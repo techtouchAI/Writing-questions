@@ -68,20 +68,18 @@ jobs:
         if: failure() && (steps.analyze.outcome == 'failure' || steps.test.outcome == 'failure')
         shell: bash
         run: |
-          emit_matches() {
-            local level="$1" file="$2" pattern="$3"
+          publish_tail() {
+            local file="$1" label="$2" excerpt
             [ -f "$file" ] || return 0
-            grep -E "$pattern" "$file" | head -30 | while IFS= read -r line; do
-              [ -n "$line" ] || continue
-              line="${line//'%'/'%25'}"
-              line="${line//$'\r'/'%0D'}"
-              line="${line//$'\n'/'%0A'}"
-              echo "::$level title=Flutter validation::$line"
-            done
+            excerpt="$(tail -n 80 "$file")"
+            [ -n "$excerpt" ] || return 0
+            excerpt="${excerpt//%/%25}"
+            excerpt="${excerpt//$'\r'/%0D}"
+            excerpt="${excerpt//$'\n'/%0A}"
+            echo "::error title=$label::$excerpt"
           }
-          emit_matches error "$RUNNER_TEMP/flutter-analyze.log" '^\s*(error|warning|info) • '
-          emit_matches error "$RUNNER_TEMP/flutter-test.log" '^\s*\[E\]|Some tests failed|Expected:|Actual:|\s+Actual:'
-          exit 0
+          publish_tail "$RUNNER_TEMP/flutter-analyze.log" 'Flutter analyzer log excerpt'
+          publish_tail "$RUNNER_TEMP/flutter-test.log" 'Flutter test log excerpt'
 
       - name: Upload validation diagnostics on failure
         if: failure()
