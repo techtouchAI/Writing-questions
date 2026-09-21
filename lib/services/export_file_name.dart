@@ -28,7 +28,7 @@ class ExportFileName {
     }
 
     var sanitized = _normalizeWhitespace(buffer.toString())
-        .replaceAll(RegExp("^'+|'+$"), '')
+        .replaceAll(RegExp(r"^'+|'+$"), '')
         .trim();
     if (sanitized.isEmpty) {
       sanitized = fallback;
