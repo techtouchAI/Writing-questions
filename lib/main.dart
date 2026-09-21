@@ -1,25 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
-import 'providers/question_provider.dart';
+
 import 'providers/exam_provider.dart';
+import 'providers/question_provider.dart';
 import 'views/home_screen.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final questionProvider = QuestionProvider();
   final examProvider = ExamProvider();
-
-  // Load local data
-  await questionProvider.loadQuestions();
-  await examProvider.loadData();
+  await Future.wait<void>(<Future<void>>[
+    questionProvider.loadQuestions(),
+    examProvider.loadData(),
+  ]);
 
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider.value(value: questionProvider),
-        ChangeNotifierProvider.value(value: examProvider),
+        ChangeNotifierProvider<QuestionProvider>.value(value: questionProvider),
+        ChangeNotifierProvider<ExamProvider>.value(value: examProvider),
       ],
       child: const WritingQuestionsApp(),
     ),
@@ -31,29 +32,35 @@ class WritingQuestionsApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF1E3A8A),
+      brightness: Brightness.light,
+    );
+
     return MaterialApp(
       title: 'صانع ومحرر الأسئلة',
       debugShowCheckedModeBanner: false,
-      locale: const Locale('ar', 'SA'),
-      supportedLocales: const [
-        Locale('ar', 'SA'),
-        Locale('en', 'US'),
+      locale: const Locale('ar'),
+      supportedLocales: const <Locale>[
+        Locale('ar'),
+        Locale('en'),
       ],
-      localizationsDelegates: const [
+      localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
       theme: ThemeData(
         useMaterial3: true,
-        fontFamily: 'Roboto',
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1E3A8A),
-          brightness: Brightness.light,
-        ),
-        appBarTheme: const AppBarTheme(
+        colorScheme: colorScheme,
+        appBarTheme: AppBarTheme(
           centerTitle: true,
           elevation: 0,
+          backgroundColor: colorScheme.surface,
+          foregroundColor: colorScheme.onSurface,
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
         ),
       ),
       home: const HomeScreen(),

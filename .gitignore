@@ -36,4 +36,5 @@ migrate_working_dir/
 **/android/gradlew
 **/android/gradlew.bat
 **/android/local.properties
+**/android/key.properties
 **/android/**/GeneratedPluginRegistrant.java

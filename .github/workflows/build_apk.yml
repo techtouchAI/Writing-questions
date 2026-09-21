@@ -1,45 +1,61 @@
-name: Build & Release Android APK
+name: Validate Android build
 
 on:
   push:
-    branches: [ main, master ]
+    branches:
+      - main
+      - 'arena/**'
   pull_request:
-    branches: [ main, master ]
+    branches:
+      - main
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
-    name: Build Flutter Android APK
+    name: Analyze, test, and build APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Check out source
         uses: actions/checkout@v4
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
+          distribution: temurin
           java-version: '17'
+          cache: gradle
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.x'
-          channel: 'stable'
+          flutter-version: '3.22.3'
+          channel: stable
           cache: true
 
-      - name: Install dependencies
+      - name: Resolve dependencies
         run: flutter pub get
 
-      - name: Analyze code
-        run: flutter analyze --no-fatal-infos
+      - name: Analyze source
+        run: flutter analyze --fatal-infos
 
-      - name: Build APK (Release)
+      - name: Run tests
+        run: flutter test
+
+      - name: Build release APK
         run: flutter build apk --release
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
+          name: writing-questions-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14

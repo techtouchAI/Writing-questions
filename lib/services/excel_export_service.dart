@@ -1,10 +1,12 @@
 import 'dart:io';
+
 import 'package:excel/excel.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+
 import '../models/question.dart';
 import '../models/question_type.dart';
-import '../models/exam.dart';
+import 'export_file_name.dart';
 
 class ExcelExportService {
   static Future<File> exportQuestionsToExcel({
@@ -14,11 +16,17 @@ class ExcelExportService {
   }) async {
     final excel = Excel.createExcel();
     final defaultSheet = excel.getDefaultSheet() ?? 'Sheet1';
-    excel.rename(defaultSheet, sheetName);
-    final sheet = excel[sheetName];
+    final safeSheetName = ExportFileName.excelSheetName(sheetName);
+    excel.rename(defaultSheet, safeSheetName);
+    final sheet = excel[safeSheetName];
+    final maxOptions = questions.fold<int>(
+      0,
+      (maximum, question) => question.options.length > maximum
+          ? question.options.length
+          : maximum,
+    );
 
-    // Configure Header Columns
-    final headers = [
+    final headers = <String>[
       '#',
       'نص السؤال',
       'النوع',
@@ -26,18 +34,19 @@ class ExcelExportService {
       'الدرجة',
       'المادة',
       'الوحدة / الموضوع',
-      'الخيار الأول (أ)',
-      'الخيار الثاني (ب)',
-      'الخيار الثالث (ج)',
-      'الخيار الرابع (د)',
+      ...List<String>.generate(
+        maxOptions,
+        (index) => 'الخيار ${_optionLabel(index)}',
+      ),
       'الإجابة الصحيحة / النموذجية',
       'الشرح والتوضيح',
     ];
 
-    // Add Header Row
-    for (int col = 0; col < headers.length; col++) {
-      final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 0));
-      cell.value = TextCellValue(headers[col]);
+    for (var column = 0; column < headers.length; column++) {
+      final cell = sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: column, rowIndex: 0),
+      );
+      cell.value = TextCellValue(headers[column]);
       cell.cellStyle = CellStyle(
         bold: true,
         backgroundColorHex: ExcelColor.fromHexString('#1E3A8A'),
@@ -47,76 +56,94 @@ class ExcelExportService {
       );
     }
 
-    // Add Data Rows
-    for (int i = 0; i < questions.length; i++) {
-      final q = questions[i];
-      final rowIndex = i + 1;
-
-      String optionA = '';
-      String optionB = '';
-      String optionC = '';
-      String optionD = '';
-      String correctAnswer = '';
-
-      if (q.type == QuestionType.multipleChoice) {
-        if (q.options.isNotEmpty) optionA = q.options[0].text;
-        if (q.options.length > 1) optionB = q.options[1].text;
-        if (q.options.length > 2) optionC = q.options[2].text;
-        if (q.options.length > 3) optionD = q.options[3].text;
-
-        final correctOptions = q.options.where((o) => o.isCorrect).map((o) => o.text).toList();
-        correctAnswer = correctOptions.join(' | ');
-      } else if (q.type == QuestionType.trueFalse) {
-        final correct = q.options.firstWhere(
-          (o) => o.isCorrect,
-          orElse: () => QuestionOption(text: 'غير محدد', isCorrect: false),
-        );
-        correctAnswer = correct.text;
-      } else {
-        correctAnswer = q.modelAnswer;
-      }
-
-      final rowData = [
-        TextCellValue('${i + 1}'),
-        TextCellValue(q.title),
-        TextCellValue(q.type.arabicLabel),
-        TextCellValue(q.difficulty.arabicLabel),
-        DoubleCellValue(q.marks),
-        TextCellValue(q.subject),
-        TextCellValue(q.topic),
-        TextCellValue(optionA),
-        TextCellValue(optionB),
-        TextCellValue(optionC),
-        TextCellValue(optionD),
-        TextCellValue(correctAnswer),
-        TextCellValue(q.explanation),
+    for (var index = 0; index < questions.length; index++) {
+      final question = questions[index];
+      final rowData = <CellValue>[
+        TextCellValue('${index + 1}'),
+        TextCellValue(question.title),
+        TextCellValue(question.type.arabicLabel),
+        TextCellValue(question.difficulty.arabicLabel),
+        DoubleCellValue(question.marks),
+        TextCellValue(question.subject),
+        TextCellValue(question.topic),
+        ...List<CellValue>.generate(
+          maxOptions,
+          (optionIndex) => TextCellValue(
+            optionIndex < question.options.length
+                ? question.options[optionIndex].text
+                : '',
+          ),
+        ),
+        TextCellValue(_answerFor(question)),
+        TextCellValue(question.explanation),
       ];
 
-      for (int col = 0; col < rowData.length; col++) {
-        final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: rowIndex));
-        cell.value = rowData[col];
+      for (var column = 0; column < rowData.length; column++) {
+        final cell = sheet.cell(
+          CellIndex.indexByColumnRow(columnIndex: column, rowIndex: index + 1),
+        );
+        cell.value = rowData[column];
         cell.cellStyle = CellStyle(
-          horizontalAlign: (col == 0 || col == 2 || col == 3 || col == 4)
+          horizontalAlign: _isCenteredColumn(column)
               ? HorizontalAlign.Center
               : HorizontalAlign.Right,
+          verticalAlign: VerticalAlign.Top,
         );
       }
     }
 
     final fileBytes = excel.save();
     if (fileBytes == null) {
-      throw Exception('فشل إنشاء بايتات ملف Excel');
+      throw StateError('فشل إنشاء بيانات ملف Excel.');
     }
 
-    final outputDir = await getApplicationDocumentsDirectory();
-    final name = fileName ?? 'اسئلة_${DateTime.now().millisecondsSinceEpoch}.xlsx';
-    final file = File('${outputDir.path}/$name');
+    final outputDirectory = await getApplicationDocumentsDirectory();
+    final requestedFileName = fileName ?? 'اسئلة_${DateTime.now().millisecondsSinceEpoch}';
+    final safeFileName = ExportFileName.fileName(
+      value: requestedFileName,
+      extension: '.xlsx',
+      fallbackStem: 'بنك_الأسئلة',
+    );
+    final file = File('${outputDirectory.path}/$safeFileName');
     await file.writeAsBytes(fileBytes, flush: true);
     return file;
   }
 
   static Future<void> shareExcelFile(File file, {String? subject}) async {
-    final xFile = XFile(file.path, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    await Share.shareXFiles([xFile], text: subject ?? 'تصدير الأسئلة بصيغة Excel');
+    final xFile = XFile(
+      file.path,
+      mimeType:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    await Share.shareXFiles(
+      <XFile>[xFile],
+      text: subject ?? 'تصدير الأسئلة بصيغة Excel',
+    );
+  }
+
+  static String _answerFor(Question question) {
+    if (question.type == QuestionType.multipleChoice) {
+      return question.options
+          .where((option) => option.isCorrect)
+          .map((option) => option.text)
+          .join(' | ');
+    }
+    if (question.type == QuestionType.trueFalse) {
+      final correctOptions = question.options
+          .where((option) => option.isCorrect)
+          .map((option) => option.text)
+          .toList(growable: false);
+      return correctOptions.isEmpty ? 'غير محدد' : correctOptions.first;
+    }
+    return question.modelAnswer;
+  }
+
+  static bool _isCenteredColumn(int column) {
+    return column == 0 || column == 2 || column == 3 || column == 4;
+  }
+
+  static String _optionLabel(int index) {
+    const labels = <String>['الأول (أ)', 'الثاني (ب)', 'الثالث (ج)', 'الرابع (د)', 'الخامس (هـ)', 'السادس (و)'];
+    return index < labels.length ? labels[index] : '${index + 1}';
   }
 }
