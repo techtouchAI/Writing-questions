@@ -41,7 +41,7 @@ class DocxExportService {
     final outputDirectory = await getApplicationDocumentsDirectory();
     final suffix = isTeacherVersion ? 'نموذج_الإجابة' : 'ورقة_الامتحان';
     final requestedFileName =
-        fileName ?? '${exam.name}_$suffix_${DateTime.now().millisecondsSinceEpoch}';
+        fileName ?? '${exam.name}_${suffix}_${DateTime.now().millisecondsSinceEpoch}';
     final safeFileName = ExportFileName.fileName(
       value: requestedFileName,
       extension: '.docx',

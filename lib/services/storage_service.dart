@@ -79,7 +79,8 @@ class StorageService {
     T Function(String source) decoder,
   ) async {
     final preferences = await _getPreferences();
-    final savedItems = preferences.getStringList(key) ?? const <String>[];
+    final storedItems = preferences.getStringList(key);
+    final savedItems = storedItems ?? const <String>[];
     final items = <T>[];
     var discardedEntries = 0;
 
@@ -94,6 +95,7 @@ class StorageService {
 
     return StorageLoadResult<T>(
       items: List<T>.unmodifiable(items),
+      hadStoredValue: storedItems != null,
       discardedEntries: discardedEntries,
     );
   }

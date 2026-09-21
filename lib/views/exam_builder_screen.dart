@@ -229,7 +229,7 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
             children: <Widget>[
               Container(
                 padding: const EdgeInsets.all(12),
-                color: Theme.of(context).colorScheme.surfaceVariant,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 child: Wrap(
                   alignment: WrapAlignment.spaceBetween,
                   crossAxisAlignment: WrapCrossAlignment.center,

@@ -133,7 +133,7 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
             ),
           Container(
             padding: const EdgeInsets.all(12),
-            color: Theme.of(context).colorScheme.surfaceVariant,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
             child: Column(
               children: <Widget>[
                 TextField(
