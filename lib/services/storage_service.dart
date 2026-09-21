@@ -22,13 +22,11 @@ class StorageLoadResult<T> {
 
 class StorageService {
   StorageService({
-    SharedPreferences? preferences,
+    SharedPreferences? prefs,
     Future<SharedPreferences> Function()? preferencesLoader,
-  })  : assert(preferences == null || preferencesLoader == null),
-        _preferencesLoader = preferencesLoader ??
-            (preferences == null
-                ? SharedPreferences.getInstance
-                : () => Future<SharedPreferences>.value(preferences));
+  })  : assert(prefs == null || preferencesLoader == null),
+        _preferencesLoader =
+            preferencesLoader ?? _createPreferencesLoader(prefs);
 
   static const String _questionsKey = 'app_saved_questions';
   static const String _examsKey = 'app_saved_exams';
@@ -36,6 +34,15 @@ class StorageService {
 
   final Future<SharedPreferences> Function() _preferencesLoader;
   Future<SharedPreferences>? _preferences;
+
+  static Future<SharedPreferences> Function() _createPreferencesLoader(
+    SharedPreferences? prefs,
+  ) {
+    if (prefs != null) {
+      return () => Future<SharedPreferences>.value(prefs);
+    }
+    return SharedPreferences.getInstance;
+  }
 
   Future<StorageLoadResult<Question>> loadQuestions() {
     return _loadList(_questionsKey, Question.fromJson);
