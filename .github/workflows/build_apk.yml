@@ -1,13 +1,17 @@
-name: Validate Android build
+name: Build & Release Android APK
 
 on:
   push:
     branches:
       - main
+      - master
       - 'arena/**'
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - main
+      - master
   workflow_dispatch:
 
 permissions:
@@ -21,20 +25,23 @@ jobs:
   build:
     name: Analyze, test, and build APK
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
+      # Immutable action references avoid surprise changes to the CI toolchain.
       - name: Check out source
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Java 17
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
 
       - name: Set up Flutter
-        uses: subosito/flutter-action@v2.23.0
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.22.3'
           channel: stable
@@ -44,40 +51,76 @@ jobs:
         run: flutter pub get
 
       - name: Analyze source
-        run: |
-          set -o pipefail
-          flutter analyze --fatal-infos 2>&1 | tee flutter-analyze.log
-
-      - name: Upload analyzer diagnostics on failure
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: flutter-analyze-diagnostics
-          path: flutter-analyze.log
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Publish analyzer diagnostics as annotations
-        if: failure()
+        id: analyze
         shell: bash
         run: |
-          while IFS= read -r line; do
-            escaped="${line//'%'/'%25'}"
-            escaped="${escaped//$'\r'/'%0D'}"
-            escaped="${escaped//$'\n'/'%0A'}"
-            echo "::error title=Flutter analyzer::$escaped"
-          done < flutter-analyze.log
+          set -o pipefail
+          flutter analyze --fatal-infos 2>&1 | tee "$RUNNER_TEMP/flutter-analyze.log"
 
       - name: Run tests
-        run: flutter test
+        id: test
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter test 2>&1 | tee "$RUNNER_TEMP/flutter-test.log"
+
+      - name: Publish analyzer and test diagnostics
+        if: failure() && (steps.analyze.outcome == 'failure' || steps.test.outcome == 'failure')
+        shell: bash
+        run: |
+          emit_matches() {
+            local level="$1" file="$2" pattern="$3"
+            [ -f "$file" ] || return 0
+            grep -E "$pattern" "$file" | head -30 | while IFS= read -r line; do
+              [ -n "$line" ] || continue
+              line="${line//'%'/'%25'}"
+              line="${line//$'\r'/'%0D'}"
+              line="${line//$'\n'/'%0A'}"
+              echo "::$level title=Flutter validation::$line"
+            done
+          }
+          emit_matches error "$RUNNER_TEMP/flutter-analyze.log" '^\s*(error|warning|info) • '
+          emit_matches error "$RUNNER_TEMP/flutter-test.log" '^\s*\[E\]|Some tests failed|Expected:|Actual:|\s+Actual:'
+          exit 0
+
+      - name: Upload validation diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: flutter-validation-diagnostics
+          path: |
+            ${{ runner.temp }}/flutter-analyze.log
+            ${{ runner.temp }}/flutter-test.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Build release APK
         run: flutter build apk --release
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: writing-questions-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    name: Attach APK to GitHub release
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download release APK
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: writing-questions-release-apk
+          path: release-artifact
+
+      - name: Attach APK to GitHub Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          files: release-artifact/app-release.apk

@@ -13,7 +13,15 @@ class ExportFileName {
         ? trimmedValue.substring(0, trimmedValue.length - normalizedExtension.length)
         : trimmedValue;
 
-    return '${_sanitizeFileStem(stem, fallbackStem)}$normalizedExtension';
+    return '${fileStem(value: stem, fallbackStem: fallbackStem)}$normalizedExtension';
+  }
+
+  /// Produces a portable file-name stem without an extension.
+  static String fileStem({
+    required String value,
+    required String fallbackStem,
+  }) {
+    return _sanitizeFileStem(value, fallbackStem);
   }
 
   static String excelSheetName(String value, {String fallback = 'بنك الأسئلة'}) {

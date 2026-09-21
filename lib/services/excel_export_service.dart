@@ -1,22 +1,22 @@
 import 'dart:io';
 
 import 'package:excel/excel.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../models/question.dart';
 import '../models/question_type.dart';
-import 'export_file_name.dart';
+import 'export_file_service.dart';
 
 class ExcelExportService {
   static Future<File> exportQuestionsToExcel({
     required List<Question> questions,
     String sheetName = 'بنك الأسئلة',
     String? fileName,
+    String? fileBaseName,
+    Directory? outputDirectory,
   }) async {
     final excel = Excel.createExcel();
     final defaultSheet = excel.getDefaultSheet() ?? 'Sheet1';
-    final safeSheetName = ExportFileName.excelSheetName(sheetName);
+    final safeSheetName = ExportFileService.sanitizeSheetName(sheetName);
     excel.rename(defaultSheet, safeSheetName);
     final sheet = excel[safeSheetName];
     final maxOptions = questions.fold<int>(
@@ -97,27 +97,20 @@ class ExcelExportService {
       throw StateError('فشل إنشاء بيانات ملف Excel.');
     }
 
-    final outputDirectory = await getApplicationDocumentsDirectory();
-    final requestedFileName = fileName ?? 'اسئلة_${DateTime.now().millisecondsSinceEpoch}';
-    final safeFileName = ExportFileName.fileName(
-      value: requestedFileName,
-      extension: '.xlsx',
-      fallbackStem: 'بنك_الأسئلة',
+    return ExportFileService.writeExportFile(
+      baseName: fileName ?? fileBaseName ?? 'بنك_الأسئلة',
+      extension: 'xlsx',
+      bytes: fileBytes,
+      destination: outputDirectory,
     );
-    final file = File('${outputDirectory.path}/$safeFileName');
-    await file.writeAsBytes(fileBytes, flush: true);
-    return file;
   }
 
-  static Future<void> shareExcelFile(File file, {String? subject}) async {
-    final xFile = XFile(
-      file.path,
+  static Future<void> shareExcelFile(File file, {String? subject}) {
+    return ExportFileService.shareExportFile(
+      file,
       mimeType:
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    );
-    await Share.shareXFiles(
-      <XFile>[xFile],
-      text: subject ?? 'تصدير الأسئلة بصيغة Excel',
+      subject: subject ?? 'تصدير الأسئلة بصيغة Excel',
     );
   }
 

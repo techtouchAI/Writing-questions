@@ -4,6 +4,7 @@ import '../../models/exam.dart';
 import '../../models/question.dart';
 import '../../services/docx_export_service.dart';
 import '../../services/excel_export_service.dart';
+import '../../services/export_file_service.dart';
 
 class ExportDialog extends StatefulWidget {
   const ExportDialog({super.key, this.exam, this.questions})
@@ -55,7 +56,12 @@ class _ExportDialogState extends State<ExportDialog> {
       messenger.showSnackBar(
         const SnackBar(content: Text('تم إنشاء ملف Excel وفتح خيارات المشاركة.')),
       );
-    } catch (_) {
+    } on ExportException catch (error) {
+      if (mounted) {
+        _showError(error.message);
+      }
+    } catch (error, stackTrace) {
+      ExportFileService.logError('Excel export failed', error, stackTrace);
       if (mounted) {
         _showError('تعذر إنشاء أو مشاركة ملف Excel. حاول مرة أخرى.');
       }
@@ -104,7 +110,12 @@ class _ExportDialogState extends State<ExportDialog> {
           ),
         ),
       );
-    } catch (_) {
+    } on ExportException catch (error) {
+      if (mounted) {
+        _showError(error.message);
+      }
+    } catch (error, stackTrace) {
+      ExportFileService.logError('Word export failed', error, stackTrace);
       if (mounted) {
         _showError('تعذر إنشاء أو مشاركة ملف Word. حاول مرة أخرى.');
       }

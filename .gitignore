@@ -38,3 +38,17 @@ migrate_working_dir/
 **/android/local.properties
 **/android/key.properties
 **/android/**/GeneratedPluginRegistrant.java
+
+# Flutter/Dart/Pub related (continued)
+/pubspec.lock
+/coverage/
+
+# Web related (in case targets are added later)
+lib/generated_plugin_registrant.dart
+
+# Symbolication and obfuscation related
+app.*.symbols
+app.*.map.json
+
+# Exceptions to above rules
+!/android/gradle/wrapper/gradle-wrapper.properties

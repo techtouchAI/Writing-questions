@@ -2,13 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../models/exam.dart';
 import '../models/question.dart';
 import '../models/question_type.dart';
-import 'export_file_name.dart';
+import 'export_file_service.dart';
 
 class DocxExportService {
   const DocxExportService._();
@@ -17,6 +15,7 @@ class DocxExportService {
     required Exam exam,
     bool isTeacherVersion = false,
     String? fileName,
+    Directory? outputDirectory,
   }) async {
     final archive = Archive();
     _addTextFile(archive, '[Content_Types].xml', _contentTypesXml);
@@ -38,29 +37,21 @@ class DocxExportService {
       throw StateError('فشل ضغط ملف Word.');
     }
 
-    final outputDirectory = await getApplicationDocumentsDirectory();
     final suffix = isTeacherVersion ? 'نموذج_الإجابة' : 'ورقة_الامتحان';
-    final requestedFileName =
-        fileName ?? '${exam.name}_${suffix}_${DateTime.now().millisecondsSinceEpoch}';
-    final safeFileName = ExportFileName.fileName(
-      value: requestedFileName,
-      extension: '.docx',
-      fallbackStem: suffix,
+    return ExportFileService.writeExportFile(
+      baseName: fileName ?? '${exam.name}_$suffix',
+      extension: 'docx',
+      bytes: zipBytes,
+      destination: outputDirectory,
     );
-    final file = File('${outputDirectory.path}/$safeFileName');
-    await file.writeAsBytes(zipBytes, flush: true);
-    return file;
   }
 
-  static Future<void> shareDocxFile(File file, {String? subject}) async {
-    final xFile = XFile(
-      file.path,
+  static Future<void> shareDocxFile(File file, {String? subject}) {
+    return ExportFileService.shareExportFile(
+      file,
       mimeType:
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    );
-    await Share.shareXFiles(
-      <XFile>[xFile],
-      text: subject ?? 'تصدير الاختبار بصيغة Word',
+      subject: subject ?? 'تصدير الاختبار بصيغة Word',
     );
   }
 

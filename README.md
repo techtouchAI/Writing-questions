@@ -1,5 +1,7 @@
 # صانع ومحرر الأسئلة
 
+[![Build & Release Android APK](https://github.com/techtouchAI/Writing-questions/actions/workflows/build_apk.yml/badge.svg)](https://github.com/techtouchAI/Writing-questions/actions/workflows/build_apk.yml)
+
 تطبيق Flutter عربي (RTL) لإنشاء بنك أسئلة، تجميع اختبارات قابلة للطباعة، وتصديرها إلى **Word (`.docx`)** و**Excel (`.xlsx`)** من جهاز Android.
 
 ## الوظائف الرئيسية
@@ -64,6 +66,7 @@ storeFile=/absolute/path/to/your-release-key.jks
 3. تحليل المصدر مع اعتبار المعلومات التحذيرية فاشلة.
 4. تشغيل اختبارات الوحدات والواجهة.
 5. بناء APK للإصدار ورفعه كأثر بناء لمدة 14 يوماً.
+6. عند دفع وسم يبدأ بـ `v`، إرفاق APK تلقائياً بإصدار GitHub المقابل.
 
 ## البنية المختصرة
 
