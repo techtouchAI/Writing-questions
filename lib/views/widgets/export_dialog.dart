@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
+
 import '../../models/exam.dart';
 import '../../models/question.dart';
 import '../../services/docx_export_service.dart';
 import '../../services/excel_export_service.dart';
+import '../../services/export_file_service.dart';
 
+/// Dialog offering every export flavor for either a whole exam or an
+/// arbitrary list of questions.
 class ExportDialog extends StatefulWidget {
-  final Exam? exam;
-  final List<Question>? questions;
-
   const ExportDialog({
     super.key,
     this.exam,
     this.questions,
   }) : assert(exam != null || questions != null);
+
+  final Exam? exam;
+  final List<Question>? questions;
 
   @override
   State<ExportDialog> createState() => _ExportDialogState();
@@ -22,84 +26,79 @@ class _ExportDialogState extends State<ExportDialog> {
   bool _isExporting = false;
   String _statusMessage = '';
 
-  Future<void> _exportToExcel() async {
+  /// Runs an export task with progress state, error handling and async-gap
+  /// safety in one place.
+  ///
+  /// [task] returns the success message to show before closing the dialog,
+  /// or null to keep the dialog open (e.g. after a validation notice).
+  Future<void> _runExport({
+    required String statusMessage,
+    required Future<String?> Function() task,
+  }) async {
     setState(() {
       _isExporting = true;
-      _statusMessage = 'جاري توليد ملف Excel (.xlsx)...';
+      _statusMessage = statusMessage;
     });
-
     try {
-      final list = widget.exam != null ? widget.exam!.questions : widget.questions!;
-      final title = widget.exam?.name ?? 'بنك_الأسئلة';
-      final file = await ExcelExportService.exportQuestionsToExcel(
-        questions: list,
-        sheetName: title,
-        fileName: '${title.replaceAll(' ', '_')}.xlsx',
-      );
-      if (mounted) {
-        Navigator.pop(context);
+      final successMessage = await task();
+      if (!mounted) return;
+      if (successMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم إنشاء ملف Excel بنجاح! جاري فتح خيارات المشاركة...')),
+          SnackBar(content: Text(successMessage)),
         );
+        Navigator.of(context).pop();
       }
-      await ExcelExportService.shareExcelFile(file, subject: title);
-    } catch (e) {
+    } on ExportException catch (error) {
+      if (!mounted) return;
+      _showError(error.message);
+    } catch (error, stackTrace) {
+      ExportFileService.logError('Export failed', error, stackTrace);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('خطأ أثناء التصدير: $e'), backgroundColor: Colors.red),
-        );
+        _showError('تعذّر إكمال التصدير. تحقق من مساحة التخزين وحاول مجدداً.');
       }
     } finally {
       if (mounted) {
-        setState(() {
-          _isExporting = false;
-        });
+        setState(() => _isExporting = false);
       }
     }
   }
 
-  Future<void> _exportToDocx({required bool isTeacherVersion}) async {
-    if (widget.exam == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('لتصدير ملف Word كامل، يُرجى إنشاء أو تحديد اختبار أولاً')),
-      );
-      return;
-    }
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ),
+    );
+  }
 
-    setState(() {
-      _isExporting = true;
-      _statusMessage = 'جاري بناء وتنسيق ملف Word (.docx)...';
-    });
-
-    try {
-      final file = await DocxExportService.exportExamToDocx(
-        exam: widget.exam!,
-        isTeacherVersion: isTeacherVersion,
-      );
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(isTeacherVersion
-                ? 'تم إنشاء نموذج إجابة المعلم بصيغة Word بنجاح!'
-                : 'تم إنشاء ورقة امتحان الطالب بصيغة Word بنجاح!'),
-          ),
-        );
-      }
-      await DocxExportService.shareDocxFile(file, subject: widget.exam!.name);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('خطأ أثناء التصدير: $e'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isExporting = false;
-        });
-      }
+  Future<String?> _exportToDocx({required bool isTeacherVersion}) async {
+    final exam = widget.exam;
+    if (exam == null) {
+      _showError('لتصدير ملف Word كامل، يُرجى إنشاء أو تحديد اختبار أولاً');
+      return null;
     }
+    final file = await DocxExportService.exportExamToDocx(
+      exam: exam,
+      isTeacherVersion: isTeacherVersion,
+    );
+    await DocxExportService.shareDocxFile(file, subject: exam.name);
+    return isTeacherVersion
+        ? 'تم إنشاء نموذج إجابة المعلم بصيغة Word بنجاح!'
+        : 'تم إنشاء ورقة امتحان الطالب بصيغة Word بنجاح!';
+  }
+
+  Future<String?> _exportToExcel() async {
+    final questions =
+        widget.exam?.questions ?? widget.questions ?? const <Question>[];
+    final title = widget.exam?.name ?? 'بنك الأسئلة';
+    final file = await ExcelExportService.exportQuestionsToExcel(
+      questions: questions,
+      sheetName: title,
+      fileBaseName: title,
+    );
+    await ExcelExportService.shareExcelFile(file, subject: title);
+    return 'تم إنشاء ملف Excel بنجاح! جاري فتح خيارات المشاركة...';
   }
 
   @override
@@ -137,7 +136,10 @@ class _ExportDialogState extends State<ExportDialog> {
                   iconColor: Colors.blue.shade700,
                   title: 'تصدير Word - ورقة الطالب (.docx)',
                   subtitle: 'ورقة اختبار رسمية منسقة للطباعة بدون إجابات',
-                  onTap: () => _exportToDocx(isTeacherVersion: false),
+                  onTap: () => _runExport(
+                    statusMessage: 'جاري بناء وتنسيق ملف Word (.docx)...',
+                    task: () => _exportToDocx(isTeacherVersion: false),
+                  ),
                 ),
                 const Divider(),
                 _buildOptionTile(
@@ -145,7 +147,10 @@ class _ExportDialogState extends State<ExportDialog> {
                   iconColor: Colors.green.shade700,
                   title: 'تصدير Word - نموذج الإجابة (.docx)',
                   subtitle: 'نسخة للمعلم تتضمن الحلول الصحيحة وتوزيع الدرجات',
-                  onTap: () => _exportToDocx(isTeacherVersion: true),
+                  onTap: () => _runExport(
+                    statusMessage: 'جاري بناء وتنسيق ملف Word (.docx)...',
+                    task: () => _exportToDocx(isTeacherVersion: true),
+                  ),
                 ),
                 const Divider(),
                 _buildOptionTile(
@@ -153,14 +158,17 @@ class _ExportDialogState extends State<ExportDialog> {
                   iconColor: Colors.teal.shade700,
                   title: 'تصدير Excel جدول بيانات (.xlsx)',
                   subtitle: 'جدول بجميع الأسئلة والخيارات والحلول لمنصات التعليم',
-                  onTap: _exportToExcel,
+                  onTap: () => _runExport(
+                    statusMessage: 'جاري توليد ملف Excel (.xlsx)...',
+                    task: _exportToExcel,
+                  ),
                 ),
               ],
             ),
       actions: [
         if (!_isExporting)
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.of(context).pop(),
             child: const Text('إلغاء'),
           ),
       ],
@@ -179,7 +187,10 @@ class _ExportDialogState extends State<ExportDialog> {
         backgroundColor: iconColor.withOpacity(0.12),
         child: Icon(icon, color: iconColor),
       ),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+      title: Text(
+        title,
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+      ),
       subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
       onTap: onTap,
     );
