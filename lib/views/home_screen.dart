@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/exam.dart';
 import '../providers/question_provider.dart';
 import '../providers/exam_provider.dart';
 import 'question_bank_screen.dart';
@@ -216,7 +217,7 @@ class HomeScreen extends StatelessWidget {
                           IconButton(
                             icon: const Icon(Icons.delete_outline, color: Colors.red),
                             tooltip: 'حذف',
-                            onPressed: () => examProvider.deleteExam(exam.id),
+                            onPressed: () => _confirmExamDeletion(context, examProvider, exam),
                           ),
                         ],
                       ),
@@ -226,6 +227,34 @@ class HomeScreen extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _confirmExamDeletion(
+    BuildContext context,
+    ExamProvider examProvider,
+    Exam exam,
+  ) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('تأكيد حذف الاختبار'),
+        content: Text('هل تريد حذف "${exam.name}" نهائياً؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              examProvider.deleteExam(exam.id);
+              Navigator.of(dialogCtx).pop();
+            },
+            child: const Text('حذف', style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
   }

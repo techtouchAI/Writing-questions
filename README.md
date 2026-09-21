@@ -1,5 +1,7 @@
 # تطبيق صانع ومحرر الأسئلة الاحترافي (Writing Questions)
 
+[![Build & Release Android APK](https://github.com/techtouchAI/Writing-questions/actions/workflows/build_apk.yml/badge.svg)](https://github.com/techtouchAI/Writing-questions/actions/workflows/build_apk.yml)
+
 تطبيق أندرويد متكامل ومبني بإطار عمل **Flutter** لتسهيل إنشاء، تنظيم، وإدارة بنوك الأسئلة، وبناء اختبارات نموذجية وتصديرها بصيغ **Word (.docx)** و **Excel (.xlsx)** بجودة عالية للطباعة والرفع على منصات التعليم الإلكتروني.
 
 ---
@@ -27,7 +29,8 @@
      - جاهز للاستيراد المباشر إلى المنصات التعليمية مثل Blackboard و Moodle و Google Forms.
 
 4. **بناء آلي مستمر (CI/CD):**
-   - ملف جاهز لـ **GitHub Actions** لتجميع حزمة التطبيق `app-release.apk` تلقائياً فور رفع الكود إلى GitHub.
+   - سير عمل **GitHub Actions** يتحقق من جودة الكود (تحليل ثابت + اختبارات آلية) ثم يجمع حزمة `app-release.apk` تلقائياً.
+   - عند رفع وسم نسخة `v*` يُرفق ملف الـ APK تلقائياً بإصدار GitHub Release.
 
 ---
 

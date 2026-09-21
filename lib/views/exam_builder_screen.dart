@@ -42,6 +42,12 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen> with SingleTicker
     }
   }
 
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
   void _saveExam() {
     if (!_headerFormKey.currentState!.validate()) {
       _tabController.animateTo(0);
@@ -61,11 +67,10 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen> with SingleTicker
       id: widget.existingExam?.id,
       name: _examName,
       header: _header,
-      questions: _selectedQuestions,
+      questions: List.from(_selectedQuestions),
     );
 
-    final examProvider = Provider.of<ExamProvider>(context, listen: false);
-    examProvider.saveExam(exam);
+    Provider.of<ExamProvider>(context, listen: false).saveExam(exam);
 
     showDialog(
       context: context,

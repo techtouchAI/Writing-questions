@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/question.dart';
 import '../models/question_type.dart';
 import '../models/difficulty.dart';
 import '../providers/question_provider.dart';
@@ -13,7 +12,8 @@ class QuestionBankScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final provider = Provider.of<QuestionProvider>(context);
+    final provider = context.watch<QuestionProvider>();
+    final visibleQuestions = provider.filteredQuestions;
 
     return Scaffold(
       appBar: AppBar(
@@ -31,7 +31,7 @@ class QuestionBankScreen extends StatelessWidget {
               }
               showDialog(
                 context: context,
-                builder: (ctx) => ExportDialog(questions: provider.filteredQuestions),
+                builder: (ctx) => ExportDialog(questions: visibleQuestions),
               );
             },
           ),
@@ -42,7 +42,7 @@ class QuestionBankScreen extends StatelessWidget {
           // Search & Filter Bar
           Container(
             padding: const EdgeInsets.all(12),
-            color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+            color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
             child: Column(
               children: [
                 TextField(
@@ -120,7 +120,7 @@ class QuestionBankScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'عدد الأسئلة المعروضة: ${provider.filteredQuestions.length}',
+                  'عدد الأسئلة المعروضة: ${visibleQuestions.length}',
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey),
                 ),
                 if (provider.searchQuery.isNotEmpty ||
@@ -137,7 +137,7 @@ class QuestionBankScreen extends StatelessWidget {
 
           // Questions List
           Expanded(
-            child: provider.filteredQuestions.isEmpty
+            child: visibleQuestions.isEmpty
                 ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -149,9 +149,9 @@ class QuestionBankScreen extends StatelessWidget {
                     ),
                   )
                 : ListView.builder(
-                    itemCount: provider.filteredQuestions.length,
+                    itemCount: visibleQuestions.length,
                     itemBuilder: (ctx, index) {
-                      final q = provider.filteredQuestions[index];
+                      final q = visibleQuestions[index];
                       return QuestionCard(
                         question: q,
                         onEdit: () {

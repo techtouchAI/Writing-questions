@@ -2,9 +2,10 @@ name: Build & Release Android APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
+    tags: ['v*']
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
@@ -13,19 +14,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Third-party actions are SHA-pinned (supply-chain hygiene).
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: 'zulu'
           java-version: '17'
 
       - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@f2c4f6686ca8e8d6e6d0f28410eeef506ed66aff # v2.18.0
         with:
-          flutter-version: '3.22.x'
+          flutter-version: 3.22.3
           channel: 'stable'
           cache: true
 
@@ -33,13 +35,57 @@ jobs:
         run: flutter pub get
 
       - name: Analyze code
-        run: flutter analyze --no-fatal-infos
+        id: analyze
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter analyze --fatal-infos 2>&1 | tee /tmp/analyze.log
+
+      - name: Run tests
+        id: test
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter test 2>&1 | tee /tmp/test.log
+
+      # Keeps static-analysis/test failures visible even when the log
+      # download endpoint is unavailable: every issue line becomes a
+      # check-run annotation, readable through the GitHub API. GitHub caps
+      # annotations at 10 per level per step, so we slice across levels.
+      - name: Report toolchain failures as annotations
+        if: failure() && (steps.analyze.outcome == 'failure' || steps.test.outcome == 'failure')
+        shell: bash
+        run: |
+          urlencode() {
+            sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e "s/'/%27/g" -e 's/"/%22/g'
+          }
+          emit() {
+            local level="$1" from="$2" to="$3" file="$4" pattern="$5"
+            [ -f "$file" ] || return 0
+            grep -E "$pattern" "$file" | sed -n "${from},${to}p" | while IFS= read -r line; do
+              [ -n "$line" ] || continue
+              echo "::$level ::$(printf '%s' "$line" | urlencode)"
+            done
+          }
+          for spec in "error 1 10" "warning 11 20" "notice 21 30"; do
+            set -- $spec
+            emit "$1" "$2" "$3" /tmp/analyze.log '^\s*(error|warning|info) • '
+            emit "$1" "$2" "$3" /tmp/test.log '^\s*\[E\]|Some tests failed|Expected:|Actual:|\s+Actual:'
+          done
+          [ -f /tmp/analyze.log ] && grep -E 'issues? found' /tmp/analyze.log | sed 's/^/::notice ::/' || true
+          exit 0
 
       - name: Build APK (Release)
         run: flutter build apk --release
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: app-release
           path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Attach APK to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
+        with:
+          files: build/app/outputs/flutter-apk/app-release.apk

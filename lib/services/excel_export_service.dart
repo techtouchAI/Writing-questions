@@ -1,122 +1,150 @@
 import 'dart:io';
+
 import 'package:excel/excel.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
+
 import '../models/question.dart';
 import '../models/question_type.dart';
-import '../models/exam.dart';
+import 'export_file_service.dart';
 
-class ExcelExportService {
+/// Builds Excel (.xlsx) workbooks that mirror the question bank in a
+/// structured table, ready for LMS import or printing.
+abstract final class ExcelExportService {
+  static const String _mimeType =
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+  static const List<String> _headers = [
+    '#',
+    'نص السؤال',
+    'النوع',
+    'الصعوبة',
+    'الدرجة',
+    'المادة',
+    'الوحدة / الموضوع',
+    'الخيار الأول (أ)',
+    'الخيار الثاني (ب)',
+    'الخيار الثالث (ج)',
+    'الخيار الرابع (د)',
+    'الإجابة الصحيحة / النموذجية',
+    'الشرح والتوضيح',
+  ];
+
+  /// Columns that render centered instead of right-aligned.
+  static const Set<int> _centeredColumns = {0, 2, 3, 4};
+
+  /// Generates the .xlsx file for [questions] and returns it as a [File].
   static Future<File> exportQuestionsToExcel({
     required List<Question> questions,
     String sheetName = 'بنك الأسئلة',
-    String? fileName,
+    String? fileBaseName,
+    Directory? outputDirectory,
   }) async {
     final excel = Excel.createExcel();
     final defaultSheet = excel.getDefaultSheet() ?? 'Sheet1';
-    excel.rename(defaultSheet, sheetName);
-    final sheet = excel[sheetName];
+    final safeSheetName = ExportFileService.sanitizeSheetName(sheetName);
+    excel.rename(defaultSheet, safeSheetName);
+    final sheet = excel[safeSheetName];
 
-    // Configure Header Columns
-    final headers = [
-      '#',
-      'نص السؤال',
-      'النوع',
-      'الصعوبة',
-      'الدرجة',
-      'المادة',
-      'الوحدة / الموضوع',
-      'الخيار الأول (أ)',
-      'الخيار الثاني (ب)',
-      'الخيار الثالث (ج)',
-      'الخيار الرابع (د)',
-      'الإجابة الصحيحة / النموذجية',
-      'الشرح والتوضيح',
-    ];
-
-    // Add Header Row
-    for (int col = 0; col < headers.length; col++) {
-      final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 0));
-      cell.value = TextCellValue(headers[col]);
-      cell.cellStyle = CellStyle(
-        bold: true,
-        backgroundColorHex: ExcelColor.fromHexString('#1E3A8A'),
-        fontColorHex: ExcelColor.fromHexString('#FFFFFF'),
-        horizontalAlign: HorizontalAlign.Center,
-        verticalAlign: VerticalAlign.Center,
-      );
+    _writeHeaderRow(sheet);
+    for (var i = 0; i < questions.length; i++) {
+      _writeDataRow(sheet, rowIndex: i + 1, number: i + 1, question: questions[i]);
     }
 
-    // Add Data Rows
-    for (int i = 0; i < questions.length; i++) {
-      final q = questions[i];
-      final rowIndex = i + 1;
-
-      String optionA = '';
-      String optionB = '';
-      String optionC = '';
-      String optionD = '';
-      String correctAnswer = '';
-
-      if (q.type == QuestionType.multipleChoice) {
-        if (q.options.isNotEmpty) optionA = q.options[0].text;
-        if (q.options.length > 1) optionB = q.options[1].text;
-        if (q.options.length > 2) optionC = q.options[2].text;
-        if (q.options.length > 3) optionD = q.options[3].text;
-
-        final correctOptions = q.options.where((o) => o.isCorrect).map((o) => o.text).toList();
-        correctAnswer = correctOptions.join(' | ');
-      } else if (q.type == QuestionType.trueFalse) {
-        final correct = q.options.firstWhere(
-          (o) => o.isCorrect,
-          orElse: () => QuestionOption(text: 'غير محدد', isCorrect: false),
-        );
-        correctAnswer = correct.text;
-      } else {
-        correctAnswer = q.modelAnswer;
-      }
-
-      final rowData = [
-        TextCellValue('${i + 1}'),
-        TextCellValue(q.title),
-        TextCellValue(q.type.arabicLabel),
-        TextCellValue(q.difficulty.arabicLabel),
-        DoubleCellValue(q.marks),
-        TextCellValue(q.subject),
-        TextCellValue(q.topic),
-        TextCellValue(optionA),
-        TextCellValue(optionB),
-        TextCellValue(optionC),
-        TextCellValue(optionD),
-        TextCellValue(correctAnswer),
-        TextCellValue(q.explanation),
-      ];
-
-      for (int col = 0; col < rowData.length; col++) {
-        final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: rowIndex));
-        cell.value = rowData[col];
-        cell.cellStyle = CellStyle(
-          horizontalAlign: (col == 0 || col == 2 || col == 3 || col == 4)
-              ? HorizontalAlign.Center
-              : HorizontalAlign.Right,
-        );
-      }
+    final bytes = excel.save();
+    if (bytes == null) {
+      throw const ExportException('تعذر توليد بايتات ملف Excel.');
     }
 
-    final fileBytes = excel.save();
-    if (fileBytes == null) {
-      throw Exception('فشل إنشاء بايتات ملف Excel');
-    }
-
-    final outputDir = await getApplicationDocumentsDirectory();
-    final name = fileName ?? 'اسئلة_${DateTime.now().millisecondsSinceEpoch}.xlsx';
-    final file = File('${outputDir.path}/$name');
-    await file.writeAsBytes(fileBytes, flush: true);
-    return file;
+    return ExportFileService.writeExportFile(
+      baseName: fileBaseName ?? safeSheetName,
+      extension: 'xlsx',
+      bytes: bytes,
+      destination: outputDirectory,
+    );
   }
 
-  static Future<void> shareExcelFile(File file, {String? subject}) async {
-    final xFile = XFile(file.path, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    await Share.shareXFiles([xFile], text: subject ?? 'تصدير الأسئلة بصيغة Excel');
+  /// Opens the system share sheet for a previously generated file.
+  static Future<void> shareExcelFile(File file, {String? subject}) {
+    return ExportFileService.shareExportFile(
+      file,
+      mimeType: _mimeType,
+      subject: subject,
+    );
+  }
+
+  static void _writeHeaderRow(Sheet sheet) {
+    for (var col = 0; col < _headers.length; col++) {
+      sheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 0))
+        ..value = TextCellValue(_headers[col])
+        ..cellStyle = CellStyle(
+          bold: true,
+          backgroundColorHex: ExcelColor.fromHexString('#1E3A8A'),
+          fontColorHex: ExcelColor.fromHexString('#FFFFFF'),
+          horizontalAlign: HorizontalAlign.Center,
+          verticalAlign: VerticalAlign.Center,
+        );
+    }
+  }
+
+  static void _writeDataRow(
+    Sheet sheet, {
+    required int rowIndex,
+    required int number,
+    required Question question,
+  }) {
+    final values = _dataRowValues(number, question);
+    for (var col = 0; col < values.length; col++) {
+      sheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: rowIndex))
+          ..value = values[col]
+          ..cellStyle = CellStyle(
+            horizontalAlign: _centeredColumns.contains(col)
+                ? HorizontalAlign.Center
+                : HorizontalAlign.Right,
+          );
+    }
+  }
+
+  static List<CellValue> _dataRowValues(int number, Question question) {
+    return [
+      TextCellValue('$number'),
+      TextCellValue(question.title),
+      TextCellValue(question.type.arabicLabel),
+      TextCellValue(question.difficulty.arabicLabel),
+      DoubleCellValue(question.marks),
+      TextCellValue(question.subject),
+      TextCellValue(question.topic),
+      TextCellValue(_optionText(question, 0)),
+      TextCellValue(_optionText(question, 1)),
+      TextCellValue(_optionText(question, 2)),
+      TextCellValue(_optionText(question, 3)),
+      TextCellValue(_correctAnswer(question)),
+      TextCellValue(question.explanation),
+    ];
+  }
+
+  static String _optionText(Question question, int index) {
+    final options = question.options;
+    return index < options.length ? options[index].text : '';
+  }
+
+  static String _correctAnswer(Question question) {
+    switch (question.type) {
+      case QuestionType.multipleChoice:
+        return question.options
+            .where((option) => option.isCorrect)
+            .map((option) => option.text)
+            .join(' | ');
+      case QuestionType.trueFalse:
+        return question.options
+            .firstWhere(
+              (option) => option.isCorrect,
+              orElse: () => QuestionOption(text: 'غير محدد'),
+            )
+            .text;
+      case QuestionType.fillInTheBlank:
+      case QuestionType.essay:
+        return question.modelAnswer;
+    }
   }
 }

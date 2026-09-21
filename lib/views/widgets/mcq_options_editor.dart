@@ -93,6 +93,10 @@ class _McqOptionsEditorState extends State<McqOptionsEditor> {
                 ),
                 Expanded(
                   child: TextFormField(
+                    // Keyed by the option id so each field keeps (and shows)
+                    // the state of its own option when the list is reordered
+                    // by removing an entry.
+                    key: ValueKey(opt.id),
                     initialValue: opt.text,
                     decoration: InputDecoration(
                       hintText: 'نص الخيار رقم ${index + 1}',

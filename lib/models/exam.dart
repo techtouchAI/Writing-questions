@@ -36,14 +36,14 @@ class Exam {
   }
 
   factory Exam.fromMap(Map<String, dynamic> map) {
+    final rawQuestions = map['questions'];
     return Exam(
       id: map['id'],
       name: map['name'] ?? 'اختبار غير معنون',
       header: ExamHeader.fromMap(map['header'] ?? {}),
-      questions: (map['questions'] as List<dynamic>?)
-              ?.map((q) => Question.fromMap(q as Map<String, dynamic>))
-              .toList() ??
-          [],
+      questions: rawQuestions is List<dynamic>
+          ? rawQuestions.whereType<Map>().map((q) => Question.fromMap(Map<String, dynamic>.from(q))).toList()
+          : <Question>[],
       createdAt: map['createdAt'] != null
           ? DateTime.tryParse(map['createdAt']) ?? DateTime.now()
           : DateTime.now(),
