@@ -77,6 +77,7 @@ class Question {
   }
 
   factory Question.fromMap(Map<String, dynamic> map) {
+    final rawOptions = map['options'];
     return Question(
       id: map['id'],
       title: map['title'] ?? '',
@@ -85,10 +86,9 @@ class Question {
       marks: (map['marks'] as num?)?.toDouble() ?? 1.0,
       subject: map['subject'] ?? 'عام',
       topic: map['topic'] ?? '',
-      options: (map['options'] as List<dynamic>?)
-              ?.map((e) => QuestionOption.fromMap(e as Map<String, dynamic>))
-              .toList() ??
-          [],
+      options: rawOptions is List<dynamic>
+          ? rawOptions.whereType<Map>().map((e) => QuestionOption.fromMap(Map<String, dynamic>.from(e))).toList()
+          : <QuestionOption>[],
       modelAnswer: map['modelAnswer'] ?? '',
       explanation: map['explanation'] ?? '',
       createdAt: map['createdAt'] != null

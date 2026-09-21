@@ -56,10 +56,12 @@ class StorageService {
     final jsonString = prefs.getString(_defaultHeaderKey);
     if (jsonString == null) return ExamHeader();
     return _tryDecode(
-      jsonString,
-      (source) => ExamHeader.fromMap(jsonDecode(source) as Map<String, dynamic>),
-      'ExamHeader',
-    );
+          jsonString,
+          (source) =>
+              ExamHeader.fromMap(jsonDecode(source) as Map<String, dynamic>),
+          'ExamHeader',
+        ) ??
+        ExamHeader();
   }
 
   Future<void> saveDefaultHeader(ExamHeader header) async {

@@ -64,11 +64,13 @@ abstract final class DocxExportService {
   // OpenXML assembly
   // ---------------------------------------------------------------------------
 
-  static ArchiveFile _textPart(String name, String content) =>
-      // `utf8.encode` produces the real byte length of the UTF-8 payload;
-      // sizing the part by `String.length` (UTF-16 code units) would corrupt
-      // any document containing Arabic text.
-      ArchiveFile.bytes(name, utf8.encode(content));
+  static ArchiveFile _textPart(String name, String content) {
+    // `utf8.encode` produces the real byte length of the UTF-8 payload;
+    // sizing the part by `String.length` (UTF-16 code units) would corrupt
+    // any document containing Arabic text.
+    final data = utf8.encode(content);
+    return ArchiveFile(name, data.length, data);
+  }
 
   static String _buildDocumentXml(Exam exam, bool isTeacher) {
     final buffer = StringBuffer()
@@ -122,8 +124,8 @@ abstract final class DocxExportService {
       ..write('<w:sz w:val="$halfPoints"/>')
       ..write('<w:rFonts w:ascii="Traditional Arabic" w:cs="Traditional Arabic"/>');
 
-    return '<w:p><w:pPr>${paragraphProps}</w:pPr>'
-        '<w:r><w:rPr>${runProps}</w:rPr>'
+    return '<w:p><w:pPr>$paragraphProps</w:pPr>'
+        '<w:r><w:rPr>$runProps</w:rPr>'
         '<w:t xml:space="preserve">${_escapeXml(text)}</w:t></w:r></w:p>';
   }
 
@@ -159,7 +161,7 @@ abstract final class DocxExportService {
       ..write('<w:color w:val="$colorHex"/>')
       ..write('<w:rFonts w:cs="Traditional Arabic"/>');
     return '<w:p><w:pPr><w:bidi/><w:jc w:val="$alignment"/></w:pPr>'
-        '<w:r><w:rPr>${runProps}</w:rPr>'
+        '<w:r><w:rPr>$runProps</w:rPr>'
         '<w:t xml:space="preserve">${_escapeXml(text)}</w:t></w:r></w:p>';
   }
 

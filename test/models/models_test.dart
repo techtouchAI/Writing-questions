@@ -54,7 +54,7 @@ void main() {
     });
 
     test('copyWith preserves identity fields', () {
-      final original = Question(title: 'أصل', marks: 1.0);
+      final original = Question(title: 'أصل', type: QuestionType.essay, marks: 1.0);
       final copy = original.copyWith(title: 'معدّل', marks: 3.0);
 
       expect(copy.id, original.id);
@@ -71,9 +71,9 @@ void main() {
         name: 'اختبار',
         header: ExamHeader(),
         questions: [
-          Question(title: 'س1', marks: 2.0),
-          Question(title: 'س2', marks: 1.5),
-          Question(title: 'س3', marks: 0.5),
+          Question(title: 'س1', type: QuestionType.trueFalse, marks: 2.0),
+          Question(title: 'س2', type: QuestionType.trueFalse, marks: 1.5),
+          Question(title: 'س3', type: QuestionType.trueFalse, marks: 0.5),
         ],
       );
 

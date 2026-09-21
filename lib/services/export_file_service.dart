@@ -65,17 +65,19 @@ abstract final class ExportFileService {
   }
 
   /// Opens the system share sheet for a previously generated export [file].
+  ///
+  /// `Share.shareXFiles` is the current API of the share_plus 10.x line this
+  /// project pins (the `SharePlus.instance.share` replacement only exists
+  /// from share_plus 11, which requires a newer Flutter SDK).
   static Future<void> shareExportFile(
     File file, {
     required String mimeType,
     String? subject,
   }) {
-    return SharePlus.instance.share(
-      ShareParams(
-        files: [XFile(file.path, mimeType: mimeType)],
-        subject: subject,
-        title: subject,
-      ),
+    return Share.shareXFiles(
+      [XFile(file.path, mimeType: mimeType)],
+      subject: subject,
+      text: subject,
     );
   }
 
