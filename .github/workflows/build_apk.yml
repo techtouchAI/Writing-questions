@@ -71,7 +71,7 @@ jobs:
           publish_tail() {
             local file="$1" label="$2" excerpt
             [ -f "$file" ] || return 0
-            excerpt="$(tail -n 80 "$file")"
+            excerpt="$(tail -n 30 "$file")"
             [ -n "$excerpt" ] || return 0
             excerpt="${excerpt//%/%25}"
             excerpt="${excerpt//$'\r'/%0D}"

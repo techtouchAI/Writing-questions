@@ -42,7 +42,7 @@ void main() {
     await tester.pump();
 
     expect(provider.questions, hasLength(baseline));
-    expect(find.text('يرجى إدخال نص السؤال'), findsOneWidget);
+    expect(find.text('يرجى إدخال نص السؤال.'), findsOneWidget);
   });
 
   testWidgets('saves a true/false question into the bank', (tester) async {
