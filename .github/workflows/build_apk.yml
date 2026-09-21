@@ -50,12 +50,23 @@ jobs:
 
       - name: Upload analyzer diagnostics on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: flutter-analyze-diagnostics
           path: flutter-analyze.log
           if-no-files-found: ignore
           retention-days: 7
+
+      - name: Publish analyzer diagnostics as annotations
+        if: failure()
+        shell: bash
+        run: |
+          while IFS= read -r line; do
+            escaped="${line//'%'/'%25'}"
+            escaped="${escaped//$'\r'/'%0D'}"
+            escaped="${escaped//$'\n'/'%0A'}"
+            echo "::error title=Flutter analyzer::$escaped"
+          done < flutter-analyze.log
 
       - name: Run tests
         run: flutter test
@@ -64,7 +75,7 @@ jobs:
         run: flutter build apk --release
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: writing-questions-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
