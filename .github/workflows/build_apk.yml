@@ -35,10 +35,45 @@ jobs:
         run: flutter pub get
 
       - name: Analyze code
-        run: flutter analyze --fatal-infos
+        id: analyze
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter analyze --fatal-infos 2>&1 | tee /tmp/analyze.log
 
       - name: Run tests
-        run: flutter test
+        id: test
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter test 2>&1 | tee /tmp/test.log
+
+      # Keeps static-analysis/test failures visible even when the log
+      # download endpoint is unavailable.
+      - name: Report toolchain failures on the PR
+        if: failure() && (steps.analyze.outcome == 'failure' || steps.test.outcome == 'failure')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          {
+            echo "🔧 Toolchain failure report for run ${GITHUB_RUN_ID}:"
+            if [ -f /tmp/analyze.log ]; then
+              echo
+              echo '**flutter analyze:**'
+              echo '```text'
+              tail -c 4000 /tmp/analyze.log
+              echo '```'
+            fi
+            if [ -f /tmp/test.log ]; then
+              echo
+              echo '**flutter test:**'
+              echo '```text'
+              tail -c 4000 /tmp/test.log
+              echo '```'
+            fi
+          } > failure-report.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file failure-report.md
 
       - name: Build APK (Release)
         run: flutter build apk --release
