@@ -23,10 +23,10 @@ void main() {
 
       final loaded = await storage.loadQuestions();
 
-      expect(loaded, hasLength(1));
-      expect(loaded.first.title, 'سؤال محفوظ');
-      expect(loaded.first.type, QuestionType.essay);
-      expect(loaded.first.marks, 4);
+      expect(loaded.items, hasLength(1));
+      expect(loaded.items.first.title, 'سؤال محفوظ');
+      expect(loaded.items.first.type, QuestionType.essay);
+      expect(loaded.items.first.marks, 4);
     });
 
     test('skips corrupt records instead of crashing', () async {
@@ -39,15 +39,21 @@ void main() {
       final storage = StorageService(prefs: prefs);
       final loaded = await storage.loadQuestions();
 
-      expect(loaded, hasLength(1));
-      expect(loaded.first.title, 'سؤال سليم');
+      expect(loaded.items, hasLength(1));
+      expect(loaded.items.first.title, 'سؤال سليم');
     });
 
-    test('returns an empty list for missing keys', () async {
+    test('distinguishes a missing key from an intentionally empty bank', () async {
       final storage = StorageService(prefs: prefs);
 
-      expect(await storage.loadQuestions(), isEmpty);
-      expect(await storage.loadExams(), isEmpty);
+      final missing = await storage.loadQuestions();
+      expect(missing.items, isEmpty);
+      expect(missing.hadStoredValue, isFalse);
+
+      await prefs.setStringList('app_saved_questions', <String>[]);
+      final emptyBank = await storage.loadQuestions();
+      expect(emptyBank.items, isEmpty);
+      expect(emptyBank.hadStoredValue, isTrue);
     });
   });
 }

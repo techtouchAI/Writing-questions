@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../models/difficulty.dart';
 import '../models/question.dart';
 import '../models/question_type.dart';
-import '../models/difficulty.dart';
 import '../providers/question_provider.dart';
 import 'widgets/mcq_options_editor.dart';
 
@@ -20,73 +19,44 @@ class QuestionEditorScreen extends StatefulWidget {
 class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
   final _formKey = GlobalKey<FormState>();
 
+  late final TextEditingController _titleController;
+  late final TextEditingController _marksController;
+  late final TextEditingController _subjectController;
+  late final TextEditingController _topicController;
+  late final TextEditingController _modelAnswerController;
+  late final TextEditingController _explanationController;
+
   late QuestionType _type;
   late Difficulty _difficulty;
   late List<QuestionOption> _options;
   bool _trueFalseAnswer = true;
-
-  final _titleController = TextEditingController();
-  final _marksController = TextEditingController();
-  final _subjectController = TextEditingController();
-  final _topicController = TextEditingController();
-  final _modelAnswerController = TextEditingController();
-  final _explanationController = TextEditingController();
+  bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
-    final seed = widget.existingQuestion;
-    double marks;
-    String subject;
-    if (seed != null) {
-      _type = seed.type;
-      _difficulty = seed.difficulty;
-      _options = seed.options
-          .map((e) => QuestionOption(id: e.id, text: e.text, isCorrect: e.isCorrect))
-          .toList();
-      marks = seed.marks;
-      subject = seed.subject;
+    final question = widget.existingQuestion;
+    _type = question?.type ?? QuestionType.multipleChoice;
+    _difficulty = question?.difficulty ?? Difficulty.medium;
+    _options = question?.options
+            .map((option) => option.copyWith())
+            .toList(growable: false) ??
+        _defaultOptions();
+    _trueFalseAnswer = _trueFalseValue(question?.options);
 
-      if (_type == QuestionType.trueFalse && _options.isNotEmpty) {
-        final correct = _options.firstWhere(
-          (option) => option.isCorrect,
-          orElse: () => _options.first,
-        );
-        _trueFalseAnswer = correct.text == 'صح';
-      }
-    } else {
-      _type = QuestionType.multipleChoice;
-      _difficulty = Difficulty.medium;
-      _options = [
-        QuestionOption(text: '', isCorrect: true),
-        QuestionOption(text: '', isCorrect: false),
-        QuestionOption(text: '', isCorrect: false),
-        QuestionOption(text: '', isCorrect: false),
-      ];
-      marks = 1.0;
-      subject = 'عام';
-    }
-
-    _titleController.text = seed?.title ?? '';
-    _marksController.text = _formatMarks(marks);
-    _subjectController.text = subject;
-    _topicController.text = seed?.topic ?? '';
-    _modelAnswerController.text = seed?.modelAnswer ?? '';
-    _explanationController.text = seed?.explanation ?? '';
+    _titleController = TextEditingController(text: question?.title ?? '');
+    _marksController = TextEditingController(
+      text: (question?.marks ?? 1).toString(),
+    );
+    _subjectController = TextEditingController(text: question?.subject ?? 'عام');
+    _topicController = TextEditingController(text: question?.topic ?? '');
+    _modelAnswerController = TextEditingController(
+      text: question?.modelAnswer ?? '',
+    );
+    _explanationController = TextEditingController(
+      text: question?.explanation ?? '',
+    );
   }
-
-  /// ASCII digits, Arabic-Indic digits, plus both decimal separators.
-  static final RegExp _marksPattern = RegExp(r'^[\d٠-٩]*[.,٫]?[\d٠-٩]*$');
-
-  static const Map<String, String> _arabicDigits = {
-    '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
-    '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9', '٫': '.',
-  };
-
-  String _normalizeMarks(String raw) => raw.replaceAllMapped(
-        RegExp(r'[٠-٩٫]'),
-        (match) => _arabicDigits[match.group(0)] ?? match.group(0)!,
-      );
 
   @override
   void dispose() {
@@ -99,287 +69,369 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
     super.dispose();
   }
 
-  String _formatMarks(double marks) =>
-      marks % 1 == 0 ? marks.toInt().toString() : marks.toString();
+  Future<void> _saveQuestion() async {
+    if (_isSaving || !(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
 
-  void _saveQuestion() {
-    if (!_formKey.currentState!.validate()) return;
+    final marks = _parseMarks(_marksController.text);
+    if (marks == null) {
+      return;
+    }
 
-    List<QuestionOption> finalOptions = [];
+    final options = _optionsForCurrentType();
     if (_type == QuestionType.multipleChoice) {
-      finalOptions = _options.where((option) => option.text.trim().isNotEmpty).toList();
-      if (finalOptions.length < 2) {
-        _showMessage('يجب إدخال خيارين على الأقل لسؤال الخيارات');
+      if (options.length < 2) {
+        _showMessage('يجب إدخال خيارين على الأقل لسؤال الخيارات.');
         return;
       }
-      if (!finalOptions.any((option) => option.isCorrect)) {
-        _showMessage('يرجى تحديد خيار واحد صحيح على الأقل');
+      if (!options.any((option) => option.isCorrect)) {
+        _showMessage('يرجى تحديد خيار واحد صحيح على الأقل.');
         return;
       }
-    } else if (_type == QuestionType.trueFalse) {
-      finalOptions = [
+    }
+
+    final subject = _subjectController.text.trim();
+    final question = Question(
+      id: widget.existingQuestion?.id,
+      title: _titleController.text.trim(),
+      type: _type,
+      difficulty: _difficulty,
+      marks: marks,
+      subject: subject.isEmpty ? 'عام' : subject,
+      topic: _topicController.text.trim(),
+      options: options,
+      modelAnswer: _modelAnswerController.text.trim(),
+      explanation: _explanationController.text.trim(),
+      createdAt: widget.existingQuestion?.createdAt,
+    );
+
+    setState(() => _isSaving = true);
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      final provider = context.read<QuestionProvider>();
+      if (widget.existingQuestion == null) {
+        await provider.addQuestion(question);
+      } else {
+        await provider.updateQuestion(question);
+      }
+
+      if (!mounted) {
+        return;
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            widget.existingQuestion == null
+                ? 'تمت إضافة السؤال بنجاح.'
+                : 'تم حفظ تعديلات السؤال بنجاح.',
+          ),
+        ),
+      );
+      Navigator.of(context).pop(true);
+    } catch (_) {
+      if (mounted) {
+        _showMessage('تعذر حفظ السؤال. حاول مرة أخرى.', isError: true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  List<QuestionOption> _optionsForCurrentType() {
+    if (_type == QuestionType.trueFalse) {
+      return <QuestionOption>[
         QuestionOption(text: 'صح', isCorrect: _trueFalseAnswer),
         QuestionOption(text: 'خطأ', isCorrect: !_trueFalseAnswer),
       ];
     }
-
-    final provider = Provider.of<QuestionProvider>(context, listen: false);
-    final title = _titleController.text.trim();
-    final marks =
-        double.tryParse(_normalizeMarks(_marksController.text)) ?? 1.0;
-    final subject =
-        _subjectController.text.trim().isEmpty ? 'عام' : _subjectController.text.trim();
-    final topic = _topicController.text.trim();
-    final modelAnswer = _modelAnswerController.text.trim();
-    final explanation = _explanationController.text.trim();
-
-    final isEditing = widget.existingQuestion != null;
-    if (isEditing) {
-      provider.updateQuestion(widget.existingQuestion!.copyWith(
-        title: title,
-        type: _type,
-        difficulty: _difficulty,
-        marks: marks,
-        subject: subject,
-        topic: topic,
-        options: finalOptions,
-        modelAnswer: modelAnswer,
-        explanation: explanation,
-      ));
-    } else {
-      provider.addQuestion(Question(
-        title: title,
-        type: _type,
-        difficulty: _difficulty,
-        marks: marks,
-        subject: subject,
-        topic: topic,
-        options: finalOptions,
-        modelAnswer: modelAnswer,
-        explanation: explanation,
-      ));
+    if (_type != QuestionType.multipleChoice) {
+      return const <QuestionOption>[];
     }
-
-    _showMessage(isEditing ? 'تم تعديل السؤال بنجاح' : 'تمت إضافة السؤال بنجاح');
-    Navigator.of(context).pop();
+    return _options
+        .where((option) => option.text.trim().isNotEmpty)
+        .map((option) => option.copyWith(text: option.text.trim()))
+        .toList(growable: false);
   }
 
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+  void _showMessage(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Theme.of(context).colorScheme.error : null,
+      ),
+    );
+  }
+
+  double? _parseMarks(String value) {
+    final normalized = value.trim().replaceAll('،', '.').replaceAll(',', '.');
+    final marks = double.tryParse(normalized);
+    return marks != null && marks.isFinite && marks > 0 ? marks : null;
+  }
+
+  String? _validateMarks(String? value) {
+    return _parseMarks(value ?? '') == null
+        ? 'أدخل درجة موجبة صحيحة، مثل 1 أو 1.5.'
+        : null;
+  }
+
+  static List<QuestionOption> _defaultOptions() {
+    return <QuestionOption>[
+      QuestionOption(text: '', isCorrect: true),
+      QuestionOption(text: ''),
+      QuestionOption(text: ''),
+      QuestionOption(text: ''),
+    ];
+  }
+
+  static bool _trueFalseValue(List<QuestionOption>? options) {
+    if (options == null || options.isEmpty) {
+      return true;
+    }
+    final correctOption = options.where((option) => option.isCorrect).toList();
+    return correctOption.isEmpty || correctOption.first.text == 'صح';
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.existingQuestion != null ? 'تعديل السؤال' : 'إضافة سؤال جديد'),
-        actions: [
+        title: Text(
+          widget.existingQuestion == null ? 'إضافة سؤال جديد' : 'تعديل السؤال',
+        ),
+        actions: <Widget>[
           IconButton(
             icon: const Icon(Icons.check),
             tooltip: 'حفظ',
-            onPressed: _saveQuestion,
+            onPressed: _isSaving ? null : _saveQuestion,
           ),
         ],
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16.0),
-          children: [
-            // Question Type Selector
-            DropdownButtonFormField<QuestionType>(
-              value: _type,
-              decoration: const InputDecoration(
-                labelText: 'نوع السؤال',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.category),
-              ),
-              items: QuestionType.values.map((type) {
-                return DropdownMenuItem(value: type, child: Text(type.arabicLabel));
-              }).toList(),
-              onChanged: (value) {
-                if (value != null) setState(() => _type = value);
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Title / Question Text
-            TextFormField(
-              controller: _titleController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'نص السؤال *',
-                hintText: 'اكتب نص السؤال بوضوح هنا...',
-                border: OutlineInputBorder(),
-                alignLabelWithHint: true,
-              ),
-              validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'يرجى إدخال نص السؤال';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Row: Difficulty & Marks
-            Row(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Form(
+            key: _formKey,
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<Difficulty>(
-                    value: _difficulty,
-                    decoration: const InputDecoration(
-                      labelText: 'مستوى الصعوبة',
-                      border: OutlineInputBorder(),
+              children: <Widget>[
+                DropdownButtonFormField<QuestionType>(
+                  value: _type,
+                  decoration: const InputDecoration(
+                    labelText: 'نوع السؤال',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.category),
+                  ),
+                  items: QuestionType.values
+                      .map(
+                        (type) => DropdownMenuItem<QuestionType>(
+                          value: type,
+                          child: Text(type.arabicLabel),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: _isSaving
+                      ? null
+                      : (type) {
+                          if (type != null) {
+                            setState(() => _type = type);
+                          }
+                        },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _titleController,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'نص السؤال *',
+                    hintText: 'اكتب نص السؤال بوضوح هنا...',
+                    border: OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                  ),
+                  textInputAction: TextInputAction.newline,
+                  validator: (value) => value == null || value.trim().isEmpty
+                      ? 'يرجى إدخال نص السؤال.'
+                      : null,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: DropdownButtonFormField<Difficulty>(
+                        value: _difficulty,
+                        decoration: const InputDecoration(
+                          labelText: 'مستوى الصعوبة',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: Difficulty.values
+                            .map(
+                              (difficulty) => DropdownMenuItem<Difficulty>(
+                                value: difficulty,
+                                child: Text(difficulty.arabicLabel),
+                              ),
+                            )
+                            .toList(growable: false),
+                        onChanged: _isSaving
+                            ? null
+                            : (difficulty) {
+                                if (difficulty != null) {
+                                  setState(() => _difficulty = difficulty);
+                                }
+                              },
+                      ),
                     ),
-                    items: Difficulty.values.map((difficulty) {
-                      return DropdownMenuItem(
-                        value: difficulty,
-                        child: Text(difficulty.arabicLabel),
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      if (value != null) setState(() => _difficulty = value);
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _marksController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'الدرجة المستحقة',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: _validateMarks,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: TextFormField(
+                        controller: _subjectController,
+                        decoration: const InputDecoration(
+                          labelText: 'المادة / التصنيف',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _topicController,
+                        decoration: const InputDecoration(
+                          labelText: 'الوحدة / الفصل (اختياري)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                if (_type == QuestionType.multipleChoice)
+                  McqOptionsEditor(
+                    options: _options,
+                    enabled: !_isSaving,
+                    onChanged: (options) {
+                      _options = options
+                          .map((option) => option.copyWith())
+                          .toList(growable: false);
                     },
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    controller: _marksController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(_marksPattern),
-                    ],
-                    decoration: const InputDecoration(
-                      labelText: 'الدرجة المستحقة',
-                      border: OutlineInputBorder(),
+                if (_type == QuestionType.trueFalse)
+                  Card(
+                    elevation: 1,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    validator: (value) {
-                      if (value == null ||
-                          double.tryParse(_normalizeMarks(value)) == null) {
-                        return 'أدخل رقماً صحيحاً';
-                      }
-                      return null;
-                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          const Text(
+                            'حدد الإجابة الصحيحة للعبارة:',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          RadioListTile<bool>(
+                            title: const Text('صح (صحيحة)'),
+                            value: true,
+                            groupValue: _trueFalseAnswer,
+                            onChanged: _isSaving
+                                ? null
+                                : (value) => setState(
+                                      () => _trueFalseAnswer = value ?? true,
+                                    ),
+                          ),
+                          RadioListTile<bool>(
+                            title: const Text('خطأ (غير صحيحة)'),
+                            value: false,
+                            groupValue: _trueFalseAnswer,
+                            onChanged: _isSaving
+                                ? null
+                                : (value) => setState(
+                                      () => _trueFalseAnswer = value ?? false,
+                                    ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (_type == QuestionType.fillInTheBlank ||
+                    _type == QuestionType.essay) ...<Widget>[
+                  TextFormField(
+                    controller: _modelAnswerController,
+                    maxLines: _type == QuestionType.essay ? 4 : 2,
+                    decoration: InputDecoration(
+                      labelText: _type == QuestionType.essay
+                          ? 'الإجابة النموذجية / معايير التصحيح *'
+                          : 'الكلمة أو العبارة الصحيحة لإكمال الفراغ *',
+                      border: const OutlineInputBorder(),
+                      alignLabelWithHint: true,
+                    ),
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? 'يرجى إدخال الإجابة النموذجية.'
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                TextFormField(
+                  controller: _explanationController,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'تفسير الإجابة / ملاحظات للمعلم (اختياري)',
+                    hintText: 'يظهر في نموذج الإجابة وملف التصدير لتوضيح الحل.',
+                    border: OutlineInputBorder(),
+                    alignLabelWithHint: true,
                   ),
                 ),
+                const SizedBox(height: 32),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    icon: _isSaving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.save),
+                    label: Text(
+                      _isSaving
+                          ? 'جارٍ الحفظ...'
+                          : widget.existingQuestion == null
+                              ? 'إضافة السؤال للبنك'
+                              : 'حفظ التعديلات',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    onPressed: _isSaving ? null : _saveQuestion,
+                  ),
+                ),
+                const SizedBox(height: 24),
               ],
             ),
-            const SizedBox(height: 16),
-
-            // Row: Subject & Topic
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _subjectController,
-                    decoration: const InputDecoration(
-                      labelText: 'المادة / التصنيف',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    controller: _topicController,
-                    decoration: const InputDecoration(
-                      labelText: 'الوحدة / الفصل (اختياري)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-
-            // Dynamic Fields based on Type
-            if (_type == QuestionType.multipleChoice)
-              McqOptionsEditor(
-                options: _options,
-                onChanged: (options) => _options = options,
-              ),
-
-            if (_type == QuestionType.trueFalse)
-              Card(
-                elevation: 1,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                child: Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'حدد الإجابة الصحيحة للعبارة:',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
-                      RadioListTile<bool>(
-                        title: const Text('صح (صحيحة)'),
-                        value: true,
-                        groupValue: _trueFalseAnswer,
-                        onChanged: (value) =>
-                            setState(() => _trueFalseAnswer = value ?? true),
-                      ),
-                      RadioListTile<bool>(
-                        title: const Text('خطأ (غير صحيحة)'),
-                        value: false,
-                        groupValue: _trueFalseAnswer,
-                        onChanged: (value) =>
-                            setState(() => _trueFalseAnswer = value ?? false),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-            if (_type == QuestionType.fillInTheBlank || _type == QuestionType.essay) ...[
-              TextFormField(
-                controller: _modelAnswerController,
-                maxLines: _type == QuestionType.essay ? 4 : 2,
-                decoration: InputDecoration(
-                  labelText: _type == QuestionType.essay
-                      ? 'الإجابة النموذجية / معايير التصحيح'
-                      : 'الكلمة أو العبارة الصحيحة لإكمال الفراغ',
-                  border: const OutlineInputBorder(),
-                  alignLabelWithHint: true,
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // General Explanation / Notes
-            TextFormField(
-              controller: _explanationController,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'تفسير الإجابة / ملاحظات للمعلم (اختياري)',
-                hintText: 'يظهر في نموذج الإجابة أو ملف التصدير لتوضيح الحل...',
-                border: OutlineInputBorder(),
-                alignLabelWithHint: true,
-              ),
-            ),
-
-            const SizedBox(height: 32),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.save),
-                label: Text(
-                  widget.existingQuestion != null ? 'حفظ التعديلات' : 'إضافة السؤال للبنك',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                onPressed: _saveQuestion,
-              ),
-            ),
-            const SizedBox(height: 40),
-          ],
+          ),
         ),
       ),
     );

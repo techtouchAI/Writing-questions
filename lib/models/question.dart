@@ -1,7 +1,9 @@
 import 'dart:convert';
+
 import 'package:uuid/uuid.dart';
-import 'question_type.dart';
+
 import 'difficulty.dart';
+import 'question_type.dart';
 
 class QuestionOption {
   final String id;
@@ -24,9 +26,17 @@ class QuestionOption {
 
   factory QuestionOption.fromMap(Map<String, dynamic> map) {
     return QuestionOption(
-      id: map['id'],
-      text: map['text'] ?? '',
-      isCorrect: map['isCorrect'] ?? false,
+      id: _nonEmptyString(map['id']),
+      text: map['text']?.toString() ?? '',
+      isCorrect: map['isCorrect'] == true,
+    );
+  }
+
+  QuestionOption copyWith({String? text, bool? isCorrect}) {
+    return QuestionOption(
+      id: id,
+      text: text ?? this.text,
+      isCorrect: isCorrect ?? this.isCorrect,
     );
   }
 }
@@ -40,9 +50,9 @@ class Question {
   String subject;
   String topic;
   List<QuestionOption> options;
-  String modelAnswer; // Used for Essay, Fill in blanks, or general explanation
+  String modelAnswer;
   String explanation;
-  DateTime createdAt;
+  final DateTime createdAt;
 
   Question({
     String? id,
@@ -57,7 +67,7 @@ class Question {
     this.explanation = '',
     DateTime? createdAt,
   })  : id = id ?? const Uuid().v4(),
-        options = options ?? [],
+        options = _copyOptions(options ?? const []),
         createdAt = createdAt ?? DateTime.now();
 
   Map<String, dynamic> toMap() {
@@ -69,7 +79,7 @@ class Question {
       'marks': marks,
       'subject': subject,
       'topic': topic,
-      'options': options.map((e) => e.toMap()).toList(),
+      'options': options.map((option) => option.toMap()).toList(growable: false),
       'modelAnswer': modelAnswer,
       'explanation': explanation,
       'createdAt': createdAt.toIso8601String(),
@@ -77,28 +87,37 @@ class Question {
   }
 
   factory Question.fromMap(Map<String, dynamic> map) {
-    final rawOptions = map['options'];
+    final rawMarks = map['marks'];
+    final parsedMarks = rawMarks is num
+        ? rawMarks.toDouble()
+        : double.tryParse(rawMarks?.toString() ?? '');
+
     return Question(
-      id: map['id'],
-      title: map['title'] ?? '',
-      type: QuestionType.fromString(map['type'] ?? ''),
-      difficulty: Difficulty.fromString(map['difficulty'] ?? ''),
-      marks: (map['marks'] as num?)?.toDouble() ?? 1.0,
-      subject: map['subject'] ?? 'عام',
-      topic: map['topic'] ?? '',
-      options: rawOptions is List<dynamic>
-          ? rawOptions.whereType<Map>().map((e) => QuestionOption.fromMap(Map<String, dynamic>.from(e))).toList()
-          : <QuestionOption>[],
-      modelAnswer: map['modelAnswer'] ?? '',
-      explanation: map['explanation'] ?? '',
-      createdAt: map['createdAt'] != null
-          ? DateTime.tryParse(map['createdAt']) ?? DateTime.now()
-          : DateTime.now(),
+      id: _nonEmptyString(map['id']),
+      title: map['title']?.toString() ?? '',
+      type: QuestionType.fromString(map['type']?.toString() ?? ''),
+      difficulty: Difficulty.fromString(map['difficulty']?.toString() ?? ''),
+      marks: parsedMarks != null && parsedMarks.isFinite && parsedMarks > 0
+          ? parsedMarks
+          : 1.0,
+      subject: _nonEmptyString(map['subject']) ?? 'عام',
+      topic: map['topic']?.toString() ?? '',
+      options: _optionsFromValue(map['options']),
+      modelAnswer: map['modelAnswer']?.toString() ?? '',
+      explanation: map['explanation']?.toString() ?? '',
+      createdAt: _dateFromValue(map['createdAt']) ?? DateTime.now(),
     );
   }
 
   String toJson() => jsonEncode(toMap());
-  factory Question.fromJson(String source) => Question.fromMap(jsonDecode(source));
+
+  factory Question.fromJson(String source) {
+    final decoded = jsonDecode(source);
+    if (decoded is! Map) {
+      throw const FormatException('Question JSON must contain an object.');
+    }
+    return Question.fromMap(Map<String, dynamic>.from(decoded));
+  }
 
   Question copyWith({
     String? title,
@@ -119,10 +138,34 @@ class Question {
       marks: marks ?? this.marks,
       subject: subject ?? this.subject,
       topic: topic ?? this.topic,
-      options: options ?? List.from(this.options),
+      options: options ?? this.options,
       modelAnswer: modelAnswer ?? this.modelAnswer,
       explanation: explanation ?? this.explanation,
       createdAt: createdAt,
     );
   }
+
+  static List<QuestionOption> _optionsFromValue(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+
+    return value
+        .whereType<Map>()
+        .map((option) => QuestionOption.fromMap(Map<String, dynamic>.from(option)))
+        .toList(growable: false);
+  }
+
+  static List<QuestionOption> _copyOptions(List<QuestionOption> source) {
+    return source.map((option) => option.copyWith()).toList(growable: false);
+  }
+
+  static DateTime? _dateFromValue(Object? value) {
+    return value is String ? DateTime.tryParse(value) : null;
+  }
+}
+
+String? _nonEmptyString(Object? value) {
+  final text = value?.toString().trim();
+  return text == null || text.isEmpty ? null : text;
 }

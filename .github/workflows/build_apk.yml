@@ -2,90 +2,125 @@ name: Build & Release Android APK
 
 on:
   push:
-    branches: [main, master]
-    tags: ['v*']
+    branches:
+      - main
+      - master
+      - 'arena/**'
+    tags:
+      - 'v*'
   pull_request:
-    branches: [main, master]
+    branches:
+      - main
+      - master
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
-    name: Build Flutter Android APK
-    runs-on: ubuntu-latest
+    name: Analyze, test, and build APK
+    # Pin the runner image to avoid unreviewed toolchain changes from ubuntu-latest.
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
 
     steps:
-      # Third-party actions are SHA-pinned (supply-chain hygiene).
-      - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # Immutable action references avoid surprise changes to the CI toolchain.
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Java 17
-        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
-          distribution: 'zulu'
+          distribution: temurin
           java-version: '17'
+          cache: gradle
 
       - name: Set up Flutter
-        uses: subosito/flutter-action@f2c4f6686ca8e8d6e6d0f28410eeef506ed66aff # v2.18.0
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: 3.22.3
-          channel: 'stable'
+          flutter-version: '3.22.3'
+          channel: stable
           cache: true
 
-      - name: Install dependencies
+      - name: Resolve dependencies
         run: flutter pub get
 
-      - name: Analyze code
+      - name: Analyze source
         id: analyze
         shell: bash
         run: |
           set -o pipefail
-          flutter analyze --fatal-infos 2>&1 | tee /tmp/analyze.log
+          flutter analyze --fatal-infos 2>&1 | tee "$RUNNER_TEMP/flutter-analyze.log"
 
       - name: Run tests
         id: test
         shell: bash
         run: |
           set -o pipefail
-          flutter test 2>&1 | tee /tmp/test.log
+          flutter test 2>&1 | tee "$RUNNER_TEMP/flutter-test.log"
 
-      # Keeps static-analysis/test failures visible even when the log
-      # download endpoint is unavailable: every issue line becomes a
-      # check-run annotation, readable through the GitHub API. GitHub caps
-      # annotations at 10 per level per step, so we slice across levels.
-      - name: Report toolchain failures as annotations
+      - name: Publish analyzer and test diagnostics
         if: failure() && (steps.analyze.outcome == 'failure' || steps.test.outcome == 'failure')
         shell: bash
         run: |
-          urlencode() {
-            sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e "s/'/%27/g" -e 's/"/%22/g'
-          }
-          emit() {
-            local level="$1" from="$2" to="$3" file="$4" pattern="$5"
+          publish_tail() {
+            local file="$1" label="$2" excerpt
             [ -f "$file" ] || return 0
-            grep -E "$pattern" "$file" | sed -n "${from},${to}p" | while IFS= read -r line; do
-              [ -n "$line" ] || continue
-              echo "::$level ::$(printf '%s' "$line" | urlencode)"
-            done
+            excerpt="$(tail -n 30 "$file")"
+            [ -n "$excerpt" ] || return 0
+            excerpt="${excerpt//%/%25}"
+            excerpt="${excerpt//$'\r'/%0D}"
+            excerpt="${excerpt//$'\n'/%0A}"
+            echo "::error title=$label::$excerpt"
           }
-          for spec in "error 1 10" "warning 11 20" "notice 21 30"; do
-            set -- $spec
-            emit "$1" "$2" "$3" /tmp/analyze.log '^\s*(error|warning|info) • '
-            emit "$1" "$2" "$3" /tmp/test.log '^\s*\[E\]|Some tests failed|Expected:|Actual:|\s+Actual:'
-          done
-          [ -f /tmp/analyze.log ] && grep -E 'issues? found' /tmp/analyze.log | sed 's/^/::notice ::/' || true
-          exit 0
+          publish_tail "$RUNNER_TEMP/flutter-analyze.log" 'Flutter analyzer log excerpt'
+          publish_tail "$RUNNER_TEMP/flutter-test.log" 'Flutter test log excerpt'
 
-      - name: Build APK (Release)
+      - name: Upload validation diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: flutter-validation-diagnostics
+          path: |
+            ${{ runner.temp }}/flutter-analyze.log
+            ${{ runner.temp }}/flutter-test.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Build release APK
         run: flutter build apk --release
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: app-release
+          name: writing-questions-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Attach APK to GitHub release
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    # Pin the runner image to avoid unreviewed toolchain changes from ubuntu-latest.
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download release APK
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: writing-questions-release-apk
+          path: release-artifact
 
       - name: Attach APK to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          files: build/app/outputs/flutter-apk/app-release.apk
+          files: release-artifact/app-release.apk

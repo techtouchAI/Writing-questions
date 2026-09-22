@@ -6,14 +6,9 @@ import '../../services/docx_export_service.dart';
 import '../../services/excel_export_service.dart';
 import '../../services/export_file_service.dart';
 
-/// Dialog offering every export flavor for either a whole exam or an
-/// arbitrary list of questions.
 class ExportDialog extends StatefulWidget {
-  const ExportDialog({
-    super.key,
-    this.exam,
-    this.questions,
-  }) : assert(exam != null || questions != null);
+  const ExportDialog({super.key, this.exam, this.questions})
+      : assert(exam != null || questions != null);
 
   final Exam? exam;
   final List<Question>? questions;
@@ -26,38 +21,106 @@ class _ExportDialogState extends State<ExportDialog> {
   bool _isExporting = false;
   String _statusMessage = '';
 
-  /// Runs an export task with progress state, error handling and async-gap
-  /// safety in one place.
-  ///
-  /// [task] returns the success message to show before closing the dialog,
-  /// or null to keep the dialog open (e.g. after a validation notice).
-  Future<void> _runExport({
-    required String statusMessage,
-    required Future<String?> Function() task,
-  }) async {
+  List<Question> get _questions => widget.exam?.questions ?? widget.questions!;
+  String get _exportTitle => widget.exam?.name ?? 'بنك_الأسئلة';
+
+  Future<void> _exportToExcel() async {
+    if (_isExporting) {
+      return;
+    }
+    if (_questions.isEmpty) {
+      _showError('لا توجد أسئلة لتصديرها.');
+      return;
+    }
+
     setState(() {
       _isExporting = true;
-      _statusMessage = statusMessage;
+      _statusMessage = 'جاري توليد ملف Excel (.xlsx)...';
     });
+    final messenger = ScaffoldMessenger.of(context);
+    var completed = false;
+
     try {
-      final successMessage = await task();
-      if (!mounted) return;
-      if (successMessage != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(successMessage)),
-        );
-        Navigator.of(context).pop();
+      final file = await ExcelExportService.exportQuestionsToExcel(
+        questions: _questions,
+        sheetName: _exportTitle,
+        fileName: _exportTitle,
+      );
+      await ExcelExportService.shareExcelFile(file, subject: _exportTitle);
+
+      if (!mounted) {
+        return;
       }
+      completed = true;
+      Navigator.of(context).pop();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('تم إنشاء ملف Excel وفتح خيارات المشاركة.')),
+      );
     } on ExportException catch (error) {
-      if (!mounted) return;
-      _showError(error.message);
-    } catch (error, stackTrace) {
-      ExportFileService.logError('Export failed', error, stackTrace);
       if (mounted) {
-        _showError('تعذّر إكمال التصدير. تحقق من مساحة التخزين وحاول مجدداً.');
+        _showError(error.message);
+      }
+    } catch (error, stackTrace) {
+      ExportFileService.logError('Excel export failed', error, stackTrace);
+      if (mounted) {
+        _showError('تعذر إنشاء أو مشاركة ملف Excel. حاول مرة أخرى.');
       }
     } finally {
+      if (mounted && !completed) {
+        setState(() => _isExporting = false);
+      }
+    }
+  }
+
+  Future<void> _exportToDocx({required bool isTeacherVersion}) async {
+    final exam = widget.exam;
+    if (exam == null) {
+      _showError('يتطلب تصدير Word إنشاء اختبار أو فتح اختبار محفوظ أولاً.');
+      return;
+    }
+    if (_isExporting) {
+      return;
+    }
+
+    setState(() {
+      _isExporting = true;
+      _statusMessage = 'جاري بناء وتنسيق ملف Word (.docx)...';
+    });
+    final messenger = ScaffoldMessenger.of(context);
+    var completed = false;
+
+    try {
+      final file = await DocxExportService.exportExamToDocx(
+        exam: exam,
+        isTeacherVersion: isTeacherVersion,
+      );
+      await DocxExportService.shareDocxFile(file, subject: exam.name);
+
+      if (!mounted) {
+        return;
+      }
+      completed = true;
+      Navigator.of(context).pop();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            isTeacherVersion
+                ? 'تم إنشاء نموذج الإجابة بصيغة Word وفتح خيارات المشاركة.'
+                : 'تم إنشاء ورقة الطالب بصيغة Word وفتح خيارات المشاركة.',
+          ),
+        ),
+      );
+    } on ExportException catch (error) {
       if (mounted) {
+        _showError(error.message);
+      }
+    } catch (error, stackTrace) {
+      ExportFileService.logError('Word export failed', error, stackTrace);
+      if (mounted) {
+        _showError('تعذر إنشاء أو مشاركة ملف Word. حاول مرة أخرى.');
+      }
+    } finally {
+      if (mounted && !completed) {
         setState(() => _isExporting = false);
       }
     }
@@ -72,104 +135,71 @@ class _ExportDialogState extends State<ExportDialog> {
     );
   }
 
-  Future<String?> _exportToDocx({required bool isTeacherVersion}) async {
-    final exam = widget.exam;
-    if (exam == null) {
-      _showError('لتصدير ملف Word كامل، يُرجى إنشاء أو تحديد اختبار أولاً');
-      return null;
-    }
-    final file = await DocxExportService.exportExamToDocx(
-      exam: exam,
-      isTeacherVersion: isTeacherVersion,
-    );
-    await DocxExportService.shareDocxFile(file, subject: exam.name);
-    return isTeacherVersion
-        ? 'تم إنشاء نموذج إجابة المعلم بصيغة Word بنجاح!'
-        : 'تم إنشاء ورقة امتحان الطالب بصيغة Word بنجاح!';
-  }
-
-  Future<String?> _exportToExcel() async {
-    final questions =
-        widget.exam?.questions ?? widget.questions ?? const <Question>[];
-    final title = widget.exam?.name ?? 'بنك الأسئلة';
-    final file = await ExcelExportService.exportQuestionsToExcel(
-      questions: questions,
-      sheetName: title,
-      fileBaseName: title,
-    );
-    await ExcelExportService.shareExcelFile(file, subject: title);
-    return 'تم إنشاء ملف Excel بنجاح! جاري فتح خيارات المشاركة...';
-  }
-
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Row(
-        children: [
-          Icon(Icons.output_rounded, color: Colors.blue),
-          SizedBox(width: 8),
-          Text('مركز تصدير الاختبار والأسئلة'),
+    return PopScope(
+      canPop: !_isExporting,
+      child: AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: <Widget>[
+            Icon(Icons.output_rounded, color: Colors.blue),
+            SizedBox(width: 8),
+            Expanded(child: Text('مركز التصدير')),
+          ],
+        ),
+        content: _isExporting
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  Text(_statusMessage, textAlign: TextAlign.center),
+                ],
+              )
+            : SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    const Text(
+                      'اختر صيغة الملف والنوع المطلوب للتصدير والمشاركة:',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildOptionTile(
+                      icon: Icons.description,
+                      iconColor: Colors.blue.shade700,
+                      title: 'Word — ورقة الطالب (.docx)',
+                      subtitle: 'ورقة اختبار منسقة للطباعة بدون إجابات.',
+                      onTap: () => _exportToDocx(isTeacherVersion: false),
+                    ),
+                    const Divider(),
+                    _buildOptionTile(
+                      icon: Icons.check_circle_outline,
+                      iconColor: Colors.green.shade700,
+                      title: 'Word — نموذج الإجابة (.docx)',
+                      subtitle: 'نسخة للمعلم تتضمن الحلول وتوزيع الدرجات.',
+                      onTap: () => _exportToDocx(isTeacherVersion: true),
+                    ),
+                    const Divider(),
+                    _buildOptionTile(
+                      icon: Icons.table_chart,
+                      iconColor: Colors.teal.shade700,
+                      title: 'Excel — جدول بيانات (.xlsx)',
+                      subtitle: 'جدول بالأسئلة والخيارات والحلول لمنصات التعليم.',
+                      onTap: _exportToExcel,
+                    ),
+                  ],
+                ),
+              ),
+        actions: <Widget>[
+          if (!_isExporting)
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('إلغاء'),
+            ),
         ],
       ),
-      content: _isExporting
-          ? Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(),
-                const SizedBox(height: 16),
-                Text(_statusMessage),
-              ],
-            )
-          : Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'اختر صيغة الملف والنوع المطلوب للتصدير والمشاركة:',
-                  style: TextStyle(fontSize: 14),
-                ),
-                const SizedBox(height: 16),
-                _buildOptionTile(
-                  icon: Icons.description,
-                  iconColor: Colors.blue.shade700,
-                  title: 'تصدير Word - ورقة الطالب (.docx)',
-                  subtitle: 'ورقة اختبار رسمية منسقة للطباعة بدون إجابات',
-                  onTap: () => _runExport(
-                    statusMessage: 'جاري بناء وتنسيق ملف Word (.docx)...',
-                    task: () => _exportToDocx(isTeacherVersion: false),
-                  ),
-                ),
-                const Divider(),
-                _buildOptionTile(
-                  icon: Icons.check_circle_outline,
-                  iconColor: Colors.green.shade700,
-                  title: 'تصدير Word - نموذج الإجابة (.docx)',
-                  subtitle: 'نسخة للمعلم تتضمن الحلول الصحيحة وتوزيع الدرجات',
-                  onTap: () => _runExport(
-                    statusMessage: 'جاري بناء وتنسيق ملف Word (.docx)...',
-                    task: () => _exportToDocx(isTeacherVersion: true),
-                  ),
-                ),
-                const Divider(),
-                _buildOptionTile(
-                  icon: Icons.table_chart,
-                  iconColor: Colors.teal.shade700,
-                  title: 'تصدير Excel جدول بيانات (.xlsx)',
-                  subtitle: 'جدول بجميع الأسئلة والخيارات والحلول لمنصات التعليم',
-                  onTap: () => _runExport(
-                    statusMessage: 'جاري توليد ملف Excel (.xlsx)...',
-                    task: _exportToExcel,
-                  ),
-                ),
-              ],
-            ),
-      actions: [
-        if (!_isExporting)
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('إلغاء'),
-          ),
-      ],
     );
   }
 
@@ -178,9 +208,10 @@ class _ExportDialogState extends State<ExportDialog> {
     required Color iconColor,
     required String title,
     required String subtitle,
-    required VoidCallback onTap,
+    required Future<void> Function() onTap,
   }) {
     return ListTile(
+      contentPadding: EdgeInsets.zero,
       leading: CircleAvatar(
         backgroundColor: iconColor.withOpacity(0.12),
         child: Icon(icon, color: iconColor),
@@ -190,7 +221,9 @@ class _ExportDialogState extends State<ExportDialog> {
         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
       ),
       subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
-      onTap: onTap,
+      onTap: () async {
+        await onTap();
+      },
     );
   }
 }

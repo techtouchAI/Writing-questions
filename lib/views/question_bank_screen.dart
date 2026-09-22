@@ -1,110 +1,222 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../models/question_type.dart';
+
 import '../models/difficulty.dart';
+import '../models/question.dart';
+import '../models/question_type.dart';
 import '../providers/question_provider.dart';
 import 'question_editor_screen.dart';
-import 'widgets/question_card.dart';
 import 'widgets/export_dialog.dart';
+import 'widgets/question_card.dart';
 
-class QuestionBankScreen extends StatelessWidget {
+class QuestionBankScreen extends StatefulWidget {
   const QuestionBankScreen({super.key});
+
+  @override
+  State<QuestionBankScreen> createState() => _QuestionBankScreenState();
+}
+
+class _QuestionBankScreenState extends State<QuestionBankScreen> {
+  late final TextEditingController _searchController;
+
+  @override
+  void initState() {
+    super.initState();
+    final provider = context.read<QuestionProvider>();
+    _searchController = TextEditingController(text: provider.searchQuery)
+      ..addListener(() => provider.setSearchQuery(_searchController.text));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openEditor([Question? question]) async {
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => QuestionEditorScreen(existingQuestion: question),
+      ),
+    );
+  }
+
+  Future<void> _confirmDelete(Question question) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تأكيد الحذف'),
+        content: const Text('هل أنت متأكد من حذف هذا السؤال من البنك؟'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldDelete != true || !mounted) {
+      return;
+    }
+
+    try {
+      await context.read<QuestionProvider>().deleteQuestion(question.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم حذف السؤال.')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('تعذر حذف السؤال. حاول مرة أخرى.'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showExportDialog(List<Question> questions) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => ExportDialog(questions: questions),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<QuestionProvider>();
-    final visibleQuestions = provider.filteredQuestions;
+    final filteredQuestions = provider.filteredQuestions;
+    final hasActiveFilters = provider.searchQuery.isNotEmpty ||
+        provider.selectedTypeFilter != null ||
+        provider.selectedDifficultyFilter != null ||
+        provider.selectedSubjectFilter != null;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('بنك الأسئلة'),
-        actions: [
+        actions: <Widget>[
           IconButton(
             icon: const Icon(Icons.file_download_outlined),
-            tooltip: 'تصدير الأسئلة كملف Excel',
-            onPressed: () {
-              if (provider.questions.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('لا توجد أسئلة لتصديرها')),
-                );
-                return;
-              }
-              showDialog(
-                context: context,
-                builder: (ctx) => ExportDialog(questions: visibleQuestions),
-              );
-            },
+            tooltip: 'تصدير الأسئلة المعروضة كملف Excel',
+            onPressed: filteredQuestions.isEmpty
+                ? null
+                : () => _showExportDialog(filteredQuestions),
           ),
         ],
       ),
       body: Column(
-        children: [
-          // Search & Filter Bar
+        children: <Widget>[
+          if (provider.errorMessage != null || provider.recoveryMessage != null)
+            MaterialBanner(
+              content: Text(provider.errorMessage ?? provider.recoveryMessage!),
+              backgroundColor: provider.errorMessage == null
+                  ? Theme.of(context).colorScheme.secondaryContainer
+                  : Theme.of(context).colorScheme.errorContainer,
+              actions: <Widget>[
+                TextButton(
+                  onPressed: provider.clearMessages,
+                  child: const Text('إخفاء'),
+                ),
+              ],
+            ),
           Container(
             padding: const EdgeInsets.all(12),
-            color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
             child: Column(
-              children: [
+              children: <Widget>[
                 TextField(
+                  controller: _searchController,
                   decoration: InputDecoration(
-                    hintText: 'ابحث عن سؤال أو موضوع...',
+                    hintText: 'ابحث عن سؤال أو موضوع أو مادة...',
                     prefixIcon: const Icon(Icons.search),
                     suffixIcon: provider.searchQuery.isNotEmpty
                         ? IconButton(
                             icon: const Icon(Icons.clear),
-                            onPressed: () => provider.setSearchQuery(''),
+                            tooltip: 'مسح البحث',
+                            onPressed: _searchController.clear,
                           )
                         : null,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                   ),
-                  onChanged: (val) => provider.setSearchQuery(val),
                 ),
                 const SizedBox(height: 8),
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
-                    children: [
-                      // Filter by Type
+                    children: <Widget>[
                       DropdownButton<QuestionType?>(
                         value: provider.selectedTypeFilter,
                         hint: const Text('نوع السؤال'),
                         underline: const SizedBox(),
-                        items: [
-                          const DropdownMenuItem(value: null, child: Text('جميع الأنواع')),
+                        items: <DropdownMenuItem<QuestionType?>>[
+                          const DropdownMenuItem<QuestionType?>(
+                            value: null,
+                            child: Text('جميع الأنواع'),
+                          ),
                           ...QuestionType.values.map(
-                            (t) => DropdownMenuItem(value: t, child: Text(t.arabicLabel)),
+                            (type) => DropdownMenuItem<QuestionType?>(
+                              value: type,
+                              child: Text(type.arabicLabel),
+                            ),
                           ),
                         ],
-                        onChanged: (val) => provider.setTypeFilter(val),
+                        onChanged: provider.setTypeFilter,
                       ),
                       const SizedBox(width: 16),
-
-                      // Filter by Difficulty
                       DropdownButton<Difficulty?>(
                         value: provider.selectedDifficultyFilter,
                         hint: const Text('مستوى الصعوبة'),
                         underline: const SizedBox(),
-                        items: [
-                          const DropdownMenuItem(value: null, child: Text('جميع المستويات')),
+                        items: <DropdownMenuItem<Difficulty?>>[
+                          const DropdownMenuItem<Difficulty?>(
+                            value: null,
+                            child: Text('جميع المستويات'),
+                          ),
                           ...Difficulty.values.map(
-                            (d) => DropdownMenuItem(value: d, child: Text(d.arabicLabel)),
+                            (difficulty) => DropdownMenuItem<Difficulty?>(
+                              value: difficulty,
+                              child: Text(difficulty.arabicLabel),
+                            ),
                           ),
                         ],
-                        onChanged: (val) => provider.setDifficultyFilter(val),
+                        onChanged: provider.setDifficultyFilter,
                       ),
                       const SizedBox(width: 16),
-
-                      // Filter by Subject
-                      DropdownButton<String>(
+                      DropdownButton<String?>(
                         value: provider.selectedSubjectFilter,
+                        hint: const Text('المادة'),
                         underline: const SizedBox(),
-                        items: provider.availableSubjects.map((s) {
-                          return DropdownMenuItem(value: s, child: Text(s));
-                        }).toList(),
-                        onChanged: (val) {
-                          if (val != null) provider.setSubjectFilter(val);
-                        },
+                        items: <DropdownMenuItem<String?>>[
+                          const DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text('جميع المواد'),
+                          ),
+                          ...provider.availableSubjects.map(
+                            (subject) => DropdownMenuItem<String?>(
+                              value: subject,
+                              child: Text(subject),
+                            ),
+                          ),
+                        ],
+                        onChanged: provider.setSubjectFilter,
                       ),
                     ],
                   ),
@@ -112,94 +224,74 @@ class QuestionBankScreen extends StatelessWidget {
               ],
             ),
           ),
-
-          // Count summary
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
+              children: <Widget>[
                 Text(
-                  'عدد الأسئلة المعروضة: ${visibleQuestions.length}',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey),
+                  'عدد الأسئلة المعروضة: ${filteredQuestions.length}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: Colors.grey,
+                  ),
                 ),
-                if (provider.searchQuery.isNotEmpty ||
-                    provider.selectedTypeFilter != null ||
-                    provider.selectedDifficultyFilter != null ||
-                    provider.selectedSubjectFilter != 'الكل')
+                if (hasActiveFilters)
                   TextButton(
-                    onPressed: () => provider.resetFilters(),
-                    child: const Text('إعادة تعيين الفلاتر', style: TextStyle(fontSize: 12)),
+                    onPressed: () {
+                      _searchController.clear();
+                      provider.resetFilters();
+                    },
+                    child: const Text(
+                      'إعادة تعيين الفلاتر',
+                      style: TextStyle(fontSize: 12),
+                    ),
                   ),
               ],
             ),
           ),
-
-          // Questions List
           Expanded(
-            child: visibleQuestions.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.quiz_outlined, size: 64, color: Colors.grey.shade400),
-                        const SizedBox(height: 12),
-                        const Text('لا توجد أسئلة تطابق البحث أو الفلتر', style: TextStyle(color: Colors.grey)),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    itemCount: visibleQuestions.length,
-                    itemBuilder: (ctx, index) {
-                      final q = visibleQuestions[index];
-                      return QuestionCard(
-                        question: q,
-                        onEdit: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => QuestionEditorScreen(existingQuestion: q),
+            child: provider.isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : filteredQuestions.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <Widget>[
+                            Icon(
+                              Icons.quiz_outlined,
+                              size: 64,
+                              color: Colors.grey.shade400,
                             ),
+                            const SizedBox(height: 12),
+                            Text(
+                              provider.questions.isEmpty
+                                  ? 'لا توجد أسئلة في البنك بعد.'
+                                  : 'لا توجد أسئلة تطابق البحث أو الفلتر.',
+                              style: const TextStyle(color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: filteredQuestions.length,
+                        itemBuilder: (context, index) {
+                          final question = filteredQuestions[index];
+                          return QuestionCard(
+                            question: question,
+                            onEdit: () => _openEditor(question),
+                            onDelete: () => _confirmDelete(question),
                           );
                         },
-                        onDelete: () {
-                          showDialog(
-                            context: context,
-                            builder: (dialogCtx) => AlertDialog(
-                              title: const Text('تأكيد الحذف'),
-                              content: const Text('هل أنت متأكد من حذف هذا السؤال من البنك؟'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(dialogCtx),
-                                  child: const Text('إلغاء'),
-                                ),
-                                ElevatedButton(
-                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                                  onPressed: () {
-                                    provider.deleteQuestion(q.id);
-                                    Navigator.pop(dialogCtx);
-                                  },
-                                  child: const Text('حذف', style: TextStyle(color: Colors.white)),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  ),
+                      ),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         icon: const Icon(Icons.add),
         label: const Text('سؤال جديد'),
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const QuestionEditorScreen()),
-          );
-        },
+        onPressed: _openEditor,
       ),
     );
   }

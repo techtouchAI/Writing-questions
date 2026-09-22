@@ -8,370 +8,414 @@ import '../models/question.dart';
 import '../models/question_type.dart';
 import 'export_file_service.dart';
 
-/// Builds Microsoft Word (.docx) documents directly as raw OpenXML.
-///
-/// A .docx file is a ZIP container holding several XML parts; this service
-/// assembles a minimal, spec-compliant package with full right-to-left
-/// support for Arabic exam papers (student and teacher variants).
-abstract final class DocxExportService {
-  static const String _mimeType =
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+class DocxExportService {
+  const DocxExportService._();
 
-  static const List<String> _choiceLetters = ['أ', 'ب', 'ج', 'د', 'هـ', 'و'];
-
-  /// Generates the .docx file for [exam] and returns it as a [File].
-  ///
-  /// When [isTeacherVersion] is set, the document embeds the correct
-  /// answers, model answers and grading notes instead of the blank answer
-  /// areas the students fill in.
   static Future<File> exportExamToDocx({
     required Exam exam,
     bool isTeacherVersion = false,
+    String? fileName,
     Directory? outputDirectory,
   }) async {
-    final archive = Archive()
-      ..addFile(_textPart('[Content_Types].xml', _contentTypesXml))
-      ..addFile(_textPart('_rels/.rels', _globalRelsXml))
-      ..addFile(_textPart('word/_rels/document.xml.rels', _documentRelsXml))
-      ..addFile(_textPart('word/styles.xml', _stylesXml))
-      ..addFile(
-        _textPart('word/document.xml', _buildDocumentXml(exam, isTeacherVersion)),
-      );
+    final archive = Archive();
+    _addTextFile(archive, '[Content_Types].xml', _contentTypesXml);
+    _addTextFile(archive, '_rels/.rels', _globalRelationshipsXml);
+    _addTextFile(
+      archive,
+      'word/_rels/document.xml.rels',
+      _documentRelationshipsXml,
+    );
+    _addTextFile(archive, 'word/styles.xml', _stylesXml);
+    _addTextFile(
+      archive,
+      'word/document.xml',
+      _buildDocumentXml(exam, isTeacherVersion),
+    );
 
-    final bytes = ZipEncoder().encode(archive);
-    if (bytes == null) {
-      throw const ExportException('تعذر ضغط حزمة ملف Word.');
+    final zipBytes = ZipEncoder().encode(archive);
+    if (zipBytes == null) {
+      throw StateError('فشل ضغط ملف Word.');
     }
 
+    final suffix = isTeacherVersion ? 'نموذج_الإجابة' : 'ورقة_الامتحان';
     return ExportFileService.writeExportFile(
-      baseName: exam.name,
+      baseName: fileName ?? '${exam.name}_$suffix',
       extension: 'docx',
-      bytes: bytes,
+      bytes: zipBytes,
       destination: outputDirectory,
     );
   }
 
-  /// Opens the system share sheet for a previously generated file.
   static Future<void> shareDocxFile(File file, {String? subject}) {
     return ExportFileService.shareExportFile(
       file,
-      mimeType: _mimeType,
-      subject: subject,
+      mimeType:
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      subject: subject ?? 'تصدير الاختبار بصيغة Word',
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // OpenXML assembly
-  // ---------------------------------------------------------------------------
-
-  static ArchiveFile _textPart(String name, String content) {
-    // `utf8.encode` produces the real byte length of the UTF-8 payload;
-    // sizing the part by `String.length` (UTF-16 code units) would corrupt
-    // any document containing Arabic text.
-    final data = utf8.encode(content);
-    return ArchiveFile(name, data.length, data);
+  static void _addTextFile(Archive archive, String path, String content) {
+    final bytes = utf8.encode(content);
+    archive.addFile(ArchiveFile(path, bytes.length, bytes));
   }
 
-  static String _buildDocumentXml(Exam exam, bool isTeacher) {
+  static String _buildDocumentXml(Exam exam, bool isTeacherVersion) {
     final buffer = StringBuffer()
       ..write('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
       ..write(
-        '<w:document xmlns:w="http://schemas.openxmlformats.org/'
-        'wordprocessingml/2006/main"><w:body>',
+        '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">',
       )
-      ..write(_headerTable(exam, isTeacher))
-      ..write(_instructionsParagraph(exam.header.generalInstructions))
-      ..write(_dividerParagraph());
+      ..write('<w:body>')
+      ..write(_buildHeaderTable(exam, isTeacherVersion));
 
-    for (var i = 0; i < exam.questions.length; i++) {
-      buffer.write(_questionXml(i + 1, exam.questions[i], isTeacher));
+    if (exam.header.generalInstructions.trim().isNotEmpty) {
+      _writeParagraph(
+        buffer,
+        'تعليمات الاختبار: ${exam.header.generalInstructions}',
+        italic: true,
+        color: '4B5563',
+        before: 120,
+        after: 160,
+      );
     }
 
-    // A4 page with 2 cm margins and a right-to-left section flow.
     buffer.write(
-      '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>'
-      '<w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134"/>'
-      '<w:bidi/></w:sectPr></w:body></w:document>',
+      '<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="12" w:space="4" w:color="1E3A8A"/></w:pBdr><w:spacing w:after="240"/></w:pPr></w:p>',
     );
+
+    for (var index = 0; index < exam.questions.length; index++) {
+      buffer.write(
+        _buildQuestionXml(
+          index + 1,
+          exam.questions[index],
+          isTeacherVersion,
+        ),
+      );
+    }
+
+    buffer
+      ..write('<w:sectPr>')
+      ..write('<w:pgSz w:w="11906" w:h="16838"/>')
+      ..write(
+        '<w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134"/>',
+      )
+      ..write('<w:bidi/>')
+      ..write('</w:sectPr>')
+      ..write('</w:body>')
+      ..write('</w:document>');
+
     return buffer.toString();
   }
 
-  /// Builds a right-to-left, Arabic-styled paragraph from a single run.
-  static String _rtlParagraph(
-    String text, {
-    bool bold = false,
-    bool italic = false,
-    bool highlighted = false,
-    String colorHex = '111827',
-    int halfPoints = 22,
-    bool indented = false,
-    String spacingBefore = '40',
-    String spacingAfter = '40',
-    String alignment = 'right',
-  }) {
-    final paragraphProps = StringBuffer('<w:bidi/><w:jc w:val="$alignment"/>');
-    if (indented) paragraphProps.write('<w:ind w:right="400"/>');
-    paragraphProps.write(
-      '<w:spacing w:before="$spacingBefore" w:after="$spacingAfter"/>',
-    );
-
-    final runProps = StringBuffer('<w:rtl/>');
-    if (bold) runProps.write('<w:b/>');
-    if (italic) runProps.write('<w:i/>');
-    if (highlighted) runProps.write('<w:highlight w:val="yellow"/>');
-    runProps
-      ..write('<w:color w:val="$colorHex"/>')
-      ..write('<w:sz w:val="$halfPoints"/>')
-      ..write('<w:rFonts w:ascii="Traditional Arabic" w:cs="Traditional Arabic"/>');
-
-    return '<w:p><w:pPr>$paragraphProps</w:pPr>'
-        '<w:r><w:rPr>$runProps</w:rPr>'
-        '<w:t xml:space="preserve">${_escapeXml(text)}</w:t></w:r></w:p>';
-  }
-
-  static String _instructionsParagraph(String instructions) {
-    if (instructions.isEmpty) return '';
-    return _rtlParagraph(
-      'تعليمات الاختبار: $instructions',
-      italic: true,
-      colorHex: '4B5563',
-      spacingBefore: '120',
-      spacingAfter: '160',
-    );
-  }
-
-  static String _dividerParagraph() =>
-      '<w:p><w:pPr><w:pBdr>'
-      '<w:bottom w:val="single" w:sz="12" w:space="4" w:color="1E3A8A"/>'
-      '</w:pBdr><w:spacing w:after="240"/></w:pPr></w:p>';
-
-  static String _cellParagraph(
-    String text, {
-    bool bold = false,
-    bool italic = false,
-    int halfPoints = 22,
-    String colorHex = '000000',
-    String alignment = 'right',
-  }) {
-    final runProps = StringBuffer('<w:rtl/>');
-    if (bold) runProps.write('<w:b/>');
-    if (italic) runProps.write('<w:i/>');
-    runProps
-      ..write('<w:sz w:val="$halfPoints"/>')
-      ..write('<w:color w:val="$colorHex"/>')
-      ..write('<w:rFonts w:cs="Traditional Arabic"/>');
-    return '<w:p><w:pPr><w:bidi/><w:jc w:val="$alignment"/></w:pPr>'
-        '<w:r><w:rPr>$runProps</w:rPr>'
-        '<w:t xml:space="preserve">${_escapeXml(text)}</w:t></w:r></w:p>';
-  }
-
-  static String _headerCell(String paragraphs, int widthPct) =>
-      '<w:tc><w:tcPr><w:tcW w:w="$widthPct" w:type="pct"/></w:tcPr>'
-      '$paragraphs</w:tc>';
-
-  static String _headerTable(Exam exam, bool isTeacher) {
+  static String _buildHeaderTable(Exam exam, bool isTeacherVersion) {
     final header = exam.header;
-    final institutionColumn = _headerCell(
-      _cellParagraph(header.institutionName, bold: true, halfPoints: 24) +
-          _cellParagraph('المادة: ${header.subject}') +
-          _cellParagraph('الصف: ${header.gradeStage}'),
-      3000,
-    );
+    final versionLabel = isTeacherVersion
+        ? 'نموذج الإجابة وتوزيع الدرجات للمعلم — العام الدراسي: ${header.academicYear}'
+        : 'العام الدراسي: ${header.academicYear}';
 
-    final titleColumn = _headerCell(
-      _cellParagraph(
-            header.title,
-            bold: true,
-            halfPoints: 28,
-            colorHex: '1E3A8A',
-            alignment: 'center',
-          ) +
-          _cellParagraph(
-            isTeacher
-                ? '【 نموذج الإجابة وتوزيع الدرجات للمعلم 】'
-                : 'العام الدراسي: ${header.academicYear}',
-            italic: true,
-            colorHex: 'DC2626',
-            alignment: 'center',
-          ),
-      4000,
-    );
-
-    final detailsParagraphs = <String>[
-      _cellParagraph('الزمن: ${header.duration}'),
-      _cellParagraph(
-        'الدرجة الكلية: ${_formatMarks(exam.totalMarks)} درجة',
-        bold: true,
-      ),
-      if (!isTeacher)
-        _cellParagraph('اسم الطالب: .................................', halfPoints: 20),
-    ];
-    final detailsColumn = _headerCell(detailsParagraphs.join(), 3000);
-
-    return '<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:bidiVisual/>'
-        '<w:tblBorders>'
-        '<w:top w:val="single" w:sz="8" w:space="0" w:color="1E3A8A"/>'
-        '<w:left w:val="single" w:sz="8" w:space="0" w:color="1E3A8A"/>'
-        '<w:bottom w:val="single" w:sz="8" w:space="0" w:color="1E3A8A"/>'
-        '<w:right w:val="single" w:sz="8" w:space="0" w:color="1E3A8A"/>'
-        '<w:insideH w:val="single" w:sz="4" w:space="0" w:color="E5E7EB"/>'
-        '<w:insideV w:val="single" w:sz="4" w:space="0" w:color="E5E7EB"/>'
-        '</w:tblBorders></w:tblPr>'
-        '<w:tr>$institutionColumn$titleColumn$detailsColumn</w:tr></w:tbl>';
+    return '''
+<w:tbl>
+  <w:tblPr>
+    <w:tblW w:w="5000" w:type="pct"/>
+    <w:bidiVisual/>
+    <w:tblBorders>
+      <w:top w:val="single" w:sz="8" w:space="0" w:color="1E3A8A"/>
+      <w:left w:val="single" w:sz="8" w:space="0" w:color="1E3A8A"/>
+      <w:bottom w:val="single" w:sz="8" w:space="0" w:color="1E3A8A"/>
+      <w:right w:val="single" w:sz="8" w:space="0" w:color="1E3A8A"/>
+      <w:insideH w:val="single" w:sz="4" w:space="0" w:color="E5E7EB"/>
+      <w:insideV w:val="single" w:sz="4" w:space="0" w:color="E5E7EB"/>
+    </w:tblBorders>
+  </w:tblPr>
+  <w:tr>
+    <w:tc>
+      <w:tcPr><w:tcW w:w="1700" w:type="pct"/></w:tcPr>
+      ${_tableParagraph(header.institutionName, bold: true, size: 24)}
+      ${_tableParagraph('المادة: ${header.subject}')}
+      ${_tableParagraph('الصف: ${header.gradeStage}')}
+      ${header.instructor.trim().isEmpty ? '' : _tableParagraph('المعلم: ${header.instructor}', size: 20)}
+    </w:tc>
+    <w:tc>
+      <w:tcPr><w:tcW w:w="1600" w:type="pct"/></w:tcPr>
+      ${_tableParagraph(header.title, bold: true, size: 28, alignment: 'center', color: '1E3A8A')}
+      ${_tableParagraph(versionLabel, italic: true, alignment: 'center', color: isTeacherVersion ? 'DC2626' : '4B5563')}
+    </w:tc>
+    <w:tc>
+      <w:tcPr><w:tcW w:w="1700" w:type="pct"/></w:tcPr>
+      ${_tableParagraph('الزمن: ${header.duration}')}
+      ${_tableParagraph('الدرجة الكلية: ${_formatMarks(exam.totalMarks)} درجة', bold: true)}
+      ${isTeacherVersion ? '' : _tableParagraph('اسم الطالب: .................................', size: 20)}
+    </w:tc>
+  </w:tr>
+</w:tbl>
+''';
   }
 
-  static String _questionXml(int number, Question question, bool isTeacher) {
-    final buffer = StringBuffer()
-      ..write(_rtlParagraph(
-        'س$number: ${question.title}  [${_formatMarks(question.marks)} درجة]',
-        bold: true,
-        halfPoints: 26,
-        spacingBefore: '180',
-        spacingAfter: '80',
-      ));
+  static String _tableParagraph(
+    String text, {
+    bool bold = false,
+    bool italic = false,
+    int size = 22,
+    String alignment = 'right',
+    String? color,
+  }) {
+    return '<w:p><w:pPr><w:bidi/><w:jc w:val="$alignment"/></w:pPr>'
+        '<w:r><w:rPr><w:rtl/>${bold ? '<w:b/>' : ''}${italic ? '<w:i/>' : ''}'
+        '${color == null ? '' : '<w:color w:val="$color"/>'}'
+        '<w:sz w:val="$size"/><w:rFonts w:cs="Traditional Arabic"/></w:rPr>'
+        '<w:t xml:space="preserve">${_escapeXml(text)}</w:t></w:r></w:p>';
+  }
+
+  static String _buildQuestionXml(
+    int index,
+    Question question,
+    bool isTeacherVersion,
+  ) {
+    final buffer = StringBuffer();
+    _writeParagraph(
+      buffer,
+      'س$index: ${question.title} [${_formatMarks(question.marks)} درجة]',
+      bold: true,
+      size: 26,
+      color: '111827',
+      before: 180,
+      after: 80,
+    );
 
     switch (question.type) {
       case QuestionType.multipleChoice:
-        _writeMultipleChoice(buffer, question, isTeacher);
+        _writeMultipleChoiceOptions(buffer, question, isTeacherVersion);
+        break;
       case QuestionType.trueFalse:
-        _writeTrueFalse(buffer, question, isTeacher);
+        _writeTrueFalseAnswer(buffer, question, isTeacherVersion);
+        break;
       case QuestionType.fillInTheBlank:
-        _writeFillInTheBlank(buffer, question, isTeacher);
+        _writeFillInTheBlankAnswer(buffer, question, isTeacherVersion);
+        break;
       case QuestionType.essay:
-        _writeEssay(buffer, question, isTeacher);
+        _writeEssayAnswerArea(buffer, question, isTeacherVersion);
+        break;
     }
 
-    if (isTeacher && question.explanation.isNotEmpty) {
-      buffer.write(_rtlParagraph(
-        '💡 سبب الإجابة / الملاحظات: ${question.explanation}',
+    if (isTeacherVersion && question.explanation.trim().isNotEmpty) {
+      _writeParagraph(
+        buffer,
+        'سبب الإجابة / الملاحظات: ${question.explanation}',
         italic: true,
-        colorHex: '2563EB',
-        halfPoints: 20,
-        indented: true,
-        spacingBefore: '40',
-        spacingAfter: '80',
-      ));
+        size: 20,
+        color: '2563EB',
+        indent: 400,
+        before: 40,
+        after: 80,
+      );
     }
+
     return buffer.toString();
   }
 
-  static void _writeMultipleChoice(
+  static void _writeMultipleChoiceOptions(
     StringBuffer buffer,
     Question question,
-    bool isTeacher,
+    bool isTeacherVersion,
   ) {
-    for (var i = 0; i < question.options.length; i++) {
-      final option = question.options[i];
-      final letter =
-          i < _choiceLetters.length ? _choiceLetters[i] : '${i + 1}';
-      final isCorrect = isTeacher && option.isCorrect;
-      buffer.write(_rtlParagraph(
-        '( $letter )  ${option.text}${isCorrect ? '  ✔ (الإجابة الصحيحة)' : ''}',
+    const labels = <String>['أ', 'ب', 'ج', 'د', 'هـ', 'و'];
+    final nonEmptyOptions = question.options
+        .where((option) => option.text.trim().isNotEmpty)
+        .toList(growable: false);
+
+    for (var index = 0; index < nonEmptyOptions.length; index++) {
+      final option = nonEmptyOptions[index];
+      final isCorrect = isTeacherVersion && option.isCorrect;
+      final label = index < labels.length ? labels[index] : '${index + 1}';
+      _writeParagraph(
+        buffer,
+        '( $label )  ${option.text}${isCorrect ? '  ✔ الإجابة الصحيحة' : ''}',
         bold: isCorrect,
-        highlighted: isCorrect,
-        colorHex: isCorrect ? '065F46' : '111827',
-        indented: true,
-      ));
+        size: 22,
+        color: isCorrect ? '065F46' : null,
+        highlight: isCorrect,
+        indent: 400,
+        before: 40,
+        after: 40,
+      );
     }
   }
 
-  static void _writeTrueFalse(
+  static void _writeTrueFalseAnswer(
     StringBuffer buffer,
     Question question,
-    bool isTeacher,
+    bool isTeacherVersion,
   ) {
-    if (!isTeacher) {
-      buffer.write(_rtlParagraph(
+    if (!isTeacherVersion) {
+      _writeParagraph(
+        buffer,
         'الإجابة: (     ) صح      /      (     ) خطأ',
-        indented: true,
-        spacingBefore: '60',
-        spacingAfter: '60',
-      ));
+        size: 22,
+        indent: 400,
+        before: 60,
+        after: 60,
+      );
       return;
     }
-    final correct = question.options.firstWhere(
-      (option) => option.isCorrect,
-      orElse: () => QuestionOption(text: 'غير محدد'),
+
+    final correctOptions = question.options
+        .where((option) => option.isCorrect)
+        .map((option) => option.text)
+        .toList(growable: false);
+    final correctAnswer =
+        correctOptions.isEmpty ? 'غير محدد' : correctOptions.first;
+    _writeParagraph(
+      buffer,
+      'الإجابة الصحيحة: $correctAnswer ✔',
+      bold: true,
+      size: 22,
+      color: '065F46',
+      highlight: true,
+      indent: 400,
+      before: 60,
+      after: 60,
     );
-    buffer.write(_rtlParagraph(
-      'الإجابة الصحيحة: ${correct.text} ✔',
-      bold: true,
-      highlighted: true,
-      colorHex: '065F46',
-      indented: true,
-      spacingBefore: '60',
-      spacingAfter: '60',
-    ));
   }
 
-  static void _writeFillInTheBlank(
+  static void _writeFillInTheBlankAnswer(
     StringBuffer buffer,
     Question question,
-    bool isTeacher,
+    bool isTeacherVersion,
   ) {
-    if (!isTeacher) {
-      final dots = '.' * 88;
-      buffer.write(_rtlParagraph(
-        'الإجابة: $dots',
-        indented: true,
-        spacingBefore: '80',
-        spacingAfter: '120',
-      ));
+    if (!isTeacherVersion) {
+      _writeParagraph(
+        buffer,
+        'الإجابة: ........................................................................................',
+        size: 22,
+        indent: 400,
+        before: 80,
+        after: 120,
+      );
       return;
     }
-    buffer.write(_rtlParagraph(
-      'الإجابة النموذجية: ${question.modelAnswer}',
+
+    _writeParagraph(
+      buffer,
+      'الإجابة النموذجية: ${_modelAnswerOrPlaceholder(question)}',
       bold: true,
-      highlighted: true,
-      colorHex: '065F46',
-      indented: true,
-      spacingBefore: '60',
-      spacingAfter: '80',
-    ));
+      size: 22,
+      color: '065F46',
+      highlight: true,
+      indent: 400,
+      before: 60,
+      after: 80,
+    );
   }
 
-  static void _writeEssay(
+  static void _writeEssayAnswerArea(
     StringBuffer buffer,
     Question question,
-    bool isTeacher,
+    bool isTeacherVersion,
   ) {
-    if (!isTeacher) {
-      // Four dotted lines for the student's handwritten answer.
-      for (var line = 0; line < 4; line++) {
-        buffer.write(_rtlParagraph(
-          '.' * 148,
-          colorHex: '9CA3AF',
-          halfPoints: 20,
-          spacingBefore: '60',
-          spacingAfter: '60',
-        ));
+    if (isTeacherVersion) {
+      _writeParagraph(
+        buffer,
+        'الإجابة النموذجية وعناصر التقييم: ${_modelAnswerOrPlaceholder(question)}',
+        bold: true,
+        size: 22,
+        color: '065F46',
+        indent: 400,
+        before: 60,
+        after: 80,
+      );
+      return;
+    }
+
+    for (var index = 0; index < 4; index++) {
+      _writeParagraph(
+        buffer,
+        '.......................................................................................................................................................',
+        size: 20,
+        color: '9CA3AF',
+        before: 60,
+        after: 60,
+      );
+    }
+  }
+
+  static String _modelAnswerOrPlaceholder(Question question) {
+    final answer = question.modelAnswer.trim();
+    return answer.isEmpty ? 'غير محدد' : answer;
+  }
+
+  static void _writeParagraph(
+    StringBuffer buffer,
+    String text, {
+    bool bold = false,
+    bool italic = false,
+    int size = 22,
+    String? color,
+    bool highlight = false,
+    int? indent,
+    int? before,
+    int? after,
+  }) {
+    buffer.write('<w:p><w:pPr><w:bidi/><w:jc w:val="right"/>');
+    if (indent != null) {
+      buffer.write('<w:ind w:right="$indent"/>');
+    }
+    if (before != null || after != null) {
+      buffer.write(
+        '<w:spacing${before == null ? '' : ' w:before="$before"'}${after == null ? '' : ' w:after="$after"'}/>',
+      );
+    }
+    buffer.write('</w:pPr><w:r><w:rPr><w:rtl/>');
+    if (bold) {
+      buffer.write('<w:b/>');
+    }
+    if (italic) {
+      buffer.write('<w:i/>');
+    }
+    if (highlight) {
+      buffer.write('<w:highlight w:val="yellow"/>');
+    }
+    if (color != null) {
+      buffer.write('<w:color w:val="$color"/>');
+    }
+    buffer.write(
+      '<w:sz w:val="$size"/><w:rFonts w:cs="Traditional Arabic"/></w:rPr>',
+    );
+    buffer.write('<w:t xml:space="preserve">${_escapeXml(text)}</w:t>');
+    buffer.write('</w:r></w:p>');
+  }
+
+  static String _formatMarks(double marks) {
+    return marks == marks.truncateToDouble()
+        ? marks.toInt().toString()
+        : marks.toString();
+  }
+
+  static String _escapeXml(String input) {
+    final validCharacters = StringBuffer();
+    final normalizedInput = input.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+
+    for (final rune in normalizedInput.runes) {
+      final isValidXmlCharacter = rune == 0x9 ||
+          rune == 0xA ||
+          rune == 0xD ||
+          (rune >= 0x20 && rune <= 0xD7FF) ||
+          (rune >= 0xE000 && rune <= 0xFFFD) ||
+          (rune >= 0x10000 && rune <= 0x10FFFF);
+      if (isValidXmlCharacter) {
+        validCharacters.writeCharCode(rune);
       }
-      return;
     }
-    buffer.write(_rtlParagraph(
-      'الإجابة النموذجية وعناصر التقييم: ${question.modelAnswer}',
-      bold: true,
-      colorHex: '065F46',
-      indented: true,
-      spacingBefore: '60',
-      spacingAfter: '80',
-    ));
+
+    return validCharacters
+        .toString()
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&apos;')
+        .replaceAll('\n', '</w:t><w:br/><w:t xml:space="preserve">');
   }
-
-  static String _escapeXml(String input) => input
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&apos;');
-
-  /// Renders 2.0 as "2" and 1.5 as "1.5" for a cleaner printed paper.
-  static String _formatMarks(double marks) =>
-      marks % 1 == 0 ? marks.toInt().toString() : marks.toString();
-
-  // ---------------------------------------------------------------------------
-  // Package parts (constants)
-  // ---------------------------------------------------------------------------
 
   static const String _contentTypesXml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -381,12 +425,12 @@ abstract final class DocxExportService {
   <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
 </Types>''';
 
-  static const String _globalRelsXml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+  static const String _globalRelationshipsXml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
 </Relationships>''';
 
-  static const String _documentRelsXml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+  static const String _documentRelationshipsXml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>''';

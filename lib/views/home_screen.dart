@@ -1,260 +1,374 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../models/exam.dart';
-import '../providers/question_provider.dart';
 import '../providers/exam_provider.dart';
+import '../providers/question_provider.dart';
+import 'exam_builder_screen.dart';
 import 'question_bank_screen.dart';
 import 'question_editor_screen.dart';
-import 'exam_builder_screen.dart';
 import 'widgets/export_dialog.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final questionProvider = Provider.of<QuestionProvider>(context);
-    final examProvider = Provider.of<ExamProvider>(context);
+  Future<void> _openQuestionEditor(BuildContext context) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (_) => const QuestionEditorScreen()),
+    );
+  }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('صانع ومحرر الأسئلة الاحترافي'),
-        centerTitle: true,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Welcome & Statistics Card
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [theme.colorScheme.primary, theme.colorScheme.secondary],
-                  begin: Alignment.topRight,
-                  end: Alignment.bottomLeft,
-                ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: theme.colorScheme.primary.withOpacity(0.3),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'لوحة التحكم وإدارة الاختبارات',
-                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'أنشئ أسئلتك، صمم نماذج الاختبارات، وصدرها لملفات Word منسقة للطباعة أو جداول Excel لمنصات التعليم.',
-                    style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
-                  ),
-                  const SizedBox(height: 18),
-                  Row(
-                    children: [
-                      _buildStatBox('الأسئلة بالبنك', '${questionProvider.questions.length}', Icons.quiz),
-                      const SizedBox(width: 12),
-                      _buildStatBox('الاختبارات الجاهزة', '${examProvider.exams.length}', Icons.assignment),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+  Future<void> _openQuestionBank(BuildContext context) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (_) => const QuestionBankScreen()),
+    );
+  }
 
-            const SizedBox(height: 24),
-            const Text(
-              'الإجراءات السريعة',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-
-            // Quick Actions Grid
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.3,
-              children: [
-                _buildActionCard(
-                  context,
-                  title: 'إضافة سؤال جديد',
-                  subtitle: 'خيارات، صح/خطأ، مقالي',
-                  icon: Icons.add_circle_outline,
-                  color: Colors.blue.shade700,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const QuestionEditorScreen()),
-                    );
-                  },
-                ),
-                _buildActionCard(
-                  context,
-                  title: 'بنك الأسئلة',
-                  subtitle: 'استعراض وفلترة وتعديل',
-                  icon: Icons.inventory_2_outlined,
-                  color: Colors.indigo.shade700,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const QuestionBankScreen()),
-                    );
-                  },
-                ),
-                _buildActionCard(
-                  context,
-                  title: 'بناء اختبار جديد',
-                  subtitle: 'تخصيص الترويسة والأسئلة',
-                  icon: Icons.post_add,
-                  color: Colors.teal.shade700,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ExamBuilderScreen()),
-                    );
-                  },
-                ),
-                _buildActionCard(
-                  context,
-                  title: 'تصدير سريع',
-                  subtitle: 'تصدير Word و Excel',
-                  icon: Icons.file_download_outlined,
-                  color: Colors.deepOrange.shade700,
-                  onTap: () {
-                    if (questionProvider.questions.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('لا توجد أسئلة لتصديرها')),
-                      );
-                      return;
-                    }
-                    showDialog(
-                      context: context,
-                      builder: (ctx) => ExportDialog(questions: questionProvider.questions),
-                    );
-                  },
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'الاختبارات المحفوظة',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ExamBuilderScreen()),
-                    );
-                  },
-                  child: const Text('اختبار جديد'),
-                ),
-              ],
-            ),
-
-            if (examProvider.exams.isEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: const Column(
-                  children: [
-                    Icon(Icons.assignment_outlined, size: 40, color: Colors.grey),
-                    SizedBox(height: 8),
-                    Text('لم تقم بإنشاء اختبارات مخصصة بعد.', style: TextStyle(color: Colors.grey)),
-                    SizedBox(height: 4),
-                    Text('انقر على "بناء اختبار جديد" لتجميع أسئلة بنموذج موحد.', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                  ],
-                ),
-              )
-            else
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: examProvider.exams.length,
-                itemBuilder: (ctx, index) {
-                  final exam = examProvider.exams[index];
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: ListTile(
-                      leading: const CircleAvatar(
-                        child: Icon(Icons.description),
-                      ),
-                      title: Text(exam.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text('${exam.questions.length} سؤال • ${exam.totalMarks} درجة • ${exam.header.subject}'),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.ios_share, color: Colors.blue),
-                            tooltip: 'تصدير',
-                            onPressed: () {
-                              showDialog(
-                                context: context,
-                                builder: (_) => ExportDialog(exam: exam),
-                              );
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline, color: Colors.red),
-                            tooltip: 'حذف',
-                            onPressed: () => _confirmExamDeletion(context, examProvider, exam),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-          ],
-        ),
+  Future<void> _openExamBuilder(BuildContext context, [Exam? exam]) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => ExamBuilderScreen(existingExam: exam),
       ),
     );
   }
 
-  void _confirmExamDeletion(
-    BuildContext context,
-    ExamProvider examProvider,
-    Exam exam,
-  ) {
-    showDialog<void>(
+  Future<void> _showQuickExport(BuildContext context) async {
+    final questions = context.read<QuestionProvider>().questions;
+    if (questions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('لا توجد أسئلة لتصديرها.')),
+      );
+      return;
+    }
+
+    await showDialog<void>(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('تأكيد حذف الاختبار'),
-        content: Text('هل تريد حذف "${exam.name}" نهائياً؟'),
-        actions: [
+      builder: (_) => ExportDialog(questions: questions),
+    );
+  }
+
+  Future<void> _showExamExport(BuildContext context, Exam exam) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => ExportDialog(exam: exam),
+    );
+  }
+
+  Future<void> _confirmDeleteExam(BuildContext context, Exam exam) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('حذف الاختبار'),
+        content: Text('هل تريد حذف اختبار "${exam.name}"؟'),
+        actions: <Widget>[
           TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
             child: const Text('إلغاء'),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () {
-              examProvider.deleteExam(exam.id);
-              Navigator.of(dialogCtx).pop();
-            },
-            child: const Text('حذف', style: TextStyle(color: Colors.white)),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('حذف'),
           ),
         ],
+      ),
+    );
+
+    if (shouldDelete != true || !context.mounted) {
+      return;
+    }
+
+    try {
+      await context.read<ExamProvider>().deleteExam(exam.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تم حذف الاختبار.')),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('تعذر حذف الاختبار. حاول مرة أخرى.'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final questionProvider = context.watch<QuestionProvider>();
+    final examProvider = context.watch<ExamProvider>();
+    final isLoading = questionProvider.isLoading || examProvider.isLoading;
+    final message = questionProvider.errorMessage ??
+        examProvider.errorMessage ??
+        questionProvider.recoveryMessage ??
+        examProvider.recoveryMessage;
+    final hasError = questionProvider.errorMessage != null ||
+        examProvider.errorMessage != null;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('صانع ومحرر الأسئلة'),
+        centerTitle: true,
+      ),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  if (message != null) ...<Widget>[
+                    MaterialBanner(
+                      content: Text(message),
+                      backgroundColor: hasError
+                          ? theme.colorScheme.errorContainer
+                          : theme.colorScheme.secondaryContainer,
+                      actions: <Widget>[
+                        TextButton(
+                          onPressed: () {
+                            questionProvider.clearMessages();
+                            examProvider.clearMessages();
+                          },
+                          child: const Text('إخفاء'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  _buildDashboardCard(
+                    context,
+                    questionCount: questionProvider.questions.length,
+                    examCount: examProvider.exams.length,
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'الإجراءات السريعة',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  GridView.count(
+                    crossAxisCount: 2,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 1.25,
+                    children: <Widget>[
+                      _buildActionCard(
+                        title: 'إضافة سؤال جديد',
+                        subtitle: 'خيارات، صح/خطأ، مقالي',
+                        icon: Icons.add_circle_outline,
+                        color: Colors.blue.shade700,
+                        onTap: () async {
+                          await _openQuestionEditor(context);
+                        },
+                      ),
+                      _buildActionCard(
+                        title: 'بنك الأسئلة',
+                        subtitle: 'استعراض وفلترة وتعديل',
+                        icon: Icons.inventory_2_outlined,
+                        color: Colors.indigo.shade700,
+                        onTap: () async {
+                          await _openQuestionBank(context);
+                        },
+                      ),
+                      _buildActionCard(
+                        title: 'بناء اختبار جديد',
+                        subtitle: 'تخصيص الترويسة والأسئلة',
+                        icon: Icons.post_add,
+                        color: Colors.teal.shade700,
+                        onTap: () async {
+                          await _openExamBuilder(context);
+                        },
+                      ),
+                      _buildActionCard(
+                        title: 'تصدير سريع',
+                        subtitle: 'تصدير Excel لبنك الأسئلة',
+                        icon: Icons.file_download_outlined,
+                        color: Colors.deepOrange.shade700,
+                        onTap: () async {
+                          await _showQuickExport(context);
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: <Widget>[
+                      const Text(
+                        'الاختبارات المحفوظة',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () async {
+                          await _openExamBuilder(context);
+                        },
+                        child: const Text('اختبار جديد'),
+                      ),
+                    ],
+                  ),
+                  if (examProvider.exams.isEmpty)
+                    _buildEmptyExamsCard()
+                  else
+                    ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: examProvider.exams.length,
+                      itemBuilder: (context, index) {
+                        final exam = examProvider.exams[index];
+                        return _buildExamTile(context, exam);
+                      },
+                    ),
+                ],
+              ),
+            ),
+    );
+  }
+
+  Widget _buildDashboardCard(
+    BuildContext context, {
+    required int questionCount,
+    required int examCount,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: <Color>[theme.colorScheme.primary, theme.colorScheme.secondary],
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: theme.colorScheme.primary.withOpacity(0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Text(
+            'لوحة التحكم وإدارة الاختبارات',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'أنشئ أسئلتك، صمم نماذج الاختبارات، وصدّرها إلى ملفات Word أو Excel.',
+            style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: <Widget>[
+              _buildStatBox('الأسئلة بالبنك', '$questionCount', Icons.quiz),
+              const SizedBox(width: 12),
+              _buildStatBox('الاختبارات الجاهزة', '$examCount', Icons.assignment),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyExamsCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: const Column(
+        children: <Widget>[
+          Icon(Icons.assignment_outlined, size: 40, color: Colors.grey),
+          SizedBox(height: 8),
+          Text(
+            'لم تقم بإنشاء اختبارات مخصصة بعد.',
+            style: TextStyle(color: Colors.grey),
+          ),
+          SizedBox(height: 4),
+          Text(
+            'انقر على "اختبار جديد" لتجميع أسئلة بنموذج موحد.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExamTile(BuildContext context, Exam exam) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: const CircleAvatar(child: Icon(Icons.description)),
+        title: Text(
+          exam.name,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text(
+          '${exam.questions.length} سؤال • ${_formatMarks(exam.totalMarks)} درجة • ${exam.header.subject}',
+        ),
+        trailing: PopupMenuButton<_ExamAction>(
+          tooltip: 'إجراءات الاختبار',
+          onSelected: (action) async {
+            switch (action) {
+              case _ExamAction.edit:
+                await _openExamBuilder(context, exam);
+                break;
+              case _ExamAction.export:
+                await _showExamExport(context, exam);
+                break;
+              case _ExamAction.delete:
+                await _confirmDeleteExam(context, exam);
+                break;
+            }
+          },
+          itemBuilder: (context) => const <PopupMenuEntry<_ExamAction>>[
+            PopupMenuItem<_ExamAction>(
+              value: _ExamAction.edit,
+              child: ListTile(
+                leading: Icon(Icons.edit_outlined),
+                title: Text('تعديل'),
+              ),
+            ),
+            PopupMenuItem<_ExamAction>(
+              value: _ExamAction.export,
+              child: ListTile(
+                leading: Icon(Icons.ios_share_outlined),
+                title: Text('تصدير'),
+              ),
+            ),
+            PopupMenuItem<_ExamAction>(
+              value: _ExamAction.delete,
+              child: ListTile(
+                leading: Icon(Icons.delete_outline, color: Colors.red),
+                title: Text('حذف', style: TextStyle(color: Colors.red)),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -268,15 +382,29 @@ class HomeScreen extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
-          children: [
+          children: <Widget>[
             Icon(icon, color: Colors.white, size: 24),
             const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(count, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
-                Text(title, style: const TextStyle(color: Colors.white70, fontSize: 11)),
-              ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    count,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                  Text(
+                    title,
+                    style: const TextStyle(color: Colors.white70, fontSize: 11),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -284,26 +412,27 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildActionCard(
-    BuildContext context, {
+  Widget _buildActionCard({
     required String title,
     required String subtitle,
     required IconData icon,
     required Color color,
-    required VoidCallback onTap,
+    required Future<void> Function() onTap,
   }) {
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
-        onTap: onTap,
+        onTap: () async {
+          await onTap();
+        },
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.all(12.0),
+          padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
-            children: [
+            children: <Widget>[
               CircleAvatar(
                 backgroundColor: color.withOpacity(0.12),
                 radius: 18,
@@ -329,4 +458,12 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
+
+  String _formatMarks(double marks) {
+    return marks == marks.truncateToDouble()
+        ? marks.toInt().toString()
+        : marks.toString();
+  }
 }
+
+enum _ExamAction { edit, export, delete }
