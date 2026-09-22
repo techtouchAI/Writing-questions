@@ -40,7 +40,11 @@ void main() {
     expect(find.text('PDF — نموذج الإجابة للمعلم'), findsOneWidget);
     expect(find.textContaining('.docx'), findsNothing, reason: 'Word مجمّد للامتحانات');
     expect(find.textContaining('.xlsx'), findsNothing, reason: 'Excel مجمّد للامتحانات');
-    expect(find.textContaining('مجمّد'), findsOneWidget);
+    expect(
+      find.textContaining('التنسيق الوزاري الثابت'),
+      findsOneWidget,
+      reason: 'يظهر تنبيه تجميد Word/Excel للامتحانات الرسمية',
+    );
   });
 
   testWidgets('question bank export keeps the Excel option', (tester) async {
