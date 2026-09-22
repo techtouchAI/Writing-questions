@@ -41,6 +41,52 @@ class QuestionOption {
   }
 }
 
+/// فرع من فروع السؤال (أ، ب، ج...) بدرجة مستقلة اختيارية.
+///
+/// يمثّل البنية الصارمة للفروع في هندسة محرك الأسئلة بدل ترك الفروع
+/// مدموجة داخل نص السؤال الحر.
+class QuestionBranch {
+  String label;
+  String text;
+  double marks;
+
+  QuestionBranch({
+    this.label = '',
+    required this.text,
+    this.marks = 0.0,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'label': label,
+      'text': text,
+      'marks': marks,
+    };
+  }
+
+  factory QuestionBranch.fromMap(Map<String, dynamic> map) {
+    final rawMarks = map['marks'];
+    final parsedMarks = rawMarks is num
+        ? rawMarks.toDouble()
+        : double.tryParse(rawMarks?.toString() ?? '');
+    return QuestionBranch(
+      label: map['label']?.toString() ?? '',
+      text: map['text']?.toString() ?? '',
+      marks: parsedMarks != null && parsedMarks.isFinite && parsedMarks >= 0
+          ? parsedMarks
+          : 0.0,
+    );
+  }
+
+  QuestionBranch copyWith({String? label, String? text, double? marks}) {
+    return QuestionBranch(
+      label: label ?? this.label,
+      text: text ?? this.text,
+      marks: marks ?? this.marks,
+    );
+  }
+}
+
 class Question {
   final String id;
   String title;
@@ -49,6 +95,10 @@ class Question {
   double marks;
   String subject;
   String topic;
+
+  /// قسم السؤال داخل المادة (القواعد/الأدب/إنشاء... مثلاً) لتقسيم ورقة الامتحان.
+  String category;
+  List<QuestionBranch> branches;
   List<QuestionOption> options;
   String modelAnswer;
   String explanation;
@@ -62,11 +112,16 @@ class Question {
     this.marks = 1.0,
     this.subject = 'عام',
     this.topic = '',
+    this.category = '',
+    List<QuestionBranch>? branches,
     List<QuestionOption>? options,
     this.modelAnswer = '',
     this.explanation = '',
     DateTime? createdAt,
   })  : id = id ?? const Uuid().v4(),
+        branches = List<QuestionBranch>.unmodifiable(
+          _copyBranches(branches ?? const []),
+        ),
         options = _copyOptions(options ?? const []),
         createdAt = createdAt ?? DateTime.now();
 
@@ -79,6 +134,8 @@ class Question {
       'marks': marks,
       'subject': subject,
       'topic': topic,
+      'category': category,
+      'branches': branches.map((branch) => branch.toMap()).toList(growable: false),
       'options': options.map((option) => option.toMap()).toList(growable: false),
       'modelAnswer': modelAnswer,
       'explanation': explanation,
@@ -102,6 +159,8 @@ class Question {
           : 1.0,
       subject: _nonEmptyString(map['subject']) ?? 'عام',
       topic: map['topic']?.toString() ?? '',
+      category: map['category']?.toString() ?? '',
+      branches: _branchesFromValue(map['branches']),
       options: _optionsFromValue(map['options']),
       modelAnswer: map['modelAnswer']?.toString() ?? '',
       explanation: map['explanation']?.toString() ?? '',
@@ -126,6 +185,8 @@ class Question {
     double? marks,
     String? subject,
     String? topic,
+    String? category,
+    List<QuestionBranch>? branches,
     List<QuestionOption>? options,
     String? modelAnswer,
     String? explanation,
@@ -138,6 +199,8 @@ class Question {
       marks: marks ?? this.marks,
       subject: subject ?? this.subject,
       topic: topic ?? this.topic,
+      category: category ?? this.category,
+      branches: branches ?? this.branches,
       options: options ?? this.options,
       modelAnswer: modelAnswer ?? this.modelAnswer,
       explanation: explanation ?? this.explanation,
@@ -156,8 +219,24 @@ class Question {
         .toList(growable: false);
   }
 
+  static List<QuestionBranch> _branchesFromValue(Object? value) {
+    if (value is! List) {
+      return const [];
+    }
+
+    return value
+        .whereType<Map>()
+        .map((branch) => QuestionBranch.fromMap(Map<String, dynamic>.from(branch)))
+        .where((branch) => branch.text.trim().isNotEmpty || branch.marks > 0)
+        .toList(growable: false);
+  }
+
   static List<QuestionOption> _copyOptions(List<QuestionOption> source) {
     return source.map((option) => option.copyWith()).toList(growable: false);
+  }
+
+  static List<QuestionBranch> _copyBranches(List<QuestionBranch> source) {
+    return source.map((branch) => branch.copyWith()).toList(growable: false);
   }
 
   static DateTime? _dateFromValue(Object? value) {
