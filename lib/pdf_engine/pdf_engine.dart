@@ -1,4 +1,4 @@
-/// الوحدة المستقلة: محرك بناء ورقة الاختبار كملف PDF بصفحة A4 واحدة.
+// الوحدة المستقلة: محرك بناء ورقة الاختبار كملف PDF بصفحة A4 واحدة.
 export 'exam_fonts.dart';
 export 'exam_strategy.dart';
 export 'pdf_exam_engine.dart';

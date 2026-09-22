@@ -87,7 +87,7 @@ class ExamTextStyles {
   static const PdfColor dangerColor = PdfColor.fromInt(0xFFDC2626);
   static const PdfColor mutedColor = PdfColor.fromInt(0xFF4B5563);
 
-  static const ExamTextStyles standard = ExamTextStyles(
+  static final ExamTextStyles standard = ExamTextStyles(
     headerTitle: pw.TextStyle(
       fontSize: 15,
       fontWeight: pw.FontWeight.bold,
@@ -176,7 +176,7 @@ abstract class ExamStrategy {
 
     for (var index = 0; index < group.items.length; index++) {
       if (index > 0) {
-        children.add(const pw.SizedBox(height: 5));
+        children.add(pw.SizedBox(height: 5));
       }
       children.add(_buildQuestion(group.items[index], styles, isTeacherVersion));
     }

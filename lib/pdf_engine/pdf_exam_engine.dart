@@ -37,9 +37,10 @@ class PdfExamEngine {
     required bool isTeacherVersion,
     ExamStrategy? strategy,
     ExamFonts? fonts,
-    ExamTextStyles styles = ExamTextStyles.standard,
+    ExamTextStyles? styles,
   }) async {
     final loadedFonts = fonts ?? await ExamFonts.load();
+    final effectiveStyles = styles ?? ExamTextStyles.standard;
     final effectiveStrategy = strategy ?? ExamStrategies.forSubject(exam.header.subject);
 
     final items = <IndexedQuestion>[
@@ -64,11 +65,18 @@ class PdfExamEngine {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.stretch,
             children: <pw.Widget>[
-              _buildHeader(exam, isTeacherVersion, styles),
+              _buildHeader(exam, isTeacherVersion, effectiveStyles),
               pw.Divider(thickness: 2, color: ExamTextStyles.primaryColor),
-              _buildNotes(exam, styles),
-              pw.Expanded(child: _buildAutoFitQuestions(items, effectiveStrategy, styles, isTeacherVersion)),
-              _buildFooter(exam, styles),
+              _buildNotes(exam, effectiveStyles),
+              pw.Expanded(
+                child: _buildAutoFitQuestions(
+                  items,
+                  effectiveStrategy,
+                  effectiveStyles,
+                  isTeacherVersion,
+                ),
+              ),
+              _buildFooter(exam, effectiveStyles),
             ],
           );
         },
@@ -114,7 +122,9 @@ class PdfExamEngine {
     final totalMarks = exam.totalMarks;
 
     return pw.Container(
-      border: pw.Border.all(color: ExamTextStyles.primaryColor, width: 1.2),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: ExamTextStyles.primaryColor, width: 1.2),
+      ),
       padding: const pw.EdgeInsets.all(6),
       child: pw.Row(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
