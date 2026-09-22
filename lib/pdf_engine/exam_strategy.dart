@@ -143,7 +143,7 @@ abstract class ExamStrategy {
     final children = <pw.Widget>[];
     for (var index = 0; index < groups.length; index++) {
       if (index > 0) {
-        children.add(const pw.SizedBox(height: 8));
+        children.add(pw.SizedBox(height: 8));
       }
       children.addAll(_buildGroup(groups[index], styles, isTeacherVersion));
     }
