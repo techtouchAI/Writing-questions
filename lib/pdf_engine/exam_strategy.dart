@@ -88,27 +88,45 @@ class ExamTextStyles {
   static const PdfColor mutedColor = PdfColor.fromInt(0xFF4B5563);
 
   static final ExamTextStyles standard = ExamTextStyles(
-    headerTitle: pw.TextStyle(
+    headerTitle: _textStyle(
       fontSize: 15,
-      fontWeight: pw.FontWeight.bold,
+      bold: true,
       color: primaryColor,
       lineSpacing: 1.5,
     ),
-    headerBody: pw.TextStyle(fontSize: 10, lineSpacing: 1.5),
-    badge: pw.TextStyle(fontSize: 9.5, fontWeight: pw.FontWeight.bold, lineSpacing: 1.5),
-    category: pw.TextStyle(
+    headerBody: _textStyle(fontSize: 10, lineSpacing: 1.5),
+    badge: _textStyle(fontSize: 9.5, bold: true, lineSpacing: 1.5),
+    category: _textStyle(
       fontSize: 12.5,
-      fontWeight: pw.FontWeight.bold,
+      bold: true,
       color: primaryColor,
       lineSpacing: 1.5,
     ),
-    question: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold, lineSpacing: 2),
-    option: pw.TextStyle(fontSize: 10.5, lineSpacing: 1.4),
-    body: pw.TextStyle(fontSize: 10.5, lineSpacing: 1.5),
-    small: pw.TextStyle(fontSize: 9, color: mutedColor, lineSpacing: 1.4),
-    note: pw.TextStyle(fontSize: 9.5, color: mutedColor, lineSpacing: 1.5),
-    footer: pw.TextStyle(fontSize: 8.5, color: mutedColor),
+    question: _textStyle(fontSize: 11, bold: true, lineSpacing: 2),
+    option: _textStyle(fontSize: 10.5, lineSpacing: 1.4),
+    body: _textStyle(fontSize: 10.5, lineSpacing: 1.5),
+    small: _textStyle(fontSize: 9, color: mutedColor, lineSpacing: 1.4),
+    note: _textStyle(fontSize: 9.5, color: mutedColor, lineSpacing: 1.5),
+    footer: _textStyle(fontSize: 8.5, color: mutedColor),
   );
+
+  /// بناء أسلوب نص في وقت التشغيل.
+  ///
+  /// يمرّ عبر دالة بدل const مباشرة لأن مكتبة pdf 3.11.x لا تحتمل
+  /// التقييم الثابت لـ TextStyle داخل const contexts.
+  static pw.TextStyle _textStyle({
+    required double fontSize,
+    bool bold = false,
+    PdfColor? color,
+    double? lineSpacing,
+  }) {
+    return pw.TextStyle(
+      fontSize: fontSize,
+      fontWeight: bold ? pw.FontWeight.bold : null,
+      color: color,
+      lineSpacing: lineSpacing,
+    );
+  }
 }
 
 /// استراتيجية بناء قائمة الأسئلة داخل ورقة الـ PDF.
