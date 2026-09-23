@@ -347,18 +347,18 @@ void main() {
       // ويضيف بدلاً منها عرض المسافة القياسية في الخط (font.stringMetrics(' '))
       // لا عرض الحرف الذي كتبه المستخدم، فنتأكد من ذلك صراحةً هنا.
       for (final entry in _spaceKinds.entries) {
-        final line = 'تدور${entry.value}الأرض';
-        final probe = await renderLines(<String>[line]);
+        final text = 'تدور${entry.value}الأرض';
+        final probe = await renderLines(<String>[text]);
         expect(probe.lines.length, 1, reason: entry.key);
 
-        final line = probe.lines.first;
+        final measured = probe.lines.first;
         expect(
-          line.words.length,
+          measured.words.length,
           2,
           reason: '${entry.key}: يجب أن يُعامل الفراغ كفاصل بين كلمتين — '
-              'المُقاس: ${line.describe()}',
+              'المُقاس: ${measured.describe()}',
         );
-        expect(expectFullSpaces(line, entry.key), 1);
+        expect(expectFullSpaces(measured, entry.key), 1);
       }
     });
 
