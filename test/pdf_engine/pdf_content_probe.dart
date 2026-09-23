@@ -177,18 +177,20 @@ class PdfContentProbe {
       final data = font;
       final advance = data == null
           ? 0.0
-          : cids.fold<double>(
-              0,
-              (sum, cid) => sum + (data.widths[cid] ?? 1000) * fontSize / 1000,
-            );
+          : cids.fold<double>(0, (sum, cid) {
+              // عرض الـ CID من مصفوفة /W، وإن لم تكن موجودة نأخذ /DW = 1000.
+              final width =
+                  cid < data.widths.length ? data.widths[cid] : 1000;
+              return sum + width * fontSize / 1000;
+            });
       words.add(ProbedWord(
         text: data == null
             ? ''
             : String.fromCharCodes(
                 cids.map((cid) => data.cidToUnicode[cid] ?? 0xFFFD),
               ),
-        x: pendingX!,
-        y: pendingY!,
+        x: pendingX,
+        y: pendingY,
         fontSize: fontSize,
         fontName: fontName,
         advanceWidth: advance,
