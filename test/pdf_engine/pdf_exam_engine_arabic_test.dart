@@ -88,28 +88,48 @@ void main() {
 
     expect(probe.lines, isNotEmpty, reason: 'يجب أن يحتوي الملف نصاً');
 
+    /// يتحقق من فجوة واحدة: يجب أن تكون **من مضاعفات** عرض المسافة في الخط
+    /// (واحد لفراغ واحد، واثنان لفراغين متتاليين كما في فصل القسم " | ").
+    /// لو اقتُطع جزء من المسافة لظهرت كسراً غير صحيح من مضاعف المسافة.
+    void expectSpaceMultiple(
+      ProbedLine line,
+      int index,
+      double space,
+      String context,
+    ) {
+      final gap = line.gapAfter(index);
+      final multiple = gap / space;
+      final rounded = multiple.round();
+      final reason = '$context: الفجوة بين "${line.words[index].text}" و '
+          '"${line.words[index + 1].text}" = ${gap.toStringAsFixed(3)} نقطة '
+          'وعرض المسافة في الخط عند حجم ${line.words[index].fontSize} = '
+          '${space.toStringAsFixed(3)} نقطة (أي ${multiple.toStringAsFixed(3)} '
+          'مسافة).\n'
+          'كل الفجوات في السطر: '
+          '${line.gaps.map((gap) => gap.toStringAsFixed(3)).toList()}\n'
+          'المُقاس: ${line.describe()}';
+      expect(rounded, greaterThanOrEqualTo(1),
+          reason: '$reason\nيجب ألا تقل الفجوة عن مسافة واحدة كاملة.');
+      expect(
+        (gap - rounded * space).abs(),
+        lessThanOrEqualTo(0.05),
+        reason: '$reason\nيجب أن تكون الفجوة ضعفاً صحيحاً لعرض المسافة '
+            '($rounded × ${space.toStringAsFixed(3)} نقطة).',
+      );
+    }
+
     var checkedPairs = 0;
     for (final line in probe.lines) {
       // نفحص الأزواج المتجاورة فعلاً داخل المقطع نفسه؛ فالسطر الواحد قد يضم
       // كلمات من عنصرين مختلفين (صفّان في Wrap مثلاً) وفجوتهما تباعد تخطيط
       // لا فراغ بين كلمتين (انظر ProbedLine.areAdjacentInRun).
       for (final index in line.adjacencyIndices) {
-        final expected = minimumSpaceAdvance(line.words[index].fontSize);
-        if (expected <= 0) {
+        final space = minimumSpaceAdvance(line.words[index].fontSize);
+        if (space <= 0) {
           continue;
         }
         checkedPairs++;
-        expect(
-          line.gapAfter(index),
-          closeTo(expected, 0.05),
-          reason: 'الفجوة بين "${line.words[index].text}" و '
-              '"${line.words[index + 1].text}" يجب أن تساوي عرض المسافة '
-              '(${expected.toStringAsFixed(3)} نقطة عند '
-              '${line.words[index].fontSize}).\n'
-              'كل الفجوات في السطر: '
-              '${line.gaps.map((gap) => gap.toStringAsFixed(3)).toList()}\n'
-              'المُقاس: ${line.describe()}',
-        );
+        expectSpaceMultiple(line, index, space, 'ورقة الاختبار');
       }
     }
     expect(
@@ -144,6 +164,7 @@ void main() {
 
     var measured = 0;
     for (final line in titleLines) {
+      expect(expected, greaterThan(0), reason: 'عرض مسافة خط السؤال');
       expect(
         line.words.length,
         greaterThanOrEqualTo(4),
@@ -157,15 +178,16 @@ void main() {
             '${line.describe()}',
       );
       for (final index in line.adjacencyIndices) {
-        final pairFontSize = line.words[index].fontSize;
         measured++;
         expect(
-          line.gapAfter(index),
-          closeTo(minimumSpaceAdvance(pairFontSize), 0.05),
+          (line.gapAfter(index) -
+                  minimumSpaceAdvance(line.words[index].fontSize))
+              .abs(),
+          lessThanOrEqualTo(0.05),
           reason: 'الفجوة بين "${line.words[index].text}" و '
               '"${line.words[index + 1].text}" في سطر العنوان يجب أن تساوي '
               'عرض المسافة (${expected.toStringAsFixed(3)} نقطة عند '
-              '$pairFontSize) — ${line.describe()}',
+              '${line.words[index].fontSize}) — ${line.describe()}',
         );
       }
     }
