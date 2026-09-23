@@ -90,7 +90,10 @@ void main() {
 
     var checkedPairs = 0;
     for (final line in probe.lines) {
-      for (var index = 0; index + 1 < line.words.length; index++) {
+      // نفحص الأزواج المتجاورة فعلاً داخل المقطع نفسه؛ فالسطر الواحد قد يضم
+      // كلمات من عنصرين مختلفين (صفّان في Wrap مثلاً) وفجوتهما تباعد تخطيط
+      // لا فراغ بين كلمتين (انظر ProbedLine.areAdjacentInRun).
+      for (final index in line.adjacencyIndices) {
         final expected = minimumSpaceAdvance(line.words[index].fontSize);
         if (expected <= 0) {
           continue;
@@ -98,10 +101,13 @@ void main() {
         checkedPairs++;
         expect(
           line.gapAfter(index),
-          greaterThanOrEqualTo(expected - 0.05),
+          closeTo(expected, 0.05),
           reason: 'الفجوة بين "${line.words[index].text}" و '
-              '"${line.words[index + 1].text}" يجب ألا تقل عن عرض المسافة '
-              '(${expected.toStringAsFixed(3)} نقطة).\n'
+              '"${line.words[index + 1].text}" يجب أن تساوي عرض المسافة '
+              '(${expected.toStringAsFixed(3)} نقطة عند '
+              '${line.words[index].fontSize}).\n'
+              'كل الفجوات في السطر: '
+              '${line.gaps.map((gap) => gap.toStringAsFixed(3)).toList()}\n'
               'المُقاس: ${line.describe()}',
         );
       }
@@ -136,6 +142,7 @@ void main() {
           'الأسطر المقيسة: ${titleLines.map((l) => l.describe()).toList()}',
     );
 
+    var measured = 0;
     for (final line in titleLines) {
       expect(
         line.words.length,
@@ -149,16 +156,25 @@ void main() {
         reason: 'سطر العنوان يجب أن يحمل رقم السؤال بعلامة النقطتين — '
             '${line.describe()}',
       );
-      for (var index = 0; index + 1 < line.words.length; index++) {
+      for (final index in line.adjacencyIndices) {
+        final pairFontSize = line.words[index].fontSize;
+        measured++;
         expect(
           line.gapAfter(index),
-          closeTo(expected, 0.05),
+          closeTo(minimumSpaceAdvance(pairFontSize), 0.05),
           reason: 'الفجوة بين "${line.words[index].text}" و '
               '"${line.words[index + 1].text}" في سطر العنوان يجب أن تساوي '
-              'عرض المسافة (${expected.toStringAsFixed(3)} نقطة) — '
-              '${line.describe()}',
+              'عرض المسافة (${expected.toStringAsFixed(3)} نقطة عند '
+              '$pairFontSize) — ${line.describe()}',
         );
       }
     }
+    expect(
+      measured,
+      greaterThanOrEqualTo(9),
+      reason: 'يجب أن تُقاس فراغات عناوين الأسئلة الثلاثة فعلاً (3 أسطر × 4 '
+          'فراغات على الأقل) — الأسطر المقيسة: '
+          '${titleLines.map((l) => l.describe()).toList()}',
+    );
   });
 }

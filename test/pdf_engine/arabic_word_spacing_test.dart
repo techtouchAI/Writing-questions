@@ -97,22 +97,31 @@ void main() {
     return PdfContentProbe.fromBytes(await document.save());
   }
 
-  /// يتحقق من أن كل فجوة بين كلمتين متجاورتين في السطر تساوي عرض المسافة.
-  void expectFullSpaces(ProbedLine line, String text) {
-    final expected = minimumSpaceAdvance(line.fontSize);
-    final reason = 'السطر "$text": الفجوات المقيسة = '
-        '${line.gaps.map((gap) => gap.toStringAsFixed(3)).toList()} '
-        'والفجوة المتوقعة = ${expected.toStringAsFixed(3)} نقطة '
-        '(عرض المسافة U+0020 في الخط عند حجم ${line.fontSize}).\n'
-        'الكلمات المرسومة: ${line.describe()}';
+  /// يتحقق من أن كل فجوة بين كلمتين متجاورتين فعلاً في السطر تساوي عرض
+  /// المسافة المصمّمة، ويعيد عدد الأزواج التي قِيست (للتأكد من أن الاختبار
+  /// قاس فعلاً شيئاً ولم يتخطَّ كل الأزواج).
+  int expectFullSpaces(ProbedLine line, String text) {
     expect(
       line.fontSize,
       11.0,
-      reason: 'حجم الخط المتوقع من أمر Tf — $reason',
+      reason: 'حجم الخط المتوقع من أمر Tf — ${line.describe()}',
     );
-    for (var index = 0; index + 1 < line.words.length; index++) {
-      expect(line.gapAfter(index), closeTo(expected, 0.05), reason: reason);
+    final expected = minimumSpaceAdvance(line.fontSize);
+    var measured = 0;
+    for (final index in line.adjacencyIndices) {
+      measured++;
+      expect(
+        line.gapAfter(index),
+        closeTo(expected, 0.05),
+        reason: 'السطر "$text": الفجوة بين "${line.words[index].text}" و '
+            '"${line.words[index + 1].text}" لا تساوي عرض المسافة '
+            '(${expected.toStringAsFixed(3)} نقطة عند ${line.fontSize}).\n'
+            'كل الفجوات المقيسة: '
+            '${line.gaps.map((gap) => gap.toStringAsFixed(3)).toList()}\n'
+            'الكلمات المرسومة: ${line.describe()}',
+      );
     }
+    return measured;
   }
 
   setUpAll(() async {
@@ -135,7 +144,9 @@ void main() {
       for (var index = 0; index < lines.length; index++) {
         final line = probe.lines[index];
         expect(line.words.length, 2, reason: line.describe());
-        expectFullSpaces(line, lines[index]);
+        expect(expectFullSpaces(line, lines[index]), 1,
+            reason: 'السطر "${lines[index]}" يجب أن يُقاس فيه زوج واحد — '
+                '${line.describe()}');
       }
     });
 
@@ -196,8 +207,13 @@ void main() {
                 'المُقاس: ${testedLine.describe()}',
           );
 
-          expectFullSpaces(testedLine, tested[index]);
-          expectFullSpaces(calibrationLine, calibration[index]);
+          expect(
+            expectFullSpaces(testedLine, tested[index]) +
+                expectFullSpaces(calibrationLine, calibration[index]),
+            2,
+            reason: 'سطرا "${tested[index]}" و"${calibration[index]}" '
+                'يجب أن يُقاس فيهما زوج واحد لكل سطر',
+          );
         }
       }
     });
@@ -213,9 +229,12 @@ void main() {
       final probe = await renderLines(lines);
       expect(probe.lines.length, lines.length);
 
+      var measured = 0;
       for (var index = 0; index < lines.length; index++) {
-        expectFullSpaces(probe.lines[index], lines[index]);
+        measured += expectFullSpaces(probe.lines[index], lines[index]);
       }
+      expect(measured, greaterThanOrEqualTo(11),
+          reason: 'عدد الأزواج المقيسة في هذا الاختبار');
     });
 
     test('الالتفاف والأسئلة متعددة الأسطر تحافظ على المسافة في كل سطر', () async {
@@ -231,9 +250,15 @@ void main() {
         reason: 'يجب أن يلتف النص الطويل على أكثر من سطر، '
             'فالالتفاف هو ما يجعل الخلل يظهر في أكثر من موضع.',
       );
+      var measured = 0;
       for (final line in probe.lines) {
-        expectFullSpaces(line, 'سطر من النص الطويل');
+        measured += expectFullSpaces(line, 'سطر من النص الطويل');
       }
+      expect(
+        measured,
+        greaterThan(10),
+        reason: 'يجب أن يُقاس عدد معتبر من الأزواج داخل أسطر النص الملفوف',
+      );
     });
 
     test('النصوص المختلطة (عربي/إنجليزي/أرقام/ترقيم) لا تفقد مسافاتها', () async {
@@ -247,9 +272,10 @@ void main() {
       final probe = await renderLines(lines);
       expect(probe.lines.length, lines.length);
 
+      var measured = 0;
       for (var index = 0; index < lines.length; index++) {
         final line = probe.lines[index];
-        expectFullSpaces(line, lines[index]);
+        measured += expectFullSpaces(line, lines[index]);
 
         // الأحرف اللاتينية والأرقام تصل إلى الملف كما هي.
         final drawn = line.words.map((word) => word.text).join();
@@ -264,6 +290,8 @@ void main() {
           }
         }
       }
+      expect(measured, greaterThanOrEqualTo(9),
+          reason: 'عدد الأزواج المقيسة في النصوص المختلطة');
     });
 
     test('الترتيب من اليمين إلى اليسار والتشكيل سليمان ولا تُرسم مسافة كمحرف',
@@ -323,14 +351,14 @@ void main() {
         final probe = await renderLines(<String>[line]);
         expect(probe.lines.length, 1, reason: entry.key);
 
-        final measured = probe.lines.first;
+        final line = probe.lines.first;
         expect(
-          measured.words.length,
+          line.words.length,
           2,
           reason: '${entry.key}: يجب أن يُعامل الفراغ كفاصل بين كلمتين — '
-              'المُقاس: ${measured.describe()}',
+              'المُقاس: ${line.describe()}',
         );
-        expectFullSpaces(measured, entry.key);
+        expect(expectFullSpaces(line, entry.key), 1);
       }
     });
 

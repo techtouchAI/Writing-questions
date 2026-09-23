@@ -64,6 +64,31 @@ class ProbedLine {
         for (var index = 0; index + 1 < words.length; index++) gapAfter(index),
       ];
 
+  /// هل الكلمتان [index] و[index + 1] متجاورتان فعلاً داخل المقطع نفسه؟
+  ///
+  /// قد يضم السطر الواحد (نفس خط القاعدة) كلمات من عنصرين مختلفين: صفّين
+  /// داخل `Wrap` مثلاً، أو سطر فرع وسطر خيارات تقاربا في الارتفاع. الفجوة بين
+  /// هذين ليست فراغاً بين كلمتين بل تباعد تخطيط (وقد تكون قفزة رجعية كبيرة
+  /// لأن الموضع يعود إلى بداية الصف). لذلك نعدّ الزوج تجاوزاً حقيقياً لفراغ
+  /// الكلمات فقط إذا كان من النص نفسه (نفس حجم الخط واسم الخط) وكانت فجوته
+  /// في مدى فراغ الكلمة: غير سالبة بحدود صغيرة، ولا تزيد عن حجم الخط (فراغ
+  /// الكلمة جزء من حجم الخط، أما تباعد `Wrap` فأكبر منه).
+  bool areAdjacentInRun(int index) {
+    final right = words[index];
+    final left = words[index + 1];
+    if (right.fontSize != left.fontSize || right.fontName != left.fontName) {
+      return false;
+    }
+    final gap = gapAfter(index);
+    return gap >= -0.5 && gap <= right.fontSize;
+  }
+
+  /// أزواج الكلمات المتجاورة فعلاً داخل المقطع (انظر [areAdjacentInRun]).
+  List<int> get adjacencyIndices => <int>[
+        for (var index = 0; index + 1 < words.length; index++)
+          if (areAdjacentInRun(index)) index,
+      ];
+
   String describe() => words
       .map((word) => '"${word.text}"@${word.x.toStringAsFixed(2)}'
           '+${word.advanceWidth.toStringAsFixed(2)}')
