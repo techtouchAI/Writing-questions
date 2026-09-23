@@ -51,6 +51,13 @@ jobs:
       - name: Resolve dependencies
         run: flutter pub get
 
+      # حزمة pdf في هذا المستودع نسخة معدّلة محلياً (third_party/pdf عبر
+      # dependency_overrides) تحمل إصلاحاً واحداً: مسافات الكلمات العربية في
+      # النص من اليمين إلى اليسار (_Line.realign كان يعكس بعرض الحبر بدل عرض
+      # التقدّم). هذا الفحص يفشل بوضوح إذا استُبدلت النسخة بأصل غير مُصلح.
+      - name: Verify vendored pdf patch (Arabic RTL word spacing)
+        run: dart run tool/verify_vendored_pdf_patch.dart
+
       - name: Analyze source
         id: analyze
         shell: bash
