@@ -13,7 +13,8 @@ import 'strategy_registry.dart';
 /// الضمانات المقصودة:
 /// 1. **صفحة واحدة تماماً**: يُضاف [pw.Page] واحد فقط؛ منطقة الأسئلة داخل
 ///    [pw.FittedBox] بوضع [pw.BoxFit.scaleDown] فتُصغَّر الطباعة آلياً
-///    بتناسق كامل حتى تتسع في المساحة المتبقية بدل أن تتجاوز الورقة.
+///    بتناسق كامل حتى تتسع في المساحة المتبقية بدل أن تتجاوز الورقة،
+///    وتُثبَّت أعلى المساحة المتبقية مباشرة بعد التعليمات لا في أسفلها.
 /// 2. **مقاسات بنقاط لا بخطوط واجهة**: كل شيء محسوب من
 ///    [PdfPageFormat.a4] والهوامش، فلا يتغير الناتج باختلاف جهاز المستخدم.
 /// 3. **لا شجرة شروط للمواد**: تُبنى قائمة الأسئلة عبر [ExamStrategy].
@@ -25,6 +26,18 @@ class PdfExamEngine {
 
   /// عرض منطقة الأسئلة داخل الهوامش (بنقطة PDF).
   static double get contentWidth => PdfPageFormat.a4.width - 2 * _margin;
+
+  /// محاذاة كتلة الأسئلة داخل المساحة المتبقية بعد الترويسة والتعليمات.
+  ///
+  /// تنبيه مهم (سبب مشكلة «الأسئلة في أسفل الصفحة»):
+  /// في حزمة `pdf` يكون [pw.Alignment.y] مساوياً `+1` لأعلى الإطار و`-1` لأسفله،
+  /// أي **عكس** دلالة Flutter. أما [pw.AlignmentDirectional.topStart] فيحمل
+  /// `y == -1` مع أن اسمه «top»، ويُمرَّر `y` كما هو في `resolve()`، فينتهي
+  /// الأمر إلى محاذاة الكتلة **للأسفل** تاركاً فراغاً كبيراً تحت التعليمات
+  /// ونازلاً بالأسئلة فوق التذييل مباشرة. لذلك نستخدم محاذاة أعلى صريحة.
+  ///
+  /// (المحاذاة الأفقية غير مؤثرة هنا لأن [contentWidth] يملأ عرض الإطار كاملاً.)
+  static const pw.Alignment questionsAlignment = pw.Alignment.topCenter;
 
   static double get _margin => pageMarginMillimeters * PdfPageFormat.mm;
 
@@ -104,7 +117,7 @@ class PdfExamEngine {
       textDirection: strategy.textDirection,
       child: pw.FittedBox(
         fit: pw.BoxFit.scaleDown,
-        alignment: pw.AlignmentDirectional.topStart,
+        alignment: questionsAlignment,
         child: pw.SizedBox(
           width: contentWidth,
           child: strategy.buildQuestionsList(

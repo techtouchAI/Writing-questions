@@ -105,5 +105,17 @@ void main() {
       const expected = 180 * PdfPageFormat.mm;
       expect(PdfExamEngine.contentWidth, closeTo(expected, 0.01));
     });
+
+    test('auto-fit questions block is anchored to the top, not the bottom', () {
+      final alignment = PdfExamEngine.questionsAlignment;
+
+      // في حزمة pdf: y = +1 يعني أعلى الإطار، و y = -1 يعني أسفله (عكس Flutter).
+      // أي قيمة سالبة هنا تعني عودة مشكلة «الأسئلة في أسفل الصفحة».
+      expect(alignment.y, 1.0, reason: 'يجب ألا تُدفن الأسئلة أسفل الصفحة');
+
+      // ولا يجوز الاعتماد على AlignmentDirectional للاتجاه العمودي هنا،
+      // لأن topStart فيه يحمل y = -1 فعلياً فيُحاذي إلى الأسفل.
+      expect(PdfExamEngine.questionsAlignment.x, 0.0);
+    });
   });
 }
