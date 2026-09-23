@@ -91,10 +91,14 @@ jobs:
           publish_first_failure() {
             local file="$1" label="$2" line start excerpt
             [ -f "$file" ] || return 0
-            line="$(grep -n -m 1 -E '\[E\]' "$file" | cut -d: -f1)"
-            [ -n "$line" ] || return 0
-            start=$((line > 5 ? line - 5 : 1))
-            excerpt="$(sed -n "${start},$((start + 60))p" "$file")"
+            line="$(grep -n -m 1 -E '\[E\]|❌|Test failed|Expected:' "$file" | cut -d: -f1)"
+            if [ -n "$line" ]; then
+              start=$((line > 5 ? line - 5 : 1))
+              excerpt="$(sed -n "${start},$((start + 60))p" "$file")"
+            else
+              # لا علامة فشل ظاهرة في السجل: ننشر آخر 120 سطراً كاملة.
+              excerpt="$(tail -n 120 "$file")"
+            fi
             [ -n "$excerpt" ] || return 0
             excerpt="${excerpt//%/%25}"
             excerpt="${excerpt//$'\r'/%0D}"
