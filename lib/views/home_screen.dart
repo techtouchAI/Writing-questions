@@ -274,7 +274,7 @@ class HomeScreen extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           const Text(
-            'أنشئ أسئلتك، صمم نماذج الاختبارات، وصدّرها إلى ملفات Word أو Excel.',
+            'أنشئ أسئلتك، صمم نماذج الاختبارات، وصدّرها كملفات PDF أو Excel.',
             style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
           ),
           const SizedBox(height: 18),

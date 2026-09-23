@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/exam.dart';
+import '../models/exam_duration_rules.dart';
 import '../models/exam_header.dart';
 import '../models/question.dart';
 import '../providers/exam_provider.dart';
@@ -24,18 +25,32 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
 
   late final TabController _tabController;
   late final TextEditingController _nameController;
+  late final TextEditingController _directorateController;
   late final TextEditingController _institutionController;
   late final TextEditingController _titleController;
   late final TextEditingController _subjectController;
   late final TextEditingController _gradeStageController;
+  late final TextEditingController _sectionController;
+  late final TextEditingController _examDateController;
   late final TextEditingController _durationController;
   late final TextEditingController _academicYearController;
   late final TextEditingController _instructorController;
   late final TextEditingController _instructionsController;
 
+  late String _examType;
+  DateTime? _examDate;
   late List<Question> _selectedQuestions;
   bool _saveAsDefaultHeader = false;
   bool _isSaving = false;
+
+  /// أنواع الاختبارات الرسمية المهيكلة (بدل نص حر).
+  static const List<String> _examTypeOptions = <String>[
+    'اختبار الفصل الأول',
+    'اختبار الفصل الثاني',
+    'اختبار نصف السنة',
+    'الاختبار النهائي',
+    'اختبار تقويمي',
+  ];
 
   @override
   void initState() {
@@ -50,10 +65,17 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
     _nameController = TextEditingController(
       text: existingExam?.name ?? 'اختبار منتصف الفصل',
     );
+    _directorateController = TextEditingController(text: header.directorate);
     _institutionController = TextEditingController(text: header.institutionName);
     _titleController = TextEditingController(text: header.title);
     _subjectController = TextEditingController(text: header.subject);
     _gradeStageController = TextEditingController(text: header.gradeStage);
+    _sectionController = TextEditingController(text: header.section);
+    _examType = header.examType;
+    _examDate = header.examDate;
+    _examDateController = TextEditingController(
+      text: header.examDate == null ? '' : _formatExamDate(header.examDate!),
+    );
     _durationController = TextEditingController(text: header.duration);
     _academicYearController = TextEditingController(text: header.academicYear);
     _instructorController = TextEditingController(text: header.instructor);
@@ -66,15 +88,56 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
   void dispose() {
     _tabController.dispose();
     _nameController.dispose();
+    _directorateController.dispose();
     _institutionController.dispose();
     _titleController.dispose();
     _subjectController.dispose();
     _gradeStageController.dispose();
+    _sectionController.dispose();
+    _examDateController.dispose();
     _durationController.dispose();
     _academicYearController.dispose();
     _instructorController.dispose();
     _instructionsController.dispose();
     super.dispose();
+  }
+
+  String _formatExamDate(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}/$month/$day';
+  }
+
+  Future<void> _pickExamDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _examDate ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _examDate = DateTime(picked.year, picked.month, picked.day);
+      _examDateController.text = _formatExamDate(_examDate!);
+    });
+  }
+
+  void _clearExamDate() {
+    setState(() {
+      _examDate = null;
+      _examDateController.clear();
+    });
+  }
+
+  void _applyAutoDuration() {
+    final duration = ExamDurationRules.calculate(
+      grade: _gradeStageController.text,
+      subject: _subjectController.text,
+    );
+    setState(() => _durationController.text = duration);
+    _showMessage('حُسب زمن الاختبار آلياً: $duration');
   }
 
   Future<void> _saveExam() async {
@@ -95,6 +158,9 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
 
     final header = ExamHeader(
       institutionName: _institutionController.text.trim(),
+      directorate: _directorateController.text.trim(),
+      section: _sectionController.text.trim(),
+      examType: _examType.trim(),
       title: _titleController.text.trim(),
       subject: _subjectController.text.trim(),
       gradeStage: _gradeStageController.text.trim(),
@@ -102,6 +168,7 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
       duration: _durationController.text.trim(),
       instructor: _instructorController.text.trim(),
       generalInstructions: _instructionsController.text.trim(),
+      examDate: _examDate,
     );
     final exam = Exam(
       id: widget.existingExam?.id,
@@ -310,7 +377,7 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
             label: Text(
               _isSaving
                   ? 'جارٍ الحفظ...'
-                  : 'حفظ والانتقال للتصدير (Word / Excel)',
+                  : 'حفظ والانتقال للتصدير (PDF / Excel)',
               style: const TextStyle(fontSize: 16),
             ),
             onPressed: _isSaving ? null : _saveExam,
@@ -337,6 +404,14 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
               validator: (value) => value == null || value.trim().isEmpty
                   ? 'اسم الاختبار مطلوب.'
                   : null,
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _directorateController,
+              decoration: const InputDecoration(
+                labelText: 'المديرية / قسم التربية (اختياري)',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 16),
             TextFormField(
@@ -374,6 +449,59 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
             const SizedBox(height: 16),
             _buildTwoColumnFields(
               TextFormField(
+                controller: _sectionController,
+                decoration: const InputDecoration(
+                  labelText: 'الشعبة / الفرع (اختياري)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              DropdownButtonFormField<String>(
+                value: _examTypeOptions.contains(_examType)
+                    ? _examType
+                    : (_examType.isNotEmpty ? _examType : ''),
+                decoration: const InputDecoration(
+                  labelText: 'نوع الاختبار',
+                  border: OutlineInputBorder(),
+                ),
+                items: <DropdownMenuItem<String>>[
+                  const DropdownMenuItem<String>(value: '', child: Text('غير محدد')),
+                  ..._examTypeOptions.map(
+                    (option) => DropdownMenuItem<String>(
+                      value: option,
+                      child: Text(option, style: const TextStyle(fontSize: 13)),
+                    ),
+                  ),
+                  if (!_examTypeOptions.contains(_examType) && _examType.isNotEmpty)
+                    DropdownMenuItem<String>(
+                      value: _examType,
+                      child: Text(_examType, style: const TextStyle(fontSize: 13)),
+                    ),
+                ],
+                onChanged: _isSaving
+                    ? null
+                    : (value) => setState(() => _examType = value ?? ''),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _examDateController,
+              readOnly: true,
+              onTap: _isSaving ? null : _pickExamDate,
+              decoration: InputDecoration(
+                labelText: 'تاريخ الاختبار (اختياري)',
+                border: const OutlineInputBorder(),
+                suffixIcon: _examDateController.text.isEmpty
+                    ? const Icon(Icons.event_available_outlined)
+                    : IconButton(
+                        icon: const Icon(Icons.clear),
+                        tooltip: 'إزالة التاريخ',
+                        onPressed: _isSaving ? null : _clearExamDate,
+                      ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildTwoColumnFields(
+              TextFormField(
                 controller: _durationController,
                 decoration: const InputDecoration(
                   labelText: 'زمن الاختبار',
@@ -386,6 +514,14 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
                   labelText: 'العام الدراسي',
                   border: OutlineInputBorder(),
                 ),
+              ),
+            ),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton.icon(
+                onPressed: _isSaving ? null : _applyAutoDuration,
+                icon: const Icon(Icons.timer_outlined, size: 18),
+                label: const Text('حساب الزمن آلياً حسب قوانين الوزارة'),
               ),
             ),
             const SizedBox(height: 16),

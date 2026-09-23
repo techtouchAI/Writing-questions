@@ -2,10 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/difficulty.dart';
+import '../models/label_alphabet.dart';
 import '../models/question.dart';
 import '../models/question_type.dart';
+import '../models/subject_catalog.dart';
 import '../providers/question_provider.dart';
 import 'widgets/mcq_options_editor.dart';
+
+/// مسودة فرع واحد أثناء التحرير (تحكمات نصية مستقلة تُطرح عند الحذف).
+class _BranchDraft {
+  _BranchDraft({required String text, required String marks})
+      : textController = TextEditingController(text: text),
+        marksController = TextEditingController(text: marks);
+
+  final TextEditingController textController;
+  final TextEditingController marksController;
+
+  void dispose() {
+    textController.dispose();
+    marksController.dispose();
+  }
+}
 
 class QuestionEditorScreen extends StatefulWidget {
   const QuestionEditorScreen({super.key, this.existingQuestion});
@@ -23,12 +40,17 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
   late final TextEditingController _marksController;
   late final TextEditingController _subjectController;
   late final TextEditingController _topicController;
+  late final TextEditingController _categoryController;
   late final TextEditingController _modelAnswerController;
   late final TextEditingController _explanationController;
 
   late QuestionType _type;
   late Difficulty _difficulty;
   late List<QuestionOption> _options;
+  late bool _customSubject;
+  late String _selectedCategory;
+  bool _customCategory = false;
+  late List<_BranchDraft> _branchDrafts;
   bool _trueFalseAnswer = true;
   bool _isSaving = false;
 
@@ -50,12 +72,33 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
     );
     _subjectController = TextEditingController(text: question?.subject ?? 'عام');
     _topicController = TextEditingController(text: question?.topic ?? '');
+    _categoryController = TextEditingController(text: question?.category ?? '');
     _modelAnswerController = TextEditingController(
       text: question?.modelAnswer ?? '',
     );
     _explanationController = TextEditingController(
       text: question?.explanation ?? '',
     );
+
+    // المادة المعروفة تُختار من القائمة، وغيرها يبقى إدخالاً يدوياً.
+    final subject = _subjectController.text;
+    _customSubject = subject.isEmpty || !SubjectCatalog.knownSubjects.contains(subject);
+
+    final category = question?.category.trim() ?? '';
+    final categoryPresets = SubjectCatalog.categoriesFor(subject);
+    _customCategory = category.isNotEmpty && !categoryPresets.contains(category);
+    _selectedCategory = categoryPresets.contains(category) ? category : '';
+
+    _branchDrafts = (question?.branches ?? const <QuestionBranch>[])
+        .map(
+          (branch) => _BranchDraft(
+            text: branch.text,
+            marks: branch.marks == branch.marks.truncateToDouble()
+                ? branch.marks.toInt().toString()
+                : branch.marks.toString(),
+          ),
+        )
+        .toList(growable: true);
   }
 
   @override
@@ -64,8 +107,12 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
     _marksController.dispose();
     _subjectController.dispose();
     _topicController.dispose();
+    _categoryController.dispose();
     _modelAnswerController.dispose();
     _explanationController.dispose();
+    for (final draft in _branchDrafts) {
+      draft.dispose();
+    }
     super.dispose();
   }
 
@@ -91,7 +138,15 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
       }
     }
 
+    final branches = _collectBranches();
+    if (branches == null) {
+      return;
+    }
+
     final subject = _subjectController.text.trim();
+    final category = _customCategory
+        ? _categoryController.text.trim()
+        : _selectedCategory.trim();
     final question = Question(
       id: widget.existingQuestion?.id,
       title: _titleController.text.trim(),
@@ -100,6 +155,8 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
       marks: marks,
       subject: subject.isEmpty ? 'عام' : subject,
       topic: _topicController.text.trim(),
+      category: category,
+      branches: branches,
       options: options,
       modelAnswer: _modelAnswerController.text.trim(),
       explanation: _explanationController.text.trim(),
@@ -155,6 +212,54 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
         .where((option) => option.text.trim().isNotEmpty)
         .map((option) => option.copyWith(text: option.text.trim()))
         .toList(growable: false);
+  }
+
+  /// يحول مسودات الفروع إلى نماذج صارمة؛ يعيد null عند درجة غير صالحة.
+  List<QuestionBranch>? _collectBranches() {
+    final branches = <QuestionBranch>[];
+    for (var index = 0; index < _branchDrafts.length; index++) {
+      final draft = _branchDrafts[index];
+      final text = draft.textController.text.trim();
+      if (text.isEmpty) {
+        continue;
+      }
+      final marks = _parseBranchMarks(draft.marksController.text);
+      if (marks == null) {
+        _showMessage('درجة الفرع "${LabelAlphabet.at(index)}" غير صالحة.');
+        return null;
+      }
+      branches.add(
+        QuestionBranch(
+          label: LabelAlphabet.at(index),
+          text: text,
+          marks: marks,
+        ),
+      );
+    }
+    return branches;
+  }
+
+  double? _parseBranchMarks(String value) {
+    final normalized = value.trim().replaceAll('،', '.').replaceAll(',', '.');
+    if (normalized.isEmpty) {
+      return 0;
+    }
+    final marks = double.tryParse(normalized);
+    return marks != null && marks.isFinite && marks >= 0 ? marks : null;
+  }
+
+  void _addBranchDraft() {
+    if (_branchDrafts.length >= 6) {
+      return;
+    }
+    setState(() {
+      _branchDrafts.add(_BranchDraft(text: '', marks: ''));
+    });
+  }
+
+  void _removeBranchDraft(int index) {
+    _branchDrafts[index].dispose();
+    setState(() => _branchDrafts.removeAt(index));
   }
 
   void _showMessage(String message, {bool isError = false}) {
@@ -303,13 +408,68 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
                 Row(
                   children: <Widget>[
                     Expanded(
-                      child: TextFormField(
-                        controller: _subjectController,
-                        decoration: const InputDecoration(
-                          labelText: 'المادة / التصنيف',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
+                      child: _customSubject
+                          ? TextFormField(
+                              controller: _subjectController,
+                              decoration: InputDecoration(
+                                labelText: 'المادة / التصنيف',
+                                border: const OutlineInputBorder(),
+                                suffixIcon: IconButton(
+                                  icon: const Icon(Icons.close),
+                                  tooltip: 'اختيار من المواد المعرفة',
+                                  onPressed: _isSaving
+                                      ? null
+                                      : () => setState(() {
+                                            _customSubject = false;
+                                          }),
+                                ),
+                              ),
+                              onChanged: (_) => setState(() {}),
+                            )
+                          : DropdownButtonFormField<String>(
+                              value: SubjectCatalog.knownSubjects
+                                      .contains(_subjectController.text)
+                                  ? _subjectController.text
+                                  : null,
+                              decoration: const InputDecoration(
+                                labelText: 'المادة / التصنيف',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: <DropdownMenuItem<String>>[
+                                ...SubjectCatalog.knownSubjects.map(
+                                  (subject) => DropdownMenuItem<String>(
+                                    value: subject,
+                                    child: Text(
+                                      subject,
+                                      style: const TextStyle(fontSize: 13),
+                                    ),
+                                  ),
+                                ),
+                                const DropdownMenuItem<String>(
+                                  value: '__custom_subject__',
+                                  child: Text(
+                                    'مادة أخرى (إدخال يدوي)',
+                                    style: TextStyle(fontSize: 13),
+                                  ),
+                                ),
+                              ],
+                              onChanged: _isSaving
+                                  ? null
+                                  : (value) {
+                                      if (value == '__custom_subject__') {
+                                        setState(() => _customSubject = true);
+                                        return;
+                                      }
+                                      if (value != null) {
+                                        setState(() {
+                                          _subjectController.text = value;
+                                          _selectedCategory = '';
+                                          _customCategory = false;
+                                          _categoryController.clear();
+                                        });
+                                      }
+                                    },
+                            ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -323,6 +483,67 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
                     ),
                   ],
                 ),
+                if (SubjectCatalog.categoriesFor(_subjectController.text).isNotEmpty ||
+                    _customCategory) ...<Widget>[
+                  const SizedBox(height: 16),
+                  _customCategory
+                      ? TextFormField(
+                          controller: _categoryController,
+                          decoration: InputDecoration(
+                            labelText: 'قسم السؤال داخل الورقة (مخصص)',
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                              icon: const Icon(Icons.close),
+                              tooltip: 'العودة للأقسام المسبقة',
+                              onPressed: _isSaving
+                                  ? null
+                                  : () => setState(() {
+                                        _customCategory = false;
+                                        _categoryController.clear();
+                                      }),
+                            ),
+                          ),
+                        )
+                      : DropdownButtonFormField<String>(
+                          value: _selectedCategory.isEmpty ? '' : _selectedCategory,
+                          decoration: const InputDecoration(
+                            labelText: 'قسم السؤال داخل الورقة (اختياري)',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: <DropdownMenuItem<String>>[
+                            const DropdownMenuItem<String>(
+                              value: '',
+                              child: Text('بدون قسم'),
+                            ),
+                            ...SubjectCatalog.categoriesFor(_subjectController.text)
+                                .map(
+                              (category) => DropdownMenuItem<String>(
+                                value: category,
+                                child: Text(
+                                  category,
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                            ),
+                            const DropdownMenuItem<String>(
+                              value: '__custom_category__',
+                              child: Text(
+                                'قسم مخصص…',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          ],
+                          onChanged: _isSaving
+                              ? null
+                              : (value) {
+                                  if (value == '__custom_category__') {
+                                    setState(() => _customCategory = true);
+                                    return;
+                                  }
+                                  setState(() => _selectedCategory = value ?? '');
+                                },
+                        ),
+                ],
                 const SizedBox(height: 20),
                 if (_type == QuestionType.multipleChoice)
                   McqOptionsEditor(
@@ -402,6 +623,8 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
                     alignLabelWithHint: true,
                   ),
                 ),
+                const SizedBox(height: 20),
+                _buildBranchesCard(),
                 const SizedBox(height: 32),
                 SizedBox(
                   width: double.infinity,
@@ -432,6 +655,94 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBranchesCard() {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Expanded(
+                  child: Text(
+                    'فروع السؤال (اختياري)',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _isSaving || _branchDrafts.length >= 6
+                      ? null
+                      : _addBranchDraft,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('إضافة فرع'),
+                ),
+              ],
+            ),
+            const Text(
+              'مثل: (أ) عبارة الفرع الأولى درجة، (ب) عبارة الفرع الثانية درجة — '
+              'تظهر مرقّمة في ورقة الامتحان ونموذج الإجابة.',
+              style: TextStyle(fontSize: 12, height: 1.4),
+            ),
+            for (var index = 0; index < _branchDrafts.length; index++) ...<Widget>[
+              const SizedBox(height: 10),
+              Row(
+                children: <Widget>[
+                  SizedBox(
+                    width: 22,
+                    child: Text(
+                      LabelAlphabet.at(index),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _branchDrafts[index].textController,
+                      decoration: const InputDecoration(
+                        hintText: 'نص الفرع',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 66,
+                    child: TextFormField(
+                      controller: _branchDrafts[index].marksController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        hintText: 'الدرجة',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 20),
+                    tooltip: 'حذف الفرع',
+                    onPressed: _isSaving
+                        ? null
+                        : () => _removeBranchDraft(index),
+                  ),
+                ],
+              ),
+            ],
+          ],
         ),
       ),
     );
