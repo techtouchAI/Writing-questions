@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../models/floating_element.dart';
+import '../../models/quran_text.dart';
 import 'formula_inserter.dart';
 
 /// يفتح بلاطة صور النظام ويعيد بايتات الصورة المختارة (أو null عند الإلغاء).
@@ -70,6 +71,7 @@ class SmartExamToolbar extends StatelessWidget {
               child: TabBarView(
                 children: <Widget>[
                   _TextTab(
+                    inserter: inserter,
                     onInsertText: onInsertText,
                     onAddMainQuestion: onAddMainQuestion,
                     onAddBranch: onAddBranch,
@@ -137,11 +139,13 @@ const List<FormulaSnippet> _physicsFormulas = <FormulaSnippet>[
 
 class _TextTab extends StatelessWidget {
   const _TextTab({
+    required this.inserter,
     required this.onInsertText,
     required this.onAddMainQuestion,
     required this.onAddBranch,
   });
 
+  final FormulaInserter inserter;
   final ValueChanged<String> onInsertText;
   final VoidCallback? onAddMainQuestion;
   final VoidCallback? onAddBranch;
@@ -173,6 +177,13 @@ class _TextTab extends StatelessWidget {
           icon: Icons.notes,
           label: 'ملاحظة للمعلم',
           onTap: () => onInsertText('ملاحظة: '),
+        ),
+        // وسم آية قرآنية: يغلّف التحديد (أو يضع المؤشر بين القوسين) فيُرسم
+        // المقطع بالخط القرآني في اللوحة وفي الطباعة معاً.
+        _ChipButton(
+          icon: Icons.menu_book,
+          label: 'آية قرآنية',
+          onTap: () => inserter.wrapSelection(QuranText.openMarker, QuranText.closeMarker),
         ),
       ],
     );

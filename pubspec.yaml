@@ -58,3 +58,8 @@ flutter:
         - asset: assets/fonts/NotoNaskhArabic-Regular.ttf
         - asset: assets/fonts/NotoNaskhArabic-Bold.ttf
           weight: 700
+    # الخط القرآني (Amiri، رخصة OFL) لآيات القرآن في قالب التربية الإسلامية؛
+    # يُستعمل «إن توفّر» وإلا رُسمت الآية بخط الورقة الأساسي بلا فقدان نص.
+    - family: Amiri
+      fonts:
+        - asset: assets/fonts/Amiri-Regular.ttf

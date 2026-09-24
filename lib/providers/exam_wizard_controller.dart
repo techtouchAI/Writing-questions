@@ -7,6 +7,7 @@ import '../models/exam_document.dart';
 import '../models/exam_header_model.dart';
 import '../models/floating_element.dart';
 import '../models/question_model.dart';
+import '../models/question_option.dart';
 import '../models/question_type.dart';
 import '../models/subject_layout.dart';
 
@@ -122,10 +123,14 @@ class ExamWizardController extends ChangeNotifier {
   // ============================ الفروع ============================
 
   void addBranch(int questionIndex, {QuestionType? type}) {
-    final template = type == null ? null : BranchModel(content: BranchContent.empty(type));
+    RangeError.checkValidIndex(questionIndex, questions, 'questionIndex');
+    // «إضافة فرع جديد بنفس خيارات الفرع السابق»: يبدأ الفرع الجديد بنوع
+    // الفرع الأخير (وبنموذج خياراته الافتراضي) بدل نوع ثابت، فيبقى (ب) و(ج)
+    // على الأدوات نفسها التي اختارها المعلم للفرع (أ).
+    final resolvedType = type ?? questions[questionIndex].branches.last.content.type;
     _commit(_document.withQuestionAt(
       questionIndex,
-      questions[questionIndex].withBranchAdded(template),
+      questions[questionIndex].withBranchAdded(BranchModel(content: BranchContent.empty(resolvedType))),
     ));
   }
 
@@ -177,6 +182,37 @@ class ExamWizardController extends ChangeNotifier {
       return;
     }
     _commit(_document.withBranchAt(ref, branch.copyWith(marks: marks)));
+  }
+
+  /// يحدّث نص خيار واحد داخل فرع (خيارات الاختيار من متعدد قابلة للتحرير
+  /// مباشرة على الورقة، وتبقى علامة الإجابة الصحيحة كما هي).
+  void updateBranchOptionText(BranchRef ref, int optionIndex, String text) {
+    if (!_document.containsRef(ref)) {
+      return;
+    }
+    final content = _document.branchAt(ref).content;
+    if (optionIndex < 0 || optionIndex >= content.options.length) {
+      return;
+    }
+    if (content.options[optionIndex].text == text) {
+      return;
+    }
+    final options = List<QuestionOption>.of(content.options);
+    options[optionIndex] = options[optionIndex].copyWith(text: text);
+    updateBranchContent(ref, content.copyWith(options: options));
+  }
+
+  /// يحدّث الإجابة النموذجية لفرع (فراغ/مقالي) — تُعرض وتُحرَّر في «نموذج
+  /// الإجابة» على الورقة.
+  void updateBranchModelAnswer(BranchRef ref, String modelAnswer) {
+    if (!_document.containsRef(ref)) {
+      return;
+    }
+    final content = _document.branchAt(ref).content;
+    if (content.modelAnswer == modelAnswer) {
+      return;
+    }
+    updateBranchContent(ref, content.copyWith(modelAnswer: modelAnswer));
   }
 
   /// **القاعدة الذهبية**: يبدّل المحتوى والدرجة فقط بين خانتين؛ العناوين

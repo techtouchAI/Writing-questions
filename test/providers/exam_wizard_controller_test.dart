@@ -3,6 +3,7 @@ import 'package:writing_questions_app/layout/paper_metrics.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/floating_element.dart';
+import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 
@@ -62,6 +63,24 @@ void main() {
       expect(before.totalMarks, 0);
     });
 
+    test('a new branch starts with the same question type as the previous branch', () {
+      final controller = ExamWizardController();
+      const first = BranchRef(questionIndex: 0, branchIndex: 0);
+      controller.updateBranchType(first, QuestionType.multipleChoice);
+      controller.updateBranchText(first, 'اختر الإجابة الصحيحة');
+
+      controller.addBranch(0);
+      controller.addBranch(0);
+
+      final branches = controller.currentQuestion.branches;
+      expect(branches, hasLength(3));
+      // الفروع الجديدة تتبع «خيارات الفرع (أ)»: نفس النوع ونموذج الخيارات.
+      expect(branches[1].content.type, QuestionType.multipleChoice);
+      expect(branches[2].content.type, QuestionType.multipleChoice);
+      expect(branches[1].content.options, hasLength(4));
+      expect(branches[1].content.text, isEmpty);
+    });
+
     test('removeQuestion keeps at least one question and renumbers', () {
       final controller = ExamWizardController();
       controller.goToNextQuestion();
@@ -76,6 +95,44 @@ void main() {
       controller.removeQuestion(0);
       expect(controller.questions, hasLength(1));
       expect(controller.questions.single.questionNumber, 1);
+    });
+  });
+
+  group('ExamWizardController in-place editing', () {
+    test('updates an option text while keeping the correct-answer flag', () {
+      final controller = ExamWizardController();
+      const ref = BranchRef(questionIndex: 0, branchIndex: 0);
+      controller.updateBranchType(ref, QuestionType.multipleChoice);
+      controller.updateBranchContent(
+        ref,
+        controller.document.branchAt(ref).content.copyWith(
+              options: <QuestionOption>[
+                QuestionOption(text: 'الأولى', isCorrect: true),
+                QuestionOption(text: 'الثانية'),
+              ],
+            ),
+      );
+
+      controller.updateBranchOptionText(ref, 1, 'الثانية معدّلة');
+      controller.updateBranchOptionText(ref, 9, 'خارج النطاق');
+
+      final options = controller.document.branchAt(ref).content.options;
+      expect(options[0].text, 'الأولى');
+      expect(options[0].isCorrect, isTrue);
+      expect(options[1].text, 'الثانية معدّلة');
+      expect(options[1].isCorrect, isFalse);
+      expect(controller.document.branchAt(ref).content.type, QuestionType.multipleChoice);
+    });
+
+    test('updates the model answer used by the teacher version', () {
+      final controller = ExamWizardController();
+      const ref = BranchRef(questionIndex: 0, branchIndex: 0);
+      expect(controller.document.branchAt(ref).content.modelAnswer, isEmpty);
+
+      controller.updateBranchModelAnswer(ref, 'الإجابة: العَلم');
+
+      expect(controller.document.branchAt(ref).content.modelAnswer, 'الإجابة: العَلم');
+      expect(controller.document.branchAt(ref).content.type, QuestionType.essay);
     });
   });
 

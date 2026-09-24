@@ -8,8 +8,10 @@ import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/question_model.dart';
+import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
+import 'package:writing_questions_app/views/widgets/tex_text.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 import 'package:writing_questions_app/views/wizard/exam_wizard_screen.dart';
 
@@ -276,6 +278,151 @@ void main() {
         find.descendant(of: source, matching: find.byType(TextField)).first,
       );
       expect(firstField.controller!.text, 'محتوى س2 ب');
+    });
+
+    testWidgets('edits multiple-choice options and the ministry category in place', (tester) async {
+      tester.view.physicalSize = const Size(1000, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final controller = ExamWizardController(
+        document: ExamDocument(
+          name: 'خيارات',
+          header: ExamHeaderModel.ministerialDefault(subject: 'التربية الإسلامية'),
+          questions: <QuestionModel>[
+            QuestionModel(
+              id: 'q1',
+              questionNumber: 1,
+              category: 'أحكام التلاوة',
+              branches: <BranchModel>[
+                BranchModel(
+                  id: 'q1a',
+                  content: BranchContent(
+                    type: QuestionType.multipleChoice,
+                    text: 'اختر الإجابة الصحيحة',
+                    options: <QuestionOption>[
+                      QuestionOption(text: 'الخيار الأول', isCorrect: true),
+                      QuestionOption(text: 'الخيار الثاني'),
+                    ],
+                  ),
+                  marks: 2,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pumpWidget(_preview(controller));
+      await tester.pump();
+
+      // عنوان القسم الوزاري ونصوص الخيارات: نصوص قابلة للتحرير في مكانها.
+      await tester.enterText(find.byKey(const ValueKey<String>('category-q1')), 'الحفظ');
+      await tester.pump();
+      expect(controller.document.questions.single.category, 'الحفظ');
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('option-q1a-1')),
+        'الخيار الثاني المعدّل',
+      );
+      await tester.pump();
+
+      final options = controller.document
+          .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
+          .content
+          .options;
+      expect(options[1].text, 'الخيار الثاني المعدّل');
+      // علامة الإجابة الصحيحة لا تتغيّر بتحرير نص الخيار.
+      expect(options[0].isCorrect, isTrue);
+      expect(options[1].isCorrect, isFalse);
+    });
+
+    testWidgets('hides teacher answers in the student sheet and edits them in the answer view',
+        (tester) async {
+      tester.view.physicalSize = const Size(1000, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final controller = ExamWizardController(document: _previewDocument(questionCount: 1));
+      await tester.pumpWidget(_preview(controller));
+      await tester.pump();
+
+      const answerKey = ValueKey<String>('answer-q1a');
+      expect(find.byKey(answerKey), findsNothing, reason: 'ورقة الطالب لا تُظهر الإجابة النموذجية');
+
+      await tester.tap(find.byTooltip('عرض نموذج الإجابة'));
+      await tester.pump();
+      expect(find.byKey(answerKey), findsOneWidget);
+
+      await tester.enterText(find.byKey(answerKey), 'إجابة نموذجية مفصّلة');
+      await tester.pump();
+      expect(
+        controller.document
+            .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
+            .content
+            .modelAnswer,
+        'إجابة نموذجية مفصّلة',
+      );
+
+      await tester.tap(find.byTooltip('عرض ورقة الطالب'));
+      await tester.pump();
+      expect(find.byKey(answerKey), findsNothing);
+    });
+
+    testWidgets('renders a Quranic verse with the Quranic font and centering', (tester) async {
+      tester.view.physicalSize = const Size(1000, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final controller = ExamWizardController(
+        document: ExamDocument(
+          name: 'تربية إسلامية',
+          header: ExamHeaderModel.ministerialDefault(subject: 'التربية الإسلامية'),
+          questions: <QuestionModel>[
+            QuestionModel(
+              id: 'q1',
+              questionNumber: 1,
+              branches: <BranchModel>[
+                BranchModel(
+                  id: 'q1a',
+                  content: BranchContent(
+                    type: QuestionType.essay,
+                    text: '﴿ إنا أعطيناك الكوثر ﴾',
+                  ),
+                  marks: 3,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pumpWidget(_preview(controller));
+      await tester.pump();
+
+      final verseText = tester.widget<TexText>(find.byType(TexText));
+      expect(verseText.textAlign, TextAlign.center, reason: 'الآية القائمة بذاتها تُوسَّط');
+      expect(verseText.quranStyle?.fontFamily, 'Amiri');
+
+      // المقطع القرآني المرسوم فعلاً يلبس الخط القرآني.
+      final renderedSpans = <InlineSpan>[];
+      for (final richText in tester.widgetList<RichText>(
+        find.descendant(of: find.byType(TexText), matching: find.byType(RichText)),
+      )) {
+        final span = richText.text;
+        if (span is TextSpan && span.children != null) {
+          renderedSpans.addAll(span.children!);
+        }
+      }
+      final verseSpans = renderedSpans
+          .whereType<TextSpan>()
+          .where((span) => span.text?.contains('﴿') ?? false)
+          .toList(growable: false);
+      expect(verseSpans, isNotEmpty, reason: 'الآية تُعرض عرضاً منسّقاً على الورقة');
+      for (final span in verseSpans) {
+        expect(span.style?.fontFamily, 'Amiri');
+      }
     });
 
     testWidgets('exposes the floating tools toolbar above the pages', (tester) async {
