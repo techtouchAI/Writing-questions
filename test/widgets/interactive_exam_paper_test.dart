@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/models/main_question.dart';
+import 'package:writing_questions_app/models/question_branch.dart';
+import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/views/widgets/formula_inserter.dart';
 import 'package:writing_questions_app/views/widgets/interactive_exam_paper.dart';
 import 'package:writing_questions_app/views/widgets/smart_exam_toolbar.dart';

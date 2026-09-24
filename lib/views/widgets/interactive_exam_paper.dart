@@ -4,6 +4,8 @@ import '../../models/exam_canvas_geometry.dart';
 import '../../models/floating_element.dart';
 import '../../models/label_alphabet.dart';
 import '../../models/main_question.dart';
+import '../../models/question_branch.dart';
+import '../../models/question_type.dart';
 import '../../models/tex_content.dart';
 import 'floating_element_view.dart';
 import 'formula_inserter.dart';

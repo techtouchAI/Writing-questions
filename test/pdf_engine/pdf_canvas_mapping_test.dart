@@ -7,6 +7,7 @@ import 'package:writing_questions_app/models/exam_canvas_geometry.dart';
 import 'package:writing_questions_app/models/exam_header.dart';
 import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/models/main_question.dart';
+import 'package:writing_questions_app/models/question_branch.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/pdf_engine/floating_elements_pdf.dart';
 import 'package:writing_questions_app/pdf_engine/pdf_engine.dart';

@@ -7,8 +7,6 @@ import 'question_branch.dart';
 import 'question_option.dart';
 import 'question_type.dart';
 
-export 'question_branch.dart';
-export 'question_option.dart';
 
 /// السؤال الرئيسي في ورقة الاختبار (س1، س2...) — عقدة الشجرة الهرمية.
 ///

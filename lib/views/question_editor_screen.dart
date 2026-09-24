@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../models/difficulty.dart';
 import '../models/label_alphabet.dart';
 import '../models/main_question.dart';
+import '../models/question_branch.dart';
+import '../models/question_option.dart';
 import '../models/question_type.dart';
 import '../models/subject_catalog.dart';
 import '../providers/question_provider.dart';

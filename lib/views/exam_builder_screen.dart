@@ -9,6 +9,7 @@ import '../models/exam_duration_rules.dart';
 import '../models/exam_header.dart';
 import '../models/floating_element.dart';
 import '../models/main_question.dart';
+import '../models/question_branch.dart';
 import '../models/question_type.dart';
 import '../providers/exam_provider.dart';
 import '../providers/question_provider.dart';

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/main_question.dart';
+import '../../models/question_option.dart';
 
 class McqOptionsEditor extends StatefulWidget {
   const McqOptionsEditor({
