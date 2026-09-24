@@ -21,6 +21,13 @@ dependencies:
   # محرك رسم الـ PDF: الإصداران مثبّتان بدقة لضمان توافق CI مع Flutter 3.22.3.
   pdf: 3.11.3
   printing: 5.13.4
+  # عرض صيغ LaTeX (جذور/كسور/تكاملات) داخل لوحة الورقة التفاعلية.
+  # 0.7.2 (وليس 0.3.x ولا 0.7.4): 0.3.x يتطلب provider ^5.0.0 (تعارض مع ^6.1.2)،
+  # و0.7.4 يستخدم RenderObjectWithLayoutCallbackMixin من Flutter 3.32 فقط.
+  # واجهة Math.tex(text, mathStyle:, textStyle:) ثابتة في كل سلسلة 0.7.x.
+  flutter_math_fork: 0.7.2
+  # اختيار الصور من بلاطة الوسائط للعناصر الحرة فوق الورقة.
+  image_picker: 1.1.2
   provider: ^6.1.2
   share_plus: ^10.0.0
   shared_preferences: ^2.3.2

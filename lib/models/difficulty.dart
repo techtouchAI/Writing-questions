@@ -14,10 +14,17 @@ enum Difficulty {
     }
   }
 
-  static Difficulty fromString(String val) {
-    return Difficulty.values.firstWhere(
-      (e) => e.name == val,
-      orElse: () => Difficulty.medium,
-    );
+  /// يقرأ المستوى **بشكل صارم**؛ القيم المجهولة ترمي [FormatException]
+  /// بدل إخفاء تلف البيانات خلف قيمة افتراضية.
+  ///
+  /// القيم المفقودة تماماً تُعامَل لاحقاً في طبقة النماذج (افتراضي: متوسط).
+  static Difficulty parse(String? value) {
+    final normalized = value?.trim() ?? '';
+    for (final difficulty in Difficulty.values) {
+      if (difficulty.name == normalized) {
+        return difficulty;
+      }
+    }
+    throw FormatException('Difficulty: مستوى صعوبة غير معروف (${value ?? 'مفقود'}).');
   }
 }

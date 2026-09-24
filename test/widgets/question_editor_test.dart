@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/question_provider.dart';
 import 'package:writing_questions_app/views/question_editor_screen.dart';
+import 'package:writing_questions_app/views/widgets/ltr_numeric_field.dart';
 
 Widget _wrap(Widget child, QuestionProvider provider) {
   return MultiProvider(
@@ -60,6 +61,16 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('صح أو خطأ').last);
     await tester.pumpAndSettle();
+
+    // درجة السؤال = مجموع درجات الفروع (roll-up) — لا بد من درجة فرع موجبة.
+    // تُدخَّل بعد اختيار النوع لأن enterText يمرّر النموذج لأسفل.
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(LtrNumericField),
+        matching: find.byType(TextFormField),
+      ),
+      '2',
+    );
 
     // Save from the app bar action.
     await tester.tap(find.byIcon(Icons.check));

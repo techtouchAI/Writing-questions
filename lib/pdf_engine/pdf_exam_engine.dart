@@ -4,8 +4,11 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../models/exam.dart';
+import '../models/exam_canvas_geometry.dart';
+import '../models/floating_element.dart';
 import 'exam_fonts.dart';
 import 'exam_strategy.dart';
+import 'floating_elements_pdf.dart';
 import 'strategy_registry.dart';
 
 /// محرك رسم ورقة الاختبار على «لوحة» A4 ثابتة (Canvas).
@@ -44,8 +47,8 @@ class PdfExamEngine {
     final effectiveStrategy = strategy ?? ExamStrategies.forSubject(exam.header.subject);
 
     final items = <IndexedQuestion>[
-      for (var index = 0; index < exam.questions.length; index++)
-        IndexedQuestion(number: index + 1, question: exam.questions[index]),
+      for (var index = 0; index < exam.mainQuestions.length; index++)
+        IndexedQuestion(number: index + 1, question: exam.mainQuestions[index]),
     ];
 
     final document = pw.Document(
@@ -58,25 +61,41 @@ class PdfExamEngine {
     document.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(pageMarginMillimeters),
+        // الصفحة كاملة بلا هوامش للمُنشئ: اللوحة التفاعلية والصفحة تشتركان
+        // في نظام إحداثيات واحد (A4 كامل) لنقل مطابقة 1:1 (خطوة 5.2).
+        margin: pw.EdgeInsets.zero,
         textDirection: pw.TextDirection.rtl,
         theme: pw.ThemeData.withFont(base: loadedFonts.regular, bold: loadedFonts.bold),
         build: (context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+          // ترجمة Stack الواجهة إلى pw.Stack بنفس الطبقات (خطوة 5.1):
+          // الطبقة السفلية = النص (بهوامش 15مم)، والعلوية = العناصر العائمة.
+          return pw.Stack(
             children: <pw.Widget>[
-              _buildHeader(exam, isTeacherVersion, effectiveStyles),
-              pw.Divider(thickness: 2, color: ExamTextStyles.primaryColor),
-              _buildNotes(exam, effectiveStyles),
-              pw.Expanded(
-                child: _buildAutoFitQuestions(
-                  items,
-                  effectiveStrategy,
-                  effectiveStyles,
-                  isTeacherVersion,
+              pw.Positioned(
+                left: _margin,
+                top: _margin,
+                right: _margin,
+                bottom: _margin,
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                  children: <pw.Widget>[
+                    _buildHeader(exam, isTeacherVersion, effectiveStyles),
+                    pw.Divider(thickness: 2, color: ExamTextStyles.primaryColor),
+                    _buildNotes(exam, effectiveStyles),
+                    pw.Expanded(
+                      child: _buildAutoFitQuestions(
+                        items,
+                        effectiveStrategy,
+                        effectiveStyles,
+                        isTeacherVersion,
+                      ),
+                    ),
+                    _buildFooter(exam, effectiveStyles),
+                  ],
                 ),
               ),
-              _buildFooter(exam, effectiveStyles),
+              for (final element in exam.floatingElements)
+                _buildPositionedElement(element),
             ],
           );
         },
@@ -86,6 +105,28 @@ class PdfExamEngine {
     return document.save();
   }
 
+  /// ينقل إحداثيات اللوحة (بكسل منطقي) إلى نقاط PDF **بنفس النِسب** —
+  /// الصورة/الشكل يظهر تماماً حيث أسقطه المستخدم على ورقة الـ WYSIWYG.
+  pw.Widget _buildPositionedElement(FloatingElement element) {
+    final pageWidth = PdfPageFormat.a4.width;
+    final pageHeight = PdfPageFormat.a4.height;
+    final left = ExamCanvasGeometry.normalizedX(element.dx) * pageWidth;
+    final top = ExamCanvasGeometry.normalizedY(element.dy) * pageHeight;
+    final width = ExamCanvasGeometry.normalizedWidth(element.width) * pageWidth;
+    final height =
+        ExamCanvasGeometry.normalizedHeight(element.height) * pageHeight;
+
+    return pw.Positioned(
+      left: left,
+      top: top,
+      child: FloatingElementsPdf.build(
+        element,
+        widthPt: width,
+        heightPt: height,
+      ),
+    );
+  }
+
   pw.Widget _buildAutoFitQuestions(
     List<IndexedQuestion> items,
     ExamStrategy strategy,
@@ -93,24 +134,32 @@ class PdfExamEngine {
     bool isTeacherVersion,
   ) {
     if (items.isEmpty) {
-      return pw.Center(
+      // لا تمرير عمودي: النص يبدأ من أعلى الورقة مباشرة (topRight).
+      return pw.Align(
+        alignment: pw.Alignment.topRight,
         child: pw.Text('لا توجد أسئلة في هذا الاختبار.', style: styles.note),
       );
     }
 
     // اللبنة الأساسية لضمان صفحة واحدة: عرض ثابت ثم تصغير تلقائي
     // بتناسق كامل عند تجاوز المحتوى المساحة المتبقية.
+    // مرساة رأسية صارمة: الرسم يبدأ من أعلى فور الترويسة
+    // (pw.Alignment.topCenter) — لا تمركز رأسي قسري (MainAxisAlignment.center
+    // أو AlignmentDirectional أو أغلفة Center مشابهة).
     return pw.Directionality(
       textDirection: strategy.textDirection,
-      child: pw.FittedBox(
-        fit: pw.BoxFit.scaleDown,
-        alignment: pw.AlignmentDirectional.topStart,
-        child: pw.SizedBox(
-          width: contentWidth,
-          child: strategy.buildQuestionsList(
-            items,
-            styles: styles,
-            isTeacherVersion: isTeacherVersion,
+      child: pw.Align(
+        alignment: pw.Alignment.topCenter,
+        child: pw.FittedBox(
+          fit: pw.BoxFit.scaleDown,
+          alignment: pw.Alignment.topCenter,
+          child: pw.SizedBox(
+            width: contentWidth,
+            child: strategy.buildQuestionsList(
+              items,
+              styles: styles,
+              isTeacherVersion: isTeacherVersion,
+            ),
           ),
         ),
       ),
@@ -220,7 +269,7 @@ class PdfExamEngine {
       children: <pw.Widget>[
         pw.SizedBox(height: 5),
         pw.Text(
-          'عدد الأسئلة: ${exam.questions.length} سؤال  |  '
+          'عدد الأسئلة: ${exam.mainQuestions.length} سؤال  |  '
           'الدرجة الكلية: ${_formatMarks(exam.totalMarks)} درجة',
           textAlign: pw.TextAlign.center,
           style: styles.small,

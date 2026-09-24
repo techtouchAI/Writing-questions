@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/exam.dart';
 import '../models/exam_header.dart';
-import '../models/question.dart';
+import '../models/main_question.dart';
 
 class StorageLoadResult<T> {
   const StorageLoadResult({
@@ -44,11 +44,11 @@ class StorageService {
     return SharedPreferences.getInstance;
   }
 
-  Future<StorageLoadResult<Question>> loadQuestions() {
-    return _loadList(_questionsKey, Question.fromJson);
+  Future<StorageLoadResult<MainQuestion>> loadQuestions() {
+    return _loadList(_questionsKey, MainQuestion.fromJson);
   }
 
-  Future<void> saveQuestions(List<Question> questions) {
+  Future<void> saveQuestions(List<MainQuestion> questions) {
     return _saveList(_questionsKey, questions.map((question) => question.toJson()));
   }
 

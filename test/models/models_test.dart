@@ -2,20 +2,24 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/models/difficulty.dart';
 import 'package:writing_questions_app/models/exam.dart';
 import 'package:writing_questions_app/models/exam_header.dart';
-import 'package:writing_questions_app/models/question.dart';
+import 'package:writing_questions_app/models/main_question.dart';
+import 'package:writing_questions_app/models/question_branch.dart';
+import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 
 void main() {
-  group('Question serialization', () {
+  group('MainQuestion map round-trip', () {
     test('round-trips through its map representation', () {
-      final question = Question(
+      final question = MainQuestion(
         title: 'ما هي عاصمة العراق؟ <&>',
         type: QuestionType.multipleChoice,
         difficulty: Difficulty.hard,
-        marks: 2.5,
         subject: 'الجغرافيا',
         topic: 'عواصم',
-        options: [
+        branches: <QuestionBranch>[
+          QuestionBranch(text: 'اختر الإجابة', marks: 2.5),
+        ],
+        options: <QuestionOption>[
           QuestionOption(text: 'بغداد', isCorrect: true),
           QuestionOption(text: 'البصرة'),
         ],
@@ -23,13 +27,14 @@ void main() {
         explanation: 'معلومة عامة',
       );
 
-      final restored = Question.fromMap(question.toMap());
+      final restored = MainQuestion.fromMap(question.toMap());
 
       expect(restored.id, question.id);
       expect(restored.title, question.title);
       expect(restored.type, QuestionType.multipleChoice);
       expect(restored.difficulty, Difficulty.hard);
       expect(restored.marks, 2.5);
+      expect(restored.branches.single.text, 'اختر الإجابة');
       expect(restored.options.length, 2);
       expect(restored.options.first.text, 'بغداد');
       expect(restored.options.first.isCorrect, isTrue);
@@ -37,61 +42,104 @@ void main() {
       expect(restored.explanation, 'معلومة عامة');
       expect(restored.createdAt, question.createdAt);
     });
-
-    test('applies safe defaults for missing or corrupt fields', () {
-      final question = Question.fromMap(const {
-        'title': 'سؤال',
-        'type': 'نوع_غير_معروف',
-        'difficulty': 'مستوى_غير_معروف',
-        'options': 'ليست قائمة',
-      });
-
-      expect(question.type, QuestionType.multipleChoice);
-      expect(question.difficulty, Difficulty.medium);
-      expect(question.marks, 1.0);
-      expect(question.options, isEmpty);
-      expect(question.subject, 'عام');
-    });
-
-    test('copyWith preserves identity fields', () {
-      final original = Question(title: 'أصل', type: QuestionType.essay, marks: 1.0);
-      final copy = original.copyWith(title: 'معدّل', marks: 3.0);
-
-      expect(copy.id, original.id);
-      expect(copy.createdAt, original.createdAt);
-      expect(copy.title, 'معدّل');
-      expect(copy.marks, 3.0);
-      expect(original.title, 'أصل', reason: 'copyWith must not mutate the source');
-    });
   });
 
-  group('Exam', () {
-    test('totalMarks sums question marks', () {
+  group('Exam hierarchical model', () {
+    test('totalMarks rolls up from every QuestionBranch of every question', () {
       final exam = Exam(
         name: 'اختبار',
         header: ExamHeader(),
-        questions: [
-          Question(title: 'س1', type: QuestionType.trueFalse, marks: 2.0),
-          Question(title: 'س2', type: QuestionType.trueFalse, marks: 1.5),
-          Question(title: 'س3', type: QuestionType.trueFalse, marks: 0.5),
+        mainQuestions: <MainQuestion>[
+          MainQuestion(
+            title: 'س1',
+            type: QuestionType.essay,
+            branches: <QuestionBranch>[
+              QuestionBranch(text: 'أ', marks: 2),
+              QuestionBranch(text: 'ب', marks: 1.5),
+            ],
+          ),
+          MainQuestion(
+            title: 'س2',
+            type: QuestionType.trueFalse,
+            branches: <QuestionBranch>[QuestionBranch(text: '', marks: 0.5)],
+          ),
         ],
       );
 
+      expect(exam.mainQuestions, hasLength(2));
       expect(exam.totalMarks, 4.0);
     });
 
-    test('round-trips through JSON', () {
+    test('round-trips through JSON with branches and floating elements', () {
       final exam = Exam(
         name: 'الاختبار النهائي',
-        questions: [Question(title: 'س1', type: QuestionType.trueFalse)],
+        mainQuestions: <MainQuestion>[
+          MainQuestion(
+            title: 'س1',
+            type: QuestionType.trueFalse,
+            branches: <QuestionBranch>[QuestionBranch(text: '', marks: 3)],
+          ),
+        ],
       );
 
       final restored = Exam.fromJson(exam.toJson());
 
       expect(restored.id, exam.id);
       expect(restored.name, exam.name);
-      expect(restored.questions, hasLength(1));
-      expect(restored.questions.first.type, QuestionType.trueFalse);
+      expect(restored.mainQuestions, hasLength(1));
+      expect(restored.mainQuestions.first.type, QuestionType.trueFalse);
+      expect(restored.mainQuestions.first.marks, 3);
+      expect(restored.floatingElements, isEmpty);
+    });
+
+    test('preserves manual ordering (no hidden shuffle)', () {
+      final exam = Exam(
+        name: 'ترتيب يدوي',
+        mainQuestions: <MainQuestion>[
+          MainQuestion(title: 'الأول', type: QuestionType.essay),
+          MainQuestion(title: 'الثاني', type: QuestionType.essay),
+          MainQuestion(title: 'الثالث', type: QuestionType.essay),
+        ],
+      );
+
+      final restored = Exam.fromJson(exam.toJson());
+      expect(
+        restored.mainQuestions.map((question) => question.title).toList(),
+        <String>['الأول', 'الثاني', 'الثالث'],
+      );
+    });
+
+    test('reads legacy exams saved under the old questions key', () {
+      final restored = Exam.fromMap(<String, dynamic>{
+        'id': 'exam-legacy',
+        'name': 'اختبار قديم',
+        'questions': <Map<String, dynamic>>[
+          <String, dynamic>{'title': 'س1', 'type': 'essay', 'marks': 2},
+        ],
+      });
+
+      expect(restored.mainQuestions, hasLength(1));
+      expect(restored.mainQuestions.first.marks, 2);
+    });
+
+    test('throws for a corrupted question so storage can isolate the record', () {
+      expect(
+        () => Exam.fromMap(<String, dynamic>{
+          'name': 'اختبار تالف',
+          'mainQuestions': <Map<String, dynamic>>[
+            <String, dynamic>{'title': 'س1', 'type': 'نوع_غير_معروف'},
+          ],
+        }),
+        throwsA(isA<FormatException>()),
+      );
+
+      expect(
+        () => Exam.fromMap(<String, dynamic>{
+          'name': 'اختبار تالف',
+          'mainQuestions': 'ليست قائمة',
+        }),
+        throwsA(isA<FormatException>()),
+      );
     });
   });
 }

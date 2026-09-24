@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/models/exam.dart';
 import 'package:writing_questions_app/models/exam_header.dart';
-import 'package:writing_questions_app/models/question.dart';
+import 'package:writing_questions_app/models/main_question.dart';
+import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/views/widgets/export_dialog.dart';
 
@@ -12,8 +13,8 @@ Widget _wrap(Widget child) {
   );
 }
 
-Question _sampleQuestion() {
-  return Question(
+MainQuestion _sampleQuestion() {
+  return MainQuestion(
     title: 'ما هي عاصمة العراق؟',
     type: QuestionType.multipleChoice,
     options: <QuestionOption>[
@@ -30,7 +31,7 @@ void main() {
     final exam = Exam(
       name: 'اختبار رسمي',
       header: ExamHeader(),
-      questions: [_sampleQuestion()],
+      mainQuestions: [_sampleQuestion()],
     );
 
     await tester.pumpWidget(_wrap(ExportDialog(exam: exam)));
@@ -49,7 +50,7 @@ void main() {
 
   testWidgets('question bank export keeps the Excel option', (tester) async {
     await tester.pumpWidget(
-      _wrap(ExportDialog(questions: <Question>[_sampleQuestion()])),
+      _wrap(ExportDialog(questions: <MainQuestion>[_sampleQuestion()])),
     );
     await tester.pumpAndSettle();
 

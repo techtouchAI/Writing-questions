@@ -5,7 +5,9 @@ import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/models/exam.dart';
 import 'package:writing_questions_app/models/exam_header.dart';
-import 'package:writing_questions_app/models/question.dart';
+import 'package:writing_questions_app/models/main_question.dart';
+import 'package:writing_questions_app/models/question_branch.dart';
+import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/services/docx_export_service.dart';
 
@@ -24,34 +26,36 @@ void main() {
     return Exam(
       name: 'اختبار تجريبي',
       header: ExamHeader(),
-      questions: [
-        Question(
+      mainQuestions: [
+        MainQuestion(
           title: 'ما هي عاصمة العراق؟',
           type: QuestionType.multipleChoice,
-          marks: 2,
+          branches: <QuestionBranch>[QuestionBranch(text: '', marks: 2)],
           options: [
             QuestionOption(text: 'بغداد', isCorrect: true),
             QuestionOption(text: 'البصرة'),
           ],
           explanation: 'معلومة عامة',
         ),
-        Question(
+        MainQuestion(
           title: 'الأرض تدور حول الشمس.',
           type: QuestionType.trueFalse,
+          branches: <QuestionBranch>[QuestionBranch(text: '', marks: 1)],
           options: [
             QuestionOption(text: 'صح', isCorrect: true),
             QuestionOption(text: 'خطأ'),
           ],
         ),
-        Question(
+        MainQuestion(
           title: 'وحدة قياس التيار هي _____.',
           type: QuestionType.fillInTheBlank,
+          branches: <QuestionBranch>[QuestionBranch(text: '', marks: 1)],
           modelAnswer: 'الأمبير',
         ),
-        Question(
+        MainQuestion(
           title: 'ناقش دور الطاقة المتجددة.',
           type: QuestionType.essay,
-          marks: 5,
+          branches: <QuestionBranch>[QuestionBranch(text: '', marks: 5)],
           modelAnswer: 'عناصر الإجابة',
         ),
       ],
@@ -82,8 +86,8 @@ void main() {
   test('escapes XML-sensitive characters in Arabic content', () async {
     final exam = Exam(
       name: 'اختبار',
-      questions: [
-        Question(title: 'سؤال بعلامات <&>" خاصة', type: QuestionType.essay),
+      mainQuestions: [
+        MainQuestion(title: 'سؤال بعلامات <&>" خاصة', type: QuestionType.essay),
       ],
     );
 

@@ -1,14 +1,23 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/exam.dart';
+import '../models/exam_canvas_geometry.dart';
 import '../models/exam_duration_rules.dart';
 import '../models/exam_header.dart';
-import '../models/question.dart';
+import '../models/floating_element.dart';
+import '../models/main_question.dart';
+import '../models/question_branch.dart';
+import '../models/question_type.dart';
 import '../providers/exam_provider.dart';
 import '../providers/question_provider.dart';
 import 'widgets/export_dialog.dart';
+import 'widgets/formula_inserter.dart';
+import 'widgets/interactive_exam_paper.dart';
 import 'widgets/question_card.dart';
+import 'widgets/smart_exam_toolbar.dart';
 
 class ExamBuilderScreen extends StatefulWidget {
   const ExamBuilderScreen({super.key, this.existingExam});
@@ -39,7 +48,9 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
 
   late String _examType;
   DateTime? _examDate;
-  late List<Question> _selectedQuestions;
+  late List<MainQuestion> _selectedQuestions;
+  late List<FloatingElement> _floatingElements;
+  final FormulaInserter _formulaInserter = FormulaInserter();
   bool _saveAsDefaultHeader = false;
   bool _isSaving = false;
 
@@ -55,13 +66,15 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
 
     final examProvider = context.read<ExamProvider>();
     final existingExam = widget.existingExam;
     final header = existingExam?.header ?? examProvider.defaultHeader;
 
-    _selectedQuestions = List<Question>.from(existingExam?.questions ?? const []);
+    _selectedQuestions = List<MainQuestion>.from(existingExam?.mainQuestions ?? const []);
+    _floatingElements =
+        List<FloatingElement>.from(existingExam?.floatingElements ?? const []);
     _nameController = TextEditingController(
       text: existingExam?.name ?? 'اختبار منتصف الفصل',
     );
@@ -174,7 +187,8 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
       id: widget.existingExam?.id,
       name: _nameController.text.trim(),
       header: header,
-      questions: _selectedQuestions,
+      mainQuestions: _selectedQuestions,
+      floatingElements: _floatingElements,
       createdAt: widget.existingExam?.createdAt,
     );
 
@@ -221,11 +235,11 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
     );
   }
 
-  void _toggleQuestion(Question question, bool selected) {
+  void _toggleQuestion(MainQuestion question, bool selected) {
     setState(() {
       if (selected) {
         if (!_selectedQuestions.any((item) => item.id == question.id)) {
-          _selectedQuestions = <Question>[..._selectedQuestions, question];
+          _selectedQuestions = <MainQuestion>[..._selectedQuestions, question];
         }
       } else {
         _selectedQuestions = _selectedQuestions
@@ -235,7 +249,7 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
     });
   }
 
-  void _toggleAllQuestions(List<Question> questions) {
+  void _toggleAllQuestions(List<MainQuestion> questions) {
     final questionIds = questions.map((question) => question.id).toSet();
     final selectedIds = _selectedQuestions.map((question) => question.id).toSet();
     final allSelected = questionIds.isNotEmpty && questionIds.every(selectedIds.contains);
@@ -246,7 +260,7 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
             .where((question) => !questionIds.contains(question.id))
             .toList(growable: false);
       } else {
-        _selectedQuestions = List<Question>.from(questions);
+        _selectedQuestions = List<MainQuestion>.from(questions);
       }
     });
   }
@@ -278,6 +292,7 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
               icon: const Icon(Icons.checklist),
               text: 'الأسئلة (${_selectedQuestions.length})',
             ),
+            const Tab(icon: Icon(Icons.dashboard_customize), text: 'لوحة الورقة'),
           ],
         ),
         actions: <Widget>[
@@ -307,15 +322,6 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
-                        TextButton.icon(
-                          icon: const Icon(Icons.shuffle, size: 18),
-                          label: const Text('خلط'),
-                          onPressed: _isSaving
-                              ? null
-                              : () {
-                                  setState(() => _selectedQuestions.shuffle());
-                                },
-                        ),
                         TextButton(
                           onPressed: _isSaving || questions.isEmpty
                               ? null
@@ -360,6 +366,7 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
               ),
             ],
           ),
+          _buildCanvasTab(),
         ],
       ),
       bottomNavigationBar: SafeArea(
@@ -385,6 +392,102 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
         ),
       ),
     );
+  }
+
+  /// لوحة الورقة التفاعلية (WYSIWYG): أداة ذكية + ورقة A4 قابلة للتحرير
+  /// والإفلات — حالتها هي مصدر الترتيب الوحيد (بلا خلط آلي).
+  Widget _buildCanvasTab() {
+    return Column(
+      children: <Widget>[
+        SmartExamToolbar(
+          inserter: _formulaInserter,
+          onInsertText: _formulaInserter.insert,
+          onAddImage: _addImageElement,
+          onAddShape: _addShapeElement,
+          onAddMainQuestion: _addMainQuestionOnCanvas,
+          onAddBranch: _addBranchOnCanvas,
+        ),
+        Expanded(
+          child: InteractiveExamPaper(
+            header: PaperHeaderFields(
+              institutionName: _institutionController,
+              directorate: _directorateController,
+              subject: _subjectController,
+              gradeStage: _gradeStageController,
+              section: _sectionController,
+              instructor: _instructorController,
+              title: _titleController,
+              examType: _examType,
+              academicYear: _academicYearController,
+              duration: _durationController,
+              generalInstructions: _instructionsController,
+            ),
+            mainQuestions: _selectedQuestions,
+            floatingElements: _floatingElements,
+            inserter: _formulaInserter,
+            onChanged: () => setState(() {}),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _addImageElement(List<int> bytes) {
+    setState(() {
+      _floatingElements.add(
+        FloatingElement(
+          type: FloatingElementType.image,
+          bytes: Uint8List.fromList(bytes),
+          dx: ExamCanvasGeometry.defaultElementDx,
+          dy: ExamCanvasGeometry.defaultElementDy,
+          width: ExamCanvasGeometry.defaultElementSize,
+          height: ExamCanvasGeometry.defaultElementSize,
+        ),
+      );
+    });
+  }
+
+  void _addShapeElement(FloatingShapeType shape) {
+    setState(() {
+      _floatingElements.add(
+        FloatingElement(
+          type: FloatingElementType.shape,
+          shape: shape,
+          dx: ExamCanvasGeometry.defaultElementDx,
+          dy: ExamCanvasGeometry.defaultElementDy,
+          width: ExamCanvasGeometry.defaultElementSize,
+          height: ExamCanvasGeometry.defaultElementSize,
+        ),
+      );
+    });
+  }
+
+  void _addMainQuestionOnCanvas() {
+    setState(() {
+      _selectedQuestions.add(
+        MainQuestion(
+          title: '',
+          type: QuestionType.essay,
+          branches: <QuestionBranch>[QuestionBranch(text: '', marks: 1)],
+        ),
+      );
+    });
+  }
+
+  void _addBranchOnCanvas() {
+    setState(() {
+      if (_selectedQuestions.isEmpty) {
+        _selectedQuestions.add(
+          MainQuestion(
+            title: '',
+            type: QuestionType.essay,
+            branches: <QuestionBranch>[QuestionBranch(text: '', marks: 0)],
+          ),
+        );
+        return;
+      }
+      _selectedQuestions.last.branches.add(QuestionBranch(text: '', marks: 0));
+    });
   }
 
   Widget _buildHeaderForm(double totalMarks) {

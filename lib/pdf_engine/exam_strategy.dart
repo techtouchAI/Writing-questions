@@ -2,15 +2,18 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../models/label_alphabet.dart';
-import '../models/question.dart';
+import '../models/main_question.dart';
+import '../models/question_branch.dart';
 import '../models/question_type.dart';
+import '../models/tex_content.dart';
+import 'latex/latex_svg_renderer.dart';
 
-/// سؤال مع رقمه المتسلسل داخل ورقة الامتحان (س1، س2... أو Q1...).
+/// سؤال رئيسي مع رقمه المتسلسل داخل ورقة الامتحان (س1، س2... أو Q1...).
 class IndexedQuestion {
   const IndexedQuestion({required this.number, required this.question});
 
   final int number;
-  final Question question;
+  final MainQuestion question;
 }
 
 /// مجموعة أسئلة متتالية تشترك في نفس القسم (القواعد/الأدب/...).
@@ -49,7 +52,7 @@ List<QuestionGroup> groupQuestionsByCategory(List<IndexedQuestion> items) {
   return groups;
 }
 
-String? _normalizedCategory(Question question) {
+String? _normalizedCategory(MainQuestion question) {
   final category = question.category.trim();
   return category.isEmpty ? null : category;
 }
@@ -149,6 +152,8 @@ abstract class ExamStrategy {
   String get marksUnit;
 
   /// بناء القائمة كاملة من الأسئلة المرقّمة [items].
+  ///
+  /// ترتيب [items] هو ترتيب المعلم اليدوي 100% (بدون أي خلط آلي).
   pw.Widget buildQuestionsList(
     List<IndexedQuestion> items, {
     required ExamTextStyles styles,
@@ -207,11 +212,14 @@ abstract class ExamStrategy {
     bool isTeacherVersion,
   ) {
     final question = item.question;
+    // الدرجة المعروضة = مجموع درجات الفروع آلياً (roll-up).
+    // نص السؤال قد يتضمن صيغ LaTeX ($...$) تُرسم متجهة عبر pw.SvgImage
+    // (مطابقة 1:1 لمعاينة اللوحة — خطوة 5.3).
     final children = <pw.Widget>[
-      pw.Text(
+      _renderText(
         '${questionNumberLabel(item.number)}: ${question.title} '
         '[${_formatMarks(question.marks)} $marksUnit]',
-        style: styles.question,
+        styles.question,
       ),
     ];
 
@@ -227,9 +235,11 @@ abstract class ExamStrategy {
             mainAxisSize: pw.MainAxisSize.min,
             children: [
               for (var index = 0; index < branches.length; index++)
-                pw.Text(
+                _renderText(
+                  // التسمية ديناميكية من الفهرس دائماً (أ، ب، ج...) —
+                  // لا تسمية مخزنة تُحدث فجوات عند حذف فرع وسط القائمة.
                   _branchLabel(index, branches[index]),
-                  style: styles.body,
+                  styles.body,
                 ),
             ],
           ),
@@ -263,16 +273,84 @@ abstract class ExamStrategy {
     );
   }
 
+  /// يرسم نصاً علمياً: مقاطع LaTeX ($...$ / $$...$$) تتحول إلى رسوم SVG
+  /// متجهة عبر [LatexSvgRenderer] وتُدمج مع النص العادي بنفس الترتيب
+  /// (مطابقة 1:1 لعرض `TexText` على اللوحة التفاعلية).
+  ///
+  /// الصيغ غير المدعومة (نص عربي داخل المعادلة مثلاً) تُرسم كنص عادي
+  /// حتى لا تنكسر الورقة أبداً.
+  pw.Widget _renderText(String text, pw.TextStyle style) {
+    final segments = TexContent.split(text);
+    if (!segments.any((segment) => segment.isMath)) {
+      return pw.Text(text, style: style);
+    }
+
+    final fontSize = style.fontSize ?? 10.5;
+    final rows = <pw.Widget>[];
+    var inline = <pw.Widget>[];
+
+    void flushInline() {
+      if (inline.isEmpty) {
+        return;
+      }
+      rows.add(
+        pw.Wrap(
+          spacing: 1,
+          runSpacing: 2,
+          crossAxisAlignment: pw.WrapCrossAlignment.center,
+          children: List<pw.Widget>.of(inline),
+        ),
+      );
+      inline = <pw.Widget>[];
+    }
+
+    for (final segment in segments) {
+      if (!segment.isMath) {
+        if (segment.text.isNotEmpty) {
+          inline.add(pw.Text(segment.text, style: style));
+        }
+        continue;
+      }
+      final latex = LatexSvgRenderer.tryToSvg(segment.text, fontSize: fontSize);
+      final fallback = segment.isBlock
+          ? pw.Text('\$\$${segment.text}\$\$', style: style)
+          : pw.Text('\$${segment.text}\$', style: style);
+      if (latex == null) {
+        inline.add(fallback);
+        continue;
+      }
+      final image = pw.SvgImage(
+        svg: latex.svg,
+        width: latex.width,
+        height: latex.height,
+      );
+      if (segment.isBlock) {
+        flushInline();
+        rows.add(pw.Center(child: image));
+      } else {
+        inline.add(image);
+      }
+    }
+    flushInline();
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      mainAxisSize: pw.MainAxisSize.min,
+      children: rows,
+    );
+  }
+
+  /// تسمية الفرع تُولَّد **من فهرسه فقط** (أ، ب، ج...) دون قراءة أي حقل
+  /// تسمية مخزن؛ درجة الفرع تُلحق بالتسمية نفسها.
   String _branchLabel(int index, QuestionBranch branch) {
-    final manual = branch.label.trim();
-    final label = manual.isEmpty ? LabelAlphabet.at(index) : manual;
+    final label = LabelAlphabet.at(index);
     final marksSuffix =
         branch.marks > 0 ? ' [${_formatMarks(branch.marks)} $marksUnit]' : '';
     return '$label) ${branch.text}$marksSuffix';
   }
 
   pw.Widget _buildTypeBody(
-    Question question,
+    MainQuestion question,
     ExamTextStyles styles,
     bool isTeacherVersion,
   ) {
@@ -289,7 +367,7 @@ abstract class ExamStrategy {
   }
 
   pw.Widget _buildOptions(
-    Question question,
+    MainQuestion question,
     ExamTextStyles styles,
     bool isTeacherVersion,
   ) {
@@ -317,7 +395,7 @@ abstract class ExamStrategy {
   }
 
   pw.Widget _buildTrueFalse(
-    Question question,
+    MainQuestion question,
     ExamTextStyles styles,
     bool isTeacherVersion,
   ) {
@@ -339,7 +417,7 @@ abstract class ExamStrategy {
   }
 
   pw.Widget _buildFillInTheBlank(
-    Question question,
+    MainQuestion question,
     ExamTextStyles styles,
     bool isTeacherVersion,
   ) {
@@ -361,7 +439,7 @@ abstract class ExamStrategy {
   }
 
   pw.Widget _buildEssay(
-    Question question,
+    MainQuestion question,
     ExamTextStyles styles,
     bool isTeacherVersion,
   ) {

@@ -2,18 +2,22 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pdf/pdf.dart';
 import 'package:writing_questions_app/models/exam.dart';
 import 'package:writing_questions_app/models/exam_header.dart';
-import 'package:writing_questions_app/models/question.dart';
+import 'package:writing_questions_app/models/main_question.dart';
+import 'package:writing_questions_app/models/question_branch.dart';
+import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/pdf_engine/pdf_engine.dart';
 
 Exam _buildExam({required int questionCount, String subject = 'اللغة العربية'}) {
-  final questions = <Question>[
+  final questions = <MainQuestion>[
     for (var index = 0; index < questionCount; index++)
-      Question(
+      MainQuestion(
         title: 'السؤال رقم ${index + 1}: ما الذي يليه مما سبق يوافق القاعدة النحوية '
             'المعتمدة في الكتاب المدرسي مع نص إضافي لاختبار الالتفاف والحجم؟',
         type: index.isEven ? QuestionType.multipleChoice : QuestionType.essay,
-        marks: index.isEven ? 2 : 5,
+        branches: <QuestionBranch>[
+          QuestionBranch(text: '', marks: index.isEven ? 2 : 5),
+        ],
         category: index.isEven ? 'القواعد' : 'الأدب',
         options: index.isEven
             ? <QuestionOption>[
@@ -40,7 +44,7 @@ Exam _buildExam({required int questionCount, String subject = 'اللغة الع
       duration: '',
       examDate: DateTime(2026, 2, 10),
     ),
-    questions: questions,
+    mainQuestions: questions,
   );
 }
 
@@ -81,7 +85,7 @@ void main() {
     });
 
     test('renders an empty exam without crashing', () async {
-      final exam = Exam(name: 'فارغ', questions: const <Question>[]);
+      final exam = Exam(name: 'فارغ', mainQuestions: const <MainQuestion>[]);
       final bytes = await const PdfExamEngine().generate(
         exam: exam,
         isTeacherVersion: false,

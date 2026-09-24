@@ -1,13 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/models/label_alphabet.dart';
-import 'package:writing_questions_app/models/question.dart';
+import 'package:writing_questions_app/models/main_question.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/pdf_engine/pdf_engine.dart';
 
 IndexedQuestion _item(int number, {String category = '', String title = ''}) {
   return IndexedQuestion(
     number: number,
-    question: Question(
+    question: MainQuestion(
       title: title.isEmpty ? 'سؤال $number' : title,
       type: QuestionType.essay,
       category: category,

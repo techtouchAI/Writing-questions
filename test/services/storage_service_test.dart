@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:writing_questions_app/models/question.dart';
+import 'package:writing_questions_app/models/main_question.dart';
+import 'package:writing_questions_app/models/question_branch.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/services/storage_service.dart';
 
@@ -18,7 +19,11 @@ void main() {
     test('round-trips questions through persistence', () async {
       final storage = StorageService(prefs: prefs);
       await storage.saveQuestions([
-        Question(title: 'سؤال محفوظ', type: QuestionType.essay, marks: 4),
+        MainQuestion(
+          title: 'سؤال محفوظ',
+          type: QuestionType.essay,
+          branches: <QuestionBranch>[QuestionBranch(text: '', marks: 4)],
+        ),
       ]);
 
       final loaded = await storage.loadQuestions();
@@ -33,6 +38,8 @@ void main() {
       await prefs.setStringList('app_saved_questions', [
         '{invalid json',
         '{"title":"سؤال سليم","type":"essay"}',
+        '{"title":"نوع مجهول","type":"نوع_غير_معروف"}',
+        '{"title":"فروع تالفة","type":"essay","branches":"ليست قائمة"}',
         '"not-even-an-object"',
       ]);
 

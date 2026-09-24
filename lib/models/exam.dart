@@ -3,46 +3,82 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 
 import 'exam_header.dart';
-import 'question.dart';
+import 'floating_element.dart';
+import 'main_question.dart';
 
+/// نموذج الاختبار (ExamModel) — جذر الشجرة الهرمية للورقة.
+///
+/// البنية الصارمة:
+/// - [Exam] ← قائمة `List<MainQuestion>` ([mainQuestions]: س1، س2...).
+/// - [MainQuestion] ← قائمة `List<QuestionBranch>` (أ، ب، ج...) ودرجته
+///   الكلية مجموع درجات فروعه آلياً.
+/// - [floatingElements] عناصر حرة (صور/أشكال) فوق لوحة الورقة بإحداثيات
+///   مطلقة تنتقل 1:1 إلى `pw.Positioned` في محرك الـ PDF.
+///
+/// **الترتيب يدوي 100%**: لا خلط (`shuffle`) آلي إطلاقاً — ترتيب
+/// [mainQuestions] هو ترتيب ورقة الامتحان كما يظهر في اللوحة التفاعلية.
 class Exam {
-  final String id;
-  final String name;
-  final ExamHeader header;
-  final List<Question> questions;
-  final DateTime createdAt;
-
   Exam({
     String? id,
     required this.name,
     ExamHeader? header,
-    List<Question>? questions,
+    List<MainQuestion>? mainQuestions,
+    List<FloatingElement>? floatingElements,
     DateTime? createdAt,
   })  : id = id ?? const Uuid().v4(),
         header = header ?? ExamHeader(),
-        questions = List<Question>.unmodifiable(questions ?? const []),
+        mainQuestions = List<MainQuestion>.from(mainQuestions ?? const []),
+        floatingElements = List<FloatingElement>.from(floatingElements ?? const []),
         createdAt = createdAt ?? DateTime.now();
 
+  final String id;
+  final String name;
+  final ExamHeader header;
+
+  /// أسئلة الاختبار الرئيسية بترتيبها اليدوي (س1، س2...).
+  final List<MainQuestion> mainQuestions;
+
+  /// العناصر الحرة (صور/أشكال) فوق لوحة الورقة.
+  final List<FloatingElement> floatingElements;
+  final DateTime createdAt;
+
+  /// الدرجة الكلية = مجموع درجات الأسئلة الرئيسية = مجموع درجات كل الفروع.
   double get totalMarks {
-    return questions.fold<double>(0, (sum, question) => sum + question.marks);
+    return mainQuestions.fold<double>(
+      0,
+      (sum, question) => sum + question.marks,
+    );
   }
 
   Map<String, dynamic> toMap() {
-    return {
+    return <String, dynamic>{
       'id': id,
       'name': name,
       'header': header.toMap(),
-      'questions': questions.map((question) => question.toMap()).toList(growable: false),
+      'mainQuestions':
+          mainQuestions.map((question) => question.toMap()).toList(growable: false),
+      'floatingElements': floatingElements
+          .map((element) => element.toMap())
+          .toList(growable: false),
       'createdAt': createdAt.toIso8601String(),
     };
   }
 
+  /// يقرأ اختباراً من مخزون JSON/Map **بشكل صارم**.
+  ///
+  /// أي سؤال تالف أو عنصر عائم تالف يرمي [FormatException] ليُعزل السجل
+  /// كاملاً بواسطة [StorageService] دون المساس بالاختبارات السليمة.
+  ///
+  /// التوافق الخلفي: يُقرأ مفتاح `mainQuestions` الجديد، وإلا مفتاح
+  /// `questions` القديم (السجلات المكتوبة بالإصدارات السابقة).
   factory Exam.fromMap(Map<String, dynamic> map) {
+    final rawQuestions = map['mainQuestions'] ?? map['questions'];
     return Exam(
       id: _nonEmptyString(map['id']),
       name: _nonEmptyString(map['name']) ?? 'اختبار غير معنون',
       header: _headerFromValue(map['header']),
-      questions: _questionsFromValue(map['questions']),
+      mainQuestions: _questionsFromValue(rawQuestions),
+      floatingElements: _floatingElementsFromValue(map['floatingElements']),
       createdAt: _dateFromValue(map['createdAt']) ?? DateTime.now(),
     );
   }
@@ -60,13 +96,15 @@ class Exam {
   Exam copyWith({
     String? name,
     ExamHeader? header,
-    List<Question>? questions,
+    List<MainQuestion>? mainQuestions,
+    List<FloatingElement>? floatingElements,
   }) {
     return Exam(
       id: id,
       name: name ?? this.name,
       header: header ?? this.header,
-      questions: questions ?? this.questions,
+      mainQuestions: mainQuestions ?? this.mainQuestions,
+      floatingElements: floatingElements ?? this.floatingElements,
       createdAt: createdAt,
     );
   }
@@ -77,15 +115,44 @@ class Exam {
         : ExamHeader();
   }
 
-  static List<Question> _questionsFromValue(Object? value) {
+  static List<MainQuestion> _questionsFromValue(Object? value) {
+    if (value == null) {
+      return <MainQuestion>[];
+    }
     if (value is! List) {
-      return const [];
+      throw const FormatException('Exam: حقل الأسئلة (mainQuestions) يجب أن يكون قائمة.');
     }
 
-    return value
-        .whereType<Map>()
-        .map((question) => Question.fromMap(Map<String, dynamic>.from(question)))
-        .toList(growable: false);
+    final questions = <MainQuestion>[];
+    for (final entry in value) {
+      if (entry is! Map) {
+        throw const FormatException(
+          'Exam: تركيب أسئلة تالف — عنصر السؤال يجب أن يكون خريطة.',
+        );
+      }
+      questions.add(MainQuestion.fromMap(Map<String, dynamic>.from(entry)));
+    }
+    return questions;
+  }
+
+  static List<FloatingElement> _floatingElementsFromValue(Object? value) {
+    if (value == null) {
+      return <FloatingElement>[];
+    }
+    if (value is! List) {
+      throw const FormatException('Exam: حقل العناصر العائمة يجب أن يكون قائمة.');
+    }
+
+    final elements = <FloatingElement>[];
+    for (final entry in value) {
+      if (entry is! Map) {
+        throw const FormatException(
+          'Exam: تركيب عناصر عائمة تالف — العنصر يجب أن يكون خريطة.',
+        );
+      }
+      elements.add(FloatingElement.fromMap(Map<String, dynamic>.from(entry)));
+    }
+    return elements;
   }
 
   static DateTime? _dateFromValue(Object? value) {
