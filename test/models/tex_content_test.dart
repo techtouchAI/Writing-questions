@@ -20,7 +20,7 @@ void main() {
       expect(segments[2], const TexSegment.plain(' بالتفصيل'));
     });
 
-    test('splits block math ($\$...\$\$) as its own segment', () {
+    test('splits block math (\$\$...\$\$) as its own segment', () {
       final segments = TexContent.split(r'قبل' '\n' r'$$\frac{a}{b}$$' '\n' r'بعد');
 
       expect(segments, hasLength(3));

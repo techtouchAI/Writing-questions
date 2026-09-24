@@ -50,7 +50,7 @@ void main() {
 
   testWidgets('question bank export keeps the Excel option', (tester) async {
     await tester.pumpWidget(
-      _wrap(ExportDialog(mainQuestions: <MainQuestion>[_sampleQuestion()])),
+      _wrap(ExportDialog(questions: <MainQuestion>[_sampleQuestion()])),
     );
     await tester.pumpAndSettle();
 

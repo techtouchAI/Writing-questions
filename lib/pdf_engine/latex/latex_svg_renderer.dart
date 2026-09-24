@@ -48,7 +48,7 @@ abstract final class LatexSvgRenderer {
     final unit = fontSize / MathStrokeFont.unitsPerEm;
     final metrics = node.measure(unit);
 
-    final pad = 1.0;
+    const pad = 1.0;
     final width = metrics.width + 2 * pad;
     final height = metrics.ascent + metrics.descent + 2 * pad;
     final baselineY = metrics.ascent + pad;

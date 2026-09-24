@@ -21,7 +21,7 @@ void main() {
 
   test('produces a decodable workbook with the expected rows', () async {
     final file = await ExcelExportService.exportQuestionsToExcel(
-      mainQuestions: [
+      questions: [
         MainQuestion(
           title: 'سؤال اختيار من متعدد',
           type: QuestionType.multipleChoice,
@@ -81,7 +81,7 @@ void main() {
 
   test('sanitizes illegal worksheet characters', () async {
     final file = await ExcelExportService.exportQuestionsToExcel(
-      mainQuestions: [MainQuestion(title: 'سؤال', type: QuestionType.trueFalse)],
+      questions: [MainQuestion(title: 'سؤال', type: QuestionType.trueFalse)],
       sheetName: 'اسم يحتوي: رموز* ممنوعة[] وتجاوز الثين والثلثين من الحروف 12345',
       fileBaseName: 'تصدير',
       outputDirectory: tempDir,

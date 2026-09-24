@@ -389,7 +389,7 @@ abstract final class MathStrokeFont {
       <double>[7, 4, 5, 2.5, 3, 2.5, 1.5, 4, 1.5, 6, 3, 7.5, 5, 7.5, 7, 6, 7, 3, 5.5, 2],
       <double>[7, 3, 7, 6.5, 5.5, 8, 3, 8, 1, 7],
     ]),
-    '$': GlyphStrokes(7.5, <List<double>>[
+    r'$': GlyphStrokes(7.5, <List<double>>[
       <double>[6.5, 2, 4.5, 0, 2, 0, 0, 2, 0, 3.5, 2, 5.5, 5, 6.5, 7, 8, 7, 9, 5, 11, 2, 11, 0, 9],
       <double>[3.5, -1.5, 3.5, 12],
     ]),

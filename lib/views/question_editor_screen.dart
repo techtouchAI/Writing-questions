@@ -9,6 +9,7 @@ import '../models/question_option.dart';
 import '../models/question_type.dart';
 import '../models/subject_catalog.dart';
 import '../providers/question_provider.dart';
+import 'widgets/ltr_numeric_field.dart';
 import 'widgets/mcq_options_editor.dart';
 
 /// مسودة فرع واحد أثناء التحرير (تحكمات نصية مستقلة تُطرح عند الحذف).
