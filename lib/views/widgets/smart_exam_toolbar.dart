@@ -1,0 +1,292 @@
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../../models/floating_element.dart';
+import 'formula_inserter.dart';
+
+/// يفتح بلاطة صور النظام ويعيد بايتات الصورة المختارة (أو null عند الإلغاء).
+Future<List<int>?> pickImageBytes() async {
+  try {
+    final picker = ImagePicker();
+    final file = await picker.pickImage(source: ImageSource.gallery);
+    if (file == null) {
+      return null;
+    }
+    return file.readAsBytes();
+  } catch (_) {
+    // المنصات غير المدعومة أو رفض الصلاحية: لا نُسقط اللوحة.
+    return null;
+  }
+}
+
+/// أداة سياقية ذكية فوق لوحة الورقة بخمسة تبويبات:
+/// نص | رياضيات | كيمياء | فيزياء | وسائط.
+///
+/// - **نص**: عناصر نصية سريعة (سؤال/فرع/قسم).
+/// - **رياضيات/كيمياء/فيزياء**: مكتبة صيغ LaTeX تُدرج مباشرة في الحقل
+///   النشط على اللوحة ($...$ سطرية أو $$...$$ منفردة) عبر [FormulaInserter].
+/// - **وسائط**: إدراج صور (بلاطة الوسائط) وأشكال هندسية (مثلث/دائرة/مربع)
+///   كعناصر حرة فوق الورقة.
+class SmartExamToolbar extends StatelessWidget {
+  const SmartExamToolbar({
+    super.key,
+    required this.inserter,
+    required this.onInsertText,
+    required this.onAddImage,
+    required this.onAddShape,
+    this.onAddMainQuestion,
+    this.onAddBranch,
+  });
+
+  final FormulaInserter inserter;
+  final ValueChanged<String> onInsertText;
+  final ValueChanged<List<int>> onAddImage;
+  final ValueChanged<FloatingShapeType> onAddShape;
+  final VoidCallback? onAddMainQuestion;
+  final VoidCallback? onAddBranch;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: DefaultTabController(
+        length: 5,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const TabBar(
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              tabs: <Widget>[
+                Tab(icon: Icon(Icons.text_fields, size: 18), text: 'نص'),
+                Tab(icon: Icon(Icons.functions, size: 18), text: 'رياضيات'),
+                Tab(icon: Icon(Icons.science, size: 18), text: 'كيمياء'),
+                Tab(icon: Icon(Icons.bolt, size: 18), text: 'فيزياء'),
+                Tab(icon: Icon(Icons.perm_media, size: 18), text: 'وسائط'),
+              ],
+            ),
+            SizedBox(
+              height: 56,
+              child: TabBarView(
+                children: <Widget>[
+                  _TextTab(
+                    onInsertText: onInsertText,
+                    onAddMainQuestion: onAddMainQuestion,
+                    onAddBranch: onAddBranch,
+                  ),
+                  _FormulaTab(
+                    inserter: inserter,
+                    formulas: _mathFormulas,
+                  ),
+                  _FormulaTab(
+                    inserter: inserter,
+                    formulas: _chemistryFormulas,
+                  ),
+                  _FormulaTab(
+                    inserter: inserter,
+                    formulas: _physicsFormulas,
+                  ),
+                  _MediaTab(onAddImage: onAddImage, onAddShape: onAddShape),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// صيغة جاهزة: [label] للعرض و[latex] لمصدر الصيغة.
+class FormulaSnippet {
+  const FormulaSnippet(this.label, this.latex);
+
+  final String label;
+  final String latex;
+}
+
+const List<FormulaSnippet> _mathFormulas = <FormulaSnippet>[
+  FormulaSnippet('كسر', r'\frac{a}{b}'),
+  FormulaSnippet('جذر', r'\sqrt{x}'),
+  FormulaSnippet('أس', r'x^{2}'),
+  FormulaSnippet('فرعي', r'x_{1}'),
+  FormulaSnippet('متكامل', r'\int_{a}^{b} f(x)\,dx'),
+  FormulaSnippet('مجموع', r'\sum_{i=1}^{n} i'),
+  FormulaSnippet('نهاية', r'\lim_{x \to 0}'),
+  FormulaSnippet('معادلة', r'\frac{-b \pm \sqrt{b^2-4ac}}{2a}'),
+];
+
+const List<FormulaSnippet> _chemistryFormulas = <FormulaSnippet>[
+  FormulaSnippet('ماء', r'H_2O'),
+  FormulaSnippet('ثاني أكسيد الكربون', r'CO_2'),
+  FormulaSnippet('حمض الكبريتيك', r'H_2SO_4'),
+  FormulaSnippet('الأمونيا', r'NH_3'),
+  FormulaSnippet('سهم تفاعل', r'\rightarrow'),
+  FormulaSnippet('تفاعل عكوس', r'\rightleftharpoons'),
+  FormulaSnippet('معادلة أيونية', r'Ag^+ + Cl^- \rightarrow AgCl'),
+];
+
+const List<FormulaSnippet> _physicsFormulas = <FormulaSnippet>[
+  FormulaSnippet('قوانين نيوتن', r'F = ma'),
+  FormulaSnippet('نسبية', r'E = mc^2'),
+  FormulaSnippet('قانون أوم', r'V = IR'),
+  FormulaSnippet('الشغل', r'W = F \cdot d'),
+  FormulaSnippet('سرعة', r'v = \frac{s}{t}'),
+  FormulaSnippet('متغير', r'\vec{F}'),
+];
+
+class _TextTab extends StatelessWidget {
+  const _TextTab({
+    required this.onInsertText,
+    required this.onAddMainQuestion,
+    required this.onAddBranch,
+  });
+
+  final ValueChanged<String> onInsertText;
+  final VoidCallback? onAddMainQuestion;
+  final VoidCallback? onAddBranch;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      children: <Widget>[
+        if (onAddMainQuestion != null)
+          _ChipButton(
+            icon: Icons.add_circle_outline,
+            label: 'سؤال جديد',
+            onTap: onAddMainQuestion!,
+          ),
+        if (onAddBranch != null)
+          _ChipButton(
+            icon: Icons.alt_route,
+            label: 'فرع جديد',
+            onTap: onAddBranch!,
+          ),
+        _ChipButton(
+          icon: Icons.wrap_text,
+          label: 'سطر جديد',
+          onTap: () => onInsertText('\n'),
+        ),
+        _ChipButton(
+          icon: Icons.notes,
+          label: 'ملاحظة للمعلم',
+          onTap: () => onInsertText('ملاحظة: '),
+        ),
+      ],
+    );
+  }
+}
+
+class _FormulaTab extends StatelessWidget {
+  const _FormulaTab({required this.inserter, required this.formulas});
+
+  final FormulaInserter inserter;
+  final List<FormulaSnippet> formulas;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      children: <Widget>[
+        for (final formula in formulas)
+          _ChipButton(
+            icon: Icons.functions,
+            label: formula.label,
+            // إدراج سطرية $...$ بالضغط الطويل منفرداً $$...$$.
+            onTap: () => inserter.insert('\$${formula.latex}\$'),
+            onLongPress: () => inserter.insert('\$\$${formula.latex}\$\$'),
+          ),
+      ],
+    );
+  }
+}
+
+class _MediaTab extends StatelessWidget {
+  const _MediaTab({required this.onAddImage, required this.onAddShape});
+
+  final ValueChanged<List<int>> onAddImage;
+  final ValueChanged<FloatingShapeType> onAddShape;
+
+  Future<void> _pickImage() async {
+    final bytes = await pickImageBytes();
+    if (bytes != null) {
+      onAddImage(bytes);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      children: <Widget>[
+        _ChipButton(
+          icon: Icons.image,
+          label: 'صورة',
+          onTap: _pickImage,
+        ),
+        _ChipButton(
+          icon: Icons.change_history,
+          label: 'مثلث',
+          onTap: () => onAddShape(FloatingShapeType.triangle),
+        ),
+        _ChipButton(
+          icon: Icons.circle_outlined,
+          label: 'دائرة',
+          onTap: () => onAddShape(FloatingShapeType.circle),
+        ),
+        _ChipButton(
+          icon: Icons.crop_square,
+          label: 'مربع',
+          onTap: () => onAddShape(FloatingShapeType.square),
+        ),
+      ],
+    );
+  }
+}
+
+class _ChipButton extends StatelessWidget {
+  const _ChipButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.onLongPress,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: colorScheme.outlineVariant),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(icon, size: 16, color: colorScheme.primary),
+              const SizedBox(width: 6),
+              Text(label, style: const TextStyle(fontSize: 12)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
