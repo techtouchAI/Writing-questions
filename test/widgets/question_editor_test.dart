@@ -56,7 +56,14 @@ void main() {
     // Fill the question text.
     await tester.enterText(find.byType(TextFormField).first, 'الشمس نجم ثابت');
 
+    // Switch the question type to true/false through the dropdown.
+    await tester.tap(find.byType(DropdownButtonFormField<QuestionType>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('صح أو خطأ').last);
+    await tester.pumpAndSettle();
+
     // درجة السؤال = مجموع درجات الفروع (roll-up) — لا بد من درجة فرع موجبة.
+    // تُدخَّل بعد اختيار النوع لأن enterText يمرّر النموذج لأسفل.
     await tester.enterText(
       find.descendant(
         of: find.byType(LtrNumericField),
@@ -64,12 +71,6 @@ void main() {
       ),
       '2',
     );
-
-    // Switch the question type to true/false through the dropdown.
-    await tester.tap(find.byType(DropdownButtonFormField<QuestionType>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('صح أو خطأ').last);
-    await tester.pumpAndSettle();
 
     // Save from the app bar action.
     await tester.tap(find.byIcon(Icons.check));
