@@ -222,8 +222,14 @@ void main() {
 
     test('isolates a corrupt question through FormatException', () {
       final map = _twoQuestionDocument().toMap();
-      (map['questions'] as List)[0] = 'ليس خريطة';
+      map['questions'] = <Object?>['ليس خريطة', ...(map['questions'] as List).skip(1)];
       expect(() => ExamDocument.fromMap(map), throwsFormatException);
+
+      final badBranch = _twoQuestionDocument().toMap();
+      final question = Map<String, dynamic>.from((badBranch['questions'] as List).first as Map);
+      question['branches'] = <Object?>[42];
+      badBranch['questions'] = <Object?>[question];
+      expect(() => ExamDocument.fromMap(badBranch), throwsFormatException);
     });
 
     test('converts to the legacy Exam model for existing exporters', () {
