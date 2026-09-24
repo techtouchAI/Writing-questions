@@ -158,9 +158,15 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
+                // تلتفّ الفلاتر بدلاً من التمرير الأفقي حتى تبقى كلّ الأزرار ضمن
+                // حدود الشاشة، والإزاحة الإضافية (end = اليسار في RTL) تضمن ظهور
+                // القوائم المنبثقة كاملة دون قصّ عند الحافة اليسرى.
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 12),
+                  child: Wrap(
+                    alignment: WrapAlignment.start,
+                    spacing: 16,
+                    runSpacing: 8,
                     children: <Widget>[
                       DropdownButton<QuestionType?>(
                         value: provider.selectedTypeFilter,
@@ -180,7 +186,6 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
                         ],
                         onChanged: provider.setTypeFilter,
                       ),
-                      const SizedBox(width: 16),
                       DropdownButton<Difficulty?>(
                         value: provider.selectedDifficultyFilter,
                         hint: const Text('مستوى الصعوبة'),
@@ -199,7 +204,6 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
                         ],
                         onChanged: provider.setDifficultyFilter,
                       ),
-                      const SizedBox(width: 16),
                       DropdownButton<String?>(
                         value: provider.selectedSubjectFilter,
                         hint: const Text('المادة'),
@@ -229,12 +233,16 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: <Widget>[
-                Text(
-                  'عدد الأسئلة المعروضة: ${filteredQuestions.length}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                    color: Colors.grey,
+                Expanded(
+                  child: Text(
+                    'عدد الأسئلة المعروضة: ${filteredQuestions.length}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: Colors.grey,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 if (hasActiveFilters)

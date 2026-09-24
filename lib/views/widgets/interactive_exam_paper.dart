@@ -173,11 +173,15 @@ class _InteractiveExamPaperState extends State<InteractiveExamPaper> {
 
   @override
   Widget build(BuildContext context) {
+    // تمرير رأسي + أفقي: ورقة A4 أعرض من شاشة الهاتف، وبدون التمرير الأفقي
+    // تُقصّ جانبا الورقة خارج حدود الصفحة ولا يمكن الوصول إليهما.
     return SingleChildScrollView(
       child: Center(
-        child: Container(
-          width: ExamCanvasGeometry.width,
-          height: ExamCanvasGeometry.height,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Container(
+            width: ExamCanvasGeometry.width,
+            height: ExamCanvasGeometry.height,
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: Colors.white,
@@ -222,6 +226,7 @@ class _InteractiveExamPaperState extends State<InteractiveExamPaper> {
                   child: _buildFloatingElement(element),
                 ),
             ],
+          ),
           ),
         ),
       ),

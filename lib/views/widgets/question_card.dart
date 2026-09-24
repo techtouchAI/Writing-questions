@@ -147,9 +147,11 @@ class QuestionCard extends StatelessWidget {
                 children: [
                   const Icon(Icons.help_outline, size: 18, color: Colors.blue),
                   const SizedBox(width: 8),
-                  Text(
-                    'الإجابة الصحيحة: ${question.options.firstWhere((o) => o.isCorrect, orElse: () => QuestionOption(text: "غير محدد")).text}',
-                    style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.green),
+                  Expanded(
+                    child: Text(
+                      'الإجابة الصحيحة: ${question.options.firstWhere((o) => o.isCorrect, orElse: () => QuestionOption(text: "غير محدد")).text}',
+                      style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.green),
+                    ),
                   ),
                 ],
               ),
