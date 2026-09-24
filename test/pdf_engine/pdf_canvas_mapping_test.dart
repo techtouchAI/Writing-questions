@@ -121,7 +121,7 @@ void main() {
       final source = String.fromCharCodes(bytes);
 
       expect(_countPages(bytes), 1);
-      expect(source, contains('/Subtype /Image'));
+      expect(source, contains('/Subtype/Image'));
     });
 
     test('renders LaTeX question titles as SVG without breaking the page', () async {

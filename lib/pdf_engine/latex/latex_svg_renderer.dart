@@ -549,6 +549,9 @@ class _Parser {
   }
 
   _Node _parseAtom() {
+    if (_pos >= source.length) {
+      throw const FormatException('LaTeX: توقّع مدخلاً بعد الأمر لكن انتهى النص.');
+    }
     final char = source[_pos];
     if (char == '{') {
       _pos++;
@@ -659,6 +662,9 @@ class _Parser {
       return _AccentNode(_parseScriptArgument());
     }
     if (name == 'left' || name == 'right') {
+      if (_pos >= source.length) {
+        throw const FormatException('LaTeX: أمر left أو right بلا قوس بعده.');
+      }
       final char = source[_pos];
       _pos++;
       return _scaledBracket(char);

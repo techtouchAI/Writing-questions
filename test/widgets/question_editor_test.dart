@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/question_provider.dart';
 import 'package:writing_questions_app/views/question_editor_screen.dart';
+import 'package:writing_questions_app/views/widgets/ltr_numeric_field.dart';
 
 Widget _wrap(Widget child, QuestionProvider provider) {
   return MultiProvider(
@@ -54,6 +55,15 @@ void main() {
 
     // Fill the question text.
     await tester.enterText(find.byType(TextFormField).first, 'الشمس نجم ثابت');
+
+    // درجة السؤال = مجموع درجات الفروع (roll-up) — لا بد من درجة فرع موجبة.
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(LtrNumericField),
+        matching: find.byType(TextFormField),
+      ),
+      '2',
+    );
 
     // Switch the question type to true/false through the dropdown.
     await tester.tap(find.byType(DropdownButtonFormField<QuestionType>));

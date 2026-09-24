@@ -40,6 +40,7 @@ void main() {
         MainQuestion(
           title: 'الأرض تدور حول الشمس.',
           type: QuestionType.trueFalse,
+          branches: <QuestionBranch>[QuestionBranch(text: '', marks: 1)],
           options: [
             QuestionOption(text: 'صح', isCorrect: true),
             QuestionOption(text: 'خطأ'),
@@ -48,6 +49,7 @@ void main() {
         MainQuestion(
           title: 'وحدة قياس التيار هي _____.',
           type: QuestionType.fillInTheBlank,
+          branches: <QuestionBranch>[QuestionBranch(text: '', marks: 1)],
           modelAnswer: 'الأمبير',
         ),
         MainQuestion(

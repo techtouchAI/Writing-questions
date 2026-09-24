@@ -70,13 +70,13 @@ void main() {
 
     // MCQ row: correct answers joined, options spread across columns.
     expect(text(1, 1), 'سؤال اختيار من متعدد');
-    expect(text(7, 1), 'أ');
-    expect(text(8, 1), 'ب');
-    expect(text(11, 1), 'أ');
+    expect(text(8, 1), 'أ');
+    expect(text(9, 1), 'ب');
+    expect(text(12, 1), 'أ');
 
     // Essay row: model answer lands in the answer column.
     expect(text(1, 2), 'سؤال مقالي');
-    expect(text(11, 2), 'الإجابة النموذجية');
+    expect(text(12, 2), 'الإجابة النموذجية');
   });
 
   test('sanitizes illegal worksheet characters', () async {
