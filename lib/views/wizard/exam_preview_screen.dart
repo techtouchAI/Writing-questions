@@ -548,53 +548,59 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final label = layout.branchLabel(ref.branchIndex);
     final selected = controller.selectedBranch == ref;
 
+    // مقبض السحب وحده يبدأ السحب (حتى لا يتعارض مع تحديد النص في الحقول)؛
+    // الهدف هو كتلة الفرع كاملة.
+    final dragHandle = LongPressDraggable<BranchRef>(
+      data: ref,
+      feedback: Material(
+        elevation: 4,
+        color: Colors.white,
+        child: Container(
+          width: 320,
+          padding: const EdgeInsets.all(8),
+          child: Text(
+            '$label) ${branch.content.text}',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: PaperStyles.body(layout),
+          ),
+        ),
+      ),
+      childWhenDragging: Icon(Icons.drag_indicator, size: 16, color: Colors.grey.shade300),
+      child: Tooltip(
+        message: 'اضغط مطولاً واسحب لتبديل المحتوى مع فرع آخر',
+        child: Icon(Icons.drag_indicator, size: 16, color: Colors.grey.shade600),
+      ),
+    );
+
     return DragTarget<BranchRef>(
       key: ValueKey<String>('branch-target-${branch.id}'),
       onWillAcceptWithDetails: (details) => details.data != ref,
       onAcceptWithDetails: (details) => controller.swapBranchContent(details.data, ref),
       builder: (context, candidates, _) {
         final highlighted = candidates.isNotEmpty;
-        final body = _buildBranchBody(controller, layout, ref, branch, label);
-        return LongPressDraggable<BranchRef>(
-          data: ref,
-          feedback: Material(
-            elevation: 4,
-            color: Colors.white,
-            child: Container(
-              width: 320,
-              padding: const EdgeInsets.all(8),
-              child: Text(
-                '$label) ${branch.content.text}',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: PaperStyles.body(layout),
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () {
+            controller.selectBranch(ref);
+            setState(() => _selectedAttachmentId = null);
+          },
+          child: Container(
+            margin: const EdgeInsets.only(top: 2),
+            padding: const EdgeInsetsDirectional.only(start: 4, end: 4, top: 2, bottom: 2),
+            decoration: BoxDecoration(
+              color: highlighted ? const Color(0x1A2563EB) : null,
+              border: Border.all(
+                color: highlighted
+                    ? PaperStyles.accent
+                    : selected
+                        ? PaperStyles.primary.withOpacity(0.45)
+                        : Colors.transparent,
+                width: highlighted ? 1.4 : 1,
               ),
+              borderRadius: BorderRadius.circular(4),
             ),
-          ),
-          childWhenDragging: Opacity(opacity: 0.35, child: body),
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: () {
-              controller.selectBranch(ref);
-              setState(() => _selectedAttachmentId = null);
-            },
-            child: Container(
-              margin: const EdgeInsets.only(top: 2),
-              padding: const EdgeInsetsDirectional.only(start: 8, end: 4, top: 2, bottom: 2),
-              decoration: BoxDecoration(
-                color: highlighted ? const Color(0x1A2563EB) : null,
-                border: Border.all(
-                  color: highlighted
-                      ? PaperStyles.accent
-                      : selected
-                          ? PaperStyles.primary.withOpacity(0.45)
-                          : Colors.transparent,
-                  width: highlighted ? 1.4 : 1,
-                ),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: body,
-            ),
+            child: _buildBranchBody(controller, layout, ref, branch, label, dragHandle),
           ),
         );
       },
@@ -607,6 +613,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     BranchRef ref,
     BranchModel branch,
     String label,
+    Widget dragHandle,
   ) {
     final content = branch.content;
     final bodyStyle = PaperStyles.body(layout);
@@ -616,10 +623,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Icon(Icons.drag_indicator, size: 14, color: Colors.grey.shade500),
-            ),
+            Padding(padding: const EdgeInsets.only(top: 2), child: dragHandle),
             SizedBox(
               width: 22,
               child: Text('$label)', style: bodyStyle.copyWith(fontWeight: FontWeight.bold)),

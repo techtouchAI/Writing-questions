@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:writing_questions_app/layout/pagination_engine.dart';
 import 'package:writing_questions_app/layout/paper_metrics.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
@@ -19,7 +20,7 @@ Widget _app(Widget home) {
   );
 }
 
-ExamDocument _previewDocument({int questionCount = 2}) {
+ExamDocument _previewDocument({int questionCount = 2, List<int>? branchesPerQuestion}) {
   return ExamDocument(
     name: 'معاينة',
     header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
@@ -29,20 +30,45 @@ ExamDocument _previewDocument({int questionCount = 2}) {
           id: 'q${q + 1}',
           questionNumber: q + 1,
           branches: <BranchModel>[
-            BranchModel(
-              id: 'q${q + 1}a',
-              content: BranchContent(type: QuestionType.essay, text: 'محتوى س${q + 1} أ'),
-              marks: q + 1.0,
-            ),
-            BranchModel(
-              id: 'q${q + 1}b',
-              content: BranchContent(type: QuestionType.essay, text: 'محتوى س${q + 1} ب'),
-              marks: 1,
-            ),
+            for (var b = 0; b < (branchesPerQuestion?[q] ?? 2); b++)
+              BranchModel(
+                id: 'q${q + 1}${b == 0 ? 'a' : b == 1 ? 'b' : 'x$b'}',
+                content: BranchContent(
+                  type: QuestionType.essay,
+                  text: 'محتوى س${q + 1} ${b == 0 ? 'أ' : b == 1 ? 'ب' : 'فرع ${b + 1}'}',
+                ),
+                marks: b == 0 ? q + 1.0 : 1,
+              ),
           ],
         ),
     ],
   );
+}
+
+/// يتحقق أن كل سؤال معروض على صفحة واحدة فقط مع **كل** فروعه (لا فصل).
+void _expectQuestionsUnsplit(ExamWizardController controller) {
+  final pages = controller.pagination.pages;
+  for (final question in controller.questions) {
+    final pageIndex = controller.pagination.pageIndexOf(question.id);
+    expect(pageIndex, isNotNull, reason: 'كل سؤال يجب أن يُسند إلى صفحة');
+    final owners = pages.where((page) => page.blockIds.contains(question.id));
+    expect(owners, hasLength(1), reason: 'السؤال ${question.id} يظهر في صفحة واحدة فقط');
+    final page = find.byKey(ValueKey<String>('a4-page-$pageIndex'));
+    expect(page, findsOneWidget);
+    for (final branch in question.branches) {
+      expect(
+        find.descendant(of: page, matching: find.text(branch.content.text)),
+        findsOneWidget,
+        reason: 'فرع ${branch.id} يجب أن يكون على صفحة سؤاله ($pageIndex)',
+      );
+    }
+  }
+  // لا صفحة تتجاوز الارتفاع المتاح إلا إذا كانت كتلة منفردة أطول من الصفحة.
+  for (final page in pages) {
+    if (!page.overflows) {
+      expect(page.usedHeight, lessThanOrEqualTo(PaperMetrics.pageContentHeightPx + 0.01));
+    }
+  }
 }
 
 Widget _preview(ExamWizardController controller) {
@@ -128,11 +154,24 @@ void main() {
       expect(controller.blockHeight(PaperMetrics.headerBlockId), greaterThan(0));
       expect(controller.blockHeight('q1'), greaterThan(0));
 
-      // ثلاثة أسئلة مقالية قصيرة تتسع في صفحة واحدة.
-      expect(controller.pagination.pageCount, 1);
+      // التوزيع المعروض مطابق لما يحسبه محرك التقسيم من الارتفاعات نفسها.
+      final expected = PaginationEngine.paginate(
+        blocks: <PageBlock>[
+          PageBlock(
+            id: PaperMetrics.headerBlockId,
+            height: controller.blockHeight(PaperMetrics.headerBlockId)!,
+          ),
+          for (final question in controller.questions)
+            PageBlock(id: question.id, height: controller.blockHeight(question.id)!),
+        ],
+        pageHeight: PaperMetrics.pageContentHeightPx,
+        spacing: PaperMetrics.blockSpacingPx,
+      );
+      expect(controller.pagination.pageCount, expected.pageCount);
       expect(find.byKey(const ValueKey<String>('a4-page-0')), findsOneWidget);
       expect(find.text('السؤال الأول: [٢ درجة]'), findsOneWidget);
       expect(find.text('السؤال الثالث: [٤ درجة]'), findsOneWidget);
+      _expectQuestionsUnsplit(controller);
     });
 
     testWidgets('moves a question that no longer fits to the next page as a whole', (tester) async {
@@ -141,35 +180,35 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      final controller = ExamWizardController(document: _previewDocument(questionCount: 2));
+      // سؤال قصير ثم سؤالان طويلان (8 فروع مقالية لكلٍّ منهما) — لا يتّسعان معاً.
+      final controller = ExamWizardController(
+        document: _previewDocument(questionCount: 3, branchesPerQuestion: <int>[2, 8, 8]),
+      );
       await tester.pumpWidget(_preview(controller));
       await tester.pump();
       await tester.pump();
-      expect(controller.pagination.pageCount, 1);
-
-      // ضخّم السؤال الثاني حتى لا يتسع مع الأول في الصفحة نفسها.
-      final pageHeight = PaperMetrics.pageContentHeightPx;
-      controller.reportBlockHeight('q2', pageHeight * 0.95);
+      // قد تُعاد القياسات بعد انتقال كتلة إلى صفحة جديدة؛ نستقر على النتيجة.
+      await tester.pump();
       await tester.pump();
 
-      expect(controller.pagination.pageCount, 2);
-      expect(controller.pageAssignments[0], <String>['q1']);
-      expect(controller.pageAssignments[1], <String>['q2']);
-      expect(find.byKey(const ValueKey<String>('a4-page-1')), findsOneWidget);
-      // السؤال الثاني وفروعه معاً على الصفحة الثانية (لا فصل للفروع).
-      final page1 = find.byKey(const ValueKey<String>('a4-page-1'));
-      expect(
-        find.descendant(of: page1, matching: find.text('محتوى س2 أ')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: page1, matching: find.text('محتوى س2 ب')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: page1, matching: find.text('السؤال الثاني: [٣ درجة]')),
-        findsOneWidget,
-      );
+      expect(controller.isFullyMeasured, isTrue);
+      final pagination = controller.pagination;
+      expect(pagination.pageCount, greaterThanOrEqualTo(2));
+      expect(pagination.pageIndexOf('q1'), 0);
+
+      // أول كتلة في كل صفحة تالية لم تكن لتتسع في الصفحة السابقة — أي أنها
+      // نُقلت كاملة بدل أن تُقسَّم.
+      for (var index = 1; index < pagination.pageCount; index++) {
+        final previous = pagination.pages[index - 1];
+        final movedId = pagination.pages[index].blockIds.first;
+        final movedHeight = controller.blockHeight(movedId)!;
+        expect(
+          previous.usedHeight + PaperMetrics.blockSpacingPx + movedHeight,
+          greaterThan(PaperMetrics.pageContentHeightPx),
+          reason: 'الكتلة $movedId نُقلت رغم أنها كانت تتسع في الصفحة ${index - 1}',
+        );
+      }
+      _expectQuestionsUnsplit(controller);
     });
 
     testWidgets('in-place editing updates the model without leaving the sheet', (tester) async {
@@ -207,8 +246,10 @@ void main() {
       expect(source, findsOneWidget);
       expect(target, findsOneWidget);
 
-      // سحب بالضغط المطوّل من (السؤال الأول - أ) إلى (السؤال الثاني - ب).
-      final gesture = await tester.startGesture(tester.getCenter(source));
+      // سحب بالضغط المطوّل من مقبض (السؤال الأول - أ) إلى (السؤال الثاني - ب).
+      final handle = find.descendant(of: source, matching: find.byIcon(Icons.drag_indicator));
+      expect(handle, findsOneWidget);
+      final gesture = await tester.startGesture(tester.getCenter(handle));
       await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
       await gesture.moveTo(tester.getCenter(target));
       await tester.pump();
