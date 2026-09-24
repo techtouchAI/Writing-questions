@@ -50,3 +50,11 @@ flutter:
   uses-material-design: true
   assets:
     - assets/fonts/
+  # نفس خط الـ PDF على لوحة المعاينة A4 حتى يتطابق التفاف الأسطر وارتفاع
+  # الكتل (ومن ثمّ التقسيم الورقي) بين الشاشة والطباعة.
+  fonts:
+    - family: NotoNaskhArabic
+      fonts:
+        - asset: assets/fonts/NotoNaskhArabic-Regular.ttf
+        - asset: assets/fonts/NotoNaskhArabic-Bold.ttf
+          weight: 700

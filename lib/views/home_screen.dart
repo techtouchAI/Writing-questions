@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/exam.dart';
+import '../models/exam_document.dart';
+import '../providers/exam_document_provider.dart';
 import '../providers/exam_provider.dart';
 import '../providers/question_provider.dart';
 import 'exam_builder_screen.dart';
 import 'question_bank_screen.dart';
 import 'question_editor_screen.dart';
 import 'widgets/export_dialog.dart';
+import 'wizard/exam_wizard_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -30,6 +33,54 @@ class HomeScreen extends StatelessWidget {
         builder: (_) => ExamBuilderScreen(existingExam: exam),
       ),
     );
+  }
+
+  /// المعالج المتسلسل للنموذج الوزاري (ترويسة ← أسئلة ← معاينة A4).
+  Future<void> _openExamWizard(BuildContext context, [ExamDocument? document]) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => ExamWizardScreen(existingDocument: document),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteDocument(BuildContext context, ExamDocument document) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('حذف النموذج الوزاري'),
+        content: Text('هل تريد حذف النموذج "${document.name}"؟'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+    if (shouldDelete != true || !context.mounted) {
+      return;
+    }
+    try {
+      await context.read<ExamDocumentProvider>().deleteDocument(document.id);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('تعذر حذف النموذج. حاول مرة أخرى.'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _showQuickExport(BuildContext context) async {
@@ -105,13 +156,19 @@ class HomeScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final questionProvider = context.watch<QuestionProvider>();
     final examProvider = context.watch<ExamProvider>();
-    final isLoading = questionProvider.isLoading || examProvider.isLoading;
+    final documentProvider = context.watch<ExamDocumentProvider>();
+    final isLoading = questionProvider.isLoading ||
+        examProvider.isLoading ||
+        documentProvider.isLoading;
     final message = questionProvider.errorMessage ??
         examProvider.errorMessage ??
+        documentProvider.errorMessage ??
         questionProvider.recoveryMessage ??
-        examProvider.recoveryMessage;
+        examProvider.recoveryMessage ??
+        documentProvider.recoveryMessage;
     final hasError = questionProvider.errorMessage != null ||
-        examProvider.errorMessage != null;
+        examProvider.errorMessage != null ||
+        documentProvider.errorMessage != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -136,6 +193,7 @@ class HomeScreen extends StatelessWidget {
                           onPressed: () {
                             questionProvider.clearMessages();
                             examProvider.clearMessages();
+                            documentProvider.clearMessages();
                           },
                           child: const Text('إخفاء'),
                         ),
@@ -153,6 +211,8 @@ class HomeScreen extends StatelessWidget {
                     'الإجراءات السريعة',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
+                  const SizedBox(height: 12),
+                  _buildWizardBanner(context),
                   const SizedBox(height: 12),
                   GridView.count(
                     crossAxisCount: 2,
@@ -201,6 +261,21 @@ class HomeScreen extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 24),
+                  if (documentProvider.documents.isNotEmpty) ...<Widget>[
+                    const Text(
+                      'النماذج الوزارية المحفوظة',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: documentProvider.documents.length,
+                      itemBuilder: (context, index) =>
+                          _buildDocumentTile(context, documentProvider.documents[index]),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: <Widget>[
@@ -290,6 +365,58 @@ class HomeScreen extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// بطاقة الدخول إلى المعالج المتسلسل للنموذج الوزاري.
+  Widget _buildWizardBanner(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Card(
+      elevation: 2,
+      color: colorScheme.primaryContainer,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        onTap: () async {
+          await _openExamWizard(context);
+        },
+        leading: CircleAvatar(
+          backgroundColor: colorScheme.primary,
+          child: const Icon(Icons.auto_awesome_motion, color: Colors.white),
+        ),
+        title: const Text(
+          'نموذج وزاري جديد (معالج متسلسل)',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: const Text(
+          'ترويسة ← أسئلة بفروعها ← معاينة A4 متعددة الصفحات مع تحرير مباشر وسحب وإفلات',
+          style: TextStyle(fontSize: 12),
+        ),
+        trailing: const Icon(Icons.arrow_back_ios_new, size: 16),
+      ),
+    );
+  }
+
+  Widget _buildDocumentTile(BuildContext context, ExamDocument document) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: const CircleAvatar(child: Icon(Icons.article_outlined)),
+        title: Text(document.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text(
+          '${document.questions.length} سؤال • ${_formatMarks(document.totalMarks)} درجة • '
+          '${document.header.subject}',
+        ),
+        onTap: () async {
+          await _openExamWizard(context, document);
+        },
+        trailing: IconButton(
+          icon: const Icon(Icons.delete_outline, color: Colors.red),
+          tooltip: 'حذف النموذج',
+          onPressed: () async {
+            await _confirmDeleteDocument(context, document);
+          },
+        ),
       ),
     );
   }
