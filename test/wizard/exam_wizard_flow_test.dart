@@ -48,6 +48,26 @@ ExamDocument _previewDocument({int questionCount = 2, List<int>? branchesPerQues
   );
 }
 
+/// يجمع كل امتدادات النص ([TextSpan]) داخل شجرة [span] مهما تعمّقت.
+///
+/// لازمة لأن `Text.rich` يلفّ الامتداد المُمرَّر داخل جذر يحمل النمط العام،
+/// فجمع الأبناء المباشرين وحده لا يصل إلى مقطع الآية.
+List<TextSpan> _collectTextSpans(InlineSpan span) {
+  final collected = <TextSpan>[];
+  void visit(InlineSpan current) {
+    if (current is! TextSpan) {
+      return;
+    }
+    collected.add(current);
+    for (final child in current.children ?? const <InlineSpan>[]) {
+      visit(child);
+    }
+  }
+
+  visit(span);
+  return collected;
+}
+
 /// يتحقق أن كل سؤال معروض على صفحة واحدة فقط مع **كل** فروعه (لا فصل).
 void _expectQuestionsUnsplit(ExamWizardController controller) {
   final pages = controller.pagination.pages;
@@ -407,17 +427,13 @@ void main() {
       expect(verseText.quranStyle?.fontFamily, ExamFont.quranicFamily);
 
       // المقطع القرآني المرسوم فعلاً يلبس الخط القرآني.
-      final renderedSpans = <InlineSpan>[];
-      for (final richText in tester.widgetList<RichText>(
-        find.descendant(of: find.byType(TexText), matching: find.byType(RichText)),
-      )) {
-        final span = richText.text;
-        if (span is TextSpan && span.children != null) {
-          renderedSpans.addAll(span.children!);
-        }
-      }
+      final renderedSpans = <TextSpan>[
+        for (final richText in tester.widgetList<RichText>(
+          find.descendant(of: find.byType(TexText), matching: find.byType(RichText)),
+        ))
+          ..._collectTextSpans(richText.text),
+      ];
       final verseSpans = renderedSpans
-          .whereType<TextSpan>()
           .where((span) => span.text?.contains('\uFD3F') ?? false)
           .toList(growable: false);
       expect(verseSpans, isNotEmpty, reason: 'الآية تُعرض عرضاً منسّقاً على الورقة');

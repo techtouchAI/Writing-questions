@@ -51,8 +51,12 @@ void main() {
 
     test('supports two verses in the same branch text', () {
       final segments = QuranText.split('${_verse(' الأولى ')} ثم ${_verse(' الثانية ')}');
+      expect(segments, hasLength(3));
       expect(segments.where((segment) => segment.isQuran), hasLength(2));
-      expect(segments.last, const QuranSegment.plain(' '));
+      // بين الآيتين نص عادي، وأول مقطع وآخره آيتان.
+      expect(segments[1], const QuranSegment.plain(' ثم '));
+      expect(segments.first.isQuran, isTrue);
+      expect(segments.last.isQuran, isTrue);
     });
 
     test('treats an unterminated verse as quranic until the end of the text', () {
