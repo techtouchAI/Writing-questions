@@ -7,7 +7,9 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/models/exam.dart';
 import 'package:writing_questions_app/models/exam_header.dart';
-import 'package:writing_questions_app/models/question.dart';
+import 'package:writing_questions_app/models/main_question.dart';
+import 'package:writing_questions_app/models/question_branch.dart';
+import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/pdf_engine/pdf_engine.dart';
 
@@ -43,11 +45,10 @@ void main() {
         duration: 'ساعتان',
         generalInstructions: 'اقرأ الأسئلة بتأنٍ ثم أجب عن جميع الفقرات.',
       ),
-      questions: <Question>[
-        Question(
+      mainQuestions: <MainQuestion>[
+        MainQuestion(
           title: 'تدور الأرض',
           type: QuestionType.multipleChoice,
-          marks: 2,
           category: 'القواعد',
           branches: <QuestionBranch>[
             QuestionBranch(text: 'تدور الأرض حول محورها', marks: 1),
@@ -59,19 +60,20 @@ void main() {
             QuestionOption(text: 'التيار الكهربائي قوي'),
           ],
         ),
-        Question(
+        MainQuestion(
           title: 'مدار الأرض',
           type: QuestionType.trueFalse,
-          marks: 1,
+          // الدرجة الكلية = مجموع الفروع آلياً: فرع مجرد (نص فارغ) يحمل الدرجة.
+          branches: <QuestionBranch>[QuestionBranch(text: '', marks: 1)],
           options: <QuestionOption>[
             QuestionOption(text: 'صح', isCorrect: true),
             QuestionOption(text: 'خطأ'),
           ],
         ),
-        Question(
+        MainQuestion(
           title: 'التيار الأرضي',
           type: QuestionType.fillInTheBlank,
-          marks: 2,
+          branches: <QuestionBranch>[QuestionBranch(text: '', marks: 2)],
           modelAnswer: 'مدار دائري حول المركز',
         ),
       ],
