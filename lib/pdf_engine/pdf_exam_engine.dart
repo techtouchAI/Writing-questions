@@ -4,8 +4,11 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../models/exam.dart';
+import '../models/exam_canvas_geometry.dart';
+import '../models/floating_element.dart';
 import 'exam_fonts.dart';
 import 'exam_strategy.dart';
+import 'floating_elements_pdf.dart';
 import 'strategy_registry.dart';
 
 /// محرك رسم ورقة الاختبار على «لوحة» A4 ثابتة (Canvas).
@@ -58,25 +61,41 @@ class PdfExamEngine {
     document.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(pageMarginMillimeters),
+        // الصفحة كاملة بلا هوامش للمُنشئ: اللوحة التفاعلية والصفحة تشتركان
+        // في نظام إحداثيات واحد (A4 كامل) لنقل مطابقة 1:1 (خطوة 5.2).
+        margin: pw.EdgeInsets.zero,
         textDirection: pw.TextDirection.rtl,
         theme: pw.ThemeData.withFont(base: loadedFonts.regular, bold: loadedFonts.bold),
         build: (context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+          // ترجمة Stack الواجهة إلى pw.Stack بنفس الطبقات (خطوة 5.1):
+          // الطبقة السفلية = النص (بهوامش 15مم)، والعلوية = العناصر العائمة.
+          return pw.Stack(
             children: <pw.Widget>[
-              _buildHeader(exam, isTeacherVersion, effectiveStyles),
-              pw.Divider(thickness: 2, color: ExamTextStyles.primaryColor),
-              _buildNotes(exam, effectiveStyles),
-              pw.Expanded(
-                child: _buildAutoFitQuestions(
-                  items,
-                  effectiveStrategy,
-                  effectiveStyles,
-                  isTeacherVersion,
+              pw.Positioned(
+                left: _margin,
+                top: _margin,
+                right: _margin,
+                bottom: _margin,
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                  children: <pw.Widget>[
+                    _buildHeader(exam, isTeacherVersion, effectiveStyles),
+                    pw.Divider(thickness: 2, color: ExamTextStyles.primaryColor),
+                    _buildNotes(exam, effectiveStyles),
+                    pw.Expanded(
+                      child: _buildAutoFitQuestions(
+                        items,
+                        effectiveStrategy,
+                        effectiveStyles,
+                        isTeacherVersion,
+                      ),
+                    ),
+                    _buildFooter(exam, effectiveStyles),
+                  ],
                 ),
               ),
-              _buildFooter(exam, effectiveStyles),
+              for (final element in exam.floatingElements)
+                _buildPositionedElement(element),
             ],
           );
         },
@@ -84,6 +103,28 @@ class PdfExamEngine {
     );
 
     return document.save();
+  }
+
+  /// ينقل إحداثيات اللوحة (بكسل منطقي) إلى نقاط PDF **بنفس النِسب** —
+  /// الصورة/الشكل يظهر تماماً حيث أسقطه المستخدم على ورقة الـ WYSIWYG.
+  pw.Widget _buildPositionedElement(FloatingElement element) {
+    final pageWidth = PdfPageFormat.a4.width;
+    final pageHeight = PdfPageFormat.a4.height;
+    final left = ExamCanvasGeometry.normalizedX(element.dx) * pageWidth;
+    final top = ExamCanvasGeometry.normalizedY(element.dy) * pageHeight;
+    final width = ExamCanvasGeometry.normalizedWidth(element.width) * pageWidth;
+    final height =
+        ExamCanvasGeometry.normalizedHeight(element.height) * pageHeight;
+
+    return pw.Positioned(
+      left: left,
+      top: top,
+      child: FloatingElementsPdf.build(
+        element,
+        widthPt: width,
+        heightPt: height,
+      ),
+    );
   }
 
   pw.Widget _buildAutoFitQuestions(
