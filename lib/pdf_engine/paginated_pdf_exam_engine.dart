@@ -46,6 +46,31 @@ class PaginatedPdfExamEngine {
   static double get pageContentHeight =>
       PdfPageFormat.a4.height - 2 * _margin - _footerHeight;
 
+  /// هل تحمل الورقة نصاً موسوماً بآية قرآنية (نص فرع أو خيار أو إجابة نموذجية)؟
+  ///
+  /// يُستهلك هذا القرار في تحميل الخط القرآني: الورقة التي لا تحمل وسماً
+  /// قرآنياً لا يُحمَّل لها أصل الخط (431 كيلوبايت) أصلاً — «إن توفّرت» تعني
+  /// أيضاً ألا نكلّف الورقة ما لا تحتاجه، مع بقاء السلوك نفسه تماماً.
+  static bool needsQuranicFont(ExamDocument document) {
+    for (final question in document.questions) {
+      for (final branch in question.branches) {
+        final content = branch.content;
+        if (QuranText.containsQuran(content.text)) {
+          return true;
+        }
+        if (QuranText.containsQuran(content.modelAnswer)) {
+          return true;
+        }
+        for (final option in content.options) {
+          if (QuranText.containsQuran(option.text)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
   /// يولّد ملف PDF متعدد الصفحات بحجم A4.
   ///
   /// [pageAssignments]: توزيع معرّفات الأسئلة على الصفحات كما حُسب على
@@ -56,7 +81,8 @@ class PaginatedPdfExamEngine {
     List<List<String>>? pageAssignments,
     ExamFonts? fonts,
   }) async {
-    final loadedFonts = fonts ?? await ExamFonts.load();
+    final loadedFonts =
+        fonts ?? await ExamFonts.load(loadQuranic: needsQuranicFont(document));
     final layout = document.layout;
     final direction = layout.isLtr ? pw.TextDirection.ltr : pw.TextDirection.rtl;
     final theme = pw.ThemeData.withFont(

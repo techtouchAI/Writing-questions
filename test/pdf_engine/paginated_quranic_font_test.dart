@@ -122,6 +122,25 @@ void main() {
       );
     });
 
+    test('skips the Quranic face for sheets with no Quranic text', () async {
+      final withVerse = _islamicDocument(verse: verse);
+      final withoutVerse = _islamicDocument(verse: 'اشرح مفهوم التلاوة الصحيحة');
+
+      expect(PaginatedPdfExamEngine.needsQuranicFont(withVerse), isTrue);
+      expect(PaginatedPdfExamEngine.needsQuranicFont(withoutVerse), isFalse);
+
+      final fonts = await ExamFonts.load(loadQuranic: false);
+      expect(fonts.hasQuranic, isFalse, reason: 'لا يُحمَّل الخط القرآني بلا حاجة');
+      expect(fonts.regular, isNotNull);
+
+      // ورقة بلا وسْم قرآني تُولَّد طبيعية (بقية الخطوط كما هي).
+      final bytes = await const PaginatedPdfExamEngine().generate(
+        document: withoutVerse,
+        fonts: fonts,
+      );
+      expect(PdfContentProbe.fromBytes(bytes).lines, isNotEmpty);
+    });
+
     test('still renders the verse when no Quranic font is available', () async {
       final fonts = await ExamFonts.load(bundle: _BundleWithoutQuranic());
       final bytes = await const PaginatedPdfExamEngine().generate(
