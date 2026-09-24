@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import '../models/exam.dart';
+import '../models/exam_document.dart';
 import '../pdf_engine/pdf_engine.dart';
 import 'export_file_service.dart';
 
@@ -18,6 +19,22 @@ abstract final class PdfExportService {
     return const PdfExamEngine().generate(
       exam: exam,
       isTeacherVersion: isTeacherVersion,
+    );
+  }
+
+  /// يبني بايتات PDF متعدد الصفحات للنموذج الوزاري [document].
+  ///
+  /// [pageAssignments] هو توزيع الأسئلة على الصفحات كما حُسب على لوحة
+  /// المعاينة، فيُطبع الملف بنفس التقسيم المعروض تماماً.
+  static Future<Uint8List> buildDocumentPdfBytes({
+    required ExamDocument document,
+    bool isTeacherVersion = false,
+    List<List<String>>? pageAssignments,
+  }) {
+    return const PaginatedPdfExamEngine().generate(
+      document: document,
+      isTeacherVersion: isTeacherVersion,
+      pageAssignments: pageAssignments,
     );
   }
 

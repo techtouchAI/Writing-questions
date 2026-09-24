@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/exam.dart';
+import '../models/exam_document.dart';
 import '../models/exam_header.dart';
 import '../models/main_question.dart';
 
@@ -31,6 +32,7 @@ class StorageService {
   static const String _questionsKey = 'app_saved_questions';
   static const String _examsKey = 'app_saved_exams';
   static const String _defaultHeaderKey = 'app_default_header';
+  static const String _examDocumentsKey = 'app_saved_exam_documents';
 
   final Future<SharedPreferences> Function() _preferencesLoader;
   Future<SharedPreferences>? _preferences;
@@ -58,6 +60,18 @@ class StorageService {
 
   Future<void> saveExams(List<Exam> exams) {
     return _saveList(_examsKey, exams.map((exam) => exam.toJson()));
+  }
+
+  /// النماذج الوزارية المنشأة عبر المعالج المتسلسل (Wizard).
+  Future<StorageLoadResult<ExamDocument>> loadExamDocuments() {
+    return _loadList(_examDocumentsKey, ExamDocument.fromJson);
+  }
+
+  Future<void> saveExamDocuments(List<ExamDocument> documents) {
+    return _saveList(
+      _examDocumentsKey,
+      documents.map((document) => document.toJson()),
+    );
   }
 
   Future<ExamHeader> loadDefaultHeader() async {
