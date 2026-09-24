@@ -442,6 +442,61 @@ void main() {
       }
     });
 
+    testWidgets('keeps the Quranic face in every template but centres only where preferred',
+        (tester) async {
+      tester.view.physicalSize = const Size(1000, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      // قالب غير إسلامي (اللغة العربية): يُلبس الخط القرآني النصَّ الموسوم،
+      // لكن «أسلوب المصحف» (التوسيط والتكبير) يبقى لقالب التربية الإسلامية.
+      final controller = ExamWizardController(
+        document: ExamDocument(
+          name: 'لغة عربية',
+          header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+          questions: <QuestionModel>[
+            QuestionModel(
+              id: 'q1',
+              questionNumber: 1,
+              branches: <BranchModel>[
+                BranchModel(
+                  id: 'q1a',
+                  content: BranchContent(
+                    type: QuestionType.essay,
+                    text: '\uFD3F إنا أعطيناك الكوثر \uFD3E',
+                  ),
+                  marks: 3,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pumpWidget(_preview(controller));
+      await tester.pump();
+
+      final verseText = tester.widget<TexText>(find.byType(TexText));
+      expect(verseText.textAlign, TextAlign.start,
+          reason: 'قالب لا يفضّل الخط القرآني: بلا توسيط مصحفي');
+      expect(verseText.quranStyle?.fontFamily, ExamFont.quranicFamily,
+          reason: 'الخط القرآني يُلبس المقاطع الموسومة في كل القوالب');
+
+      final renderedSpans = <TextSpan>[
+        for (final richText in tester.widgetList<RichText>(
+          find.descendant(of: find.byType(TexText), matching: find.byType(RichText)),
+        ))
+          ..._collectTextSpans(richText.text),
+      ];
+      final verseSpans = renderedSpans
+          .where((span) => span.text?.contains('\uFD3F') ?? false)
+          .toList(growable: false);
+      expect(verseSpans, isNotEmpty, reason: 'الآية تُعرض عرضاً منسّقاً على الورقة');
+      for (final span in verseSpans) {
+        expect(span.style?.fontFamily, ExamFont.quranicFamily);
+      }
+    });
+
     testWidgets('exposes the floating tools toolbar above the pages', (tester) async {
       tester.view.physicalSize = const Size(1000, 1400);
       tester.view.devicePixelRatio = 1;

@@ -865,22 +865,27 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// عرض منسّق لنص الفرع: الآيات القرآنية بالخط القرآني (Amiri) والآية
-  /// القائمة بذاتها بخط أوضح وموسّطة — وهو نفس قرار محرك الـ PDF.
+  /// عرض منسّق لنص الفرع: الآيات القرآنية بالخط القرآني (Amiri) دائماً.
+  ///
+  /// وأما «أسلوب المصحف» — توسيط الآية القائمة بذاتها وتكبيرها — فيتبع
+  /// تفضيل القالب ([SubjectLayoutTemplate.prefersQuranicFont]، أي قالب
+  /// التربية الإسلامية)؛ وهو **نفس قرار محرك الـ PDF** حرفياً فلا تنحرف
+  /// الشاشة عن الطباعة.
   Widget _buildRichPreview(
     SubjectLayoutTemplate layout,
     String text,
     TextStyle bodyStyle,
   ) {
-    final standaloneVerse = QuranText.isStandaloneVerse(text);
+    final mushafVerse =
+        layout.prefersQuranicFont && QuranText.isStandaloneVerse(text);
     return TexText(
       text,
       style: bodyStyle,
       mathTextStyle: bodyStyle,
-      quranStyle: standaloneVerse
+      quranStyle: mushafVerse
           ? PaperStyles.verse(layout)
           : PaperStyles.quranic(bodyStyle),
-      textAlign: standaloneVerse ? TextAlign.center : TextAlign.start,
+      textAlign: mushafVerse ? TextAlign.center : TextAlign.start,
     );
   }
 

@@ -331,10 +331,13 @@ class PaginatedPdfExamEngine {
     final marksSuffix = branch.marks > 0
         ? ' (${layout.formatNumber(branch.marks)} ${layout.marksUnit})'
         : '';
-    // الآية القائمة بذاتها تُوسَّط بخط قرآني أوضح — نفس قرار لوحة المعاينة
-    // تماماً؛ والتوسيط والحجم لا يتعلقان بتوفر الخط القرآني (الخط وحده يرتد
-    // إلى خط الورقة إن غاب) حتى تبقى الشاشة والطباعة متطابقتين.
-    final standaloneVerse = QuranText.isStandaloneVerse(content.text);
+    // المقاطع الموسومة بالآيات تُرسم بالخط القرآني في كل القوالب، وأما
+    // «أسلوب المصحف» — توسيط الآية القائمة بذاتها وتكبيرها — فيتبع تفضيل
+    // القالب ([SubjectLayoutTemplate.prefersQuranicFont] أي التربية
+    // الإسلامية). وهو **نفس قرار لوحة المعاينة** حرفياً؛ والتوسيط والحجم لا
+    // يتعلقان بتوفر الخط (الخط وحده يرتد إلى خط الورقة إن غاب الأصل).
+    final standaloneVerse =
+        layout.prefersQuranicFont && QuranText.isStandaloneVerse(content.text);
     final bodyStyle = (standaloneVerse
             ? styles.body.copyWith(fontSize: 12, lineSpacing: layout.lineHeightFactor * 2 + 2)
             : styles.body.copyWith(lineSpacing: layout.lineHeightFactor * 2));
@@ -346,7 +349,7 @@ class PaginatedPdfExamEngine {
         _renderText(
           '$label) ${content.text}$marksSuffix',
           bodyStyle,
-          fonts,
+          fonts.quranic,
           centerVerse: standaloneVerse,
         ),
         pw.Padding(
@@ -415,7 +418,7 @@ class PaginatedPdfExamEngine {
                 '( ${layout.branchLabel(index)} ) ${options[index].text}'
                 '${isTeacherVersion && options[index].isCorrect ? ' •' : ''}',
                 isTeacherVersion && options[index].isCorrect ? answerStyle : styles.option,
-                fonts,
+                fonts.quranic,
               ),
           ],
         );
@@ -498,10 +501,9 @@ class PaginatedPdfExamEngine {
   pw.Widget _renderText(
     String text,
     pw.TextStyle style,
-    ExamFonts fonts, {
+    pw.Font? quranFont, {
     bool centerVerse = false,
   }) {
-    final quranFont = fonts.quranic;
     final segments = TexContent.split(text);
     final hasMath = segments.any((segment) => segment.isMath);
     if (!hasMath) {

@@ -21,10 +21,10 @@ class _BundleWithoutQuranic extends CachingAssetBundle {
   }
 }
 
-ExamDocument _islamicDocument({required String verse}) {
+ExamDocument _islamicDocument({required String verse, String subject = 'التربية الإسلامية'}) {
   return ExamDocument(
-    name: 'تربية إسلامية',
-    header: ExamHeaderModel.ministerialDefault(subject: 'التربية الإسلامية'),
+    name: subject,
+    header: ExamHeaderModel.ministerialDefault(subject: subject),
     questions: <QuestionModel>[
       QuestionModel(
         id: 'q1',
@@ -97,6 +97,29 @@ void main() {
           reason: 'محرف غير مغطى في الخط القرآني: ${word.text}',
         );
       }
+    });
+
+    test('applies the Quranic face in non-Islamic templates too (no mushaf centering)', () async {
+      final bytes = await const PaginatedPdfExamEngine().generate(
+        document: _islamicDocument(verse: verse, subject: 'اللغة العربية'),
+      );
+      final probe = PdfContentProbe.fromBytes(bytes);
+
+      final words = <ProbedWord>[
+        for (final line in probe.lines) ...line.words,
+      ];
+      expect(words, isNotEmpty);
+      // القوسان المزخرفان يُرسمان (الآية موجودة نصاً) وبالخط القرآني.
+      expect(
+        words.any((word) => word.text.contains('\uFD3F') || word.text.contains('\uFD3E')),
+        isTrue,
+        reason: 'وسم الآية يُرسم كما كتبه المعلم',
+      );
+      expect(
+        words.any((word) => word.baseFont.toLowerCase().contains('amiri')),
+        isTrue,
+        reason: 'الخط القرآني يُلبس المقاطع الموسومة في كل القوالب',
+      );
     });
 
     test('still renders the verse when no Quranic font is available', () async {
