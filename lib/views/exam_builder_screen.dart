@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/exam.dart';
 import '../models/exam_duration_rules.dart';
 import '../models/exam_header.dart';
-import '../models/question.dart';
+import '../models/main_question.dart';
 import '../providers/exam_provider.dart';
 import '../providers/question_provider.dart';
 import 'widgets/export_dialog.dart';
@@ -39,7 +39,7 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
 
   late String _examType;
   DateTime? _examDate;
-  late List<Question> _selectedQuestions;
+  late List<MainQuestion> _selectedQuestions;
   bool _saveAsDefaultHeader = false;
   bool _isSaving = false;
 
@@ -61,7 +61,7 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
     final existingExam = widget.existingExam;
     final header = existingExam?.header ?? examProvider.defaultHeader;
 
-    _selectedQuestions = List<Question>.from(existingExam?.questions ?? const []);
+    _selectedQuestions = List<MainQuestion>.from(existingExam?.mainQuestions ?? const []);
     _nameController = TextEditingController(
       text: existingExam?.name ?? 'اختبار منتصف الفصل',
     );
@@ -174,7 +174,7 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
       id: widget.existingExam?.id,
       name: _nameController.text.trim(),
       header: header,
-      questions: _selectedQuestions,
+      mainQuestions: _selectedQuestions,
       createdAt: widget.existingExam?.createdAt,
     );
 
@@ -221,11 +221,11 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
     );
   }
 
-  void _toggleQuestion(Question question, bool selected) {
+  void _toggleQuestion(MainQuestion question, bool selected) {
     setState(() {
       if (selected) {
         if (!_selectedQuestions.any((item) => item.id == question.id)) {
-          _selectedQuestions = <Question>[..._selectedQuestions, question];
+          _selectedQuestions = <MainQuestion>[..._selectedQuestions, question];
         }
       } else {
         _selectedQuestions = _selectedQuestions
@@ -235,7 +235,7 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
     });
   }
 
-  void _toggleAllQuestions(List<Question> questions) {
+  void _toggleAllQuestions(List<MainQuestion> questions) {
     final questionIds = questions.map((question) => question.id).toSet();
     final selectedIds = _selectedQuestions.map((question) => question.id).toSet();
     final allSelected = questionIds.isNotEmpty && questionIds.every(selectedIds.contains);
@@ -246,7 +246,7 @@ class _ExamBuilderScreenState extends State<ExamBuilderScreen>
             .where((question) => !questionIds.contains(question.id))
             .toList(growable: false);
       } else {
-        _selectedQuestions = List<Question>.from(questions);
+        _selectedQuestions = List<MainQuestion>.from(questions);
       }
     });
   }

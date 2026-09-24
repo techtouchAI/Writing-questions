@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:excel/excel.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:writing_questions_app/models/question.dart';
+import 'package:writing_questions_app/models/main_question.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/services/excel_export_service.dart';
 
@@ -19,11 +19,11 @@ void main() {
 
   test('produces a decodable workbook with the expected rows', () async {
     final file = await ExcelExportService.exportQuestionsToExcel(
-      questions: [
-        Question(
+      mainQuestions: [
+        MainQuestion(
           title: 'سؤال اختيار من متعدد',
           type: QuestionType.multipleChoice,
-          marks: 2,
+          branches: <QuestionBranch>[QuestionBranch(text: '', marks: 2)],
           subject: 'العلوم',
           options: [
             QuestionOption(text: 'أ', isCorrect: true),
@@ -33,10 +33,10 @@ void main() {
           ],
           explanation: 'شرح',
         ),
-        Question(
+        MainQuestion(
           title: 'سؤال مقالي',
           type: QuestionType.essay,
-          marks: 5,
+          branches: <QuestionBranch>[QuestionBranch(text: '', marks: 5)],
           modelAnswer: 'الإجابة النموذجية',
         ),
       ],
@@ -79,7 +79,7 @@ void main() {
 
   test('sanitizes illegal worksheet characters', () async {
     final file = await ExcelExportService.exportQuestionsToExcel(
-      questions: [Question(title: 'سؤال', type: QuestionType.trueFalse)],
+      mainQuestions: [MainQuestion(title: 'سؤال', type: QuestionType.trueFalse)],
       sheetName: 'اسم يحتوي: رموز* ممنوعة[] وتجاوز الثين والثلثين من الحروف 12345',
       fileBaseName: 'تصدير',
       outputDirectory: tempDir,

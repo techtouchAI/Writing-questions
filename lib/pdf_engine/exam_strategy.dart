@@ -2,15 +2,16 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../models/label_alphabet.dart';
-import '../models/question.dart';
+import '../models/main_question.dart';
+import '../models/question_branch.dart';
 import '../models/question_type.dart';
 
-/// سؤال مع رقمه المتسلسل داخل ورقة الامتحان (س1، س2... أو Q1...).
+/// سؤال رئيسي مع رقمه المتسلسل داخل ورقة الامتحان (س1، س2... أو Q1...).
 class IndexedQuestion {
   const IndexedQuestion({required this.number, required this.question});
 
   final int number;
-  final Question question;
+  final MainQuestion question;
 }
 
 /// مجموعة أسئلة متتالية تشترك في نفس القسم (القواعد/الأدب/...).
@@ -49,7 +50,7 @@ List<QuestionGroup> groupQuestionsByCategory(List<IndexedQuestion> items) {
   return groups;
 }
 
-String? _normalizedCategory(Question question) {
+String? _normalizedCategory(MainQuestion question) {
   final category = question.category.trim();
   return category.isEmpty ? null : category;
 }
@@ -149,6 +150,8 @@ abstract class ExamStrategy {
   String get marksUnit;
 
   /// بناء القائمة كاملة من الأسئلة المرقّمة [items].
+  ///
+  /// ترتيب [items] هو ترتيب المعلم اليدوي 100% (بدون أي خلط آلي).
   pw.Widget buildQuestionsList(
     List<IndexedQuestion> items, {
     required ExamTextStyles styles,
@@ -207,6 +210,7 @@ abstract class ExamStrategy {
     bool isTeacherVersion,
   ) {
     final question = item.question;
+    // الدرجة المعروضة = مجموع درجات الفروع آلياً (roll-up).
     final children = <pw.Widget>[
       pw.Text(
         '${questionNumberLabel(item.number)}: ${question.title} '
@@ -228,6 +232,8 @@ abstract class ExamStrategy {
             children: [
               for (var index = 0; index < branches.length; index++)
                 pw.Text(
+                  // التسمية ديناميكية من الفهرس دائماً (أ، ب، ج...) —
+                  // لا تسمية مخزنة تُحدث فجوات عند حذف فرع وسط القائمة.
                   _branchLabel(index, branches[index]),
                   style: styles.body,
                 ),
@@ -263,16 +269,17 @@ abstract class ExamStrategy {
     );
   }
 
+  /// تسمية الفرع تُولَّد **من فهرسه فقط** (أ، ب، ج...) دون قراءة أي حقل
+  /// تسمية مخزن؛ درجة الفرع تُلحق بالتسمية نفسها.
   String _branchLabel(int index, QuestionBranch branch) {
-    final manual = branch.label.trim();
-    final label = manual.isEmpty ? LabelAlphabet.at(index) : manual;
+    final label = LabelAlphabet.at(index);
     final marksSuffix =
         branch.marks > 0 ? ' [${_formatMarks(branch.marks)} $marksUnit]' : '';
     return '$label) ${branch.text}$marksSuffix';
   }
 
   pw.Widget _buildTypeBody(
-    Question question,
+    MainQuestion question,
     ExamTextStyles styles,
     bool isTeacherVersion,
   ) {
@@ -289,7 +296,7 @@ abstract class ExamStrategy {
   }
 
   pw.Widget _buildOptions(
-    Question question,
+    MainQuestion question,
     ExamTextStyles styles,
     bool isTeacherVersion,
   ) {
@@ -317,7 +324,7 @@ abstract class ExamStrategy {
   }
 
   pw.Widget _buildTrueFalse(
-    Question question,
+    MainQuestion question,
     ExamTextStyles styles,
     bool isTeacherVersion,
   ) {
@@ -339,7 +346,7 @@ abstract class ExamStrategy {
   }
 
   pw.Widget _buildFillInTheBlank(
-    Question question,
+    MainQuestion question,
     ExamTextStyles styles,
     bool isTeacherVersion,
   ) {
@@ -361,7 +368,7 @@ abstract class ExamStrategy {
   }
 
   pw.Widget _buildEssay(
-    Question question,
+    MainQuestion question,
     ExamTextStyles styles,
     bool isTeacherVersion,
   ) {

@@ -44,8 +44,8 @@ class PdfExamEngine {
     final effectiveStrategy = strategy ?? ExamStrategies.forSubject(exam.header.subject);
 
     final items = <IndexedQuestion>[
-      for (var index = 0; index < exam.questions.length; index++)
-        IndexedQuestion(number: index + 1, question: exam.questions[index]),
+      for (var index = 0; index < exam.mainQuestions.length; index++)
+        IndexedQuestion(number: index + 1, question: exam.mainQuestions[index]),
     ];
 
     final document = pw.Document(
@@ -93,24 +93,32 @@ class PdfExamEngine {
     bool isTeacherVersion,
   ) {
     if (items.isEmpty) {
-      return pw.Center(
+      // لا تمرير عمودي: النص يبدأ من أعلى الورقة مباشرة (topRight).
+      return pw.Align(
+        alignment: pw.Alignment.topRight,
         child: pw.Text('لا توجد أسئلة في هذا الاختبار.', style: styles.note),
       );
     }
 
     // اللبنة الأساسية لضمان صفحة واحدة: عرض ثابت ثم تصغير تلقائي
     // بتناسق كامل عند تجاوز المحتوى المساحة المتبقية.
+    // مرساة رأسية صارمة: الرسم يبدأ من أعلى فور الترويسة
+    // (pw.Alignment.topCenter) — لا تمركز رأسي قسري (MainAxisAlignment.center
+    // أو AlignmentDirectional أو أغلفة Center مشابهة).
     return pw.Directionality(
       textDirection: strategy.textDirection,
-      child: pw.FittedBox(
-        fit: pw.BoxFit.scaleDown,
-        alignment: pw.AlignmentDirectional.topStart,
-        child: pw.SizedBox(
-          width: contentWidth,
-          child: strategy.buildQuestionsList(
-            items,
-            styles: styles,
-            isTeacherVersion: isTeacherVersion,
+      child: pw.Align(
+        alignment: pw.Alignment.topCenter,
+        child: pw.FittedBox(
+          fit: pw.BoxFit.scaleDown,
+          alignment: pw.Alignment.topCenter,
+          child: pw.SizedBox(
+            width: contentWidth,
+            child: strategy.buildQuestionsList(
+              items,
+              styles: styles,
+              isTeacherVersion: isTeacherVersion,
+            ),
           ),
         ),
       ),
@@ -220,7 +228,7 @@ class PdfExamEngine {
       children: <pw.Widget>[
         pw.SizedBox(height: 5),
         pw.Text(
-          'عدد الأسئلة: ${exam.questions.length} سؤال  |  '
+          'عدد الأسئلة: ${exam.mainQuestions.length} سؤال  |  '
           'الدرجة الكلية: ${_formatMarks(exam.totalMarks)} درجة',
           textAlign: pw.TextAlign.center,
           style: styles.small,

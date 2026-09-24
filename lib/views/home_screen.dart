@@ -328,7 +328,7 @@ class HomeScreen extends StatelessWidget {
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Text(
-          '${exam.questions.length} سؤال • ${_formatMarks(exam.totalMarks)} درجة • ${exam.header.subject}',
+          '${exam.mainQuestions.length} سؤال • ${_formatMarks(exam.totalMarks)} درجة • ${exam.header.subject}',
         ),
         trailing: PopupMenuButton<_ExamAction>(
           tooltip: 'إجراءات الاختبار',

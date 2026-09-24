@@ -2,13 +2,14 @@ import 'dart:io';
 
 import 'package:excel/excel.dart';
 
-import '../models/question.dart';
+import '../models/label_alphabet.dart';
+import '../models/main_question.dart';
 import '../models/question_type.dart';
 import 'export_file_service.dart';
 
 class ExcelExportService {
   static Future<File> exportQuestionsToExcel({
-    required List<Question> questions,
+    required List<MainQuestion> questions,
     String sheetName = 'بنك الأسئلة',
     String? fileName,
     String? fileBaseName,
@@ -29,6 +30,7 @@ class ExcelExportService {
     final headers = <String>[
       '#',
       'نص السؤال',
+      'الفروع (أ، ب، ج...)',
       'النوع',
       'الصعوبة',
       'الدرجة',
@@ -61,8 +63,10 @@ class ExcelExportService {
       final rowData = <CellValue>[
         TextCellValue('${index + 1}'),
         TextCellValue(question.title),
+        TextCellValue(_branchesSummary(question)),
         TextCellValue(question.type.arabicLabel),
         TextCellValue(question.difficulty.arabicLabel),
+        // الدرجة الكلية = مجموع درجات الفروع آلياً (roll-up).
         DoubleCellValue(question.marks),
         TextCellValue(question.subject),
         TextCellValue(question.topic),
@@ -114,7 +118,7 @@ class ExcelExportService {
     );
   }
 
-  static String _answerFor(Question question) {
+  static String _answerFor(MainQuestion question) {
     if (question.type == QuestionType.multipleChoice) {
       return question.options
           .where((option) => option.isCorrect)
@@ -132,11 +136,23 @@ class ExcelExportService {
   }
 
   static bool _isCenteredColumn(int column) {
-    return column == 0 || column == 2 || column == 3 || column == 4;
+    return column == 0 || column == 3 || column == 4 || column == 5;
   }
 
+  /// ملخص الفروع بتسميات ديناميكية من الفهرس (أ، ب، ج...) مع الدرجات.
+  static String _branchesSummary(MainQuestion question) {
+    return question.branches.asMap().entries.map((entry) {
+      final label = LabelAlphabet.at(entry.key);
+      final marks = entry.value.marks == entry.value.marks.truncateToDouble()
+          ? entry.value.marks.toInt().toString()
+          : entry.value.marks.toString();
+      final text = entry.value.text.trim();
+      return '$label) ${text.isEmpty ? '—' : text} [$marks]';
+    }).join('\n');
+  }
+
+  /// تسمية الخيار تُولَّد ديناميكياً من الفهرس (أ، ب، ج...) بلا قوائم مخزنة.
   static String _optionLabel(int index) {
-    const labels = <String>['الأول (أ)', 'الثاني (ب)', 'الثالث (ج)', 'الرابع (د)', 'الخامس (هـ)', 'السادس (و)'];
-    return index < labels.length ? labels[index] : '${index + 1}';
+    return 'الخيار ${LabelAlphabet.at(index)}';
   }
 }

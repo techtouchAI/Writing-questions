@@ -3,7 +3,9 @@ import 'dart:collection';
 import 'package:flutter/foundation.dart';
 
 import '../models/difficulty.dart';
-import '../models/question.dart';
+import '../models/main_question.dart';
+import '../models/question_branch.dart';
+import '../models/question_option.dart';
 import '../models/question_type.dart';
 import '../services/storage_service.dart';
 
@@ -13,7 +15,7 @@ class QuestionProvider extends ChangeNotifier {
 
   final StorageService _storageService;
 
-  List<Question> _questions = <Question>[];
+  List<MainQuestion> _questions = <MainQuestion>[];
   bool _isLoading = false;
   String? _errorMessage;
   String? _recoveryMessage;
@@ -23,7 +25,7 @@ class QuestionProvider extends ChangeNotifier {
   Difficulty? _selectedDifficultyFilter;
   String? _selectedSubjectFilter;
 
-  UnmodifiableListView<Question> get questions => UnmodifiableListView(_questions);
+  UnmodifiableListView<MainQuestion> get questions => UnmodifiableListView(_questions);
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   String? get recoveryMessage => _recoveryMessage;
@@ -42,9 +44,9 @@ class QuestionProvider extends ChangeNotifier {
     return List<String>.unmodifiable(subjects);
   }
 
-  List<Question> get filteredQuestions {
+  List<MainQuestion> get filteredQuestions {
     final normalizedQuery = _searchQuery.trim().toLowerCase();
-    return List<Question>.unmodifiable(
+    return List<MainQuestion>.unmodifiable(
       _questions.where((question) {
         if (normalizedQuery.isNotEmpty) {
           final matchesQuery = <String>[
@@ -94,7 +96,7 @@ class QuestionProvider extends ChangeNotifier {
       }
       _ensureSelectedSubjectIsAvailable();
     } catch (_) {
-      _questions = <Question>[];
+      _questions = <MainQuestion>[];
       _errorMessage =
           'تعذر تحميل بنك الأسئلة من مساحة التخزين المحلية. حاول إعادة تشغيل التطبيق.';
     } finally {
@@ -103,8 +105,8 @@ class QuestionProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> addQuestion(Question question) async {
-    final previousQuestions = List<Question>.from(_questions);
+  Future<void> addQuestion(MainQuestion question) async {
+    final previousQuestions = List<MainQuestion>.from(_questions);
     _questions.insert(0, question.copyWith());
     _errorMessage = null;
     notifyListeners();
@@ -119,13 +121,13 @@ class QuestionProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> updateQuestion(Question question) async {
+  Future<void> updateQuestion(MainQuestion question) async {
     final index = _questions.indexWhere((item) => item.id == question.id);
     if (index == -1) {
       throw StateError('لا يمكن العثور على السؤال المطلوب تعديله.');
     }
 
-    final previousQuestions = List<Question>.from(_questions);
+    final previousQuestions = List<MainQuestion>.from(_questions);
     _questions[index] = question.copyWith();
     _errorMessage = null;
     _ensureSelectedSubjectIsAvailable();
@@ -148,7 +150,7 @@ class QuestionProvider extends ChangeNotifier {
       return;
     }
 
-    final previousQuestions = List<Question>.from(_questions);
+    final previousQuestions = List<MainQuestion>.from(_questions);
     _questions.removeAt(index);
     _errorMessage = null;
     _ensureSelectedSubjectIsAvailable();
@@ -221,15 +223,18 @@ class QuestionProvider extends ChangeNotifier {
     }
   }
 
+  /// أسئلة نموذجية هرمية: درجة كل سؤال = مجموع درجات فروعه آلياً.
   void _initSampleQuestions() {
-    _questions = <Question>[
-      Question(
+    _questions = <MainQuestion>[
+      MainQuestion(
         title: 'ما هي عاصمة جمهورية العراق؟',
         type: QuestionType.multipleChoice,
         difficulty: Difficulty.easy,
-        marks: 2,
         subject: 'الجغرافيا والتاريخ',
         topic: 'عواصم العالم العربي',
+        branches: <QuestionBranch>[
+          QuestionBranch(text: '', marks: 2),
+        ],
         options: <QuestionOption>[
           QuestionOption(text: 'بغداد', isCorrect: true),
           QuestionOption(text: 'البصرة'),
@@ -238,37 +243,51 @@ class QuestionProvider extends ChangeNotifier {
         ],
         explanation: 'بغداد هي العاصمة الرسمية وأكبر مدن العراق.',
       ),
-      Question(
+      MainQuestion(
         title: 'تدور الأرض حول الشمس في مدار دائري تماماً.',
         type: QuestionType.trueFalse,
         difficulty: Difficulty.medium,
-        marks: 1.5,
         subject: 'العلوم العامة',
         topic: 'النظام الشمسي',
+        branches: <QuestionBranch>[
+          QuestionBranch(text: '', marks: 1.5),
+        ],
         options: <QuestionOption>[
           QuestionOption(text: 'صح'),
           QuestionOption(text: 'خطأ', isCorrect: true),
         ],
         explanation: 'مدار الأرض حول الشمس إهليلجي (بيضاوي) وليس دائرياً تماماً.',
       ),
-      Question(
+      MainQuestion(
         title: 'تُعرف وحدة قياس شدة التيار الكهربائي في النظام الدولي بـ _____.',
         type: QuestionType.fillInTheBlank,
         difficulty: Difficulty.easy,
-        marks: 2,
         subject: 'الفيزياء',
         topic: 'الكهرباء والمغناطيسية',
+        branches: <QuestionBranch>[
+          QuestionBranch(text: '', marks: 2),
+        ],
         modelAnswer: 'الأمبير (Ampere)',
         explanation: 'يقاس التيار الكهربائي بوحدة الأمبير تكريماً للعالم أندريه ماري أمبير.',
       ),
-      Question(
+      MainQuestion(
         title:
             'ناقش أثر الطاقة الشمسية في تقليل الانبعاثات الكربونية ودورها في استدامة الشبكة الكهربائية الوطنية.',
         type: QuestionType.essay,
         difficulty: Difficulty.hard,
-        marks: 5,
         subject: 'العلوم والبيئة',
         topic: 'الطاقة المتجددة',
+        branches: <QuestionBranch>[
+          QuestionBranch(
+            text: 'اذكر أثر الطاقة الشمسية في تقليل الانبعاثات الكربونية',
+            marks: 2,
+          ),
+          QuestionBranch(
+            text: 'وضح دورها في استدامة الشبكة الكهربائية الوطنية',
+            marks: 2,
+          ),
+          QuestionBranch(text: 'استنتج خلاصة علمية مدعومة', marks: 1),
+        ],
         modelAnswer:
             '1- تقليل الاعتماد على الوقود الأحفوري\n2- خفض الانبعاثات الكربونية\n3- تخفيف الحمل على الشبكة وقت الذروة.',
         explanation: 'يتم توزيع الدرجات بناء على ذكر العناصر الثلاثة واستيفاء الشرح العلمي.',

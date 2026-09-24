@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/difficulty.dart';
-import '../models/question.dart';
+import '../models/main_question.dart';
 import '../models/question_type.dart';
 import '../providers/question_provider.dart';
 import 'question_editor_screen.dart';
@@ -33,7 +33,7 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
     super.dispose();
   }
 
-  Future<void> _openEditor([Question? question]) async {
+  Future<void> _openEditor([MainQuestion? question]) async {
     await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         builder: (_) => QuestionEditorScreen(existingQuestion: question),
@@ -41,7 +41,7 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
     );
   }
 
-  Future<void> _confirmDelete(Question question) async {
+  Future<void> _confirmDelete(MainQuestion question) async {
     final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -87,7 +87,7 @@ class _QuestionBankScreenState extends State<QuestionBankScreen> {
     }
   }
 
-  Future<void> _showExportDialog(List<Question> questions) async {
+  Future<void> _showExportDialog(List<MainQuestion> questions) async {
     await showDialog<void>(
       context: context,
       builder: (_) => ExportDialog(questions: questions),

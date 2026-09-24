@@ -37,33 +37,38 @@ class WritingQuestionsApp extends StatelessWidget {
       brightness: Brightness.light,
     );
 
-    return MaterialApp(
-      title: 'صانع ومحرر الأسئلة',
-      debugShowCheckedModeBanner: false,
-      locale: const Locale('ar'),
-      supportedLocales: const <Locale>[
-        Locale('ar'),
-        Locale('en'),
-      ],
-      localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: colorScheme,
-        appBarTheme: AppBarTheme(
-          centerTitle: true,
-          elevation: 0,
-          backgroundColor: colorScheme.surface,
-          foregroundColor: colorScheme.onSurface,
+    // اتجاه صارم RTL لتطبيق كامل (خطوة 1.2)؛ حقول الأرقام (الدرجات)
+    // تفرض LTR داخلياً لمنع انعكاس الكسور العشرية (1.5 ← 5.1).
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: MaterialApp(
+        title: 'صانع ومحرر الأسئلة',
+        debugShowCheckedModeBanner: false,
+        locale: const Locale('ar'),
+        supportedLocales: const <Locale>[
+          Locale('ar'),
+          Locale('en'),
+        ],
+        localizationsDelegates: const <LocalizationsDelegate<dynamic>>[
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        theme: ThemeData(
+          useMaterial3: true,
+          colorScheme: colorScheme,
+          appBarTheme: AppBarTheme(
+            centerTitle: true,
+            elevation: 0,
+            backgroundColor: colorScheme.surface,
+            foregroundColor: colorScheme.onSurface,
+          ),
+          inputDecorationTheme: InputDecorationTheme(
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
         ),
-        inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-        ),
+        home: const HomeScreen(),
       ),
-      home: const HomeScreen(),
     );
   }
 }

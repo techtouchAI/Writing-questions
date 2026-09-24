@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/difficulty.dart';
 import '../models/label_alphabet.dart';
-import '../models/question.dart';
+import '../models/main_question.dart';
 import '../models/question_type.dart';
 import '../models/subject_catalog.dart';
 import '../providers/question_provider.dart';
@@ -27,7 +27,7 @@ class _BranchDraft {
 class QuestionEditorScreen extends StatefulWidget {
   const QuestionEditorScreen({super.key, this.existingQuestion});
 
-  final Question? existingQuestion;
+  final MainQuestion? existingQuestion;
 
   @override
   State<QuestionEditorScreen> createState() => _QuestionEditorScreenState();
@@ -37,7 +37,6 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
   final _formKey = GlobalKey<FormState>();
 
   late final TextEditingController _titleController;
-  late final TextEditingController _marksController;
   late final TextEditingController _subjectController;
   late final TextEditingController _topicController;
   late final TextEditingController _categoryController;
@@ -67,9 +66,6 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
     _trueFalseAnswer = _trueFalseValue(question?.options);
 
     _titleController = TextEditingController(text: question?.title ?? '');
-    _marksController = TextEditingController(
-      text: (question?.marks ?? 1).toString(),
-    );
     _subjectController = TextEditingController(text: question?.subject ?? 'عام');
     _topicController = TextEditingController(text: question?.topic ?? '');
     _categoryController = TextEditingController(text: question?.category ?? '');
@@ -89,7 +85,10 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
     _customCategory = category.isNotEmpty && !categoryPresets.contains(category);
     _selectedCategory = categoryPresets.contains(category) ? category : '';
 
-    _branchDrafts = (question?.branches ?? const <QuestionBranch>[])
+    // الدرجة الكلية للسؤال = مجموع درجات الفروع آلياً — لا حقل درجة مستقل.
+    // سؤال جديد يبدأ بفرع واحد جاهز يحمل درجته (نص الفرع اختياري).
+    final existingBranches = question?.branches ?? const <QuestionBranch>[];
+    _branchDrafts = existingBranches
         .map(
           (branch) => _BranchDraft(
             text: branch.text,
@@ -99,12 +98,14 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
           ),
         )
         .toList(growable: true);
+    if (_branchDrafts.isEmpty) {
+      _branchDrafts.add(_BranchDraft(text: '', marks: ''));
+    }
   }
 
   @override
   void dispose() {
     _titleController.dispose();
-    _marksController.dispose();
     _subjectController.dispose();
     _topicController.dispose();
     _categoryController.dispose();
@@ -118,11 +119,6 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
 
   Future<void> _saveQuestion() async {
     if (_isSaving || !(_formKey.currentState?.validate() ?? false)) {
-      return;
-    }
-
-    final marks = _parseMarks(_marksController.text);
-    if (marks == null) {
       return;
     }
 
@@ -147,12 +143,13 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
     final category = _customCategory
         ? _categoryController.text.trim()
         : _selectedCategory.trim();
-    final question = Question(
+    // الدرجة الكلية تُحسب آلياً = مجموع درجات الفروع (roll-up) — لا حقل درجة
+    // مستقل يمكن أن يخالف المجموع (خطوة 1.4).
+    final question = MainQuestion(
       id: widget.existingQuestion?.id,
       title: _titleController.text.trim(),
       type: _type,
       difficulty: _difficulty,
-      marks: marks,
       subject: subject.isEmpty ? 'عام' : subject,
       topic: _topicController.text.trim(),
       category: category,
@@ -162,6 +159,10 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
       explanation: _explanationController.text.trim(),
       createdAt: widget.existingQuestion?.createdAt,
     );
+    if (question.marks <= 0) {
+      _showMessage('لا يمكن حفظ سؤال بلا درجات: حدّد درجة فرع واحد على الأقل.');
+      return;
+    }
 
     setState(() => _isSaving = true);
     final messenger = ScaffoldMessenger.of(context);
@@ -215,22 +216,25 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
   }
 
   /// يحول مسودات الفروع إلى نماذج صارمة؛ يعيد null عند درجة غير صالحة.
+  ///
+  /// **لا تُخزَّن تسميات (أ/ب/ج)** — تُولَّد ديناميكياً من الفهرس وقت العرض
+  /// والطباعة (خطوة 2.2). الفروع ذات النص الفارغ تبقى محفوظة إذا حملت
+  /// درجة (فرع درجة مجردة للسؤال البسيط).
   List<QuestionBranch>? _collectBranches() {
     final branches = <QuestionBranch>[];
     for (var index = 0; index < _branchDrafts.length; index++) {
       final draft = _branchDrafts[index];
       final text = draft.textController.text.trim();
-      if (text.isEmpty) {
-        continue;
-      }
       final marks = _parseBranchMarks(draft.marksController.text);
       if (marks == null) {
         _showMessage('درجة الفرع "${LabelAlphabet.at(index)}" غير صالحة.');
         return null;
       }
+      if (text.isEmpty && marks == 0) {
+        continue;
+      }
       branches.add(
         QuestionBranch(
-          label: LabelAlphabet.at(index),
           text: text,
           marks: marks,
         ),
@@ -248,10 +252,22 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
     return marks != null && marks.isFinite && marks >= 0 ? marks : null;
   }
 
-  void _addBranchDraft() {
-    if (_branchDrafts.length >= 6) {
-      return;
+  /// الدرجة الكلية الحالية = مجموع درجات الفروع (تُحسب لحظياً للعرض فقط).
+  double get _totalBranchMarks {
+    var total = 0.0;
+    for (final draft in _branchDrafts) {
+      total += _parseBranchMarks(draft.marksController.text) ?? 0;
     }
+    return total;
+  }
+
+  String _formatMarks(double marks) {
+    return marks == marks.truncateToDouble()
+        ? marks.toInt().toString()
+        : marks.toString();
+  }
+
+  void _addBranchDraft() {
     setState(() {
       _branchDrafts.add(_BranchDraft(text: '', marks: ''));
     });
@@ -269,18 +285,6 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
         backgroundColor: isError ? Theme.of(context).colorScheme.error : null,
       ),
     );
-  }
-
-  double? _parseMarks(String value) {
-    final normalized = value.trim().replaceAll('،', '.').replaceAll(',', '.');
-    final marks = double.tryParse(normalized);
-    return marks != null && marks.isFinite && marks > 0 ? marks : null;
-  }
-
-  String? _validateMarks(String? value) {
-    return _parseMarks(value ?? '') == null
-        ? 'أدخل درجة موجبة صحيحة، مثل 1 أو 1.5.'
-        : null;
   }
 
   static List<QuestionOption> _defaultOptions() {
@@ -390,16 +394,17 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: TextFormField(
-                        controller: _marksController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
+                      child: InputDecorator(
                         decoration: const InputDecoration(
-                          labelText: 'الدرجة المستحقة',
+                          labelText: 'الدرجة الكلية (مجموع الفروع)',
                           border: OutlineInputBorder(),
                         ),
-                        validator: _validateMarks,
+                        child: Text(
+                          '${_formatMarks(_totalBranchMarks)} درجة',
+                          textDirection: TextDirection.ltr,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
                       ),
                     ),
                   ],
@@ -678,22 +683,21 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
               children: <Widget>[
                 const Expanded(
                   child: Text(
-                    'فروع السؤال (اختياري)',
+                    'فروع السؤال ودرجاته',
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
                 TextButton.icon(
-                  onPressed: _isSaving || _branchDrafts.length >= 6
-                      ? null
-                      : _addBranchDraft,
+                  onPressed: _isSaving ? null : _addBranchDraft,
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('إضافة فرع'),
                 ),
               ],
             ),
             const Text(
-              'مثل: (أ) عبارة الفرع الأولى درجة، (ب) عبارة الفرع الثانية درجة — '
-              'تظهر مرقّمة في ورقة الامتحان ونموذج الإجابة.',
+              'درجة السؤال الكلية = مجموع درجات الفروع آلياً. التسميات (أ، ب، ج...) '
+              'تُولَّد تلقائياً من ترتيب الفروع ولا تُحفظ، فيبقى الترقيم متتالياً '
+              'حتى بعد حذف فرع وسط القائمة.',
               style: TextStyle(fontSize: 12, height: 1.4),
             ),
             for (var index = 0; index < _branchDrafts.length; index++) ...<Widget>[
@@ -720,16 +724,9 @@ class _QuestionEditorScreenState extends State<QuestionEditorScreen> {
                   const SizedBox(width: 8),
                   SizedBox(
                     width: 66,
-                    child: TextFormField(
+                    child: LtrNumericField(
                       controller: _branchDrafts[index].marksController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(
-                        hintText: 'الدرجة',
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                      ),
+                      hintText: 'الدرجة',
                     ),
                   ),
                   IconButton(

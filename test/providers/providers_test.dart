@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:writing_questions_app/models/difficulty.dart';
-import 'package:writing_questions_app/models/question.dart';
+import 'package:writing_questions_app/models/main_question.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/question_provider.dart';
 
@@ -84,8 +84,8 @@ void main() {
 }
 
 // Helper at top level so both groups can use it.
-Question createQuestion(String title) {
-  return Question(
+MainQuestion createQuestion(String title) {
+  return MainQuestion(
     title: title,
     type: QuestionType.trueFalse,
     subject: 'مادة تجريبية',

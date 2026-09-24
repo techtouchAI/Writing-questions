@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../models/question.dart';
+import '../../models/main_question.dart';
 import '../../models/question_type.dart';
 import '../../models/difficulty.dart';
 
 class QuestionCard extends StatelessWidget {
-  final Question question;
+  final MainQuestion question;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
   final bool isSelected;

@@ -4,7 +4,8 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 
 import '../models/exam.dart';
-import '../models/question.dart';
+import '../models/label_alphabet.dart';
+import '../models/main_question.dart';
 import '../models/question_type.dart';
 import 'export_file_service.dart';
 
@@ -84,11 +85,11 @@ class DocxExportService {
       '<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="12" w:space="4" w:color="1E3A8A"/></w:pBdr><w:spacing w:after="240"/></w:pPr></w:p>',
     );
 
-    for (var index = 0; index < exam.questions.length; index++) {
+    for (var index = 0; index < exam.mainQuestions.length; index++) {
       buffer.write(
         _buildQuestionXml(
           index + 1,
-          exam.questions[index],
+          exam.mainQuestions[index],
           isTeacherVersion,
         ),
       );
@@ -169,10 +170,11 @@ class DocxExportService {
 
   static String _buildQuestionXml(
     int index,
-    Question question,
+    MainQuestion question,
     bool isTeacherVersion,
   ) {
     final buffer = StringBuffer();
+    // الدرجة الكلية = مجموع درجات الفروع آلياً (roll-up).
     _writeParagraph(
       buffer,
       'س$index: ${question.title} [${_formatMarks(question.marks)} درجة]',
@@ -182,6 +184,28 @@ class DocxExportService {
       before: 180,
       after: 80,
     );
+
+    // فروع السؤال بتسميات ديناميكية من الفهرس (أ، ب، ج...) — لا تسمية مخزنة.
+    for (var branchIndex = 0;
+        branchIndex < question.branches.length;
+        branchIndex++) {
+      final branch = question.branches[branchIndex];
+      if (branch.text.trim().isEmpty) {
+        continue;
+      }
+      final label = LabelAlphabet.at(branchIndex);
+      final marksSuffix = branch.marks > 0
+          ? ' [${_formatMarks(branch.marks)} درجة]'
+          : '';
+      _writeParagraph(
+        buffer,
+        '$label) ${branch.text}$marksSuffix',
+        size: 22,
+        indent: 400,
+        before: 40,
+        after: 40,
+      );
+    }
 
     switch (question.type) {
       case QuestionType.multipleChoice:
@@ -216,10 +240,9 @@ class DocxExportService {
 
   static void _writeMultipleChoiceOptions(
     StringBuffer buffer,
-    Question question,
+    MainQuestion question,
     bool isTeacherVersion,
   ) {
-    const labels = <String>['أ', 'ب', 'ج', 'د', 'هـ', 'و'];
     final nonEmptyOptions = question.options
         .where((option) => option.text.trim().isNotEmpty)
         .toList(growable: false);
@@ -227,7 +250,8 @@ class DocxExportService {
     for (var index = 0; index < nonEmptyOptions.length; index++) {
       final option = nonEmptyOptions[index];
       final isCorrect = isTeacherVersion && option.isCorrect;
-      final label = index < labels.length ? labels[index] : '${index + 1}';
+      // التسمية ديناميكية من الفهرس (أ، ب، ج...) بلا قوائم مخزنة.
+      final label = LabelAlphabet.at(index);
       _writeParagraph(
         buffer,
         '( $label )  ${option.text}${isCorrect ? '  ✔ الإجابة الصحيحة' : ''}',
@@ -244,7 +268,7 @@ class DocxExportService {
 
   static void _writeTrueFalseAnswer(
     StringBuffer buffer,
-    Question question,
+    MainQuestion question,
     bool isTeacherVersion,
   ) {
     if (!isTeacherVersion) {
@@ -280,7 +304,7 @@ class DocxExportService {
 
   static void _writeFillInTheBlankAnswer(
     StringBuffer buffer,
-    Question question,
+    MainQuestion question,
     bool isTeacherVersion,
   ) {
     if (!isTeacherVersion) {
@@ -310,7 +334,7 @@ class DocxExportService {
 
   static void _writeEssayAnswerArea(
     StringBuffer buffer,
-    Question question,
+    MainQuestion question,
     bool isTeacherVersion,
   ) {
     if (isTeacherVersion) {
@@ -339,7 +363,7 @@ class DocxExportService {
     }
   }
 
-  static String _modelAnswerOrPlaceholder(Question question) {
+  static String _modelAnswerOrPlaceholder(MainQuestion question) {
     final answer = question.modelAnswer.trim();
     return answer.isEmpty ? 'غير محدد' : answer;
   }

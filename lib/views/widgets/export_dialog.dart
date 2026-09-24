@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../models/exam.dart';
-import '../../models/question.dart';
+import '../../models/main_question.dart';
 import '../../services/excel_export_service.dart';
 import '../../services/export_file_service.dart';
 import '../../services/pdf_export_service.dart';
@@ -16,7 +16,7 @@ class ExportDialog extends StatefulWidget {
       : assert(exam != null || questions != null);
 
   final Exam? exam;
-  final List<Question>? questions;
+  final List<MainQuestion>? questions;
 
   @override
   State<ExportDialog> createState() => _ExportDialogState();
@@ -26,8 +26,8 @@ class _ExportDialogState extends State<ExportDialog> {
   bool _isExporting = false;
   String _statusMessage = '';
 
-  List<Question>? get _questions =>
-      widget.exam != null ? widget.exam!.questions : widget.questions;
+  List<MainQuestion>? get _questions =>
+      widget.exam != null ? widget.exam!.mainQuestions : widget.questions;
   String get _exportTitle => widget.exam?.name ?? 'بنك_الأسئلة';
 
   Future<void> _previewExamPdf({required bool isTeacherVersion}) async {
@@ -39,7 +39,7 @@ class _ExportDialogState extends State<ExportDialog> {
     if (_isExporting) {
       return;
     }
-    if (exam.questions.isEmpty) {
+    if (exam.mainQuestions.isEmpty) {
       _showError('لا توجد أسئلة في الاختبار لتصديرها.');
       return;
     }
