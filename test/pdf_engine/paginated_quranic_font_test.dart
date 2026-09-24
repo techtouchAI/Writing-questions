@@ -65,7 +65,7 @@ void main() {
   });
 
   group('PaginatedPdfExamEngine — Quranic verses', () {
-    const verse = '﴿ إنا أعطيناك الكوثر ﴾';
+    const verse = '\uFD3F إنا أعطيناك الكوثر \uFD3E';
 
     test('draws the verse with the Quranic font and the rest with Noto Naskh', () async {
       final bytes = await const PaginatedPdfExamEngine().generate(

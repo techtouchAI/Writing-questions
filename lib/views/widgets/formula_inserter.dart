@@ -14,7 +14,7 @@ class FormulaInserter {
   /// هل يوجد حقل نصي نشط يستقبل الإدراج؟
   bool get hasTarget => controller != null;
 
-  /// يُدرج [snippet] عند المؤشر (أбо في النهاية إن لا تحديد صالح).
+  /// يُدرج [snippet] عند المؤشر (أو في نهاية النص إن لا تحديد صالح).
   void insert(String snippet) {
     final active = controller;
     if (active == null) {

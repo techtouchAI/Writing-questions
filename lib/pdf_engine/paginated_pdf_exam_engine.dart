@@ -331,8 +331,10 @@ class PaginatedPdfExamEngine {
     final marksSuffix = branch.marks > 0
         ? ' (${layout.formatNumber(branch.marks)} ${layout.marksUnit})'
         : '';
-    // الآية القائمة بذاتها تُوسَّط بخط قرآني أوضح — نفس قرار لوحة المعاينة.
-    final standaloneVerse = fonts.hasQuranic && QuranText.isStandaloneVerse(content.text);
+    // الآية القائمة بذاتها تُوسَّط بخط قرآني أوضح — نفس قرار لوحة المعاينة
+    // تماماً؛ والتوسيط والحجم لا يتعلقان بتوفر الخط القرآني (الخط وحده يرتد
+    // إلى خط الورقة إن غاب) حتى تبقى الشاشة والطباعة متطابقتين.
+    final standaloneVerse = QuranText.isStandaloneVerse(content.text);
     final bodyStyle = (standaloneVerse
             ? styles.body.copyWith(fontSize: 12, lineSpacing: layout.lineHeightFactor * 2 + 2)
             : styles.body.copyWith(lineSpacing: layout.lineHeightFactor * 2));

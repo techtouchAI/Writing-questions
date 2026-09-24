@@ -6,6 +6,7 @@ import 'package:writing_questions_app/layout/pagination_engine.dart';
 import 'package:writing_questions_app/layout/paper_metrics.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
+import 'package:writing_questions_app/models/exam_font.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
@@ -389,7 +390,7 @@ void main() {
                   id: 'q1a',
                   content: BranchContent(
                     type: QuestionType.essay,
-                    text: '﴿ إنا أعطيناك الكوثر ﴾',
+                    text: '\uFD3F إنا أعطيناك الكوثر \uFD3E',
                   ),
                   marks: 3,
                 ),
@@ -403,7 +404,7 @@ void main() {
 
       final verseText = tester.widget<TexText>(find.byType(TexText));
       expect(verseText.textAlign, TextAlign.center, reason: 'الآية القائمة بذاتها تُوسَّط');
-      expect(verseText.quranStyle?.fontFamily, 'Amiri');
+      expect(verseText.quranStyle?.fontFamily, ExamFont.quranicFamily);
 
       // المقطع القرآني المرسوم فعلاً يلبس الخط القرآني.
       final renderedSpans = <InlineSpan>[];
@@ -417,11 +418,11 @@ void main() {
       }
       final verseSpans = renderedSpans
           .whereType<TextSpan>()
-          .where((span) => span.text?.contains('﴿') ?? false)
+          .where((span) => span.text?.contains('\uFD3F') ?? false)
           .toList(growable: false);
       expect(verseSpans, isNotEmpty, reason: 'الآية تُعرض عرضاً منسّقاً على الورقة');
       for (final span in verseSpans) {
-        expect(span.style?.fontFamily, 'Amiri');
+        expect(span.style?.fontFamily, ExamFont.quranicFamily);
       }
     });
 
