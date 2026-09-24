@@ -250,8 +250,12 @@ void main() {
       final handle = find.descendant(of: source, matching: find.byIcon(Icons.drag_indicator));
       expect(handle, findsOneWidget);
       final gesture = await tester.startGesture(tester.getCenter(handle));
+      await tester.pump();
       await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
-      await gesture.moveTo(tester.getCenter(target));
+      final destination = tester.getCenter(target);
+      await gesture.moveBy(const Offset(0, 10));
+      await tester.pump();
+      await gesture.moveTo(destination);
       await tester.pump();
       await gesture.up();
       await tester.pumpAndSettle();

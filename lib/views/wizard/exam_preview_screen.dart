@@ -567,8 +567,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         ),
       ),
       childWhenDragging: Icon(Icons.drag_indicator, size: 16, color: Colors.grey.shade300),
-      child: Tooltip(
-        message: 'اضغط مطولاً واسحب لتبديل المحتوى مع فرع آخر',
+      // لا Tooltip هنا: مُعرِّف الضغط المطوّل الخاص به يتنافس مع بدء السحب.
+      child: Semantics(
+        label: 'اضغط مطولاً واسحب لتبديل المحتوى مع فرع آخر',
         child: Icon(Icons.drag_indicator, size: 16, color: Colors.grey.shade600),
       ),
     );

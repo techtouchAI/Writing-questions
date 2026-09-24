@@ -89,21 +89,31 @@ jobs:
           # ينشر سياق أول اختبار فاشل (بما فيه رسالة التوقّع والفرق)، لأن ذيل
           # السجل قد يكون كله اختبارات ناجحة فلا يُظهر سبب الفشل.
           publish_first_failure() {
-            local file="$1" label="$2" line start excerpt
+            local file="$1" label="$2" line start excerpt count=0
             [ -f "$file" ] || return 0
-            line="$(grep -n -m 1 -E '\[E\]|❌|Test failed|Expected:' "$file" | cut -d: -f1)"
-            if [ -n "$line" ]; then
-              start=$((line > 5 ? line - 5 : 1))
-              excerpt="$(sed -n "${start},$((start + 60))p" "$file")"
-            else
+            # ينشر سياق كل اختبار فاشل (حتى 6 اختبارات) لا الأول فقط، لأن
+            # سجلات التنزيل قد لا تكون متاحة خارج GitHub.
+            while read -r line; do
+              [ -n "$line" ] || continue
+              count=$((count + 1))
+              [ "$count" -le 6 ] || break
+              start=$((line > 2 ? line - 2 : 1))
+              excerpt="$(sed -n "${start},$((start + 45))p" "$file")"
+              [ -n "$excerpt" ] || continue
+              excerpt="${excerpt//%/%25}"
+              excerpt="${excerpt//$'\r'/%0D}"
+              excerpt="${excerpt//$'\n'/%0A}"
+              echo "::error title=$label ($count)::$excerpt"
+            done < <(grep -n -E '❌|\[E\]' "$file" | cut -d: -f1)
+            if [ "$count" -eq 0 ]; then
               # لا علامة فشل ظاهرة في السجل: ننشر آخر 120 سطراً كاملة.
               excerpt="$(tail -n 120 "$file")"
+              [ -n "$excerpt" ] || return 0
+              excerpt="${excerpt//%/%25}"
+              excerpt="${excerpt//$'\r'/%0D}"
+              excerpt="${excerpt//$'\n'/%0A}"
+              echo "::error title=$label::$excerpt"
             fi
-            [ -n "$excerpt" ] || return 0
-            excerpt="${excerpt//%/%25}"
-            excerpt="${excerpt//$'\r'/%0D}"
-            excerpt="${excerpt//$'\n'/%0A}"
-            echo "::error title=$label::$excerpt"
           }
           publish_tail "$RUNNER_TEMP/flutter-analyze.log" 'Flutter analyzer log excerpt'
           publish_tail "$RUNNER_TEMP/flutter-test.log" 'Flutter test log excerpt'
