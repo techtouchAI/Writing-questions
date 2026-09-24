@@ -3,6 +3,10 @@ include: package:flutter_lints/flutter.yaml
 analyzer:
   exclude:
     - build/**
+    # النسخة المحلية من حزمة pdf (third_party/pdf): شيفرة خارجية منسوخة كما هي
+    # مع تعديل موثّق واحد (انظر docs/arabic_word_spacing_fix.md و
+    # README-VENDORED.md)، ولا نُخضعها لقواعد تحليل التطبيق.
+    - third_party/**
 
 linter:
   rules:

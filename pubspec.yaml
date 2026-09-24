@@ -33,6 +33,14 @@ dependencies:
   shared_preferences: ^2.3.2
   uuid: ^4.4.0
 
+# نستخدم نسخة معدّلة محلياً من حزمة pdf 3.11.3 لإصلاح واحد فقط:
+# مسافات الكلمات العربية في النص من اليمين إلى اليسار (تدورالأرض ← تدور الأرض).
+# التفاصيل الكاملة والقياسات في docs/arabic_word_spacing_fix.md، والمصدر في
+# third_party/pdf (نفس إصدار الحزمة 3.11.3 حرفياً + التعديل الموثّق).
+dependency_overrides:
+  pdf:
+    path: third_party/pdf
+
 dev_dependencies:
   flutter_lints: ^4.0.0
   flutter_test:

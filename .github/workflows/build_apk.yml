@@ -51,6 +51,13 @@ jobs:
       - name: Resolve dependencies
         run: flutter pub get
 
+      # حزمة pdf في هذا المستودع نسخة معدّلة محلياً (third_party/pdf عبر
+      # dependency_overrides) تحمل إصلاحاً واحداً: مسافات الكلمات العربية في
+      # النص من اليمين إلى اليسار (_Line.realign كان يعكس بعرض الحبر بدل عرض
+      # التقدّم). هذا الفحص يفشل بوضوح إذا استُبدلت النسخة بأصل غير مُصلح.
+      - name: Verify vendored pdf patch (Arabic RTL word spacing)
+        run: dart run tool/verify_vendored_pdf_patch.dart
+
       - name: Analyze source
         id: analyze
         shell: bash
@@ -79,8 +86,28 @@ jobs:
             excerpt="${excerpt//$'\n'/%0A}"
             echo "::error title=$label::$excerpt"
           }
+          # ينشر سياق أول اختبار فاشل (بما فيه رسالة التوقّع والفرق)، لأن ذيل
+          # السجل قد يكون كله اختبارات ناجحة فلا يُظهر سبب الفشل.
+          publish_first_failure() {
+            local file="$1" label="$2" line start excerpt
+            [ -f "$file" ] || return 0
+            line="$(grep -n -m 1 -E '\[E\]|❌|Test failed|Expected:' "$file" | cut -d: -f1)"
+            if [ -n "$line" ]; then
+              start=$((line > 5 ? line - 5 : 1))
+              excerpt="$(sed -n "${start},$((start + 60))p" "$file")"
+            else
+              # لا علامة فشل ظاهرة في السجل: ننشر آخر 120 سطراً كاملة.
+              excerpt="$(tail -n 120 "$file")"
+            fi
+            [ -n "$excerpt" ] || return 0
+            excerpt="${excerpt//%/%25}"
+            excerpt="${excerpt//$'\r'/%0D}"
+            excerpt="${excerpt//$'\n'/%0A}"
+            echo "::error title=$label::$excerpt"
+          }
           publish_tail "$RUNNER_TEMP/flutter-analyze.log" 'Flutter analyzer log excerpt'
           publish_tail "$RUNNER_TEMP/flutter-test.log" 'Flutter test log excerpt'
+          publish_first_failure "$RUNNER_TEMP/flutter-test.log" 'First failing test excerpt'
 
       - name: Upload validation diagnostics on failure
         if: failure()
