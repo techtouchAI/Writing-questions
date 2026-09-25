@@ -892,10 +892,21 @@ class PaginatedPdfExamEngine {
       if (segment.text.isEmpty) {
         continue;
       }
+      // تنبيه دقيق في حزمة pdf: `copyWith(font:)` يوجَّه إلى خانة الوزن
+      // الفارغة فقط، وأي خط مضبوط مسبقاً (مثل Noto الصريح الذي يضعه
+      // PaperStyleResolver) يبقى ويسقط الخط الممرَّر. لذلك تُتجاوَز هنا
+      // الخانات الأربع صراحةً ليُلبَس الخط القرآني حتماً.
       spans.add(
         pw.TextSpan(
           text: segment.text,
-          style: segment.isQuran ? style.copyWith(font: quranFont) : style,
+          style: segment.isQuran
+              ? style.copyWith(
+                  fontNormal: quranFont,
+                  fontBold: quranFont,
+                  fontItalic: quranFont,
+                  fontBoldItalic: quranFont,
+                )
+              : style,
         ),
       );
     }

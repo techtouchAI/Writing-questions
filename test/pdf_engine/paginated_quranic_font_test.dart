@@ -68,40 +68,22 @@ void main() {
     const verse = '\uFD3F إنا أعطيناك الكوثر \uFD3E';
 
     test('draws the verse with the Quranic font and the rest with Noto Naskh', () async {
-      final doc = _islamicDocument(verse: verse);
-      final needsQ = PaginatedPdfExamEngine.needsQuranicFont(doc);
-      final loaded = await ExamFonts.load(loadQuranic: needsQ);
-      final bytesAuto = await PaginatedPdfExamEngine().generate(document: doc);
-      final probeAuto = PdfContentProbe.fromBytes(bytesAuto);
-      final seenAuto = <String>{
-        for (final line in probeAuto.lines) for (final word in line.words) word.baseFont,
-      };
-      final bytesExplicit = await PaginatedPdfExamEngine().generate(
-        document: doc,
-        fonts: loaded,
+      final bytes = await PaginatedPdfExamEngine().generate(
+        document: _islamicDocument(verse: verse),
       );
-      final probeExplicit = PdfContentProbe.fromBytes(bytesExplicit);
-      final seenExplicit = <String>{
-        for (final line in probeExplicit.lines)
-          for (final word in line.words) word.baseFont,
-      };
+      final probe = PdfContentProbe.fromBytes(bytes);
 
-      bool hasFont(PdfContentProbe probe, String needle) => probe.lines.any(
+      bool hasFont(String needle) => probe.lines.any(
             (line) => line.words.any(
               (word) => word.baseFont.toLowerCase().contains(needle),
             ),
           );
 
-      expect(
-        hasFont(probeAuto, 'amiri'),
-        isTrue,
-        reason: 'DIAG needsQuranic=$needsQ quranicLoaded=${loaded.quranic != null} '
-            'seenAuto=$seenAuto seenExplicit=$seenExplicit',
-      );
-      expect(hasFont(probeAuto, 'noto'), isTrue, reason: 'بقية الورقة تبقى بخط Noto Naskh');
+      expect(hasFont('amiri'), isTrue, reason: 'الآية يجب أن تُرسم بالخط القرآني');
+      expect(hasFont('noto'), isTrue, reason: 'بقية الورقة تبقى بخط Noto Naskh');
 
       final quranicWords = <ProbedWord>[
-        for (final line in probeAuto.lines)
+        for (final line in probe.lines)
           for (final word in line.words)
             if (word.baseFont.toLowerCase().contains('amiri')) word,
       ];
