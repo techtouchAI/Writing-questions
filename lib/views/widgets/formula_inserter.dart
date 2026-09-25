@@ -14,7 +14,7 @@ class FormulaInserter {
   /// هل يوجد حقل نصي نشط يستقبل الإدراج؟
   bool get hasTarget => controller != null;
 
-  /// يُدرج [snippet] عند المؤشر (أбо في النهاية إن لا تحديد صالح).
+  /// يُدرج [snippet] عند المؤشر (أو في نهاية النص إن لا تحديد صالح).
   void insert(String snippet) {
     final active = controller;
     if (active == null) {
@@ -33,5 +33,33 @@ class FormulaInserter {
       active.text = text + snippet;
       active.selection = TextSelection.collapsed(offset: active.text.length);
     }
+  }
+
+  /// يغلّف التحديد الحالي بـ [open] و[close] — يُستعمل لوسم آيات القرآن
+  /// بالقوسين المزخرفين `﴿ ... ﴾`.
+  ///
+  /// إن لم يكن هناك تحديد، يُدرج القوسان ويوضع المؤشر **بينهما** ليكتب
+  /// المستخدم الآية مباشرة داخلهما.
+  void wrapSelection(String open, String close) {
+    final active = controller;
+    if (active == null) {
+      return;
+    }
+    final selection = active.selection;
+    final text = active.text;
+    if (selection.isValid &&
+        selection.start >= 0 &&
+        selection.end <= text.length) {
+      final start = selection.start;
+      final end = selection.end;
+      final selected = text.substring(start, end);
+      active.text = text.replaceRange(start, end, '$open$selected$close');
+      active.selection = TextSelection.collapsed(
+        offset: start + open.length + (selected.isEmpty ? 0 : selected.length + close.length),
+      );
+      return;
+    }
+    active.text = '$text$open$close';
+    active.selection = TextSelection.collapsed(offset: active.text.length - close.length);
   }
 }

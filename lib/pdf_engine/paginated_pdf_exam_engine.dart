@@ -10,6 +10,7 @@ import '../models/exam_document.dart';
 import '../models/exam_header_model.dart';
 import '../models/question_model.dart';
 import '../models/question_type.dart';
+import '../models/quran_text.dart';
 import '../models/subject_layout.dart';
 import '../models/tex_content.dart';
 import 'exam_fonts.dart';
@@ -45,6 +46,31 @@ class PaginatedPdfExamEngine {
   static double get pageContentHeight =>
       PdfPageFormat.a4.height - 2 * _margin - _footerHeight;
 
+  /// هل تحمل الورقة نصاً موسوماً بآية قرآنية (نص فرع أو خيار أو إجابة نموذجية)؟
+  ///
+  /// يُستهلك هذا القرار في تحميل الخط القرآني: الورقة التي لا تحمل وسماً
+  /// قرآنياً لا يُحمَّل لها أصل الخط (431 كيلوبايت) أصلاً — «إن توفّرت» تعني
+  /// أيضاً ألا نكلّف الورقة ما لا تحتاجه، مع بقاء السلوك نفسه تماماً.
+  static bool needsQuranicFont(ExamDocument document) {
+    for (final question in document.questions) {
+      for (final branch in question.branches) {
+        final content = branch.content;
+        if (QuranText.containsQuran(content.text)) {
+          return true;
+        }
+        if (QuranText.containsQuran(content.modelAnswer)) {
+          return true;
+        }
+        for (final option in content.options) {
+          if (QuranText.containsQuran(option.text)) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
   /// يولّد ملف PDF متعدد الصفحات بحجم A4.
   ///
   /// [pageAssignments]: توزيع معرّفات الأسئلة على الصفحات كما حُسب على
@@ -55,7 +81,8 @@ class PaginatedPdfExamEngine {
     List<List<String>>? pageAssignments,
     ExamFonts? fonts,
   }) async {
-    final loadedFonts = fonts ?? await ExamFonts.load();
+    final loadedFonts =
+        fonts ?? await ExamFonts.load(loadQuranic: needsQuranicFont(document));
     final layout = document.layout;
     final direction = layout.isLtr ? pw.TextDirection.ltr : pw.TextDirection.rtl;
     final theme = pw.ThemeData.withFont(
@@ -76,6 +103,7 @@ class PaginatedPdfExamEngine {
       measure: (widget) => _measure(widget, pdf, theme, direction),
       layout: layout,
       styles: styles,
+      fonts: loadedFonts,
       isTeacherVersion: isTeacherVersion,
     );
 
@@ -95,6 +123,7 @@ class PaginatedPdfExamEngine {
                   document.questionById(id)!,
                   layout,
                   styles,
+                  loadedFonts,
                   isTeacherVersion,
                 ),
             ];
@@ -152,6 +181,7 @@ class PaginatedPdfExamEngine {
     required double Function(pw.Widget) measure,
     required SubjectLayoutTemplate layout,
     required ExamTextStyles styles,
+    required ExamFonts fonts,
     required bool isTeacherVersion,
   }) {
     if (pageAssignments != null && _coversAllQuestions(pageAssignments, document)) {
@@ -167,7 +197,7 @@ class PaginatedPdfExamEngine {
         for (final question in document.questions)
           PageBlock(
             id: question.id,
-            height: measure(_buildQuestion(question, layout, styles, isTeacherVersion)),
+            height: measure(_buildQuestion(question, layout, styles, fonts, isTeacherVersion)),
           ),
       ],
       pageHeight: pageContentHeight,
@@ -286,6 +316,7 @@ class PaginatedPdfExamEngine {
     QuestionModel question,
     SubjectLayoutTemplate layout,
     ExamTextStyles styles,
+    ExamFonts fonts,
     bool isTeacherVersion,
   ) {
     final category = question.category.trim();
@@ -306,6 +337,7 @@ class PaginatedPdfExamEngine {
               layout.branchLabel(index),
               layout,
               styles,
+              fonts,
               isTeacherVersion,
             ),
           ),
@@ -318,22 +350,37 @@ class PaginatedPdfExamEngine {
     String label,
     SubjectLayoutTemplate layout,
     ExamTextStyles styles,
+    ExamFonts fonts,
     bool isTeacherVersion,
   ) {
     final content = branch.content;
     final marksSuffix = branch.marks > 0
         ? ' (${layout.formatNumber(branch.marks)} ${layout.marksUnit})'
         : '';
-    final bodyStyle = styles.body.copyWith(lineSpacing: layout.lineHeightFactor * 2);
+    // المقاطع الموسومة بالآيات تُرسم بالخط القرآني في كل القوالب، وأما
+    // «أسلوب المصحف» — توسيط الآية القائمة بذاتها وتكبيرها — فيتبع تفضيل
+    // القالب ([SubjectLayoutTemplate.prefersQuranicFont] أي التربية
+    // الإسلامية). وهو **نفس قرار لوحة المعاينة** حرفياً؛ والتوسيط والحجم لا
+    // يتعلقان بتوفر الخط (الخط وحده يرتد إلى خط الورقة إن غاب الأصل).
+    final standaloneVerse =
+        layout.prefersQuranicFont && QuranText.isStandaloneVerse(content.text);
+    final bodyStyle = (standaloneVerse
+            ? styles.body.copyWith(fontSize: 12, lineSpacing: layout.lineHeightFactor * 2 + 2)
+            : styles.body.copyWith(lineSpacing: layout.lineHeightFactor * 2));
 
     final body = pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       mainAxisSize: pw.MainAxisSize.min,
       children: <pw.Widget>[
-        _renderText('$label) ${content.text}$marksSuffix', bodyStyle),
+        _renderText(
+          '$label) ${content.text}$marksSuffix',
+          bodyStyle,
+          fonts.quranic,
+          centerVerse: standaloneVerse,
+        ),
         pw.Padding(
           padding: const pw.EdgeInsetsDirectional.only(start: 14, top: 1),
-          child: _buildTypeBody(content, layout, styles, isTeacherVersion),
+          child: _buildTypeBody(content, layout, styles, fonts, isTeacherVersion),
         ),
       ],
     );
@@ -376,6 +423,7 @@ class PaginatedPdfExamEngine {
     BranchContent content,
     SubjectLayoutTemplate layout,
     ExamTextStyles styles,
+    ExamFonts fonts,
     bool isTeacherVersion,
   ) {
     final answerStyle = styles.body.copyWith(
@@ -392,12 +440,11 @@ class PaginatedPdfExamEngine {
           runSpacing: 2,
           children: <pw.Widget>[
             for (var index = 0; index < options.length; index++)
-              pw.Text(
+              _renderText(
                 '( ${layout.branchLabel(index)} ) ${options[index].text}'
                 '${isTeacherVersion && options[index].isCorrect ? ' •' : ''}',
-                style: isTeacherVersion && options[index].isCorrect
-                    ? answerStyle
-                    : styles.option,
+                isTeacherVersion && options[index].isCorrect ? answerStyle : styles.option,
+                fonts.quranic,
               ),
           ],
         );
@@ -473,11 +520,20 @@ class PaginatedPdfExamEngine {
     );
   }
 
-  /// نص علمي: مقاطع LaTeX ($...$) تُرسم SVG متجهة، والباقي نص عادي.
-  pw.Widget _renderText(String text, pw.TextStyle style) {
+  /// نص الورقة: مقاطع LaTeX ($...$) تُرسم SVG متجهة، وآيات القرآن الموسومة
+  /// بـ `﴿ ... ﴾` تُرسم بالخط القرآني (Amiri) إن توفّر، والباقي نص عادي.
+  ///
+  /// [centerVerse] يوسّط آية قائمة بذاتها كما في لوحة المعاينة.
+  pw.Widget _renderText(
+    String text,
+    pw.TextStyle style,
+    pw.Font? quranFont, {
+    bool centerVerse = false,
+  }) {
     final segments = TexContent.split(text);
-    if (!segments.any((segment) => segment.isMath)) {
-      return pw.Text(text, style: style);
+    final hasMath = segments.any((segment) => segment.isMath);
+    if (!hasMath) {
+      return _plainText(text, style, quranFont, centerVerse: centerVerse);
     }
     final fontSize = style.fontSize ?? 10.5;
     final rows = <pw.Widget>[];
@@ -501,7 +557,7 @@ class PaginatedPdfExamEngine {
     for (final segment in segments) {
       if (!segment.isMath) {
         if (segment.text.isNotEmpty) {
-          inline.add(pw.Text(segment.text, style: style));
+          inline.add(_plainText(segment.text, style, quranFont));
         }
         continue;
       }
@@ -523,6 +579,41 @@ class PaginatedPdfExamEngine {
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       mainAxisSize: pw.MainAxisSize.min,
       children: rows,
+    );
+  }
+
+  /// نص عادي — وإذا حمل آيات موسومة رُسمت مقاطعها بالخط القرآني [quranFont]
+  /// في نفس السطر ([pw.RichText] بامتدادات متعددة الخطوط).
+  ///
+  /// غياب الخط القرآني أو غياب الوسم يعيد النص كما هو بخط الورقة الأساسي.
+  static pw.Widget _plainText(
+    String text,
+    pw.TextStyle style,
+    pw.Font? quranFont, {
+    bool centerVerse = false,
+  }) {
+    if (quranFont == null || !QuranText.containsQuran(text)) {
+      return pw.Text(
+        text,
+        style: style,
+        textAlign: centerVerse ? pw.TextAlign.center : null,
+      );
+    }
+    final spans = <pw.InlineSpan>[];
+    for (final segment in QuranText.split(text)) {
+      if (segment.text.isEmpty) {
+        continue;
+      }
+      spans.add(
+        pw.TextSpan(
+          text: segment.text,
+          style: segment.isQuran ? style.copyWith(font: quranFont) : style,
+        ),
+      );
+    }
+    return pw.RichText(
+      text: pw.TextSpan(children: spans),
+      textAlign: centerVerse ? pw.TextAlign.center : null,
     );
   }
 

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 
 import '../../layout/pagination_engine.dart';
@@ -12,6 +13,7 @@ import '../../models/exam_header_model.dart';
 import '../../models/floating_element.dart';
 import '../../models/question_model.dart';
 import '../../models/question_type.dart';
+import '../../models/quran_text.dart';
 import '../../models/subject_layout.dart';
 import '../../models/tex_content.dart';
 import '../../providers/exam_document_provider.dart';
@@ -53,6 +55,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   String? _selectedAttachmentId;
   bool _isBusy = false;
 
+  /// عرض «نموذج الإجابة» على الورقة: تُظهر الإجابات الصحيحة والنموذجية
+  /// وتحرَّر في مكانها (نفس سلوك ملف الـ PDF في وضع المعلم).
+  bool _showTeacherAnswers = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -86,6 +92,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   static String _branchTextKey(String branchId) => 'branch-$branchId';
   static String _branchMarksKey(String branchId) => 'marks-$branchId';
+  static String _optionKey(String branchId, int index) => 'option-$branchId-$index';
+  static String _modelAnswerKey(String branchId) => 'answer-$branchId';
+  static String _categoryKey(String questionId) => 'category-$questionId';
   static String _headerKey(HeaderSlot slot, int line) => 'header-${slot.name}-$line';
   static const String _instructionsKey = 'instructions';
 
@@ -99,6 +108,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
     final document = controller.document;
     for (final question in document.questions) {
+      final categoryField = _fields[_categoryKey(question.id)];
+      if (categoryField != null && categoryField.text != question.category) {
+        categoryField.text = question.category;
+      }
       for (final branch in question.branches) {
         final textField = _fields[_branchTextKey(branch.id)];
         if (textField != null && textField.text != branch.content.text) {
@@ -107,6 +120,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         final marksField = _fields[_branchMarksKey(branch.id)];
         if (marksField != null && _parseMarks(marksField.text) != branch.marks) {
           marksField.text = _formatMarksInput(branch.marks);
+        }
+        final answerField = _fields[_modelAnswerKey(branch.id)];
+        if (answerField != null && answerField.text != branch.content.modelAnswer) {
+          answerField.text = branch.content.modelAnswer;
+        }
+        for (var index = 0; index < branch.content.options.length; index++) {
+          final optionField = _fields[_optionKey(branch.id, index)];
+          if (optionField != null && optionField.text != branch.content.options[index].text) {
+            optionField.text = branch.content.options[index].text;
+          }
         }
       }
     }
@@ -119,6 +142,45 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         }
       }
     }
+    _disposeStaleFields(document);
+  }
+
+  /// يتخلّص من تحكمات الحقول التي حُذف أصحابها (سؤال أو فرع) فلا تتراكم
+  /// تحكمات بلا مالك. الحذف يتم **بعد اكتمال الإطار** كي لا يُحرَّر تحكم
+  /// ما زال مربوطاً بحقل في الشجرة الحالية.
+  void _disposeStaleFields(ExamDocument document) {
+    final live = <String>{
+      _instructionsKey,
+      for (final slot in HeaderSlot.values)
+        for (var line = 0; line < HeaderColumn.lineCount; line++) _headerKey(slot, line),
+      for (final question in document.questions) ...<String>{
+        _categoryKey(question.id),
+        for (final branch in question.branches) ...<String>{
+          _branchTextKey(branch.id),
+          _branchMarksKey(branch.id),
+          _modelAnswerKey(branch.id),
+          for (var index = 0; index < branch.content.options.length; index++)
+            _optionKey(branch.id, index),
+        },
+      },
+    };
+    final stale = _fields.keys.where((key) => !live.contains(key)).toList(growable: false);
+    if (stale.isEmpty) {
+      return;
+    }
+    // يُزال القيد فوراً (فلا يُعاد استخدام تحكم فرع محذوف)، ويُحرَّر التحكم
+    // بعد اكتمال إطارين — فالإطار الأول يُسقط الحقول من الشجرة، والثاني
+    // يضمن أن التحكم لم يبق مربوطاً بأي حقل قبل تحريره.
+    final orphaned = <TextEditingController>[
+      for (final key in stale) _fields.remove(key)!,
+    ];
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        for (final controller in orphaned) {
+          controller.dispose();
+        }
+      });
+    });
   }
 
   static double? _parseMarks(String value) {
@@ -271,6 +333,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           onPressed: widget.onBackToQuestions,
         ),
         actions: <Widget>[
+          IconButton(
+            icon: Icon(
+              _showTeacherAnswers ? Icons.visibility : Icons.visibility_off_outlined,
+            ),
+            tooltip: _showTeacherAnswers ? 'عرض ورقة الطالب' : 'عرض نموذج الإجابة',
+            onPressed: _isBusy
+                ? null
+                : () => setState(() => _showTeacherAnswers = !_showTeacherAnswers),
+          ),
           IconButton(
             icon: const Icon(Icons.save_outlined),
             tooltip: 'حفظ النموذج',
@@ -433,6 +504,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           children: <Widget>[
             for (var index = 0; index < lines.length; index++)
               _paperField(
+                key: ValueKey<String>(_headerKey(slot, index)),
                 controller: _field(
                   _headerKey(slot, index),
                   lines[index],
@@ -478,6 +550,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           style: PaperStyles.small,
         ),
         _paperField(
+          key: const ValueKey<String>(_instructionsKey),
           controller: _field(_instructionsKey, header.instructions, controller.updateInstructions),
           style: PaperStyles.note,
           textAlign: TextAlign.center,
@@ -503,7 +576,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       key: ValueKey<String>('question-block-${question.id}'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        if (category.isNotEmpty) Text(category, style: PaperStyles.category),
+        // عنوان القسم الوزاري: نص قابل للتحرير مباشرة على الورقة مثل بقية النصوص.
+        if (category.isNotEmpty)
+          _paperField(
+            key: ValueKey<String>(_categoryKey(question.id)),
+            controller: _field(
+              _categoryKey(question.id),
+              category,
+              (value) => controller.updateQuestionCategory(questionIndex, value),
+            ),
+            style: PaperStyles.category,
+            hint: 'القسم الوزاري...',
+          ),
         Row(
           children: <Widget>[
             Expanded(
@@ -631,6 +715,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             ),
             Expanded(
               child: _paperField(
+                key: ValueKey<String>(_branchTextKey(branch.id)),
                 controller: _field(
                   _branchTextKey(branch.id),
                   content.text,
@@ -664,14 +749,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             Text(layout.marksUnit, style: PaperStyles.small),
           ],
         ),
-        if (TexContent.containsMath(content.text))
+        // عرض منسّق للنص العلمي (LaTeX) وللآيات القرآنية (خط قرآني) تحت
+        // الحقل، مع إبقاء الحقل نفسه للكتابة: ما يُرى هو ما يُطبع.
+        if (TexContent.containsMath(content.text) || QuranText.containsQuran(content.text))
           Padding(
             padding: const EdgeInsetsDirectional.only(start: 36),
-            child: TexText(content.text, style: bodyStyle),
+            child: _buildRichPreview(layout, content.text, bodyStyle),
           ),
         Padding(
           padding: const EdgeInsetsDirectional.only(start: 36, top: 1),
-          child: _buildTypeBody(layout, content),
+          child: _buildTypeBody(controller, ref, layout, branch),
         ),
       ],
     );
@@ -778,25 +865,111 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// جسم الفرع حسب نوعه (ورقة الطالب): خيارات / صح-خطأ / فراغ / أسطر مقالية.
-  Widget _buildTypeBody(SubjectLayoutTemplate layout, BranchContent content) {
+  /// عرض منسّق لنص الفرع: الآيات القرآنية بالخط القرآني (Amiri) دائماً.
+  ///
+  /// وأما «أسلوب المصحف» — توسيط الآية القائمة بذاتها وتكبيرها — فيتبع
+  /// تفضيل القالب ([SubjectLayoutTemplate.prefersQuranicFont]، أي قالب
+  /// التربية الإسلامية)؛ وهو **نفس قرار محرك الـ PDF** حرفياً فلا تنحرف
+  /// الشاشة عن الطباعة.
+  Widget _buildRichPreview(
+    SubjectLayoutTemplate layout,
+    String text,
+    TextStyle bodyStyle,
+  ) {
+    final mushafVerse =
+        layout.prefersQuranicFont && QuranText.isStandaloneVerse(text);
+    return TexText(
+      text,
+      style: bodyStyle,
+      mathTextStyle: bodyStyle,
+      quranStyle: mushafVerse
+          ? PaperStyles.verse(layout)
+          : PaperStyles.quranic(bodyStyle),
+      textAlign: mushafVerse ? TextAlign.center : TextAlign.start,
+    );
+  }
+
+  /// عرض حقل الخيار الواحد على اللوحة (بكسل منطقي) — قريب من توزيع
+  /// الخيارات في الورقة المطبوعة مع إبقائها قابلة للتحرير في مكانها.
+  static const double _optionFieldWidth = 190;
+
+  /// جسم الفرع حسب نوعه: خيارات / صح-خطأ / فراغ / أسطر مقالية.
+  ///
+  /// كل نصوصه قابلة للتحرير في مكانها — بما فيها نصوص الخيارات في «اختيار
+  /// من متعدد» — وتُعرض الإجابات النموذجية وتُحرَّر عند تشغيل «نموذج الإجابة».
+  Widget _buildTypeBody(
+    ExamWizardController controller,
+    BranchRef ref,
+    SubjectLayoutTemplate layout,
+    BranchModel branch,
+  ) {
+    final content = branch.content;
+    final answerStyle = PaperStyles.answerBody(layout);
     switch (content.type) {
       case QuestionType.multipleChoice:
-        final options = content.options
-            .where((option) => option.text.trim().isNotEmpty)
-            .toList(growable: false);
+        // عرض الخيارات بنفس منطق الورقة المطبوعة (صفوف متعددة الخيارات)،
+        // لكن كل خيار حقل كتابة مباشر بعرض ثابت — والخيارات الفارغة تبقى
+        // ظاهرة ليُكتب فيها (محرك الطباعة يستثني الفارغ كما في الورقة).
         return Wrap(
           spacing: 14,
           runSpacing: 2,
+          crossAxisAlignment: WrapCrossAlignment.start,
           children: <Widget>[
-            for (var index = 0; index < options.length; index++)
-              Text(
-                '( ${layout.branchLabel(index)} ) ${options[index].text}',
-                style: PaperStyles.option,
+            for (var index = 0; index < content.options.length; index++)
+              SizedBox(
+                width: _optionFieldWidth,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Text(
+                        '( ${layout.branchLabel(index)} )',
+                        style: PaperStyles.option,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _paperField(
+                        key: ValueKey<String>(_optionKey(branch.id, index)),
+                        controller: _field(
+                          _optionKey(branch.id, index),
+                          content.options[index].text,
+                          (value) => controller.updateBranchOptionText(ref, index, value),
+                        ),
+                        style: _showTeacherAnswers && content.options[index].isCorrect
+                            ? answerStyle
+                            : PaperStyles.option,
+                        hint: layout.isLtr ? 'Option...' : 'نص الخيار...',
+                        registerInserter: true,
+                      ),
+                    ),
+                    if (_showTeacherAnswers && content.options[index].isCorrect)
+                      const Padding(
+                        padding: EdgeInsetsDirectional.only(start: 2),
+                        child: Text(
+                          '•',
+                          style: TextStyle(
+                            color: PaperStyles.answer,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
           ],
         );
       case QuestionType.trueFalse:
+        if (_showTeacherAnswers) {
+          final answer = content.trueFalseAnswer;
+          return Text(
+            layout.isLtr
+                ? 'Answer: ${answer ? 'True' : 'False'} •'
+                : 'الإجابة الصحيحة: ${answer ? 'صح' : 'خطأ'} •',
+            style: answerStyle,
+          );
+        }
         return Text(
           layout.isLtr
               ? 'Answer: (     ) True      (     ) False'
@@ -804,6 +977,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           style: PaperStyles.body(layout),
         );
       case QuestionType.fillInTheBlank:
+        if (_showTeacherAnswers) {
+          return _buildModelAnswerField(controller, ref, layout, branch, answerStyle);
+        }
         return Text(
           '${layout.isLtr ? 'Answer' : 'الإجابة'}: '
           '............................................................................',
@@ -812,6 +988,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           overflow: TextOverflow.clip,
         );
       case QuestionType.essay:
+        if (_showTeacherAnswers) {
+          return _buildModelAnswerField(controller, ref, layout, branch, answerStyle);
+        }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: List<Widget>.generate(
@@ -827,15 +1006,54 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
   }
 
+  /// الإجابة النموذجية على الورقة في وضع «نموذج الإجابة» — نص قابل للتحرير
+  /// في مكانه (فراغ/مقالي)، تماماً كما يُطبع في ملف الـ PDF.
+  Widget _buildModelAnswerField(
+    ExamWizardController controller,
+    BranchRef ref,
+    SubjectLayoutTemplate layout,
+    BranchModel branch,
+    TextStyle answerStyle,
+  ) {
+    final content = branch.content;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          content.type == QuestionType.essay
+              ? (layout.isLtr ? 'Model answer: ' : 'الإجابة النموذجية وعناصر التقييم: ')
+              : (layout.isLtr ? 'Model answer: ' : 'الإجابة النموذجية: '),
+          style: answerStyle,
+        ),
+        Expanded(
+          child: _paperField(
+            key: ValueKey<String>(_modelAnswerKey(branch.id)),
+            controller: _field(
+              _modelAnswerKey(branch.id),
+              content.modelAnswer,
+              (value) => controller.updateBranchModelAnswer(ref, value),
+            ),
+            style: answerStyle,
+            hint: layout.isLtr ? 'Model answer...' : 'اكتب الإجابة النموذجية...',
+            registerInserter: true,
+          ),
+        ),
+        Text(' •', style: answerStyle),
+      ],
+    );
+  }
+
   /// حقل نصي مسطّح على الورقة (تحرير مباشر بلا حوارات).
   Widget _paperField({
     required TextEditingController controller,
     required TextStyle style,
+    Key? key,
     TextAlign textAlign = TextAlign.start,
     String? hint,
     bool registerInserter = false,
   }) {
     return TextField(
+      key: key,
       controller: controller,
       maxLines: null,
       textAlign: textAlign,

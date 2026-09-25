@@ -18,6 +18,7 @@ class ProbedWord {
     required this.fontSize,
     required this.fontName,
     required this.advanceWidth,
+    this.baseFont = '',
   });
 
   /// النص كما يراه العارض (أشكال العرض العربية بعد التشكيل).
@@ -25,6 +26,9 @@ class ProbedWord {
 
   /// اسم مورد الخط المستخدم لهذه الكلمة (مثل /F2).
   final String fontName;
+
+  /// اسم الخط الفعلي كما في `/BaseFont` (مثل `AAAAAA+Amiri-Regular`).
+  final String baseFont;
 
   /// إحداثي البداية الأفقي من أمر Td (نقاط PDF).
   final double x;
@@ -219,6 +223,7 @@ class PdfContentProbe {
         fontSize: fontSize,
         fontName: fontName,
         advanceWidth: advance,
+        baseFont: data?.baseFont ?? '',
       ));
       pendingX = null;
       pendingY = null;
@@ -270,7 +275,10 @@ final Map<ByteData, TtfParser> _fontParsers = <ByteData, TtfParser>{};
 
 /// بيانات خط واحد كما وردت في ملف PDF.
 class _FontData {
-  _FontData({required this.widths, required this.cidToUnicode});
+  _FontData({required this.widths, required this.cidToUnicode, required this.baseFont});
+
+  /// اسم الخط من `/BaseFont` في كائن الخط (قد يحمل بادئة مجموعة فرعية).
+  final String baseFont;
 
   /// عرض كل CID بالألف من وحدة النص (كما في /W)، بترتيب الـ CID.
   final List<int> widths;
@@ -411,6 +419,8 @@ class _PdfObjects {
       }
     }
 
-    return _FontData(widths: widths, cidToUnicode: cidToUnicode);
+    final baseFont = RegExp(r'/BaseFont\s*/([^\s/>\]]+)').firstMatch(dict)?.group(1) ?? '';
+
+    return _FontData(widths: widths, cidToUnicode: cidToUnicode, baseFont: baseFont);
   }
 }

@@ -6,10 +6,13 @@ import 'package:writing_questions_app/layout/pagination_engine.dart';
 import 'package:writing_questions_app/layout/paper_metrics.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
+import 'package:writing_questions_app/models/exam_font.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/question_model.dart';
+import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
+import 'package:writing_questions_app/views/widgets/tex_text.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 import 'package:writing_questions_app/views/wizard/exam_wizard_screen.dart';
 
@@ -43,6 +46,26 @@ ExamDocument _previewDocument({int questionCount = 2, List<int>? branchesPerQues
         ),
     ],
   );
+}
+
+/// يجمع كل امتدادات النص ([TextSpan]) داخل شجرة [span] مهما تعمّقت.
+///
+/// لازمة لأن `Text.rich` يلفّ الامتداد المُمرَّر داخل جذر يحمل النمط العام،
+/// فجمع الأبناء المباشرين وحده لا يصل إلى مقطع الآية.
+List<TextSpan> _collectTextSpans(InlineSpan span) {
+  final collected = <TextSpan>[];
+  void visit(InlineSpan current) {
+    if (current is! TextSpan) {
+      return;
+    }
+    collected.add(current);
+    for (final child in current.children ?? const <InlineSpan>[]) {
+      visit(child);
+    }
+  }
+
+  visit(span);
+  return collected;
 }
 
 /// يتحقق أن كل سؤال معروض على صفحة واحدة فقط مع **كل** فروعه (لا فصل).
@@ -276,6 +299,202 @@ void main() {
         find.descendant(of: source, matching: find.byType(TextField)).first,
       );
       expect(firstField.controller!.text, 'محتوى س2 ب');
+    });
+
+    testWidgets('edits multiple-choice options and the ministry category in place', (tester) async {
+      tester.view.physicalSize = const Size(1000, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final controller = ExamWizardController(
+        document: ExamDocument(
+          name: 'خيارات',
+          header: ExamHeaderModel.ministerialDefault(subject: 'التربية الإسلامية'),
+          questions: <QuestionModel>[
+            QuestionModel(
+              id: 'q1',
+              questionNumber: 1,
+              category: 'أحكام التلاوة',
+              branches: <BranchModel>[
+                BranchModel(
+                  id: 'q1a',
+                  content: BranchContent(
+                    type: QuestionType.multipleChoice,
+                    text: 'اختر الإجابة الصحيحة',
+                    options: <QuestionOption>[
+                      QuestionOption(text: 'الخيار الأول', isCorrect: true),
+                      QuestionOption(text: 'الخيار الثاني'),
+                    ],
+                  ),
+                  marks: 2,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pumpWidget(_preview(controller));
+      await tester.pump();
+
+      // عنوان القسم الوزاري ونصوص الخيارات: نصوص قابلة للتحرير في مكانها.
+      await tester.enterText(find.byKey(const ValueKey<String>('category-q1')), 'الحفظ');
+      await tester.pump();
+      expect(controller.document.questions.single.category, 'الحفظ');
+
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('option-q1a-1')),
+        'الخيار الثاني المعدّل',
+      );
+      await tester.pump();
+
+      final options = controller.document
+          .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
+          .content
+          .options;
+      expect(options[1].text, 'الخيار الثاني المعدّل');
+      // علامة الإجابة الصحيحة لا تتغيّر بتحرير نص الخيار.
+      expect(options[0].isCorrect, isTrue);
+      expect(options[1].isCorrect, isFalse);
+    });
+
+    testWidgets('hides teacher answers in the student sheet and edits them in the answer view',
+        (tester) async {
+      tester.view.physicalSize = const Size(1000, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final controller = ExamWizardController(document: _previewDocument(questionCount: 1));
+      await tester.pumpWidget(_preview(controller));
+      await tester.pump();
+
+      const answerKey = ValueKey<String>('answer-q1a');
+      expect(find.byKey(answerKey), findsNothing, reason: 'ورقة الطالب لا تُظهر الإجابة النموذجية');
+
+      await tester.tap(find.byTooltip('عرض نموذج الإجابة'));
+      await tester.pump();
+      expect(find.byKey(answerKey), findsOneWidget);
+
+      await tester.enterText(find.byKey(answerKey), 'إجابة نموذجية مفصّلة');
+      await tester.pump();
+      expect(
+        controller.document
+            .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
+            .content
+            .modelAnswer,
+        'إجابة نموذجية مفصّلة',
+      );
+
+      await tester.tap(find.byTooltip('عرض ورقة الطالب'));
+      await tester.pump();
+      expect(find.byKey(answerKey), findsNothing);
+    });
+
+    testWidgets('renders a Quranic verse with the Quranic font and centering', (tester) async {
+      tester.view.physicalSize = const Size(1000, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final controller = ExamWizardController(
+        document: ExamDocument(
+          name: 'تربية إسلامية',
+          header: ExamHeaderModel.ministerialDefault(subject: 'التربية الإسلامية'),
+          questions: <QuestionModel>[
+            QuestionModel(
+              id: 'q1',
+              questionNumber: 1,
+              branches: <BranchModel>[
+                BranchModel(
+                  id: 'q1a',
+                  content: BranchContent(
+                    type: QuestionType.essay,
+                    text: '\uFD3F إنا أعطيناك الكوثر \uFD3E',
+                  ),
+                  marks: 3,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pumpWidget(_preview(controller));
+      await tester.pump();
+
+      final verseText = tester.widget<TexText>(find.byType(TexText));
+      expect(verseText.textAlign, TextAlign.center, reason: 'الآية القائمة بذاتها تُوسَّط');
+      expect(verseText.quranStyle?.fontFamily, ExamFont.quranicFamily);
+
+      // المقطع القرآني المرسوم فعلاً يلبس الخط القرآني.
+      final renderedSpans = <TextSpan>[
+        for (final richText in tester.widgetList<RichText>(
+          find.descendant(of: find.byType(TexText), matching: find.byType(RichText)),
+        ))
+          ..._collectTextSpans(richText.text),
+      ];
+      final verseSpans = renderedSpans
+          .where((span) => span.text?.contains('\uFD3F') ?? false)
+          .toList(growable: false);
+      expect(verseSpans, isNotEmpty, reason: 'الآية تُعرض عرضاً منسّقاً على الورقة');
+      for (final span in verseSpans) {
+        expect(span.style?.fontFamily, ExamFont.quranicFamily);
+      }
+    });
+
+    testWidgets('keeps the Quranic face in every template but centres only where preferred',
+        (tester) async {
+      tester.view.physicalSize = const Size(1000, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      // قالب غير إسلامي (اللغة العربية): يُلبس الخط القرآني النصَّ الموسوم،
+      // لكن «أسلوب المصحف» (التوسيط والتكبير) يبقى لقالب التربية الإسلامية.
+      final controller = ExamWizardController(
+        document: ExamDocument(
+          name: 'لغة عربية',
+          header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+          questions: <QuestionModel>[
+            QuestionModel(
+              id: 'q1',
+              questionNumber: 1,
+              branches: <BranchModel>[
+                BranchModel(
+                  id: 'q1a',
+                  content: BranchContent(
+                    type: QuestionType.essay,
+                    text: '\uFD3F إنا أعطيناك الكوثر \uFD3E',
+                  ),
+                  marks: 3,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pumpWidget(_preview(controller));
+      await tester.pump();
+
+      final verseText = tester.widget<TexText>(find.byType(TexText));
+      expect(verseText.textAlign, TextAlign.start,
+          reason: 'قالب لا يفضّل الخط القرآني: بلا توسيط مصحفي');
+      expect(verseText.quranStyle?.fontFamily, ExamFont.quranicFamily,
+          reason: 'الخط القرآني يُلبس المقاطع الموسومة في كل القوالب');
+
+      final renderedSpans = <TextSpan>[
+        for (final richText in tester.widgetList<RichText>(
+          find.descendant(of: find.byType(TexText), matching: find.byType(RichText)),
+        ))
+          ..._collectTextSpans(richText.text),
+      ];
+      final verseSpans = renderedSpans
+          .where((span) => span.text?.contains('\uFD3F') ?? false)
+          .toList(growable: false);
+      expect(verseSpans, isNotEmpty, reason: 'الآية تُعرض عرضاً منسّقاً على الورقة');
+      for (final span in verseSpans) {
+        expect(span.style?.fontFamily, ExamFont.quranicFamily);
+      }
     });
 
     testWidgets('exposes the floating tools toolbar above the pages', (tester) async {
