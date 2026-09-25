@@ -68,10 +68,14 @@ void main() {
     const verse = '\uFD3F إنا أعطيناك الكوثر \uFD3E';
 
     test('draws the verse with the Quranic font and the rest with Noto Naskh', () async {
-      final bytes = await PaginatedPdfExamEngine().generate(
-        document: _islamicDocument(verse: verse),
-      );
+      final doc = _islamicDocument(verse: verse);
+      final needsQ = PaginatedPdfExamEngine.needsQuranicFont(doc);
+      final loaded = await ExamFonts.load(loadQuranic: needsQ);
+      final bytes = await PaginatedPdfExamEngine().generate(document: doc);
       final probe = PdfContentProbe.fromBytes(bytes);
+      final seenFonts = <String>{
+        for (final line in probe.lines) for (final word in line.words) word.baseFont,
+      };
 
       bool hasFont(String needle) => probe.lines.any(
             (line) => line.words.any(
@@ -79,7 +83,12 @@ void main() {
             ),
           );
 
-      expect(hasFont('amiri'), isTrue, reason: 'الآية يجب أن تُرسم بالخط القرآني');
+      expect(
+        hasFont('amiri'),
+        isTrue,
+        reason: 'DIAG needsQuranic=$needsQ quranicLoaded=${loaded.quranic != null} '
+            'seenFonts=$seenFonts',
+      );
       expect(hasFont('noto'), isTrue, reason: 'بقية الورقة تبقى بخط Noto Naskh');
 
       final quranicWords = <ProbedWord>[
