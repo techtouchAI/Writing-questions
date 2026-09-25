@@ -71,28 +71,37 @@ void main() {
       final doc = _islamicDocument(verse: verse);
       final needsQ = PaginatedPdfExamEngine.needsQuranicFont(doc);
       final loaded = await ExamFonts.load(loadQuranic: needsQ);
-      final bytes = await PaginatedPdfExamEngine().generate(document: doc);
-      final probe = PdfContentProbe.fromBytes(bytes);
-      final seenFonts = <String>{
-        for (final line in probe.lines) for (final word in line.words) word.baseFont,
+      final bytesAuto = await PaginatedPdfExamEngine().generate(document: doc);
+      final probeAuto = PdfContentProbe.fromBytes(bytesAuto);
+      final seenAuto = <String>{
+        for (final line in probeAuto.lines) for (final word in line.words) word.baseFont,
+      };
+      final bytesExplicit = await PaginatedPdfExamEngine().generate(
+        document: doc,
+        fonts: loaded,
+      );
+      final probeExplicit = PdfContentProbe.fromBytes(bytesExplicit);
+      final seenExplicit = <String>{
+        for (final line in probeExplicit.lines)
+          for (final word in line.words) word.baseFont,
       };
 
-      bool hasFont(String needle) => probe.lines.any(
+      bool hasFont(PdfContentProbe probe, String needle) => probe.lines.any(
             (line) => line.words.any(
               (word) => word.baseFont.toLowerCase().contains(needle),
             ),
           );
 
       expect(
-        hasFont('amiri'),
+        hasFont(probeAuto, 'amiri'),
         isTrue,
         reason: 'DIAG needsQuranic=$needsQ quranicLoaded=${loaded.quranic != null} '
-            'seenFonts=$seenFonts',
+            'seenAuto=$seenAuto seenExplicit=$seenExplicit',
       );
-      expect(hasFont('noto'), isTrue, reason: 'بقية الورقة تبقى بخط Noto Naskh');
+      expect(hasFont(probeAuto, 'noto'), isTrue, reason: 'بقية الورقة تبقى بخط Noto Naskh');
 
       final quranicWords = <ProbedWord>[
-        for (final line in probe.lines)
+        for (final line in probeAuto.lines)
           for (final word in line.words)
             if (word.baseFont.toLowerCase().contains('amiri')) word,
       ];
