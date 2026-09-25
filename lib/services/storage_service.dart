@@ -33,6 +33,7 @@ class StorageService {
   static const String _examsKey = 'app_saved_exams';
   static const String _defaultHeaderKey = 'app_default_header';
   static const String _examDocumentsKey = 'app_saved_exam_documents';
+  static const String _lastOpenDocumentKey = 'app_last_open_document_id';
 
   final Future<SharedPreferences> Function() _preferencesLoader;
   Future<SharedPreferences>? _preferences;
@@ -98,6 +99,25 @@ class StorageService {
     final saved = await preferences.setString(_defaultHeaderKey, jsonEncode(header.toMap()));
     if (!saved) {
       throw StateError('تعذر حفظ الترويسة الافتراضية على الجهاز.');
+    }
+  }
+
+  /// هوية آخر نموذج وزاري فُتح (للمتابعة من حيث توقف المدرس).
+  Future<String?> loadLastOpenDocumentId() async {
+    final preferences = await _getPreferences();
+    final id = preferences.getString(_lastOpenDocumentKey);
+    return id == null || id.isEmpty ? null : id;
+  }
+
+  Future<void> saveLastOpenDocumentId(String? id) async {
+    final preferences = await _getPreferences();
+    if (id == null || id.isEmpty) {
+      await preferences.remove(_lastOpenDocumentKey);
+      return;
+    }
+    final saved = await preferences.setString(_lastOpenDocumentKey, id);
+    if (!saved) {
+      throw StateError('تعذر حفظ آخر نموذج مفتوح على الجهاز.');
     }
   }
 

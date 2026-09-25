@@ -1,3 +1,4 @@
+import 'paper_text_style.dart';
 import 'subject_layout.dart';
 
 /// عمود واحد من أعمدة الترويسة الوزارية (يمين/وسط/يسار) بثلاثة أسطر ثابتة.
@@ -95,10 +96,14 @@ class ExamHeaderModel {
     HeaderColumn? center,
     HeaderColumn? left,
     this.instructions = '',
+    this.title = '',
+    this.notes = '',
+    PaperTextStyle? style,
     SubjectLayoutTemplate? layoutTemplate,
   })  : right = right ?? const HeaderColumn.empty(),
         center = center ?? const HeaderColumn.empty(),
         left = left ?? const HeaderColumn.empty(),
+        style = style ?? PaperTextStyle.empty,
         layoutTemplate =
             layoutTemplate ?? SubjectLayoutTemplate.fromSubject(subject);
 
@@ -145,6 +150,16 @@ class ExamHeaderModel {
   final HeaderColumn center;
   final HeaderColumn left;
   final String instructions;
+
+  /// عنوان الامتحان أعلى الترويسة (اختياري).
+  final String title;
+
+  /// ملاحظات إضافية أسفل الترويسة (اختياري).
+  final String notes;
+
+  /// تنسيق نصوص الترويسة (خط/حجم/عريض/محاذاة).
+  final PaperTextStyle style;
+
   final SubjectLayoutTemplate layoutTemplate;
 
   HeaderColumn column(HeaderSlot slot) {
@@ -177,6 +192,9 @@ class ExamHeaderModel {
     HeaderColumn? center,
     HeaderColumn? left,
     String? instructions,
+    String? title,
+    String? notes,
+    PaperTextStyle? style,
     SubjectLayoutTemplate? layoutTemplate,
   }) {
     final nextSubject = subject ?? this.subject;
@@ -186,6 +204,9 @@ class ExamHeaderModel {
       center: center ?? this.center,
       left: left ?? this.left,
       instructions: instructions ?? this.instructions,
+      title: title ?? this.title,
+      notes: notes ?? this.notes,
+      style: style ?? this.style,
       // تغيير المادة يعيد اختيار القالب آلياً ما لم يُحدَّد قالب صراحة.
       layoutTemplate: layoutTemplate ??
           (subject == null
@@ -201,6 +222,9 @@ class ExamHeaderModel {
       'center': center.toList(),
       'left': left.toList(),
       'instructions': instructions,
+      if (title.isNotEmpty) 'title': title,
+      if (notes.isNotEmpty) 'notes': notes,
+      if (style.isNotEmpty) 'style': style.toMap(),
       'layoutTemplate': layoutTemplate.name,
     };
   }
@@ -221,6 +245,9 @@ class ExamHeaderModel {
       center: HeaderColumn.fromValue(map['center']),
       left: HeaderColumn.fromValue(map['left']),
       instructions: map['instructions']?.toString() ?? '',
+      title: map['title']?.toString() ?? '',
+      notes: map['notes']?.toString() ?? '',
+      style: PaperTextStyle.fromValue(map['style']),
       layoutTemplate: rawTemplate == null
           ? null
           : SubjectLayoutTemplate.parse(rawTemplate as String),

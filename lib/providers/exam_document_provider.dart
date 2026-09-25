@@ -66,6 +66,39 @@ class ExamDocumentProvider extends ChangeNotifier {
     }
   }
 
+  /// ينسخ ورقة كاملة بهوية جديدة (لـ«نسخ» في المكتبة) ويعيد النسخة.
+  Future<ExamDocument> duplicateDocument(String id) async {
+    final index = _documents.indexWhere((item) => item.id == id);
+    if (index == -1) {
+      throw StateError('الورقة غير موجودة.');
+    }
+    final copy = _documents[index].duplicated();
+    await saveDocument(copy);
+    return copy;
+  }
+
+  /// يعيد تسمية ورقة في المكتبة.
+  Future<void> renameDocument(String id, String name) async {
+    final index = _documents.indexWhere((item) => item.id == id);
+    if (index == -1) {
+      return;
+    }
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || trimmed == _documents[index].name) {
+      return;
+    }
+    await saveDocument(_documents[index].renamed(trimmed));
+  }
+
+  ExamDocument? documentById(String id) {
+    for (final document in _documents) {
+      if (document.id == id) {
+        return document;
+      }
+    }
+    return null;
+  }
+
   Future<void> deleteDocument(String id) async {
     final index = _documents.indexWhere((item) => item.id == id);
     if (index == -1) {

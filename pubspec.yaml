@@ -63,3 +63,13 @@ flutter:
     - family: Amiri
       fonts:
         - asset: assets/fonts/Amiri-Regular.ttf
+    # خط عصري نظيف مناسب للمدارس (Tajawal، رخصة OFL).
+    - family: Tajawal
+      fonts:
+        - asset: assets/fonts/Tajawal-Regular.ttf
+        - asset: assets/fonts/Tajawal-Bold.ttf
+          weight: 700
+    # خط عرض بأسلوب الرقعة للعناوين والترويسة (Rakkas، رخصة OFL).
+    - family: Rakkas
+      fonts:
+        - asset: assets/fonts/Rakkas-Regular.ttf

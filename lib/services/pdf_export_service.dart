@@ -31,10 +31,32 @@ abstract final class PdfExportService {
     bool isTeacherVersion = false,
     List<List<String>>? pageAssignments,
   }) {
-    return const PaginatedPdfExamEngine().generate(
+    return PaginatedPdfExamEngine().generate(
       document: document,
       isTeacherVersion: isTeacherVersion,
       pageAssignments: pageAssignments,
+    );
+  }
+
+  /// يكتب ورقة [document] كملف PDF على القرص ويعيد الملف.
+  static Future<File> exportDocumentToPdf({
+    required ExamDocument document,
+    bool isTeacherVersion = false,
+    List<List<String>>? pageAssignments,
+    String? fileName,
+    Directory? outputDirectory,
+  }) async {
+    final bytes = await buildDocumentPdfBytes(
+      document: document,
+      isTeacherVersion: isTeacherVersion,
+      pageAssignments: pageAssignments,
+    );
+    final suffix = isTeacherVersion ? 'نموذج_الإجابة' : 'ورقة_الامتحان';
+    return ExportFileService.writeExportFile(
+      baseName: fileName ?? '${document.name}_$suffix',
+      extension: 'pdf',
+      bytes: bytes,
+      destination: outputDirectory,
     );
   }
 

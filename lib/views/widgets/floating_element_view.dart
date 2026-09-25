@@ -1,71 +1,82 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../models/floating_element.dart';
+import '../../models/paper_font.dart';
+import '../../models/subject_layout.dart';
+import '../wizard/paper_styles.dart';
+import 'paper_shape_painter.dart';
 
-/// عرض عنصر عائم (صورة/شكل هندسي) فوق لوحة الورقة التفاعلية.
+/// عرض عنصر عائم (صورة/شكل/مربع نص) فوق لوحة الورقة التفاعلية.
 ///
 /// الأشكال تُرسم متجهةً (CustomPaint) تماماً كما تُرسم SVG في الـ PDF،
-/// والصور تُعرض من البايتات المخزنة ([FloatingElement.bytes]).
+/// والصور تُعرض من البايتات المخزنة ([FloatingElement.bytes])، ومربعات
+/// النص تعرض نصها بتنسيقها — والتدوير حول المركز كما في الطباعة.
 class FloatingElementView extends StatelessWidget {
-  const FloatingElementView({super.key, required this.element});
+  const FloatingElementView({super.key, required this.element, this.defaultFont});
 
   final FloatingElement element;
 
+  /// خط الورقة الافتراضي (لمربعات النص).
+  final PaperFont? defaultFont;
+
   @override
   Widget build(BuildContext context) {
+    final Widget content;
     switch (element.type) {
       case FloatingElementType.image:
-        final bytes = element.bytes;
-        if (bytes == null) {
-          return const ColoredBox(color: Color(0xFFEEEEEE));
-        }
-        return Image.memory(bytes, fit: BoxFit.contain);
+        content = _buildImage();
       case FloatingElementType.shape:
-        return CustomPaint(
-          painter: _ShapePainter(element.shape ?? FloatingShapeType.square),
-        );
+        content = _buildShape();
     }
-  }
-}
-
-/// راسم الأشكال الهندسية الأساسية (مثلث/دائرة/مربع) بخطوط سوداء وتعبئة بيضاء
-/// — مطابق لبنود SVG في محرك الـ PDF.
-class _ShapePainter extends CustomPainter {
-  const _ShapePainter(this.shape);
-
-  final FloatingShapeType shape;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF111827)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
-      ..strokeJoin = StrokeJoin.round;
-
-    final fill = Paint()..color = Colors.white;
-
-    switch (shape) {
-      case FloatingShapeType.square:
-        final rect = const Offset(2, 2) & Size(size.width - 4, size.height - 4);
-        canvas.drawRect(rect, fill);
-        canvas.drawRect(rect, paint);
-      case FloatingShapeType.circle:
-        final center = Offset(size.width / 2, size.height / 2);
-        final radius = (size.shortestSide / 2) - 2;
-        canvas.drawCircle(center, radius, fill);
-        canvas.drawCircle(center, radius, paint);
-      case FloatingShapeType.triangle:
-        final path = Path()
-          ..moveTo(size.width / 2, 2)
-          ..lineTo(2, size.height - 2)
-          ..lineTo(size.width - 2, size.height - 2)
-          ..close();
-        canvas.drawPath(path, fill);
-        canvas.drawPath(path, paint);
+    if (element.rotationDegrees == 0) {
+      return content;
     }
+    return Transform.rotate(
+      angle: element.rotationDegrees * math.pi / 180,
+      child: content,
+    );
   }
 
-  @override
-  bool shouldRepaint(_ShapePainter oldDelegate) => oldDelegate.shape != shape;
+  Widget _buildImage() {
+    final bytes = element.bytes;
+    if (bytes == null) {
+      return const ColoredBox(color: Color(0xFFEEEEEE));
+    }
+    return Image.memory(bytes, fit: BoxFit.contain);
+  }
+
+  Widget _buildShape() {
+    final shape = element.shape ?? FloatingShapeType.square;
+    if (shape == FloatingShapeType.textBox) {
+      return _buildTextBox();
+    }
+    return CustomPaint(
+      painter: PaperShapePainter(shape, strokeWidth: element.strokeWidth),
+    );
+  }
+
+  Widget _buildTextBox() {
+    final style = PaperStyles.resolve(
+      PaperStyles.body(SubjectLayoutTemplate.generic),
+      element.textStyle,
+      defaultFont: defaultFont ?? PaperFont.naskh,
+    );
+    final text = element.label.trim().isEmpty ? 'مربع نص...' : element.label;
+    return Container(
+      decoration: element.framed
+          ? BoxDecoration(
+              border: Border.all(color: const Color(0xFF111827), width: 1),
+            )
+          : null,
+      padding: const EdgeInsets.all(4),
+      alignment: Alignment.topRight,
+      child: Text(
+        text,
+        style: element.label.trim().isEmpty ? PaperStyles.hint(style) : style,
+        textAlign: PaperStyles.toTextAlign(element.textStyle.align),
+      ),
+    );
+  }
 }
