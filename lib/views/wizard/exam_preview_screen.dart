@@ -1287,7 +1287,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               onInsertText: _inserter.insert,
               onAddImage: _addImage,
               onAddShape: _addShape,
-              onAddMainQuestion: controller.addQuestion,
+              onAddQuestion: controller.addQuestion,
               onAddBranch: _addBranchToSelected,
               onAddTextBox: () => _addAttachmentToBranch(
                 FloatingElement(

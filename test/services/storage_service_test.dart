@@ -1,9 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:writing_questions_app/models/main_question.dart';
-import 'package:writing_questions_app/models/question_branch.dart';
-import 'package:writing_questions_app/models/question_type.dart';
+import 'package:writing_questions_app/models/exam_document.dart';
+import 'package:writing_questions_app/models/exam_header_model.dart';
+import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/services/storage_service.dart';
+
+ExamDocument _sampleDocument() {
+  return ExamDocument(
+    name: 'نموذج محفوظ',
+    header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+    questions: <QuestionModel>[QuestionModel(questionNumber: 1)],
+  );
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -16,51 +24,45 @@ void main() {
   });
 
   group('StorageService', () {
-    test('round-trips questions through persistence', () async {
+    test('round-trips exam documents through persistence', () async {
       final storage = StorageService(prefs: prefs);
-      await storage.saveQuestions([
-        MainQuestion(
-          title: 'سؤال محفوظ',
-          type: QuestionType.essay,
-          branches: <QuestionBranch>[QuestionBranch(text: '', marks: 4)],
-        ),
-      ]);
+      await storage.saveExamDocuments([_sampleDocument()]);
 
-      final loaded = await storage.loadQuestions();
+      final loaded = await storage.loadExamDocuments();
 
       expect(loaded.items, hasLength(1));
-      expect(loaded.items.first.title, 'سؤال محفوظ');
-      expect(loaded.items.first.type, QuestionType.essay);
-      expect(loaded.items.first.marks, 4);
+      expect(loaded.items.first.name, 'نموذج محفوظ');
+      expect(loaded.items.first.header.subject, 'اللغة العربية');
+      expect(loaded.items.first.questions, hasLength(1));
     });
 
     test('skips corrupt records instead of crashing', () async {
-      await prefs.setStringList('app_saved_questions', [
+      await prefs.setStringList('app_saved_exam_documents', [
         '{invalid json',
-        '{"title":"سؤال سليم","type":"essay"}',
-        '{"title":"نوع مجهول","type":"نوع_غير_معروف"}',
-        '{"title":"فروع تالفة","type":"essay","branches":"ليست قائمة"}',
+        _sampleDocument().toJson(),
+        '{"name":"بلا ترويسة"}',
+        '{"name":"أسئلة تالفة","header":{},"questions":"ليست قائمة"}',
         '"not-even-an-object"',
       ]);
 
       final storage = StorageService(prefs: prefs);
-      final loaded = await storage.loadQuestions();
+      final loaded = await storage.loadExamDocuments();
 
       expect(loaded.items, hasLength(1));
-      expect(loaded.items.first.title, 'سؤال سليم');
+      expect(loaded.items.first.name, 'نموذج محفوظ');
     });
 
-    test('distinguishes a missing key from an intentionally empty bank', () async {
+    test('distinguishes a missing key from an intentionally empty library', () async {
       final storage = StorageService(prefs: prefs);
 
-      final missing = await storage.loadQuestions();
+      final missing = await storage.loadExamDocuments();
       expect(missing.items, isEmpty);
       expect(missing.hadStoredValue, isFalse);
 
-      await prefs.setStringList('app_saved_questions', <String>[]);
-      final emptyBank = await storage.loadQuestions();
-      expect(emptyBank.items, isEmpty);
-      expect(emptyBank.hadStoredValue, isTrue);
+      await prefs.setStringList('app_saved_exam_documents', <String>[]);
+      final emptyLibrary = await storage.loadExamDocuments();
+      expect(emptyLibrary.items, isEmpty);
+      expect(emptyLibrary.hadStoredValue, isTrue);
     });
   });
 }

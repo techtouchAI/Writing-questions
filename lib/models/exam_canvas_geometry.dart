@@ -13,7 +13,7 @@ abstract final class ExamCanvasGeometry {
   /// عرض لوحة الورقة (بكسل منطقي = A4 عرضاً عند 96dpi).
   static const Size canvasSize = Size(794, 1123);
 
-  /// هامش الورقة الداخلي (15 مم عند 96dpi) — يطابق `PdfExamEngine.pageMarginMillimeters`.
+  /// هامش الورقة الداخلي (15 مم عند 96dpi) — يطابق `PaginatedPdfExamEngine.pageMarginMillimeters`.
   static const double margin = 15 * 96 / 25.4;
 
   static double get width => canvasSize.width;

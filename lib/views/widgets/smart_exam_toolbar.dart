@@ -35,7 +35,7 @@ class SmartExamToolbar extends StatelessWidget {
     required this.onInsertText,
     required this.onAddImage,
     required this.onAddShape,
-    this.onAddMainQuestion,
+    this.onAddQuestion,
     this.onAddBranch,
     this.onAddTextBox,
     this.onAddDivider,
@@ -45,7 +45,7 @@ class SmartExamToolbar extends StatelessWidget {
   final ValueChanged<String> onInsertText;
   final ValueChanged<List<int>> onAddImage;
   final ValueChanged<FloatingShapeType> onAddShape;
-  final VoidCallback? onAddMainQuestion;
+  final VoidCallback? onAddQuestion;
   final VoidCallback? onAddBranch;
   final VoidCallback? onAddTextBox;
   final VoidCallback? onAddDivider;
@@ -77,7 +77,7 @@ class SmartExamToolbar extends StatelessWidget {
                   _TextTab(
                     inserter: inserter,
                     onInsertText: onInsertText,
-                    onAddMainQuestion: onAddMainQuestion,
+                    onAddQuestion: onAddQuestion,
                     onAddBranch: onAddBranch,
                   ),
                   _FormulaTab(
@@ -150,13 +150,13 @@ class _TextTab extends StatelessWidget {
   const _TextTab({
     required this.inserter,
     required this.onInsertText,
-    required this.onAddMainQuestion,
+    required this.onAddQuestion,
     required this.onAddBranch,
   });
 
   final FormulaInserter inserter;
   final ValueChanged<String> onInsertText;
-  final VoidCallback? onAddMainQuestion;
+  final VoidCallback? onAddQuestion;
   final VoidCallback? onAddBranch;
 
   @override
@@ -165,11 +165,11 @@ class _TextTab extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       children: <Widget>[
-        if (onAddMainQuestion != null)
+        if (onAddQuestion != null)
           _ChipButton(
             icon: Icons.add_circle_outline,
             label: 'سؤال جديد',
-            onTap: onAddMainQuestion!,
+            onTap: onAddQuestion!,
           ),
         if (onAddBranch != null)
           _ChipButton(

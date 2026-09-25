@@ -3,12 +3,8 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 
 import 'branch_model.dart';
-import 'exam.dart';
-import 'exam_header.dart';
 import 'exam_header_model.dart';
-import 'main_question.dart';
 import 'paper_settings.dart';
-import 'question_branch.dart';
 import 'question_model.dart';
 import 'subject_layout.dart';
 
@@ -296,49 +292,6 @@ class ExamDocument {
 
   /// نسخة محدّثة الطابع الزمني (تُستدعى عند الحفظ/التصدير).
   ExamDocument touched() => copyWith(updatedAt: DateTime.now());
-
-  /// تحويل للنموذج القديم ([Exam]) لإعادة استخدام التصدير والتخزين الحاليين.
-  ///
-  /// كل فرع يتحوّل إلى [QuestionBranch]، ونوع السؤال الرئيسي يُؤخذ من الفرع
-  /// الأول (النموذج القديم يحمل نوعاً واحداً لكل سؤال).
-  Exam toLegacyExam() {
-    final legacyQuestions = <MainQuestion>[
-      for (final question in questions)
-        MainQuestion(
-          id: question.id,
-          title: question.prompt.trim().isEmpty
-              ? displayQuestionLabel(question)
-              : '${displayQuestionLabel(question)}: ${question.prompt}',
-          type: question.branches.first.content.type,
-          subject: header.subject,
-          category: question.category,
-          branches: <QuestionBranch>[
-            for (final branch in question.branches)
-              QuestionBranch(
-                id: branch.id,
-                text: branch.content.text,
-                marks: branch.marks,
-              ),
-          ],
-          options: question.branches.first.content.options,
-          modelAnswer: question.branches.first.content.modelAnswer,
-        ),
-    ];
-    return Exam(
-      id: id,
-      name: name,
-      header: ExamHeader(
-        institutionName: header.center.lines.first,
-        title: header.title.trim().isEmpty ? header.center.lines[1] : header.title,
-        subject: header.subject,
-        gradeStage: header.right.lines[2],
-        duration: header.left.lines.first,
-        generalInstructions: header.instructions,
-      ),
-      mainQuestions: legacyQuestions,
-      createdAt: createdAt,
-    );
-  }
 
   Map<String, dynamic> toMap() {
     return <String, dynamic>{

@@ -6,7 +6,7 @@ import '../models/exam_document.dart';
 import '../services/storage_service.dart';
 
 /// مخزن النماذج الوزارية المنشأة عبر المعالج المتسلسل، مع حفظ ذري
-/// وتراجع عند فشل الكتابة (نفس نمط [ExamProvider]).
+/// وتراجع عند فشل الكتابة.
 class ExamDocumentProvider extends ChangeNotifier {
   ExamDocumentProvider({StorageService? storageService})
       : _storageService = storageService ?? StorageService();

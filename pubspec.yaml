@@ -1,5 +1,5 @@
 name: writing_questions_app
-description: تطبيق Flutter لإنشاء بنك أسئلة وبناء الاختبارات وتصديرها كملفات PDF وExcel.
+description: تطبيق Flutter لتحرير أوراق الأسئلة الوزارية وتصديرها كملفات PDF وWord.
 publish_to: none
 version: 1.0.0+1
 

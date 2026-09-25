@@ -3,27 +3,17 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/exam_document_provider.dart';
-import 'providers/exam_provider.dart';
-import 'providers/question_provider.dart';
 import 'views/home_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final questionProvider = QuestionProvider();
-  final examProvider = ExamProvider();
   final examDocumentProvider = ExamDocumentProvider();
-  await Future.wait<void>(<Future<void>>[
-    questionProvider.loadQuestions(),
-    examProvider.loadData(),
-    examDocumentProvider.loadDocuments(),
-  ]);
+  await examDocumentProvider.loadDocuments();
 
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider<QuestionProvider>.value(value: questionProvider),
-        ChangeNotifierProvider<ExamProvider>.value(value: examProvider),
         ChangeNotifierProvider<ExamDocumentProvider>.value(
           value: examDocumentProvider,
         ),
