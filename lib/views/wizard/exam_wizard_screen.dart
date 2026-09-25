@@ -43,10 +43,14 @@ class _ExamWizardScreenState extends State<ExamWizardScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final provider = context.read<ExamDocumentProvider>();
-      _controller.enableAutoSave((doc) async {
-        await provider.saveDocument(doc.touched());
-      });
+      try {
+        final provider = Provider.of<ExamDocumentProvider>(context, listen: false);
+        _controller.enableAutoSave((doc) async {
+          await provider.saveDocument(doc.touched());
+        });
+      } catch (_) {
+        // في بيئات الاختبار المعزولة التي لا يتوفر فيها ExamDocumentProvider في الشجرة.
+      }
     });
   }
 

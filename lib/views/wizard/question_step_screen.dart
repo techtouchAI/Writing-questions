@@ -49,6 +49,17 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
     super.dispose();
   }
 
+  bool _validate(BuildContext context, ExamWizardController controller) {
+    final question = controller.currentQuestion;
+    if (!question.hasContent) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('اكتب نص السؤال أو محتوى فرع واحد على الأقل قبل المتابعة.')),
+      );
+      return false;
+    }
+    return true;
+  }
+
   void _syncPromptField(ExamWizardController controller, int questionIndex) {
     if (_promptQuestionIndex != questionIndex) {
       _promptQuestionIndex = questionIndex;
@@ -273,7 +284,9 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
             Expanded(
               child: FilledButton.icon(
                 onPressed: () {
-                  controller.goToNextQuestion();
+                  if (_validate(context, controller)) {
+                    controller.goToNextQuestion();
+                  }
                 },
                 icon: const Icon(Icons.arrow_back),
                 label: Text(
@@ -295,9 +308,13 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: widget.onFinish,
+                onPressed: () {
+                  if (_validate(context, controller)) {
+                    widget.onFinish();
+                  }
+                },
                 icon: const Icon(Icons.preview),
-                label: const Text('معاينة الورقة'),
+                label: const Text('إنهاء وعرض النموذج'),
               ),
             ),
           ],
