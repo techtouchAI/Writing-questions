@@ -95,7 +95,7 @@ abstract final class FloatingElementsPdf {
     PaperFont defaultFont,
   ) {
     final style = PaperStyleResolver.apply(
-      pw.TextStyle(fontSize: 10.5, lineSpacing: 2),
+      const pw.TextStyle(fontSize: 10.5, lineSpacing: 2),
       element.textStyle,
       fonts: fonts ?? _fallbackFonts,
       defaultFont: element.textStyle.font ?? defaultFont,

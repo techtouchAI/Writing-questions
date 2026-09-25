@@ -11,7 +11,6 @@ import '../models/exam_document.dart';
 import '../models/exam_header_model.dart';
 import '../models/floating_element.dart';
 import '../models/paper_divider.dart';
-import '../models/paper_text_style.dart';
 import '../models/question_model.dart';
 import '../models/question_type.dart';
 import '../models/quran_text.dart';
@@ -47,6 +46,12 @@ class PaginatedPdfExamEngine {
   /// الخارجية؛ العرض الفعلي لكل مستند يُحسب من هامشه عبر [_contentWidthFor].
   static double get contentWidth =>
       PdfPageFormat.a4.width - 2 * pageMarginMillimeters * PdfPageFormat.mm;
+
+  /// ارتفاع المحتوى الافتراضي (للهامش الافتراضي) بعد حسم التذييل.
+  static double get pageContentHeight =>
+      PdfPageFormat.a4.height -
+      2 * pageMarginMillimeters * PdfPageFormat.mm -
+      _footerHeight;
 
   static double get _footerHeight => PaperMetrics.pt(PaperMetrics.footerHeightPx);
 
@@ -139,7 +144,7 @@ class PaginatedPdfExamEngine {
     final pages = _resolvePages(
       document: document,
       pageAssignments: pageAssignments,
-      measure: (widget) => _measure(widget, pdf, theme, direction),
+      measure: (widget) => _measure(widget, pdf, theme, direction, contentWidth),
       layout: layout,
       styles: styles,
       fonts: loadedFonts,
@@ -177,7 +182,7 @@ class PaginatedPdfExamEngine {
                       fit: pw.BoxFit.scaleDown,
                       alignment: pw.Alignment.topCenter,
                       child: pw.SizedBox(
-                        width: _contentWidth,
+                        width: contentWidth,
                         child: pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                           mainAxisSize: pw.MainAxisSize.min,
@@ -205,10 +210,10 @@ class PaginatedPdfExamEngine {
             return pw.Stack(
               children: <pw.Widget>[
                 pw.Positioned(
-                  left: _marginValue,
-                  top: _marginValue,
-                  right: _marginValue,
-                  bottom: _marginValue,
+                  left: margin,
+                  top: margin,
+                  right: margin,
+                  bottom: margin,
                   child: content,
                 ),
               ],
@@ -251,7 +256,7 @@ class PaginatedPdfExamEngine {
                 document, question, layout, styles, fonts, isTeacherVersion)),
           ),
       ],
-      pageHeight: _pageContentHeight,
+      pageHeight: _pageContentHeightFor(document),
       spacing: _blockSpacing,
     );
     return <List<String>>[
@@ -274,6 +279,7 @@ class PaginatedPdfExamEngine {
     pw.Document pdf,
     pw.ThemeData theme,
     pw.TextDirection direction,
+    double contentWidth,
   ) {
     final context = pw.Context(document: pdf.document).inheritFromAll(<pw.Inherited>[
       theme,
@@ -281,7 +287,7 @@ class PaginatedPdfExamEngine {
     ]);
     widget.layout(
       context,
-      pw.BoxConstraints(maxWidth: _contentWidth),
+      pw.BoxConstraints(maxWidth: contentWidth),
       parentUsesSize: true,
     );
     return widget.box?.height ?? 0;
@@ -458,7 +464,8 @@ class PaginatedPdfExamEngine {
             isTeacherVersion,
           ),
         ),
-      if (question.dividerAfter != null) _buildDivider(question.dividerAfter!),
+      if (question.dividerAfter != null)
+        _buildDivider(question.dividerAfter!, _contentWidthFor(document)),
     ];
 
     pw.Widget body = pw.Column(
@@ -484,6 +491,7 @@ class PaginatedPdfExamEngine {
       layout: layout,
       fonts: fonts,
       defaultFont: settings.defaultFont,
+      contentWidth: _contentWidthFor(document),
     );
   }
 
@@ -536,7 +544,8 @@ class PaginatedPdfExamEngine {
           child: _buildTypeBody(document, content, layout, styles, fonts, isTeacherVersion),
         ),
       if (isTeacherVersion && content.plainText) _buildPlainTeacherAnswer(document, content, layout, styles),
-      if (branch.dividerAfter != null) _buildDivider(branch.dividerAfter!),
+      if (branch.dividerAfter != null)
+        _buildDivider(branch.dividerAfter!, _contentWidthFor(document)),
     ];
 
     pw.Widget body = pw.Column(
@@ -563,6 +572,7 @@ class PaginatedPdfExamEngine {
       layout: layout,
       fonts: fonts,
       defaultFont: settings.defaultFont,
+      contentWidth: _contentWidthFor(document),
     );
   }
 
@@ -633,7 +643,7 @@ class PaginatedPdfExamEngine {
     );
   }
 
-  pw.Widget _buildDivider(PaperDivider divider) {
+  pw.Widget _buildDivider(PaperDivider divider, double contentWidth) {
     return pw.Padding(
       padding: pw.EdgeInsets.only(
         top: divider.spacingBefore,
@@ -641,7 +651,7 @@ class PaginatedPdfExamEngine {
       ),
       child: pw.Center(
         child: pw.SizedBox(
-          width: _activeContentWidth * divider.widthFraction,
+          width: contentWidth * divider.widthFraction,
           child: pw.Divider(
             thickness: divider.thickness,
             color: ExamTextStyles.primaryColor,
@@ -659,6 +669,7 @@ class PaginatedPdfExamEngine {
     required SubjectLayoutTemplate layout,
     required ExamFonts fonts,
     required dynamic defaultFont,
+    required double contentWidth,
   }) {
     final scale = PaperMetrics.pointsPerPixel;
     final minHeight = attachments.fold<double>(
@@ -671,7 +682,7 @@ class PaginatedPdfExamEngine {
     return pw.Stack(
       children: <pw.Widget>[
         pw.ConstrainedBox(
-          constraints: pw.BoxConstraints(minHeight: minHeight, minWidth: _contentWidth - 24),
+          constraints: pw.BoxConstraints(minHeight: minHeight, minWidth: contentWidth - 24),
           child: body,
         ),
         for (final element in attachments)

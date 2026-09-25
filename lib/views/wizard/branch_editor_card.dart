@@ -360,7 +360,6 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
                       controller: _itemField(items[index]),
                       enabled: widget.enabled,
                       maxLines: null,
-                      isDense: true,
                       decoration: InputDecoration(
                         hintText: 'نص النقطة ${index + 1}...',
                         isDense: true,
