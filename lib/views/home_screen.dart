@@ -113,12 +113,13 @@ class HomeScreen extends StatelessWidget {
 
   Future<void> _exportPdfFromHome(BuildContext context, ExamDocument document) async {
     try {
-      final bytes = await PdfExportService.buildExamPdfBytes(document: document);
+      final bytes = await PdfExportService.buildDocumentPdfBytes(document: document);
       if (!context.mounted) return;
       await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
           builder: (_) => PdfPreviewScreen(
             pdfBytes: bytes,
+            title: 'معاينة ورقة الامتحان (PDF)',
             fileName: '${document.name}_ورقة_الامتحان.pdf',
           ),
         ),

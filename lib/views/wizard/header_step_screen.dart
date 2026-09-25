@@ -729,7 +729,6 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
       case PaperAlign.start:
       case PaperAlign.end:
       case PaperAlign.justify:
-      case null:
         return TextAlign.right;
     }
   }

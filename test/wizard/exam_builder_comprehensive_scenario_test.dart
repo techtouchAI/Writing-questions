@@ -170,7 +170,7 @@ void main() {
       expect(controller.questions[0].prompt, contains('صدق الله العظيم'));
 
       // 2. حذف فرع من س1
-      final q1BranchRefToDelete = BranchRef(questionIndex: 0, branchIndex: 3);
+      final q1BranchRefToDelete = const BranchRef(questionIndex: 0, branchIndex: 3);
       controller.removeBranch(q1BranchRefToDelete);
       expect(controller.questions[0].branches.length, 3);
 
