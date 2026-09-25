@@ -57,7 +57,7 @@ void main() {
 
   group('PaginatedPdfExamEngine', () {
     test('renders a single-page A4 document for a short exam', () async {
-      final bytes = await const PaginatedPdfExamEngine().generate(
+      final bytes = await PaginatedPdfExamEngine().generate(
         document: _document(questionCount: 2, branchesPerQuestion: 1),
       );
       final source = String.fromCharCodes(bytes);
@@ -69,7 +69,7 @@ void main() {
 
     test('spreads a long exam over multiple pages without splitting a question', () async {
       // 12 أسئلة مقالية × 3 فروع × 4 أسطر إجابة ≈ أطول من صفحة واحدة بكثير.
-      final bytes = await const PaginatedPdfExamEngine().generate(
+      final bytes = await PaginatedPdfExamEngine().generate(
         document: _document(questionCount: 12),
       );
 
@@ -78,7 +78,7 @@ void main() {
 
     test('honours the on-screen page assignments exactly', () async {
       final document = _document(questionCount: 4, branchesPerQuestion: 1);
-      final bytes = await const PaginatedPdfExamEngine().generate(
+      final bytes = await PaginatedPdfExamEngine().generate(
         document: document,
         pageAssignments: const <List<String>>[
           <String>['q1'],
@@ -92,7 +92,7 @@ void main() {
 
     test('falls back to its own measurement when assignments are incomplete', () async {
       final document = _document(questionCount: 2, branchesPerQuestion: 1);
-      final bytes = await const PaginatedPdfExamEngine().generate(
+      final bytes = await PaginatedPdfExamEngine().generate(
         document: document,
         pageAssignments: const <List<String>>[
           <String>['q1'],
@@ -110,8 +110,8 @@ void main() {
       );
       expect(english.layout.isLtr, isTrue);
 
-      final student = await const PaginatedPdfExamEngine().generate(document: english);
-      final teacher = await const PaginatedPdfExamEngine().generate(
+      final student = await PaginatedPdfExamEngine().generate(document: english);
+      final teacher = await PaginatedPdfExamEngine().generate(
         document: english,
         isTeacherVersion: true,
       );
@@ -148,7 +148,7 @@ void main() {
         ],
       );
 
-      final bytes = await const PaginatedPdfExamEngine().generate(document: document);
+      final bytes = await PaginatedPdfExamEngine().generate(document: document);
       expect(_countPages(bytes), 1);
       expect(String.fromCharCodes(bytes), startsWith('%PDF-'));
     });

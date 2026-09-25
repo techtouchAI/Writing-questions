@@ -232,13 +232,5 @@ void main() {
       expect(() => ExamDocument.fromMap(badBranch), throwsFormatException);
     });
 
-    test('converts to the legacy Exam model for existing exporters', () {
-      final legacy = _twoQuestionDocument().toLegacyExam();
-      expect(legacy.mainQuestions, hasLength(2));
-      expect(legacy.mainQuestions.first.title, 'السؤال الأول');
-      expect(legacy.mainQuestions.first.branches, hasLength(2));
-      expect(legacy.totalMarks, 11);
-      expect(legacy.header.subject, 'اللغة العربية');
-    });
   });
 }

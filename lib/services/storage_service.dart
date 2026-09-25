@@ -1,11 +1,6 @@
-import 'dart:convert';
-
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/exam.dart';
 import '../models/exam_document.dart';
-import '../models/exam_header.dart';
-import '../models/main_question.dart';
 
 class StorageLoadResult<T> {
   const StorageLoadResult({
@@ -29,10 +24,8 @@ class StorageService {
         _preferencesLoader =
             preferencesLoader ?? _createPreferencesLoader(prefs);
 
-  static const String _questionsKey = 'app_saved_questions';
-  static const String _examsKey = 'app_saved_exams';
-  static const String _defaultHeaderKey = 'app_default_header';
   static const String _examDocumentsKey = 'app_saved_exam_documents';
+  static const String _lastOpenDocumentKey = 'app_last_open_document_id';
 
   final Future<SharedPreferences> Function() _preferencesLoader;
   Future<SharedPreferences>? _preferences;
@@ -44,22 +37,6 @@ class StorageService {
       return () => Future<SharedPreferences>.value(prefs);
     }
     return SharedPreferences.getInstance;
-  }
-
-  Future<StorageLoadResult<MainQuestion>> loadQuestions() {
-    return _loadList(_questionsKey, MainQuestion.fromJson);
-  }
-
-  Future<void> saveQuestions(List<MainQuestion> questions) {
-    return _saveList(_questionsKey, questions.map((question) => question.toJson()));
-  }
-
-  Future<StorageLoadResult<Exam>> loadExams() {
-    return _loadList(_examsKey, Exam.fromJson);
-  }
-
-  Future<void> saveExams(List<Exam> exams) {
-    return _saveList(_examsKey, exams.map((exam) => exam.toJson()));
   }
 
   /// النماذج الوزارية المنشأة عبر المعالج المتسلسل (Wizard).
@@ -74,30 +51,22 @@ class StorageService {
     );
   }
 
-  Future<ExamHeader> loadDefaultHeader() async {
+  /// هوية آخر نموذج وزاري فُتح (للمتابعة من حيث توقف المدرس).
+  Future<String?> loadLastOpenDocumentId() async {
     final preferences = await _getPreferences();
-    final jsonString = preferences.getString(_defaultHeaderKey);
-    if (jsonString == null || jsonString.isEmpty) {
-      return ExamHeader();
-    }
-
-    try {
-      final decoded = jsonDecode(jsonString);
-      if (decoded is! Map) {
-        return ExamHeader();
-      }
-      return ExamHeader.fromMap(Map<String, dynamic>.from(decoded));
-    } catch (_) {
-      // A damaged default header must not prevent the application from opening.
-      return ExamHeader();
-    }
+    final id = preferences.getString(_lastOpenDocumentKey);
+    return id == null || id.isEmpty ? null : id;
   }
 
-  Future<void> saveDefaultHeader(ExamHeader header) async {
+  Future<void> saveLastOpenDocumentId(String? id) async {
     final preferences = await _getPreferences();
-    final saved = await preferences.setString(_defaultHeaderKey, jsonEncode(header.toMap()));
+    if (id == null || id.isEmpty) {
+      await preferences.remove(_lastOpenDocumentKey);
+      return;
+    }
+    final saved = await preferences.setString(_lastOpenDocumentKey, id);
     if (!saved) {
-      throw StateError('تعذر حفظ الترويسة الافتراضية على الجهاز.');
+      throw StateError('تعذر حفظ آخر نموذج مفتوح على الجهاز.');
     }
   }
 

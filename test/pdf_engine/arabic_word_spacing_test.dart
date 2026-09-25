@@ -79,7 +79,7 @@ void main() {
     document.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(PdfExamEngine.pageMarginMillimeters),
+        margin: const pw.EdgeInsets.all(PaginatedPdfExamEngine.pageMarginMillimeters),
         textDirection: pw.TextDirection.rtl,
         theme: pw.ThemeData.withFont(base: fonts.regular, bold: fonts.bold),
         build: (context) => pw.Column(

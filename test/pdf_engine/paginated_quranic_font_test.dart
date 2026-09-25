@@ -68,7 +68,7 @@ void main() {
     const verse = '\uFD3F إنا أعطيناك الكوثر \uFD3E';
 
     test('draws the verse with the Quranic font and the rest with Noto Naskh', () async {
-      final bytes = await const PaginatedPdfExamEngine().generate(
+      final bytes = await PaginatedPdfExamEngine().generate(
         document: _islamicDocument(verse: verse),
       );
       final probe = PdfContentProbe.fromBytes(bytes);
@@ -100,7 +100,7 @@ void main() {
     });
 
     test('applies the Quranic face in non-Islamic templates too (no mushaf centering)', () async {
-      final bytes = await const PaginatedPdfExamEngine().generate(
+      final bytes = await PaginatedPdfExamEngine().generate(
         document: _islamicDocument(verse: verse, subject: 'اللغة العربية'),
       );
       final probe = PdfContentProbe.fromBytes(bytes);
@@ -134,7 +134,7 @@ void main() {
       expect(fonts.regular, isNotNull);
 
       // ورقة بلا وسْم قرآني تُولَّد طبيعية (بقية الخطوط كما هي).
-      final bytes = await const PaginatedPdfExamEngine().generate(
+      final bytes = await PaginatedPdfExamEngine().generate(
         document: withoutVerse,
         fonts: fonts,
       );
@@ -143,7 +143,7 @@ void main() {
 
     test('still renders the verse when no Quranic font is available', () async {
       final fonts = await ExamFonts.load(bundle: _BundleWithoutQuranic());
-      final bytes = await const PaginatedPdfExamEngine().generate(
+      final bytes = await PaginatedPdfExamEngine().generate(
         document: _islamicDocument(verse: verse),
         fonts: fonts,
       );

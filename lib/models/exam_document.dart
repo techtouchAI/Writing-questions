@@ -3,11 +3,8 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 
 import 'branch_model.dart';
-import 'exam.dart';
-import 'exam_header.dart';
 import 'exam_header_model.dart';
-import 'main_question.dart';
-import 'question_branch.dart';
+import 'paper_settings.dart';
 import 'question_model.dart';
 import 'subject_layout.dart';
 
@@ -34,12 +31,16 @@ class BranchRef {
   String toString() => 'BranchRef(q=$questionIndex, b=$branchIndex)';
 }
 
-/// نموذج الامتحان الوزاري الكامل (جذر شجرة المعالج المتسلسل).
+/// نموذج الامتحان الكامل (جذر شجرة منشئ ورقة الأسئلة).
 ///
-/// - [header]: الترويسة الوزارية (3 أعمدة × 3 أسطر).
-/// - [questions]: الأسئلة بترتيبها الهيكلي؛ [QuestionModel.questionNumber]
-///   يُعاد ضبطه دائماً من الفهرس (1..n) عبر [normalized].
+/// - [header]: الترويسة (3 أعمدة × 3 أسطر + عنوان + ملاحظات + تنسيق).
+/// - [questions]: الأسئلة بترتيبها؛ [QuestionModel.questionNumber] يُعاد
+///   ضبطه من الفهرس (1..n) عبر [normalized] عند تفعيل الترقيم التلقائي.
+/// - [settings]: إعدادات الورقة (ترقيم/أرقام/هوامش/خط افتراضي/إطارات).
 /// - قالب التنسيق يُشتق من مادة الترويسة ([layout]).
+///
+/// المدرس حر تماماً: لا حد لعدد الأسئلة أو الفروع أو النقاط، ولا نوع
+/// مفروض على أي مستوى — التطبيق أدوات تحرير فقط.
 class ExamDocument {
   ExamDocument({
     String? id,
@@ -47,11 +48,18 @@ class ExamDocument {
     required this.header,
     List<QuestionModel>? questions,
     DateTime? createdAt,
+    DateTime? updatedAt,
+    PaperSettings? settings,
   })  : id = id ?? const Uuid().v4(),
+        settings = settings ?? const PaperSettings(),
         questions = List<QuestionModel>.unmodifiable(
-          _renumber(questions ?? const <QuestionModel>[]),
+          _renumber(
+            questions ?? const <QuestionModel>[],
+            auto: settings?.autoNumberQuestions ?? true,
+          ),
         ),
-        createdAt = createdAt ?? DateTime.now();
+        createdAt = createdAt ?? DateTime.now(),
+        updatedAt = updatedAt ?? DateTime.now();
 
   final String id;
   final String name;
@@ -59,13 +67,63 @@ class ExamDocument {
   final List<QuestionModel> questions;
   final DateTime createdAt;
 
+  /// آخر تعديل (يُحدَّث عند كل حفظ).
+  final DateTime updatedAt;
+
+  /// إعدادات الورقة (الترقيم/الأرقام/الهوامش/الخط/الإطارات).
+  final PaperSettings settings;
+
   SubjectLayoutTemplate get layout => header.layoutTemplate;
 
   double get totalMarks =>
       questions.fold<double>(0, (sum, question) => sum + question.marks);
 
-  /// نسخة بأرقام أسئلة متتالية 1..n (يُستدعى بعد كل حذف/إدراج).
+  /// عدد الفروع الكلي في الورقة (لشاشة المراجعة).
+  int get totalBranches =>
+      questions.fold<int>(0, (sum, question) => sum + question.branches.length);
+
+  /// نسخة بأرقام أسئلة متتالية 1..n (يُستدعى بعد كل حذف/إدراج) — فقط عند
+  /// تفعيل الترقيم التلقائي، وإلا تُحفظ الأرقام اليدوية كما هي.
   ExamDocument get normalized => copyWith(questions: questions);
+
+  /// التسمية المعروضة للسؤال: اليدوية إن ثُبّتت، وإلا من قالب المادة.
+  String displayQuestionLabel(QuestionModel question) {
+    final manual = question.numberOverride?.trim();
+    if (manual != null && manual.isNotEmpty) {
+      return manual;
+    }
+    return layout.questionLabel(question.questionNumber);
+  }
+
+  /// التسمية المعروضة للفرع: اليدوية إن ثُبّتت، وإلا من الفهرس.
+  String displayBranchLabel(int questionIndex, int branchIndex) {
+    final branch = questions[questionIndex].branches[branchIndex];
+    final manual = branch.labelOverride?.trim();
+    if (manual != null && manual.isNotEmpty) {
+      return manual;
+    }
+    return layout.branchLabel(branchIndex);
+  }
+
+  /// هل تُعرض الأرقام بالمشرقية؟ (إعداد الورقة يتقدم على قالب المادة).
+  bool get usesArabicIndicNumerals {
+    switch (settings.numerals) {
+      case PaperNumerals.arabicIndic:
+        return true;
+      case PaperNumerals.latin:
+        return false;
+      case PaperNumerals.auto:
+        return layout.usesArabicIndicNumerals;
+    }
+  }
+
+  /// يُنسّق عدداً وفق نسق أرقام الورقة الفعلي.
+  String formatNumber(num value) {
+    final text = value == value.truncateToDouble()
+        ? value.toInt().toString()
+        : value.toString();
+    return usesArabicIndicNumerals ? SubjectLayoutTemplate.toArabicIndic(text) : text;
+  }
 
   QuestionModel? questionById(String id) {
     for (final question in questions) {
@@ -75,6 +133,8 @@ class ExamDocument {
     }
     return null;
   }
+
+  int indexOfQuestion(String id) => questions.indexWhere((question) => question.id == id);
 
   BranchModel branchAt(BranchRef ref) =>
       questions[ref.questionIndex].branches[ref.branchIndex];
@@ -91,6 +151,8 @@ class ExamDocument {
     String? name,
     ExamHeaderModel? header,
     List<QuestionModel>? questions,
+    DateTime? updatedAt,
+    PaperSettings? settings,
   }) {
     return ExamDocument(
       id: id,
@@ -98,6 +160,8 @@ class ExamDocument {
       header: header ?? this.header,
       questions: questions ?? this.questions,
       createdAt: createdAt,
+      updatedAt: updatedAt,
+      settings: settings ?? this.settings,
     );
   }
 
@@ -122,6 +186,47 @@ class ExamDocument {
     RangeError.checkValidIndex(index, questions, 'index');
     final updated = List<QuestionModel>.of(questions)..removeAt(index);
     return copyWith(questions: updated);
+  }
+
+  /// ينقل سؤالاً كاملاً (وحدة لا تتجزأ: نص/فروع/نقاط/صور/أشكال/درجات/
+  /// فواصل) من [from] إلى [to]، ثم يُعاد الترقيم حسب الإعداد.
+  ExamDocument withQuestionMoved(int from, int to) {
+    RangeError.checkValidIndex(from, questions, 'from');
+    final updated = List<QuestionModel>.of(questions);
+    final question = updated.removeAt(from);
+    updated.insert(to.clamp(0, updated.length), question);
+    return copyWith(questions: updated);
+  }
+
+  /// ينسخ سؤالاً كاملاً (كل المحتوى والتنسيق) بعد الأصل مباشرة.
+  ExamDocument withQuestionDuplicated(int index) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    final updated = List<QuestionModel>.of(questions);
+    updated.insert(
+      index + 1,
+      questions[index].duplicated(questionNumber: questions[index].questionNumber),
+    );
+    return copyWith(questions: updated);
+  }
+
+  /// ينقل فرعاً داخل سؤاله من [from] إلى [to] (المحتوى كما هو، الموضع فقط).
+  ExamDocument withBranchMoved(int questionIndex, int from, int to) {
+    RangeError.checkValidIndex(questionIndex, questions, 'questionIndex');
+    return withQuestionAt(
+      questionIndex,
+      questions[questionIndex].withBranchMoved(from, to),
+    );
+  }
+
+  /// ينسخ فرعاً كاملاً بعد الأصل مباشرة داخل سؤاله.
+  ExamDocument withBranchDuplicated(BranchRef ref) {
+    if (!containsRef(ref)) {
+      return this;
+    }
+    return withQuestionAt(
+      ref.questionIndex,
+      questions[ref.questionIndex].withBranchDuplicated(ref.branchIndex),
+    );
   }
 
   /// نسخة مع استبدال الفرع عند [ref].
@@ -154,46 +259,39 @@ class ExamDocument {
     return withBranchAt(from, sourceUpdated).withBranchAt(to, targetUpdated);
   }
 
-  /// تحويل للنموذج القديم ([Exam]) لإعادة استخدام التصدير والتخزين الحاليين.
-  ///
-  /// كل فرع يتحوّل إلى [QuestionBranch]، ونوع السؤال الرئيسي يُؤخذ من الفرع
-  /// الأول (النموذج القديم يحمل نوعاً واحداً لكل سؤال).
-  Exam toLegacyExam() {
-    final legacyQuestions = <MainQuestion>[
-      for (final question in questions)
-        MainQuestion(
-          id: question.id,
-          title: layout.questionLabel(question.questionNumber),
-          type: question.branches.first.content.type,
-          subject: header.subject,
-          category: question.category,
-          branches: <QuestionBranch>[
-            for (final branch in question.branches)
-              QuestionBranch(
-                id: branch.id,
-                text: branch.content.text,
-                marks: branch.marks,
-              ),
-          ],
-          options: question.branches.first.content.options,
-          modelAnswer: question.branches.first.content.modelAnswer,
-        ),
-    ];
-    return Exam(
-      id: id,
-      name: name,
-      header: ExamHeader(
-        institutionName: header.center.lines.first,
-        title: header.center.lines[1],
+  /// نسخة باسم جديد (لإعادة التسمية في المكتبة).
+  ExamDocument renamed(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      return this;
+    }
+    return copyWith(name: trimmed);
+  }
+
+  /// نسخة كاملة بهوية جديدة (لـ«نسخ الورقة» في المكتبة).
+  ExamDocument duplicated({String? name}) {
+    return ExamDocument(
+      name: (name == null || name.trim().isEmpty) ? '${this.name} (نسخة)' : name.trim(),
+      header: ExamHeaderModel(
         subject: header.subject,
-        gradeStage: header.right.lines[2],
-        duration: header.left.lines.first,
-        generalInstructions: header.instructions,
+        right: HeaderColumn(header.right.toList()),
+        center: HeaderColumn(header.center.toList()),
+        left: HeaderColumn(header.left.toList()),
+        instructions: header.instructions,
+        title: header.title,
+        notes: header.notes,
+        style: header.style,
       ),
-      mainQuestions: legacyQuestions,
-      createdAt: createdAt,
+      questions: <QuestionModel>[
+        for (final question in questions)
+          question.duplicated(questionNumber: question.questionNumber),
+      ],
+      settings: settings,
     );
   }
+
+  /// نسخة محدّثة الطابع الزمني (تُستدعى عند الحفظ/التصدير).
+  ExamDocument touched() => copyWith(updatedAt: DateTime.now());
 
   Map<String, dynamic> toMap() {
     return <String, dynamic>{
@@ -201,12 +299,15 @@ class ExamDocument {
       'name': name,
       'header': header.toMap(),
       'questions': questions.map((question) => question.toMap()).toList(growable: false),
+      'settings': settings.toMap(),
       'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
     };
   }
 
   /// يقرأ نموذجاً **بشكل صارم**؛ أي سؤال تالف يرمي [FormatException] ليُعزل
-  /// السجل كاملاً بواسطة `StorageService`.
+  /// السجل كاملاً بواسطة `StorageService`. الحقول الجديدة (الإعدادات/
+  /// الطابع الزمني) متسامحة لتبقى النماذج القديمة صالحة.
   factory ExamDocument.fromMap(Map<String, dynamic> map) {
     final rawHeader = map['header'];
     if (rawHeader is! Map) {
@@ -225,6 +326,7 @@ class ExamDocument {
     }
     final rawName = map['name']?.toString().trim();
     final rawCreated = map['createdAt'];
+    final rawUpdated = map['updatedAt'];
     return ExamDocument(
       id: map['id'] is String && (map['id'] as String).trim().isNotEmpty
           ? map['id'] as String
@@ -233,6 +335,8 @@ class ExamDocument {
       header: ExamHeaderModel.fromMap(Map<String, dynamic>.from(rawHeader)),
       questions: questions,
       createdAt: rawCreated is String ? DateTime.tryParse(rawCreated) : null,
+      updatedAt: rawUpdated is String ? DateTime.tryParse(rawUpdated) : null,
+      settings: PaperSettings.fromValue(map['settings']),
     );
   }
 
@@ -246,7 +350,11 @@ class ExamDocument {
     return ExamDocument.fromMap(Map<String, dynamic>.from(decoded));
   }
 
-  static List<QuestionModel> _renumber(List<QuestionModel> source) {
+  /// يعيد ترقيم الأسئلة 1..n عند التفعيل، وإلا يحفظ الأرقام كما هي.
+  static List<QuestionModel> _renumber(List<QuestionModel> source, {required bool auto}) {
+    if (!auto) {
+      return List<QuestionModel>.of(source);
+    }
     return <QuestionModel>[
       for (var index = 0; index < source.length; index++)
         source[index].questionNumber == index + 1

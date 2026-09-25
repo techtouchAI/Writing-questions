@@ -1,10 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:writing_questions_app/models/exam.dart';
-import 'package:writing_questions_app/models/exam_header.dart';
-import 'package:writing_questions_app/models/main_question.dart';
-import 'package:writing_questions_app/models/question_branch.dart';
+import 'package:writing_questions_app/models/branch_model.dart';
+import 'package:writing_questions_app/models/exam_document.dart';
+import 'package:writing_questions_app/models/exam_header_model.dart';
+import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/services/pdf_export_service.dart';
 
@@ -21,42 +21,37 @@ void main() {
     await tempDir.delete(recursive: true);
   });
 
-  Exam buildExam() {
-    return Exam(
-      name: 'اختبار الرياضيات',
-      header: ExamHeader(
-        subject: 'الرياضيات',
-        gradeStage: 'الصف الخامس الابتدائي',
-        instructor: 'أ. سعد',
-      ),
-      mainQuestions: [
-        MainQuestion(
-          title: 'احسب ناتج 15 × 4.',
-          type: QuestionType.multipleChoice,
-          branches: <QuestionBranch>[QuestionBranch(text: '', marks: 2)],
-        ),
-        MainQuestion(
-          title: 'اكتب خطوات الحل.',
-          type: QuestionType.essay,
-          branches: <QuestionBranch>[QuestionBranch(text: '', marks: 5)],
+  ExamDocument buildDocument() {
+    return ExamDocument(
+      name: 'نموذج الرياضيات',
+      header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
+      questions: <QuestionModel>[
+        QuestionModel(
+          questionNumber: 1,
+          prompt: 'احسب ناتج 15 × 4.',
+          branches: <BranchModel>[
+            BranchModel(
+              content: BranchContent(type: QuestionType.essay, text: 'اكتب خطوات الحل.'),
+              marks: 5,
+            ),
+          ],
         ),
       ],
     );
   }
 
-  test('buildExamPdfBytes returns a real PDF payload', () async {
-    final bytes = await PdfExportService.buildExamPdfBytes(
-      exam: buildExam(),
-      isTeacherVersion: false,
+  test('buildDocumentPdfBytes returns a real PDF payload', () async {
+    final bytes = await PdfExportService.buildDocumentPdfBytes(
+      document: buildDocument(),
     );
 
     expect(bytes, isNotEmpty);
     expect(String.fromCharCodes(bytes), startsWith('%PDF-'));
   });
 
-  test('exportExamToPdf writes a .pdf file into the destination', () async {
-    final file = await PdfExportService.exportExamToPdf(
-      exam: buildExam(),
+  test('exportDocumentToPdf writes a .pdf file into the destination', () async {
+    final file = await PdfExportService.exportDocumentToPdf(
+      document: buildDocument(),
       isTeacherVersion: true,
       outputDirectory: tempDir,
     );

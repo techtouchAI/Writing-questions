@@ -26,8 +26,8 @@ Future<List<int>?> pickImageBytes() async {
 /// - **نص**: عناصر نصية سريعة (سؤال/فرع/قسم).
 /// - **رياضيات/كيمياء/فيزياء**: مكتبة صيغ LaTeX تُدرج مباشرة في الحقل
 ///   النشط على اللوحة ($...$ سطرية أو $$...$$ منفردة) عبر [FormulaInserter].
-/// - **وسائط**: إدراج صور (بلاطة الوسائط) وأشكال هندسية (مثلث/دائرة/مربع)
-///   كعناصر حرة فوق الورقة.
+/// - **وسائط**: إدراج صور (بلاطة الوسائط) وأشكال (مثلث/دائرة/مربع/
+///   مستطيل/خط/سهم) ومربعات نص وفواصل كعناصر حرة فوق الورقة.
 class SmartExamToolbar extends StatelessWidget {
   const SmartExamToolbar({
     super.key,
@@ -35,16 +35,20 @@ class SmartExamToolbar extends StatelessWidget {
     required this.onInsertText,
     required this.onAddImage,
     required this.onAddShape,
-    this.onAddMainQuestion,
+    this.onAddQuestion,
     this.onAddBranch,
+    this.onAddTextBox,
+    this.onAddDivider,
   });
 
   final FormulaInserter inserter;
   final ValueChanged<String> onInsertText;
   final ValueChanged<List<int>> onAddImage;
   final ValueChanged<FloatingShapeType> onAddShape;
-  final VoidCallback? onAddMainQuestion;
+  final VoidCallback? onAddQuestion;
   final VoidCallback? onAddBranch;
+  final VoidCallback? onAddTextBox;
+  final VoidCallback? onAddDivider;
 
   @override
   Widget build(BuildContext context) {
@@ -73,7 +77,7 @@ class SmartExamToolbar extends StatelessWidget {
                   _TextTab(
                     inserter: inserter,
                     onInsertText: onInsertText,
-                    onAddMainQuestion: onAddMainQuestion,
+                    onAddQuestion: onAddQuestion,
                     onAddBranch: onAddBranch,
                   ),
                   _FormulaTab(
@@ -88,7 +92,12 @@ class SmartExamToolbar extends StatelessWidget {
                     inserter: inserter,
                     formulas: _physicsFormulas,
                   ),
-                  _MediaTab(onAddImage: onAddImage, onAddShape: onAddShape),
+                  _MediaTab(
+                    onAddImage: onAddImage,
+                    onAddShape: onAddShape,
+                    onAddTextBox: onAddTextBox,
+                    onAddDivider: onAddDivider,
+                  ),
                 ],
               ),
             ),
@@ -141,13 +150,13 @@ class _TextTab extends StatelessWidget {
   const _TextTab({
     required this.inserter,
     required this.onInsertText,
-    required this.onAddMainQuestion,
+    required this.onAddQuestion,
     required this.onAddBranch,
   });
 
   final FormulaInserter inserter;
   final ValueChanged<String> onInsertText;
-  final VoidCallback? onAddMainQuestion;
+  final VoidCallback? onAddQuestion;
   final VoidCallback? onAddBranch;
 
   @override
@@ -156,11 +165,11 @@ class _TextTab extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       children: <Widget>[
-        if (onAddMainQuestion != null)
+        if (onAddQuestion != null)
           _ChipButton(
             icon: Icons.add_circle_outline,
             label: 'سؤال جديد',
-            onTap: onAddMainQuestion!,
+            onTap: onAddQuestion!,
           ),
         if (onAddBranch != null)
           _ChipButton(
@@ -216,10 +225,17 @@ class _FormulaTab extends StatelessWidget {
 }
 
 class _MediaTab extends StatelessWidget {
-  const _MediaTab({required this.onAddImage, required this.onAddShape});
+  const _MediaTab({
+    required this.onAddImage,
+    required this.onAddShape,
+    required this.onAddTextBox,
+    required this.onAddDivider,
+  });
 
   final ValueChanged<List<int>> onAddImage;
   final ValueChanged<FloatingShapeType> onAddShape;
+  final VoidCallback? onAddTextBox;
+  final VoidCallback? onAddDivider;
 
   Future<void> _pickImage() async {
     final bytes = await pickImageBytes();
@@ -254,6 +270,33 @@ class _MediaTab extends StatelessWidget {
           label: 'مربع',
           onTap: () => onAddShape(FloatingShapeType.square),
         ),
+        _ChipButton(
+          icon: Icons.rectangle_outlined,
+          label: 'مستطيل',
+          onTap: () => onAddShape(FloatingShapeType.rectangle),
+        ),
+        _ChipButton(
+          icon: Icons.remove,
+          label: 'خط',
+          onTap: () => onAddShape(FloatingShapeType.line),
+        ),
+        _ChipButton(
+          icon: Icons.arrow_forward,
+          label: 'سهم',
+          onTap: () => onAddShape(FloatingShapeType.arrow),
+        ),
+        if (onAddTextBox != null)
+          _ChipButton(
+            icon: Icons.text_fields,
+            label: 'مربع نص',
+            onTap: onAddTextBox!,
+          ),
+        if (onAddDivider != null)
+          _ChipButton(
+            icon: Icons.horizontal_rule,
+            label: 'فاصل',
+            onTap: onAddDivider!,
+          ),
       ],
     );
   }

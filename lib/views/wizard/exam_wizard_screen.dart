@@ -88,10 +88,12 @@ class _ExamWizardScreenState extends State<ExamWizardScreen> {
           key: const ValueKey<WizardStep>(WizardStep.header),
           initialHeader: _controller.document.header,
           initialName: _controller.document.name,
-          onNext: (header, name) {
+          initialSettings: _controller.document.settings,
+          onNext: (header, name, settings) {
             _controller
               ..updateHeader(header)
               ..updateName(name)
+              ..updateSettings(settings)
               ..openQuestion(0);
             _goTo(WizardStep.questions);
           },

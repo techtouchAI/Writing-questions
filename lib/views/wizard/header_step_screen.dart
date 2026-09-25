@@ -1,27 +1,34 @@
 import 'package:flutter/material.dart';
 
 import '../../models/exam_header_model.dart';
+import '../../models/paper_font.dart';
+import '../../models/paper_settings.dart';
+import '../../models/paper_text_style.dart';
 import '../../models/subject_catalog.dart';
 import '../../models/subject_layout.dart';
 
-/// الخطوة 1 من المعالج: إدخال الترويسة الوزارية (يمين / وسط / يسار).
+/// الخطوة 1 من المعالج: إدخال الترويسة (عنوان + يمين / وسط / يسار).
 ///
-/// الحقول مقسّمة إلى ثلاث بطاقات تحاكي أعمدة النموذج الوزاري؛ تغيير المادة
+/// الحقول مقسّمة إلى بطاقات تحاكي أعمدة الورقة؛ تغيير المادة
 /// يعيد اختيار قالب التنسيق ([SubjectLayoutTemplate]) ويعيد تعبئة الأعمدة
-/// بالقيم الافتراضية للقالب عند الطلب.
+/// بالقيم الافتراضية للقالب عند الطلب. جميع الحقول اختيارية وقابلة للحذف
+/// ما عدا اسم النموذج والمادة، وتصميم الترويسة (خط/حجم/محاذاة/إطار)
+/// يُعاين مباشرة قبل المتابعة.
 class HeaderStepScreen extends StatefulWidget {
   const HeaderStepScreen({
     super.key,
     required this.initialHeader,
     required this.initialName,
+    required this.initialSettings,
     required this.onNext,
   });
 
   final ExamHeaderModel initialHeader;
   final String initialName;
+  final PaperSettings initialSettings;
 
-  /// يُستدعى بالترويسة النهائية واسم النموذج عند الضغط على [التالي].
-  final void Function(ExamHeaderModel header, String name) onNext;
+  /// يُستدعى بالترويسة النهائية واسم النموذج والإعدادات عند [التالي].
+  final void Function(ExamHeaderModel header, String name, PaperSettings settings) onNext;
 
   @override
   State<HeaderStepScreen> createState() => _HeaderStepScreenState();
@@ -32,8 +39,15 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
   late final TextEditingController _nameController;
   late final TextEditingController _subjectController;
   late final TextEditingController _instructionsController;
+  late final TextEditingController _titleController;
+  late final TextEditingController _notesController;
   late final Map<HeaderSlot, List<TextEditingController>> _columns;
   late bool _customSubject;
+  late PaperFont _font;
+  late double _fontSize;
+  late bool _bold;
+  late PaperAlign _align;
+  late bool _headerBorder;
 
   @override
   void initState() {
@@ -42,6 +56,8 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
     _nameController = TextEditingController(text: widget.initialName);
     _subjectController = TextEditingController(text: header.subject);
     _instructionsController = TextEditingController(text: header.instructions);
+    _titleController = TextEditingController(text: header.title);
+    _notesController = TextEditingController(text: header.notes);
     _columns = <HeaderSlot, List<TextEditingController>>{
       for (final slot in HeaderSlot.values)
         slot: <TextEditingController>[
@@ -49,6 +65,11 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
         ],
     };
     _customSubject = !SubjectCatalog.knownSubjects.contains(header.subject);
+    _font = header.style.font ?? widget.initialSettings.defaultFont;
+    _fontSize = (header.style.fontSize ?? 10).clamp(8.0, 16.0).toDouble();
+    _bold = header.style.bold ?? false;
+    _align = header.style.align ?? PaperAlign.center;
+    _headerBorder = widget.initialSettings.headerBorder;
   }
 
   @override
@@ -56,6 +77,8 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
     _nameController.dispose();
     _subjectController.dispose();
     _instructionsController.dispose();
+    _titleController.dispose();
+    _notesController.dispose();
     for (final controllers in _columns.values) {
       for (final controller in controllers) {
         controller.dispose();
@@ -71,7 +94,14 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
       center: HeaderColumn(_columns[HeaderSlot.center]!.map((c) => c.text).toList()),
       left: HeaderColumn(_columns[HeaderSlot.left]!.map((c) => c.text).toList()),
       instructions: _instructionsController.text.trim(),
+      title: _titleController.text.trim(),
+      notes: _notesController.text.trim(),
+      style: PaperTextStyle(font: _font, fontSize: _fontSize, bold: _bold, align: _align),
     );
+  }
+
+  PaperSettings _collectSettings() {
+    return widget.initialSettings.copyWith(headerBorder: _headerBorder);
   }
 
   void _applyMinisterialDefaults() {
@@ -95,7 +125,7 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
     if (!(_formKey.currentState?.validate() ?? false)) {
       return;
     }
-    widget.onNext(_collect(), _nameController.text.trim());
+    widget.onNext(_collect(), _nameController.text.trim(), _collectSettings());
   }
 
   @override
@@ -112,11 +142,21 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(
-                  labelText: 'اسم النموذج (للتنظيم داخل التطبيق) *',
+                  labelText: 'اسم الورقة (للتنظيم داخل التطبيق) *',
                   border: OutlineInputBorder(),
                 ),
                 validator: (value) =>
-                    value == null || value.trim().isEmpty ? 'اسم النموذج مطلوب.' : null,
+                    value == null || value.trim().isEmpty ? 'اسم الورقة مطلوب.' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _titleController,
+                decoration: const InputDecoration(
+                  labelText: 'عنوان الامتحان (يظهر أعلى الترويسة)',
+                  hintText: 'مثال: أسئلة امتحان مادة اللغة العربية',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) => setState(() {}),
               ),
               const SizedBox(height: 12),
               _buildSubjectField(),
@@ -172,6 +212,20 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
                   border: OutlineInputBorder(),
                 ),
               ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _notesController,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'ملاحظات إضافية أسفل الترويسة (اختياري)',
+                  hintText: 'الوقت، الدرجة الكلية، أي نص...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _buildDesignCard(),
+              const SizedBox(height: 12),
+              _buildLivePreview(),
               const SizedBox(height: 24),
               SizedBox(
                 height: 50,
@@ -277,8 +331,237 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
                   isDense: true,
                   border: const OutlineInputBorder(),
                 ),
+                onChanged: (_) => setState(() {}),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// بطاقة تصميم الترويسة (خط/حجم/عريض/محاذاة/إطار).
+  Widget _buildDesignCard() {
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Row(
+              children: <Widget>[
+                Icon(Icons.palette_outlined, size: 18),
+                SizedBox(width: 6),
+                Text('تصميم الترويسة', style: TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: DropdownButtonFormField<PaperFont>(
+                    value: _font,
+                    decoration: const InputDecoration(
+                      labelText: 'الخط',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    items: PaperFont.values
+                        .map((font) => DropdownMenuItem<PaperFont>(
+                              value: font,
+                              child: Text(
+                                font.arabicLabel,
+                                style: TextStyle(fontSize: 12, fontFamily: font.family),
+                              ),
+                            ))
+                        .toList(growable: false),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _font = value);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<double>(
+                    value: _fontSize,
+                    decoration: const InputDecoration(
+                      labelText: 'الحجم',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const <double>[8, 9, 10, 11, 12, 14, 16]
+                        .map((size) => DropdownMenuItem<double>(
+                              value: size,
+                              child: Text('${size.toInt()}',
+                                  style: const TextStyle(fontSize: 12)),
+                            ))
+                        .toList(growable: false),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() => _fontSize = value);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: SegmentedButton<PaperAlign>(
+                    style: SegmentedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    segments: const <ButtonSegment<PaperAlign>>[
+                      ButtonSegment<PaperAlign>(
+                        value: PaperAlign.right,
+                        icon: Icon(Icons.format_align_right, size: 16),
+                      ),
+                      ButtonSegment<PaperAlign>(
+                        value: PaperAlign.center,
+                        icon: Icon(Icons.format_align_center, size: 16),
+                      ),
+                      ButtonSegment<PaperAlign>(
+                        value: PaperAlign.left,
+                        icon: Icon(Icons.format_align_left, size: 16),
+                      ),
+                    ],
+                    selected: <PaperAlign>{_align},
+                    onSelectionChanged: (selected) =>
+                        setState(() => _align = selected.single),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'عريض',
+                  isSelected: _bold,
+                  icon: const Icon(Icons.format_bold),
+                  onPressed: () => setState(() => _bold = !_bold),
+                ),
+                IconButton(
+                  tooltip: 'إطار حول الترويسة',
+                  isSelected: _headerBorder,
+                  icon: const Icon(Icons.border_outer),
+                  onPressed: () => setState(() => _headerBorder = !_headerBorder),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  TextAlign _previewAlign() {
+    switch (_align) {
+      case PaperAlign.left:
+        return TextAlign.left;
+      case PaperAlign.center:
+        return TextAlign.center;
+      case PaperAlign.right:
+      case PaperAlign.start:
+      case PaperAlign.end:
+      case PaperAlign.justify:
+        return TextAlign.right;
+    }
+  }
+
+  /// معاينة حية لشكل الترويسة قبل المتابعة.
+  Widget _buildLivePreview() {
+    final style = TextStyle(
+      fontFamily: _font.family,
+      fontSize: _fontSize + 4,
+      fontWeight: _bold ? FontWeight.bold : FontWeight.normal,
+    );
+    Widget column(List<TextEditingController> controllers) {
+      return Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            for (final field in controllers)
+              Text(
+                field.text.isEmpty ? ' ' : field.text,
+                style: style.copyWith(fontSize: _fontSize + 1),
+                textAlign: _previewAlign(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+          ],
+        ),
+      );
+    }
+
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Row(
+              children: <Widget>[
+                Icon(Icons.preview_outlined, size: 18),
+                SizedBox(width: 6),
+                Text('معاينة الترويسة', style: TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Column(
+                children: <Widget>[
+                  if (_titleController.text.trim().isNotEmpty)
+                    Text(
+                      _titleController.text,
+                      style: style.copyWith(
+                        fontSize: _fontSize + 6,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      textAlign: _previewAlign(),
+                    ),
+                  Container(
+                    margin: const EdgeInsets.only(top: 6),
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      border: _headerBorder
+                          ? Border.all(
+                              color: Theme.of(context).colorScheme.primary, width: 1.2)
+                          : null,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        column(_columns[HeaderSlot.right]!),
+                        const SizedBox(width: 6),
+                        column(_columns[HeaderSlot.center]!),
+                        const SizedBox(width: 6),
+                        column(_columns[HeaderSlot.left]!),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
