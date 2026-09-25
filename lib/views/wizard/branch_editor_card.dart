@@ -8,10 +8,10 @@ import '../widgets/mcq_options_editor.dart';
 
 /// بطاقة تحرير فرع واحد (أ، ب، ج...) داخل خطوة «إعداد السؤال».
 ///
-/// تُغلّف أدوات الإدخال الحالية بدل إعادة برمجتها: [McqOptionsEditor]
-/// للخيارات، و[LtrNumericField] للدرجة، ونموذج صح/خطأ والفراغات بنفس منطق
-/// محرر بنك الأسئلة — مع نوع السؤال قابل للاختيار لكل فرع على حدة،
-/// ووضع «نص حر» (بلا مساحة إجابة مولّدة)، ونقاط غير محدودة (1، 2، 3...).
+/// تُغلّف أدوات الإدخال: [McqOptionsEditor] للخيارات، و[LtrNumericField] للدرجة،
+/// ونموذج صح/خطأ والفراغات والمقالي — مع نوع السؤال قابل للاختيار لكل فرع على حدة،
+/// ووضع «نص حر» (بلا مساحة إجابة مولّدة)، ونقاط غير محدودة (1، 2، 3...)،
+/// وإمكانية تعيين تسمية يدوية مخصصة للفرع (مثل أولاً: أو ثانياً:).
 class BranchEditorCard extends StatefulWidget {
   const BranchEditorCard({
     super.key,
@@ -35,6 +35,7 @@ class BranchEditorCard extends StatefulWidget {
 class _BranchEditorCardState extends State<BranchEditorCard> {
   late final TextEditingController _textController;
   late final TextEditingController _marksController;
+  late final TextEditingController _labelOverrideController;
   late final TextEditingController _modelAnswerController;
   final TextEditingController _countController = TextEditingController();
   final Map<String, TextEditingController> _itemFields = <String, TextEditingController>{};
@@ -44,6 +45,8 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
     super.initState();
     _textController = TextEditingController(text: widget.branch.content.text);
     _marksController = TextEditingController(text: _formatMarks(widget.branch.marks));
+    _labelOverrideController =
+        TextEditingController(text: widget.branch.labelOverride ?? '');
     _modelAnswerController =
         TextEditingController(text: widget.branch.content.modelAnswer);
   }
@@ -51,9 +54,11 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
   @override
   void didUpdateWidget(covariant BranchEditorCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // مزامنة الحقول عند تبديل المحتوى خارجياً (مثلاً بعد السحب والإفلات).
     if (widget.branch.content.text != _textController.text) {
       _textController.text = widget.branch.content.text;
+    }
+    if ((widget.branch.labelOverride ?? '') != _labelOverrideController.text) {
+      _labelOverrideController.text = widget.branch.labelOverride ?? '';
     }
     if (widget.branch.content.modelAnswer != _modelAnswerController.text) {
       _modelAnswerController.text = widget.branch.content.modelAnswer;
@@ -62,7 +67,6 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
     if (parsedMarks == null || parsedMarks != widget.branch.marks) {
       _marksController.text = _formatMarks(widget.branch.marks);
     }
-    // التخلص من حقول النقاط المحذوفة.
     final liveIds = widget.branch.content.items.map((item) => item.id).toSet();
     final stale = _itemFields.keys.where((id) => !liveIds.contains(id)).toList();
     for (final id in stale) {
@@ -74,6 +78,7 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
   void dispose() {
     _textController.dispose();
     _marksController.dispose();
+    _labelOverrideController.dispose();
     _modelAnswerController.dispose();
     _countController.dispose();
     for (final field in _itemFields.values) {
@@ -93,6 +98,15 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
     if (marks != null) {
       widget.onChanged(widget.branch.copyWith(marks: marks));
     }
+  }
+
+  void _onLabelOverrideChanged(String value) {
+    final trimmed = value.trim();
+    widget.onChanged(
+      widget.branch.copyWith(
+        labelOverride: () => trimmed.isEmpty ? null : trimmed,
+      ),
+    );
   }
 
   static double? _parseMarks(String value) {
@@ -132,6 +146,10 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final displayLabel = widget.branch.labelOverride?.trim().isNotEmpty == true
+        ? widget.branch.labelOverride!.trim()
+        : widget.label;
+
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: 12),
@@ -150,18 +168,18 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
                   radius: 14,
                   backgroundColor: colorScheme.primaryContainer,
                   child: Text(
-                    widget.label,
+                    displayLabel,
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       color: colorScheme.onPrimaryContainer,
-                      fontSize: 13,
+                      fontSize: 12,
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'الفرع (${widget.label})',
+                    'الفرع ($displayLabel)',
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
@@ -182,30 +200,51 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
                   ),
               ],
             ),
-            const SizedBox(height: 10),
-            DropdownButtonFormField<QuestionType>(
-              value: _content.type,
-              decoration: const InputDecoration(
-                labelText: 'نوع السؤال',
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
-              items: QuestionType.values
-                  .map(
-                    (type) => DropdownMenuItem<QuestionType>(
-                      value: type,
-                      child: Text(type.arabicLabel, style: const TextStyle(fontSize: 13)),
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: TextFormField(
+                    controller: _labelOverrideController,
+                    enabled: widget.enabled,
+                    decoration: const InputDecoration(
+                      labelText: 'تسمية مخصصة للفرع (اختياري)',
+                      hintText: 'مثال: أولاً: أو ثانياً: (فارغ = تلقائي)',
+                      isDense: true,
+                      border: OutlineInputBorder(),
                     ),
-                  )
-                  .toList(growable: false),
-              onChanged: widget.enabled
-                  ? (type) {
-                      if (type != null && type != _content.type) {
-                        _emitContent(_content.copyWith(type: type));
-                      }
-                    }
-                  : null,
+                    onChanged: _onLabelOverrideChanged,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<QuestionType>(
+                    value: _content.type,
+                    decoration: const InputDecoration(
+                      labelText: 'نوع السؤال',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    items: QuestionType.values
+                        .map(
+                          (type) => DropdownMenuItem<QuestionType>(
+                            value: type,
+                            child: Text(type.arabicLabel, style: const TextStyle(fontSize: 13)),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged: widget.enabled
+                        ? (type) {
+                            if (type != null && type != _content.type) {
+                              _emitContent(_content.copyWith(type: type));
+                            }
+                          }
+                        : null,
+                  ),
+                ),
+              ],
             ),
+            const SizedBox(height: 6),
             SwitchListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,

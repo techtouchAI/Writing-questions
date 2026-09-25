@@ -20,6 +20,6 @@ void main() {
 
     expect(find.text('صانع ومحرر الأسئلة'), findsOneWidget);
     expect(find.text('الإجراءات السريعة'), findsOneWidget);
-    expect(find.text('نموذج وزاري جديد (معالج متسلسل)'), findsOneWidget);
+    expect(find.text('إنشاء ورقة أسئلة جديدة'), findsOneWidget);
   });
 }

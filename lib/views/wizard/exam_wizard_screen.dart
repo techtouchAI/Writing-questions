@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/exam_document.dart';
+import '../../providers/exam_document_provider.dart';
 import '../../providers/exam_wizard_controller.dart';
 import 'exam_preview_screen.dart';
 import 'header_step_screen.dart';
@@ -13,10 +14,10 @@ enum WizardStep { header, questions, preview }
 /// المعالج المتسلسل لإنشاء النموذج الوزاري (Wizard Flow):
 ///
 /// 1. الترويسة (يمين/وسط/يسار) ← 2. إعداد الأسئلة سؤالاً سؤالاً ←
-/// 3. المعاينة A4 (تحرير مباشر، سحب وإفلات، أدوات عائمة، تصدير PDF).
+/// 3. المعاينة A4 (تحرير مباشر، سحب وإفلات، أدوات عائمة، تصدير PDF / Word).
 ///
 /// يملك [ExamWizardController] ويوفّره لكل الخطوات؛ زر الرجوع في النظام
-/// يعود خطوة واحدة بدل الخروج مباشرة.
+/// يعود خطوة واحدة بدل الخروج مباشرة، مع تفعيل الحفظ التلقائي الفوري.
 class ExamWizardScreen extends StatefulWidget {
   const ExamWizardScreen({super.key, this.existingDocument, this.initialStep});
 
@@ -39,6 +40,14 @@ class _ExamWizardScreenState extends State<ExamWizardScreen> {
     _controller = ExamWizardController(document: widget.existingDocument);
     _step = widget.initialStep ??
         (widget.existingDocument == null ? WizardStep.header : WizardStep.preview);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final provider = context.read<ExamDocumentProvider>();
+      _controller.enableAutoSave((doc) async {
+        await provider.saveDocument(doc.touched());
+      });
+    });
   }
 
   @override

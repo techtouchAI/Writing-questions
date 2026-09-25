@@ -7,13 +7,12 @@ import '../../models/paper_text_style.dart';
 import '../../models/subject_catalog.dart';
 import '../../models/subject_layout.dart';
 
-/// الخطوة 1 من المعالج: إدخال الترويسة (عنوان + يمين / وسط / يسار).
+/// الخطوة 1 من المعالج: إدخال وتصميم الترويسة (عنوان + يمين / وسط / يسار).
 ///
-/// الحقول مقسّمة إلى بطاقات تحاكي أعمدة الورقة؛ تغيير المادة
-/// يعيد اختيار قالب التنسيق ([SubjectLayoutTemplate]) ويعيد تعبئة الأعمدة
-/// بالقيم الافتراضية للقالب عند الطلب. جميع الحقول اختيارية وقابلة للحذف
-/// ما عدا اسم النموذج والمادة، وتصميم الترويسة (خط/حجم/محاذاة/إطار)
-/// يُعاين مباشرة قبل المتابعة.
+/// الحقول مقسّمة إلى بطاقات تحاكي أعمدة الورقة؛ بالإضافة إلى نموذج إدخال منظم
+/// يتيح تعبئة معلومات الجهة، الامتحان، الطالب، والوقت والدرجة وتوزيعها مباشرة
+/// على الأعمدة. جميع الحقول اختيارية وقابلة للتعديل والحذف، وتصميم الترويسة
+/// (الخط/الحجم/المحاذاة/الإطار) يُعاين مباشرة قبل المتابعة.
 class HeaderStepScreen extends StatefulWidget {
   const HeaderStepScreen({
     super.key,
@@ -49,6 +48,24 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
   late PaperAlign _align;
   late bool _headerBorder;
 
+  // حقول النموذج المنظم الإضافية للتعبئة السريعة المرتبة
+  late final TextEditingController _countryController;
+  late final TextEditingController _ministryController;
+  late final TextEditingController _directorateController;
+  late final TextEditingController _schoolController;
+  late final TextEditingController _gradeController;
+  late final TextEditingController _branchFieldController;
+  late final TextEditingController _academicYearController;
+  late final TextEditingController _examRoundController;
+  late final TextEditingController _examTypeController;
+  late final TextEditingController _durationController;
+  late final TextEditingController _totalMarksController;
+  late final TextEditingController _studentNameController;
+  late final TextEditingController _studentNoController;
+  late final TextEditingController _studentSectionController;
+
+  bool _showStructuredHelper = false;
+
   @override
   void initState() {
     super.initState();
@@ -70,6 +87,21 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
     _bold = header.style.bold ?? false;
     _align = header.style.align ?? PaperAlign.center;
     _headerBorder = widget.initialSettings.headerBorder;
+
+    _countryController = TextEditingController(text: 'جمهورية العراق');
+    _ministryController = TextEditingController(text: 'وزارة التربية');
+    _directorateController = TextEditingController(text: 'المديرية العامة للتربية');
+    _schoolController = TextEditingController(text: 'اسم المدرسة');
+    _gradeController = TextEditingController(text: 'الصف الثالث المتوسط');
+    _branchFieldController = TextEditingController(text: '');
+    _academicYearController = TextEditingController(text: '2025-2026');
+    _examRoundController = TextEditingController(text: 'الدور الأول');
+    _examTypeController = TextEditingController(text: 'امتحان نصف السنة');
+    _durationController = TextEditingController(text: 'ساعتان ونصف');
+    _totalMarksController = TextEditingController(text: '100');
+    _studentNameController = TextEditingController(text: 'اسم الطالب:');
+    _studentNoController = TextEditingController(text: 'الرقم الامتحاني:');
+    _studentSectionController = TextEditingController(text: 'الشعبة:');
   }
 
   @override
@@ -84,6 +116,20 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
         controller.dispose();
       }
     }
+    _countryController.dispose();
+    _ministryController.dispose();
+    _directorateController.dispose();
+    _schoolController.dispose();
+    _gradeController.dispose();
+    _branchFieldController.dispose();
+    _academicYearController.dispose();
+    _examRoundController.dispose();
+    _examTypeController.dispose();
+    _durationController.dispose();
+    _totalMarksController.dispose();
+    _studentNameController.dispose();
+    _studentNoController.dispose();
+    _studentSectionController.dispose();
     super.dispose();
   }
 
@@ -121,6 +167,53 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
     });
   }
 
+  void _applyStructuredHelper() {
+    final subject = _subjectController.text.trim().isEmpty ? 'اللغة العربية' : _subjectController.text.trim();
+    final ministry = _ministryController.text.trim().isEmpty ? 'وزارة التربية' : _ministryController.text.trim();
+    final school = _schoolController.text.trim().isEmpty ? 'اسم المدرسة' : _schoolController.text.trim();
+    final directorate = _directorateController.text.trim();
+    final grade = _gradeController.text.trim().isEmpty ? 'الصف الثالث المتوسط' : _gradeController.text.trim();
+    final branch = _branchFieldController.text.trim();
+    final gradeFull = branch.isNotEmpty ? '$grade — $branch' : grade;
+    final year = _academicYearController.text.trim().isEmpty ? '2025-2026' : _academicYearController.text.trim();
+    final round = _examRoundController.text.trim().isEmpty ? 'الدور الأول' : _examRoundController.text.trim();
+    final examType = _examTypeController.text.trim().isEmpty ? 'امتحان نصف السنة' : _examTypeController.text.trim();
+    final duration = _durationController.text.trim().isEmpty ? 'ساعتان' : _durationController.text.trim();
+    final marks = _totalMarksController.text.trim();
+
+    setState(() {
+      // العمود الأيمن
+      _columns[HeaderSlot.right]![0].text = 'التاريخ:      /      /';
+      _columns[HeaderSlot.right]![1].text = 'المادة: $subject';
+      _columns[HeaderSlot.right]![2].text = gradeFull;
+
+      // العمود الأوسط
+      _columns[HeaderSlot.center]![0].text = directorate.isNotEmpty ? '$ministry — $directorate' : '$ministry — $school';
+      _columns[HeaderSlot.center]![1].text = '$examType للعام الدراسي $year';
+      _columns[HeaderSlot.center]![2].text = round;
+
+      // العمود الأيسر
+      _columns[HeaderSlot.left]![0].text = 'الوقت: $duration';
+      _columns[HeaderSlot.left]![1].text = _studentNameController.text.trim().isEmpty ? 'اسم الطالب:' : _studentNameController.text.trim();
+      _columns[HeaderSlot.left]![2].text = _studentNoController.text.trim().isEmpty ? 'الرقم الامتحاني:' : _studentNoController.text.trim();
+
+      // العنوان والملاحظات
+      if (_titleController.text.trim().isEmpty) {
+        _titleController.text = 'أسئلة امتحان مادة $subject للعام الدراسي $year — $round';
+      }
+      if (marks.isNotEmpty && _notesController.text.trim().isEmpty) {
+        _notesController.text = 'الدرجة الكلية: $marks درجة';
+      }
+      if (_instructionsController.text.trim().isEmpty) {
+        _instructionsController.text = 'ملاحظة: أجب عن جميع الأسئلة الآتية.';
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم توزيع معلومات الترويسة على الأعمدة بنجاح.')),
+    );
+  }
+
   void _submit() {
     if (!(_formKey.currentState?.validate() ?? false)) {
       return;
@@ -153,7 +246,7 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
                 controller: _titleController,
                 decoration: const InputDecoration(
                   labelText: 'عنوان الامتحان (يظهر أعلى الترويسة)',
-                  hintText: 'مثال: أسئلة امتحان مادة اللغة العربية',
+                  hintText: 'مثال: أسئلة امتحان مادة اللغة العربية للعام الدراسي 2025-2026',
                   border: OutlineInputBorder(),
                 ),
                 onChanged: (_) => setState(() {}),
@@ -182,6 +275,8 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
                 ],
               ),
               const SizedBox(height: 8),
+              _buildStructuredHelperCard(),
+              const SizedBox(height: 12),
               _buildColumnCard(
                 slot: HeaderSlot.right,
                 title: 'العمود الأيمن',
@@ -209,6 +304,7 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
                 maxLines: 2,
                 decoration: const InputDecoration(
                   labelText: 'ملاحظة / تعليمات أعلى الأسئلة (اختياري)',
+                  hintText: 'مثال: ملاحظة: أجب عن جميع الأسئلة الآتية.',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -240,6 +336,158 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildStructuredHelperCard() {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: theme.colorScheme.primary.withOpacity(0.4)),
+      ),
+      color: theme.colorScheme.primaryContainer.withOpacity(0.2),
+      child: ExpansionTile(
+        initiallyExpanded: _showStructuredHelper,
+        onExpansionChanged: (val) => setState(() => _showStructuredHelper = val),
+        leading: Icon(Icons.view_headline_outlined, color: theme.colorScheme.primary),
+        title: const Text(
+          'نموذج تفصيلي لمعلومات الترويسة (اختياري للتعبئة المنظمة)',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+        ),
+        subtitle: const Text(
+          'الجهة، المدرسة، الصف، الفرع، العام الدراسي، الدور، الوقت، الطالب...',
+          style: TextStyle(fontSize: 11),
+        ),
+        childrenPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: TextFormField(
+                  controller: _countryController,
+                  decoration: const InputDecoration(labelText: 'الدولة / الجهة', isDense: true, border: OutlineInputBorder()),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _ministryController,
+                  decoration: const InputDecoration(labelText: 'وزارة التربية', isDense: true, border: OutlineInputBorder()),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: TextFormField(
+                  controller: _directorateController,
+                  decoration: const InputDecoration(labelText: 'المديرية العامة', isDense: true, border: OutlineInputBorder()),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _schoolController,
+                  decoration: const InputDecoration(labelText: 'اسم المدرسة', isDense: true, border: OutlineInputBorder()),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: TextFormField(
+                  controller: _gradeController,
+                  decoration: const InputDecoration(labelText: 'الصف / المرحلة', isDense: true, border: OutlineInputBorder()),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _branchFieldController,
+                  decoration: const InputDecoration(labelText: 'الفرع (علمي/أدبي...)', isDense: true, border: OutlineInputBorder()),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: TextFormField(
+                  controller: _academicYearController,
+                  decoration: const InputDecoration(labelText: 'العام الدراسي', isDense: true, border: OutlineInputBorder()),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _examRoundController,
+                  decoration: const InputDecoration(labelText: 'الدور', isDense: true, border: OutlineInputBorder()),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: TextFormField(
+                  controller: _examTypeController,
+                  decoration: const InputDecoration(labelText: 'نوع الامتحان', isDense: true, border: OutlineInputBorder()),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _durationController,
+                  decoration: const InputDecoration(labelText: 'الوقت', isDense: true, border: OutlineInputBorder()),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _totalMarksController,
+                  decoration: const InputDecoration(labelText: 'الدرجة الكلية', isDense: true, border: OutlineInputBorder()),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: TextFormField(
+                  controller: _studentNameController,
+                  decoration: const InputDecoration(labelText: 'معلومات الطالب: الاسم', isDense: true, border: OutlineInputBorder()),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: _studentNoController,
+                  decoration: const InputDecoration(labelText: 'الرقم الامتحاني', isDense: true, border: OutlineInputBorder()),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonalIcon(
+              onPressed: _applyStructuredHelper,
+              icon: const Icon(Icons.sync_alt, size: 18),
+              label: const Text('توزيع المعلومات على أعمدة الترويسة والعنوان'),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
       ),
     );
   }
@@ -318,20 +566,33 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
               children: <Widget>[
                 Icon(icon, size: 18),
                 const SizedBox(width: 6),
-                Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                Expanded(
+                  child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                ),
+                TextButton(
+                  onPressed: () {
+                    for (final c in controllers) {
+                      c.clear();
+                    }
+                    setState(() {});
+                  },
+                  child: const Text('تفريغ', style: TextStyle(fontSize: 12)),
+                ),
               ],
             ),
+            const SizedBox(height: 6),
             for (var index = 0; index < controllers.length; index++) ...<Widget>[
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: controllers[index],
-                decoration: InputDecoration(
-                  labelText: 'السطر ${index + 1}',
-                  hintText: index < hints.length ? hints[index] : null,
-                  isDense: true,
-                  border: const OutlineInputBorder(),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: TextFormField(
+                  controller: controllers[index],
+                  decoration: InputDecoration(
+                    labelText: 'السطر ${index + 1} (${hints[index]})',
+                    isDense: true,
+                    border: const OutlineInputBorder(),
+                  ),
+                  onChanged: (_) => setState(() {}),
                 ),
-                onChanged: (_) => setState(() {}),
               ),
             ],
           ],
@@ -340,11 +601,9 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
     );
   }
 
-  /// بطاقة تصميم الترويسة (خط/حجم/عريض/محاذاة/إطار).
   Widget _buildDesignCard() {
     return Card(
       elevation: 0,
-      margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
         side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
@@ -470,101 +729,115 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
       case PaperAlign.start:
       case PaperAlign.end:
       case PaperAlign.justify:
+      case null:
         return TextAlign.right;
     }
   }
 
-  /// معاينة حية لشكل الترويسة قبل المتابعة.
   Widget _buildLivePreview() {
-    final style = TextStyle(
+    final title = _titleController.text.trim();
+    final notes = _notesController.text.trim();
+    final instructions = _instructionsController.text.trim();
+    final textStyle = TextStyle(
       fontFamily: _font.family,
-      fontSize: _fontSize + 4,
+      fontSize: _fontSize,
       fontWeight: _bold ? FontWeight.bold : FontWeight.normal,
     );
-    Widget column(List<TextEditingController> controllers) {
-      return Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            for (final field in controllers)
-              Text(
-                field.text.isEmpty ? ' ' : field.text,
-                style: style.copyWith(fontSize: _fontSize + 1),
-                textAlign: _previewAlign(),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-          ],
-        ),
-      );
-    }
+    final border = _headerBorder
+        ? Border.all(color: Colors.grey.shade400, width: 1)
+        : null;
 
     return Card(
-      elevation: 0,
-      margin: EdgeInsets.zero,
+      elevation: 1,
+      color: Colors.white,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: Colors.grey.shade300),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            const Row(
-              children: <Widget>[
-                Icon(Icons.preview_outlined, size: 18),
-                SizedBox(width: 6),
-                Text('معاينة الترويسة', style: TextStyle(fontWeight: FontWeight.bold)),
-              ],
+            const Text(
+              'معاينة حية للترويسة (كما ستظهر في الورقة):',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey),
             ),
             const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.grey.shade300),
+            if (title.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: textStyle.copyWith(fontSize: _fontSize + 2, fontWeight: FontWeight.bold),
+                ),
               ),
-              child: Column(
+            Container(
+              decoration: BoxDecoration(border: border),
+              padding: const EdgeInsets.all(8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  if (_titleController.text.trim().isNotEmpty)
-                    Text(
-                      _titleController.text,
-                      style: style.copyWith(
-                        fontSize: _fontSize + 6,
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      textAlign: _previewAlign(),
-                    ),
-                  Container(
-                    margin: const EdgeInsets.only(top: 6),
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      border: _headerBorder
-                          ? Border.all(
-                              color: Theme.of(context).colorScheme.primary, width: 1.2)
-                          : null,
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        column(_columns[HeaderSlot.right]!),
-                        const SizedBox(width: 6),
-                        column(_columns[HeaderSlot.center]!),
-                        const SizedBox(width: 6),
-                        column(_columns[HeaderSlot.left]!),
-                      ],
-                    ),
+                  Expanded(
+                    child: _buildPreviewColumn(HeaderSlot.right, textStyle),
+                  ),
+                  Expanded(
+                    child: _buildPreviewColumn(HeaderSlot.center, textStyle),
+                  ),
+                  Expanded(
+                    child: _buildPreviewColumn(HeaderSlot.left, textStyle),
                   ),
                 ],
               ),
             ),
+            if (instructions.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  instructions,
+                  style: textStyle.copyWith(fontStyle: FontStyle.italic),
+                  textAlign: _previewAlign(),
+                ),
+              ),
+            if (notes.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  notes,
+                  style: textStyle.copyWith(fontSize: _fontSize - 1, color: Colors.grey.shade700),
+                  textAlign: _previewAlign(),
+                ),
+              ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildPreviewColumn(HeaderSlot slot, TextStyle style) {
+    final lines = _columns[slot]!.map((c) => c.text).toList();
+    return Column(
+      crossAxisAlignment: slot == HeaderSlot.center
+          ? CrossAxisAlignment.center
+          : slot == HeaderSlot.left
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+      children: lines
+          .where((l) => l.trim().isNotEmpty)
+          .map((line) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 1.5),
+                child: Text(
+                  line,
+                  style: style,
+                  textAlign: slot == HeaderSlot.center
+                      ? TextAlign.center
+                      : slot == HeaderSlot.left
+                          ? TextAlign.end
+                          : TextAlign.start,
+                ),
+              ))
+          .toList(),
     );
   }
 }

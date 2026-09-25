@@ -217,6 +217,14 @@ class _DocxBuilder {
     }
 
     final marginTwips = (document.settings.marginMm / 25.4 * 1440).round();
+    final pageBordersXml = document.settings.pageBorder
+        ? '<w:pgBorders w:offsetFrom="page">'
+            '<w:top w:val="single" w:sz="12" w:space="24" w:color="1E3A8A"/>'
+            '<w:left w:val="single" w:sz="12" w:space="24" w:color="1E3A8A"/>'
+            '<w:bottom w:val="single" w:sz="12" w:space="24" w:color="1E3A8A"/>'
+            '<w:right w:val="single" w:sz="12" w:space="24" w:color="1E3A8A"/>'
+            '</w:pgBorders>'
+        : '';
     documentXml =
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
@@ -229,6 +237,7 @@ class _DocxBuilder {
         '<w:sectPr>'
         '<w:pgSz w:w="11906" w:h="16838"/>'
         '<w:pgMar w:top="$marginTwips" w:right="$marginTwips" w:bottom="$marginTwips" w:left="$marginTwips"/>'
+        '$pageBordersXml'
         '<w:bidi/>'
         '</w:sectPr>'
         '</w:body>'

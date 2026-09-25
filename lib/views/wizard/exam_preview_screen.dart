@@ -1693,11 +1693,21 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               else
                 Icon(Icons.drag_indicator, size: 18, color: Colors.grey.shade300),
               Expanded(
-                child: Text(
-                  '$label$marksPart',
-                  style: titleStyle,
-                  textAlign: PaperStyles.toTextAlign(question.style.align),
+                child: InkWell(
+                  onTap: () => _tapQuestion(questionIndex),
+                  onDoubleTap: !_locked ? () => _editQuestionLabel(questionIndex) : null,
+                  child: Text(
+                    '$label$marksPart',
+                    style: titleStyle,
+                    textAlign: PaperStyles.toTextAlign(question.style.align),
+                  ),
                 ),
+              ),
+              IconButton(
+                tooltip: 'تخصيص ترقيم السؤال',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.edit_note, size: 16),
+                onPressed: !_locked ? () => _editQuestionLabel(questionIndex) : null,
               ),
               IconButton(
                 tooltip: 'إضافة فرع',
@@ -1804,6 +1814,76 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
       ],
     );
+  }
+
+  Future<void> _editQuestionLabel(int index) async {
+    final controller = _controller!;
+    final question = controller.questions[index];
+    final textController = TextEditingController(text: question.numberOverride ?? '');
+    final updated = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تخصيص ترقيم/تسمية السؤال'),
+        content: TextField(
+          controller: textController,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'تسمية السؤال (اتركه فارغاً للترقيم التلقائي)',
+            hintText: 'مثال: س1/ أو أولاً: أو المسألة 1',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(textController.text),
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+    if (updated != null) {
+      final val = updated.trim();
+      controller.updateQuestionNumberOverride(index, val.isEmpty ? null : val);
+    }
+  }
+
+  Future<void> _editBranchLabel(BranchRef ref) async {
+    final controller = _controller!;
+    final branch = controller.document.branchAt(ref);
+    final textController = TextEditingController(text: branch.labelOverride ?? '');
+    final updated = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تخصيص تسمية الفرع'),
+        content: TextField(
+          controller: textController,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'تسمية الفرع (اتركه فارغاً للترميز التلقائي)',
+            hintText: 'مثال: أولاً: أو ثانياً: أو 1-',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(textController.text),
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+    if (updated != null) {
+      final val = updated.trim();
+      controller.updateBranchLabelOverride(ref, val.isEmpty ? null : val);
+    }
   }
 
   Future<void> _confirmDeleteQuestion(int index) async {
@@ -1950,9 +2030,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Padding(padding: const EdgeInsets.only(top: 2), child: dragHandle),
-            SizedBox(
-              width: 26,
-              child: Text('$label)', style: bodyStyle.copyWith(fontWeight: FontWeight.bold)),
+            Padding(
+              padding: const EdgeInsetsDirectional.only(end: 4),
+              child: InkWell(
+                onTap: !_locked ? () => _editBranchLabel(ref) : null,
+                borderRadius: BorderRadius.circular(4),
+                child: Text('$label)', style: bodyStyle.copyWith(fontWeight: FontWeight.bold)),
+              ),
             ),
             Expanded(
               child: _paperField(

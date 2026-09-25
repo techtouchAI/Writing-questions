@@ -3,12 +3,16 @@ import 'package:provider/provider.dart';
 
 import '../models/exam_document.dart';
 import '../providers/exam_document_provider.dart';
+import '../services/docx_document_export_service.dart';
+import '../services/export_file_service.dart';
+import '../services/pdf_export_service.dart';
+import 'widgets/pdf_preview_screen.dart';
 import 'wizard/exam_wizard_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
-  /// المعالج المتسلسل للنموذج الوزاري (ترويسة ← أسئلة ← معاينة A4).
+  /// المعالج المتسلسل للورقة الامتحانية (ترويسة ← أسئلة ← معاينة وتحرير A4).
   Future<void> _openExamWizard(BuildContext context, [ExamDocument? document]) async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -21,8 +25,8 @@ class HomeScreen extends StatelessWidget {
     final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('حذف النموذج الوزاري'),
-        content: Text('هل تريد حذف النموذج "${document.name}"؟'),
+        title: const Text('حذف ورقة الامتحان'),
+        content: Text('هل تريد حذف الورقة "${document.name}"؟'),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -48,12 +52,115 @@ class HomeScreen extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('تعذر حذف النموذج. حاول مرة أخرى.'),
+            content: const Text('تعذر حذف الورقة. حاول مرة أخرى.'),
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
         );
       }
     }
+  }
+
+  Future<void> _duplicateDocument(BuildContext context, ExamDocument document) async {
+    try {
+      final copy = await context.read<ExamDocumentProvider>().duplicateDocument(document.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تم نسخ الورقة بنجاح: "${copy.name}"')),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('تعذر نسخ الورقة. حاول مرة أخرى.'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _renameDocument(BuildContext context, ExamDocument document) async {
+    final controller = TextEditingController(text: document.name);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تغيير اسم الورقة'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'اسم الورقة الجديد',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+    if (newName != null && newName.isNotEmpty && context.mounted) {
+      await context.read<ExamDocumentProvider>().renameDocument(document.id, newName);
+    }
+  }
+
+  Future<void> _exportPdfFromHome(BuildContext context, ExamDocument document) async {
+    try {
+      final bytes = await PdfExportService.buildExamPdfBytes(document: document);
+      if (!context.mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => PdfPreviewScreen(
+            pdfBytes: bytes,
+            fileName: '${document.name}_ورقة_الامتحان.pdf',
+          ),
+        ),
+      );
+    } catch (error, stackTrace) {
+      ExportFileService.logError('Home PDF export failed', error, stackTrace);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('تعذر إنشاء ملف الـ PDF. حاول مرة أخرى.'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _exportWordFromHome(BuildContext context, ExamDocument document) async {
+    try {
+      final file = await DocxDocumentExportService.exportDocumentToDocx(
+        document: document,
+        isTeacherVersion: false,
+      );
+      await DocxDocumentExportService.shareDocxFile(file);
+    } catch (error, stackTrace) {
+      ExportFileService.logError('Home Word export failed', error, stackTrace);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('تعذر إنشاء ملف الـ Word. حاول مرة أخرى.'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
+    }
+  }
+
+  String _formatDate(DateTime dt) {
+    final day = dt.day.toString().padLeft(2, '0');
+    final month = dt.month.toString().padLeft(2, '0');
+    final year = dt.year.toString();
+    return '$day/$month/$year';
   }
 
   @override
@@ -65,10 +172,18 @@ class HomeScreen extends StatelessWidget {
         documentProvider.errorMessage ?? documentProvider.recoveryMessage;
     final hasError = documentProvider.errorMessage != null;
 
+    final documents = documentProvider.documents;
+    final lastDocument = documents.isNotEmpty ? documents.first : null;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('صانع ومحرر الأسئلة'),
         centerTitle: true,
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _openExamWizard(context),
+        icon: const Icon(Icons.add),
+        label: const Text('إنشاء ورقة جديدة'),
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -94,7 +209,7 @@ class HomeScreen extends StatelessWidget {
                   ],
                   _buildDashboardCard(
                     context,
-                    documentCount: documentProvider.documents.length,
+                    documentCount: documents.length,
                   ),
                   const SizedBox(height: 24),
                   const Text(
@@ -102,26 +217,40 @@ class HomeScreen extends StatelessWidget {
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 12),
-                  _buildWizardBanner(context),
+                  _buildNewExamBanner(context),
+                  if (lastDocument != null) ...<Widget>[
+                    const SizedBox(height: 12),
+                    _buildResumeDraftBanner(context, lastDocument),
+                  ],
                   const SizedBox(height: 24),
-                  if (documentProvider.documents.isEmpty)
+                  if (documents.isEmpty)
                     _buildEmptyDocumentsCard(context)
                   else ...<Widget>[
-                    const Text(
-                      'النماذج الوزارية المحفوظة',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: <Widget>[
+                        const Text(
+                          'أوراقي الامتحانية',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          '${documents.length} ورقة',
+                          style: TextStyle(fontSize: 13, color: theme.colorScheme.primary),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 10),
                     ListView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      itemCount: documentProvider.documents.length,
+                      itemCount: documents.length,
                       itemBuilder: (context, index) => _buildDocumentTile(
                         context,
-                        documentProvider.documents[index],
+                        documents[index],
                       ),
                     ),
                   ],
+                  const SizedBox(height: 80),
                 ],
               ),
             ),
@@ -155,7 +284,7 @@ class HomeScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           const Text(
-            'محرر أوراق الأسئلة الوزارية',
+            'محرر أوراق الأسئلة والامتحانات',
             style: TextStyle(
               color: Colors.white,
               fontSize: 18,
@@ -164,7 +293,7 @@ class HomeScreen extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           const Text(
-            'صمم الترويسة والأسئلة بفروعها، وحرر الورقة مباشرة على معاينة A4، ثم صدّرها PDF أو Word.',
+            'صمم الترويسة والأسئلة بفروعها ونقاطها بحرية تامة، وحرر الورقة بصرياً كما ستطبع، ثم صدّرها كملف PDF أو Word جاهز للطباعة.',
             style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
           ),
           const SizedBox(height: 18),
@@ -178,8 +307,8 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  /// بطاقة الدخول إلى المعالج المتسلسل للنموذج الوزاري.
-  Widget _buildWizardBanner(BuildContext context) {
+  /// بطاقة إنشاء ورقة أسئلة جديدة.
+  Widget _buildNewExamBanner(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Card(
       elevation: 2,
@@ -191,14 +320,14 @@ class HomeScreen extends StatelessWidget {
         },
         leading: CircleAvatar(
           backgroundColor: colorScheme.primary,
-          child: const Icon(Icons.auto_awesome_motion, color: Colors.white),
+          child: const Icon(Icons.post_add, color: Colors.white),
         ),
         title: const Text(
-          'نموذج وزاري جديد (معالج متسلسل)',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          'إنشاء ورقة أسئلة جديدة',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
         ),
         subtitle: const Text(
-          'ترويسة ← أسئلة بفروعها ← معاينة A4 متعددة الصفحات مع تحرير مباشر وسحب وإفلات',
+          'ترويسة كاملة ← أسئلة بفروعها ونقاطها ← معاينة A4 ومحرر بصري ← تصدير PDF / Word',
           style: TextStyle(fontSize: 12),
         ),
         trailing: const Icon(Icons.arrow_back_ios_new, size: 16),
@@ -206,10 +335,45 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  /// بطاقة متابعة العمل على آخر ورقة مفتوحة أو قيد العمل.
+  Widget _buildResumeDraftBanner(BuildContext context, ExamDocument document) {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
+      ),
+      child: ListTile(
+        onTap: () async {
+          await _openExamWizard(context, document);
+        },
+        leading: CircleAvatar(
+          backgroundColor: theme.colorScheme.secondaryContainer,
+          child: Icon(Icons.history_edu, color: theme.colorScheme.onSecondaryContainer),
+        ),
+        title: Text(
+          'متابعة العمل: ${document.name}',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          'آخر تعديل ${_formatDate(document.updatedAt)} • ${document.questions.length} أسئلة',
+          style: const TextStyle(fontSize: 12),
+        ),
+        trailing: FilledButton.tonal(
+          onPressed: () => _openExamWizard(context, document),
+          child: const Text('متابعة'),
+        ),
+      ),
+    );
+  }
+
   Widget _buildEmptyDocumentsCard(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
         color: Colors.grey.shade50,
         borderRadius: BorderRadius.circular(12),
@@ -217,15 +381,15 @@ class HomeScreen extends StatelessWidget {
       ),
       child: const Column(
         children: <Widget>[
-          Icon(Icons.article_outlined, size: 40, color: Colors.grey),
-          SizedBox(height: 8),
+          Icon(Icons.article_outlined, size: 44, color: Colors.grey),
+          SizedBox(height: 10),
           Text(
-            'لم تنشئ أي نموذج وزاري بعد.',
-            style: TextStyle(color: Colors.grey),
+            'لم تنشئ أي ورقة امتحانية بعد.',
+            style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
           ),
-          SizedBox(height: 4),
+          SizedBox(height: 6),
           Text(
-            'انقر على "نموذج وزاري جديد" لبدء تصميم ورقتك.',
+            'اضغط على "إنشاء ورقة أسئلة جديدة" لبدء كتابة أول ورقة امتحان.',
             style: TextStyle(fontSize: 12, color: Colors.grey),
             textAlign: TextAlign.center,
           ),
@@ -235,24 +399,126 @@ class HomeScreen extends StatelessWidget {
   }
 
   Widget _buildDocumentTile(BuildContext context, ExamDocument document) {
+    final theme = Theme.of(context);
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: const CircleAvatar(child: Icon(Icons.article_outlined)),
-        title: Text(document.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(
-          '${document.questions.length} سؤال • ${_formatMarks(document.totalMarks)} درجة • '
-          '${document.header.subject}',
-        ),
-        onTap: () async {
-          await _openExamWizard(context, document);
-        },
-        trailing: IconButton(
-          icon: const Icon(Icons.delete_outline, color: Colors.red),
-          tooltip: 'حذف النموذج',
-          onPressed: () async {
-            await _confirmDeleteDocument(context, document);
-          },
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.5)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const CircleAvatar(
+                  radius: 18,
+                  child: Icon(Icons.description, size: 20),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        '📄 ${document.name}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '📅 ${_formatDate(document.updatedAt)}  •  ${document.questions.length} أسئلة  •  ${_formatMarks(document.totalMarks)} درجة  •  ${document.header.subject}',
+                        style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  tooltip: 'خيارات الورقة',
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (value) async {
+                    switch (value) {
+                      case 'edit':
+                        await _openExamWizard(context, document);
+                        break;
+                      case 'duplicate':
+                        await _duplicateDocument(context, document);
+                        break;
+                      case 'rename':
+                        await _renameDocument(context, document);
+                        break;
+                      case 'delete':
+                        await _confirmDeleteDocument(context, document);
+                        break;
+                    }
+                  },
+                  itemBuilder: (context) => <PopupMenuEntry<String>>[
+                    const PopupMenuItem<String>(
+                      value: 'edit',
+                      child: ListTile(
+                        leading: Icon(Icons.edit_outlined),
+                        title: Text('فتح وتعديل'),
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                      ),
+                    ),
+                    const PopupMenuItem<String>(
+                      value: 'duplicate',
+                      child: ListTile(
+                        leading: Icon(Icons.copy_outlined),
+                        title: Text('نسخ الورقة'),
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                      ),
+                    ),
+                    const PopupMenuItem<String>(
+                      value: 'rename',
+                      child: ListTile(
+                        leading: Icon(Icons.drive_file_rename_outline),
+                        title: Text('تغيير الاسم'),
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                      ),
+                    ),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem<String>(
+                      value: 'delete',
+                      child: ListTile(
+                        leading: Icon(Icons.delete_outline, color: Colors.red),
+                        title: Text('حذف الورقة', style: TextStyle(color: Colors.red)),
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const Divider(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                TextButton.icon(
+                  onPressed: () => _openExamWizard(context, document),
+                  icon: const Icon(Icons.edit, size: 16),
+                  label: const Text('تعديل / فتح'),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: () => _exportPdfFromHome(context, document),
+                  icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+                  label: const Text('PDF'),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: () => _exportWordFromHome(context, document),
+                  icon: const Icon(Icons.description_outlined, size: 16),
+                  label: const Text('Word'),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

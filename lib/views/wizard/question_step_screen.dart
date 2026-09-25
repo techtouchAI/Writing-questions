@@ -6,14 +6,15 @@ import '../../providers/exam_wizard_controller.dart';
 import '../widgets/ltr_numeric_field.dart';
 import 'branch_editor_card.dart';
 
-/// الخطوة 2 من المعالج: إعداد سؤال واحد بنصه وفروعه (أ، ب، ج...).
+/// الخطوة 2 من المعالج: إعداد الأسئلة وفروعها (س1، س2، س3...).
 ///
-/// - العنوان ديناميكي: «إعداد السؤال الأول» ثم «الثاني»...
+/// - المدرس حر تماماً: لا حد لعدد الأسئلة أو الفروع أو النقاط.
 /// - حقل حر لنص السؤال/تعليماته («أجب عن فرعين فقط:»...) بلا صيغة مفروضة.
-/// - يبدأ بفرع (أ) افتراضياً؛ [إضافة فرع جديد] يضيف (ب) ثم (ج) بنفس الأدوات.
-/// - الدرجة تلقائية (مجموع الفروع) ما لم يثبّت المدرس درجة يدوية.
-/// - [التالي] يحفظ السؤال ويفتح سؤالاً جديداً فارغاً، و[إنهاء وعرض النموذج]
-///   ينتقل إلى محرك المعاينة A4.
+/// - إمكانية تحديد تسمية يدوية ثابتة للسؤال (مثل س1/ أو أولاً:).
+/// - زر واضح لإضافة فرع جديد (+ إضافة فرع) دون حد.
+/// - الدرجة تلقائية (مجموع الفروع) مع إمكانية التثبيت اليدوي.
+/// - زر واضح لإضافة سؤال جديد (+ إضافة سؤال).
+/// - لا قيود أو حظر على التنقل أو الحفظ عند عدم وضع الدرجة.
 class QuestionStepScreen extends StatefulWidget {
   const QuestionStepScreen({
     super.key,
@@ -31,33 +32,21 @@ class QuestionStepScreen extends StatefulWidget {
 class _QuestionStepScreenState extends State<QuestionStepScreen> {
   final TextEditingController _promptController = TextEditingController();
   final TextEditingController _manualMarksController = TextEditingController();
+  final TextEditingController _numberOverrideController = TextEditingController();
   final FocusNode _promptFocus = FocusNode();
+  final FocusNode _numberFocus = FocusNode();
   int? _promptQuestionIndex;
   int? _marksQuestionIndex;
+  int? _numberQuestionIndex;
 
   @override
   void dispose() {
     _promptController.dispose();
     _manualMarksController.dispose();
+    _numberOverrideController.dispose();
     _promptFocus.dispose();
+    _numberFocus.dispose();
     super.dispose();
-  }
-
-  bool _validate(BuildContext context, ExamWizardController controller) {
-    final question = controller.currentQuestion;
-    if (!question.hasContent) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('اكتب نص السؤال أو محتوى فرع واحد على الأقل قبل المتابعة.')),
-      );
-      return false;
-    }
-    if (question.marks <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('حدّد درجة فرع واحد على الأقل لهذا السؤال.')),
-      );
-      return false;
-    }
-    return true;
   }
 
   void _syncPromptField(ExamWizardController controller, int questionIndex) {
@@ -66,9 +55,20 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
       _promptController.text = controller.questions[questionIndex].prompt;
     } else if (!_promptFocus.hasFocus &&
         _promptController.text != controller.questions[questionIndex].prompt) {
-      // مزامنة خارجية (تراجع/نقل) فقط — لا نسرق نص المستخدم أثناء الكتابة.
       _promptController.text = controller.questions[questionIndex].prompt;
     }
+
+    if (_numberQuestionIndex != questionIndex) {
+      _numberQuestionIndex = questionIndex;
+      _numberOverrideController.text =
+          controller.questions[questionIndex].numberOverride ?? '';
+    } else if (!_numberFocus.hasFocus &&
+        _numberOverrideController.text !=
+            (controller.questions[questionIndex].numberOverride ?? '')) {
+      _numberOverrideController.text =
+          controller.questions[questionIndex].numberOverride ?? '';
+    }
+
     if (_marksQuestionIndex != questionIndex) {
       _marksQuestionIndex = questionIndex;
       _manualMarksController.text =
@@ -103,6 +103,14 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
           onPressed: questionIndex == 0 ? widget.onBack : controller.goToPreviousQuestion,
         ),
         actions: <Widget>[
+          IconButton(
+            icon: const Icon(Icons.add_circle_outline),
+            tooltip: 'إضافة سؤال جديد',
+            onPressed: () {
+              controller.addQuestion();
+              controller.openQuestion(controller.questions.length - 1);
+            },
+          ),
           if (questionIndex > 0)
             IconButton(
               icon: const Icon(Icons.arrow_upward),
@@ -134,30 +142,27 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
           children: <Widget>[
             _buildProgressStrip(context, controller),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _promptController,
-              focusNode: _promptFocus,
-              maxLines: null,
-              minLines: 2,
-              decoration: InputDecoration(
-                labelText: layout.isLtr
-                    ? 'Question text / instructions (optional)'
-                    : 'نص السؤال / التعليمات (اختياري)',
-                hintText: layout.isLtr
-                    ? 'e.g. Answer two branches only:'
-                    : 'مثال: أجب عن فرعين فقط:',
-                border: const OutlineInputBorder(),
-                alignLabelWithHint: true,
-              ),
-              onChanged: (value) => controller.updateQuestionPrompt(questionIndex, value),
-            ),
-            const SizedBox(height: 12),
             Row(
               children: <Widget>[
                 Expanded(
+                  child: TextFormField(
+                    controller: _numberOverrideController,
+                    focusNode: _numberFocus,
+                    decoration: const InputDecoration(
+                      labelText: 'تسمية السؤال المخصصة (اختياري)',
+                      hintText: 'مثال: س1/ أو أولاً: (فارغ = تلقائي)',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onChanged: (value) =>
+                        controller.updateQuestionNumberOverride(questionIndex, value),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
                   child: LtrNumericField(
                     controller: _manualMarksController,
-                    hintText: 'درجة يدوية (فارغ = تلقائي)',
+                    hintText: 'درجة يدوية للسؤال (اختياري)',
                     onChanged: (value) {
                       final normalized = value.trim();
                       if (normalized.isEmpty) {
@@ -173,19 +178,25 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
                     },
                   ),
                 ),
-                const SizedBox(width: 8),
-                Tooltip(
-                  message: question.hasAutoMarks
-                      ? 'الدرجة محسوبة تلقائياً من الفروع'
-                      : 'درجة يدوية ثابتة — امسح الحقل للعودة للتلقائي',
-                  child: Chip(
-                    label: Text(
-                      question.hasAutoMarks ? 'تلقائي' : 'يدوي',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ),
               ],
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _promptController,
+              focusNode: _promptFocus,
+              maxLines: null,
+              minLines: 2,
+              decoration: InputDecoration(
+                labelText: layout.isLtr
+                    ? 'Question text / instructions (optional)'
+                    : 'نص السؤال / التعليمات (اختياري)',
+                hintText: layout.isLtr
+                    ? 'e.g. Answer two branches only:'
+                    : 'مثال: قال تعالى: ... أو أجب عن فرعين فقط: أو اختر الإجابة...',
+                border: const OutlineInputBorder(),
+                alignLabelWithHint: true,
+              ),
+              onChanged: (value) => controller.updateQuestionPrompt(questionIndex, value),
             ),
             const SizedBox(height: 12),
             if (sections.isNotEmpty) ...<Widget>[
@@ -219,6 +230,7 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
                   final ref = BranchRef(questionIndex: questionIndex, branchIndex: index);
                   controller.updateBranchContent(ref, branch.content);
                   controller.updateBranchMarks(ref, branch.marks);
+                  controller.updateBranchLabelOverride(ref, branch.labelOverride);
                 },
                 onRemove: question.branches.length > 1
                     ? () => controller.removeBranch(
@@ -261,9 +273,7 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
             Expanded(
               child: FilledButton.icon(
                 onPressed: () {
-                  if (_validate(context, controller)) {
-                    controller.goToNextQuestion();
-                  }
+                  controller.goToNextQuestion();
                 },
                 icon: const Icon(Icons.arrow_back),
                 label: Text(
@@ -273,16 +283,21 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
+            IconButton.filledTonal(
+              tooltip: 'إضافة سؤال جديد',
+              icon: const Icon(Icons.add),
+              onPressed: () {
+                controller.addQuestion();
+                controller.openQuestion(controller.questions.length - 1);
+              },
+            ),
+            const SizedBox(width: 8),
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: () {
-                  if (_validate(context, controller)) {
-                    widget.onFinish();
-                  }
-                },
+                onPressed: widget.onFinish,
                 icon: const Icon(Icons.preview),
-                label: const Text('إنهاء وعرض النموذج'),
+                label: const Text('معاينة الورقة'),
               ),
             ),
           ],
