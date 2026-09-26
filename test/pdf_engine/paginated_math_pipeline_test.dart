@@ -131,14 +131,16 @@ void expectNoRawLatex(PdfContentProbe probe, {required String surface}) {
 
 /// سطر مِرساتَي نص السؤال؛ يعيد المسافة الأفقية المطلقة بينهما بالنقاط.
 double _anchorsSpan(PdfContentProbe probe) {
-  final line = probe.lines.firstWhere(
-    (candidate) =>
-        candidate.words.length == 2 &&
-        candidate.words.every((word) => word.text == 'F5A' || word.text == 'F5B') &&
-        candidate.words.any((word) => word.text == 'F5A') &&
-        candidate.words.any((word) => word.text == 'F5B'),
-    reason: 'لم يُعثر على سطر المِرساتين F5A/F5B — طبقة النص تغيّرت.',
-  );
+  final candidates = probe.lines
+      .where((candidate) =>
+          candidate.words.length == 2 &&
+          candidate.words.every((word) => word.text == 'F5A' || word.text == 'F5B') &&
+          candidate.words.any((word) => word.text == 'F5A') &&
+          candidate.words.any((word) => word.text == 'F5B'))
+      .toList(growable: false);
+  expect(candidates, hasLength(1),
+      reason: 'لم يُعثر على سطر المِرساتين F5A/F5B — طبقة النص تغيّرت.');
+  final line = candidates.single;
   final left = line.words[0].x < line.words[1].x ? line.words[0] : line.words[1];
   final right = identical(left, line.words[0]) ? line.words[1] : line.words[0];
   return right.x - (left.x + left.advanceWidth);
