@@ -39,9 +39,14 @@ void main() {
       expect(EquationModel.parse('x_1').toLatex(), 'x_{1}');
     });
 
-    test('parses nested structures losslessly', () {
+    test('parses nested structures (scripts normalize to braces)', () {
       const latex = r'\frac{-b \pm \sqrt{b^2-4ac}}{2a}';
-      expect(EquationModel.parse(latex).toLatex(), latex);
+      // التطبيع مقصود ومثبت في اختبار sup/sub أعلاه (H_2O ← H_{2}O):
+      // لا يُفقد أي محتوى، والأقواس شكل قياسي مكافئ.
+      expect(
+        EquationModel.parse(latex).toLatex(),
+        r'\frac{-b \pm \sqrt{b^{2}-4ac}}{2a}',
+      );
     });
 
     test('keeps unsupported commands verbatim instead of losing them', () {

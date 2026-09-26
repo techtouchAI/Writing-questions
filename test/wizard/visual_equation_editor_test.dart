@@ -47,10 +47,21 @@ List<String> _slotTexts(WidgetTester tester) {
       .toList(growable: false);
 }
 
+/// يضخ المضيف بنافذة اختبار طويلة: زر الإدراج أسفل الحوار يُقصّ
+/// في نافذة 800×600 الافتراضية فيفشل النقر عليه.
+Future<void> _pumpEditor(WidgetTester tester, Widget host) async {
+  tester.view.physicalSize = const Size(900, 1400);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  await tester.pumpWidget(MaterialApp(home: host));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   group('VisualEquationEditor', () {
     testWidgets('builds a fraction visually and inserts inline math', (tester) async {
-      await tester.pumpWidget(const MaterialApp(home: _EditorHost()));
+      await _pumpEditor(tester, const _EditorHost());
       await tester.tap(find.text('فتح المحرر'));
       await tester.pumpAndSettle();
       expect(find.text('محرر المعادلات'), findsOneWidget);
@@ -70,7 +81,7 @@ void main() {
     });
 
     testWidgets('loads an existing formula for visual editing', (tester) async {
-      await tester.pumpWidget(const MaterialApp(home: _EditorHost(initialLatex: r'\frac{1}{2}')));
+      await _pumpEditor(tester, const _EditorHost(initialLatex: r'\frac{1}{2}'));
       await tester.tap(find.text('فتح المحرر'));
       await tester.pumpAndSettle();
 
@@ -83,7 +94,7 @@ void main() {
     });
 
     testWidgets('inserts symbols at the cursor with live structure', (tester) async {
-      await tester.pumpWidget(const MaterialApp(home: _EditorHost()));
+      await _pumpEditor(tester, const _EditorHost());
       await tester.tap(find.text('فتح المحرر'));
       await tester.pumpAndSettle();
 
@@ -102,7 +113,7 @@ void main() {
     });
 
     testWidgets('block mode wraps the result in double dollars', (tester) async {
-      await tester.pumpWidget(const MaterialApp(home: _EditorHost(initialIsBlock: true)));
+      await _pumpEditor(tester, const _EditorHost(initialIsBlock: true));
       await tester.tap(find.text('فتح المحرر'));
       await tester.pumpAndSettle();
 
@@ -117,7 +128,7 @@ void main() {
     });
 
     testWidgets('cancelling returns null without a result', (tester) async {
-      await tester.pumpWidget(const MaterialApp(home: _EditorHost()));
+      await _pumpEditor(tester, const _EditorHost());
       await tester.tap(find.text('فتح المحرر'));
       await tester.pumpAndSettle();
 

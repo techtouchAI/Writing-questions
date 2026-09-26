@@ -412,7 +412,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   /// هل السؤال [index] محدد؟
   bool _isQuestionSelected(int index) {
-    final id = _controller!.questions[index].id;
+    final questions = _controller!.questions;
+    // حارس أمان: فهرس قديم أثناء إعادة بناء متداخلة = غير محدد لا عطل.
+    if (index < 0 || index >= questions.length) {
+      return false;
+    }
+    final id = questions[index].id;
     if (_selectedQuestions.contains(id)) {
       return true;
     }
@@ -1880,7 +1885,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       if (question == null) {
         continue;
       }
-      final questionIndex = controller.questions.indexOf(question);
+      // بحث بالمعرف لا بالهوية: نسخ المستند تستبدل النسخ لا المعرفات.
+      final questionIndex = controller.document.indexOfQuestion(question.id);
       // إفلات سؤال مسحوب هنا يعيد ترتيبه (السؤال وحدة لا تتجزأ).
       blocks.add(
         DragTarget<int>(
@@ -2127,7 +2133,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     QuestionModel question,
   ) {
     final document = controller.document;
-    final questionIndex = controller.questions.indexOf(question);
+    // بحث بالمعرف لا بالهوية: نسخ المستند تستبدل النسخ لا المعرفات.
+    final questionIndex = document.indexOfQuestion(question.id);
     final category = question.category.trim();
     final selected = _isQuestionSelected(questionIndex);
     final defaultFont = document.settings.defaultFont;

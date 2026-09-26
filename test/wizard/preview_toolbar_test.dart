@@ -131,7 +131,8 @@ void main() {
 
       await tester.enterText(find.byType(TextField).last, 'B.');
       await tester.tap(find.text('حفظ'));
-      await tester.pump();
+      // خروج الحوار متحرك — ننتظر اكتماله حتى لا يُحتسب نصه مع التسمية.
+      await tester.pumpAndSettle();
 
       final options = controller.document
           .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
