@@ -133,7 +133,12 @@ class PaginatedPdfExamEngine {
       base: loadedFonts.fontFor(settings.defaultFont),
       bold: loadedFonts.fontFor(settings.defaultFont, bold: true),
     );
-    final styles = ExamTextStyles.standard;
+    // الأنماط الأساسية مقاسة بمعاملَي الورقة العامّين (القيم الافتراضية
+    // تعني 1.0 أي بلا تغيير) — والتنسيق المخصص لعنصر بعينه يبقى مطلقاً.
+    final styles = ExamTextStyles.standard.scaled(
+      fontScale: settings.fontScale,
+      heightScale: settings.heightScale,
+    );
 
     final pdf = pw.Document(
       title: document.name,
@@ -306,13 +311,14 @@ class PaginatedPdfExamEngine {
     final header = document.header;
     final settings = document.settings;
     final lineStyle = PaperStyleResolver.apply(
-      styles.headerBody.copyWith(lineSpacing: 2),
+      styles.headerBody.copyWith(lineSpacing: 2 * settings.heightScale),
       header.style,
       fonts: fonts,
       defaultFont: settings.defaultFont,
     );
     final centerStyle = PaperStyleResolver.apply(
-      styles.headerBody.copyWith(fontWeight: pw.FontWeight.bold, lineSpacing: 2),
+      styles.headerBody.copyWith(
+          fontWeight: pw.FontWeight.bold, lineSpacing: 2 * settings.heightScale),
       header.style,
       fonts: fonts,
       defaultFont: settings.defaultFont,
@@ -430,7 +436,8 @@ class PaginatedPdfExamEngine {
 
     final prompt = question.prompt.trim();
     final promptStyle = PaperStyleResolver.apply(
-      styles.body.copyWith(lineSpacing: layout.lineHeightFactor * 2),
+      styles.body.copyWith(
+          lineSpacing: layout.lineHeightFactor * 2 * settings.heightScale),
       question.style,
       fonts: fonts,
       defaultFont: settings.defaultFont,
@@ -492,6 +499,8 @@ class PaginatedPdfExamEngine {
       fonts: fonts,
       defaultFont: settings.defaultFont,
       contentWidth: _contentWidthFor(document),
+      fontScale: settings.fontScale,
+      heightScale: settings.heightScale,
     );
   }
 
@@ -517,8 +526,12 @@ class PaginatedPdfExamEngine {
     final standaloneVerse =
         layout.prefersQuranicFont && QuranText.isStandaloneVerse(content.text);
     final baseBody = standaloneVerse
-        ? styles.body.copyWith(fontSize: 12, lineSpacing: layout.lineHeightFactor * 2 + 2)
-        : styles.body.copyWith(lineSpacing: layout.lineHeightFactor * 2);
+        ? styles.body.copyWith(
+            fontSize: 12 * settings.fontScale,
+            lineSpacing:
+                (layout.lineHeightFactor * 2 + 2) * settings.heightScale)
+        : styles.body.copyWith(
+            lineSpacing: layout.lineHeightFactor * 2 * settings.heightScale);
     final bodyStyle = PaperStyleResolver.apply(
       baseBody,
       branch.style,
@@ -536,7 +549,14 @@ class PaginatedPdfExamEngine {
       if (content.items.isNotEmpty)
         pw.Padding(
           padding: const pw.EdgeInsetsDirectional.only(start: 14, top: 1),
-          child: _buildItems(document, content, layout, styles, fonts),
+          child: _buildItems(
+            document,
+            content,
+            layout,
+            styles,
+            fonts,
+            isTeacherVersion,
+          ),
         ),
       if (!(content.plainText && !isTeacherVersion))
         pw.Padding(
@@ -573,6 +593,8 @@ class PaginatedPdfExamEngine {
       fonts: fonts,
       defaultFont: settings.defaultFont,
       contentWidth: _contentWidthFor(document),
+      fontScale: settings.fontScale,
+      heightScale: settings.heightScale,
     );
   }
 
@@ -583,10 +605,12 @@ class PaginatedPdfExamEngine {
     SubjectLayoutTemplate layout,
     ExamTextStyles styles,
     ExamFonts fonts,
+    bool isTeacherVersion,
   ) {
     final settings = document.settings;
     final itemStyle = PaperStyleResolver.apply(
-      styles.body.copyWith(lineSpacing: layout.lineHeightFactor * 2),
+      styles.body.copyWith(
+          lineSpacing: layout.lineHeightFactor * 2 * settings.heightScale),
       null,
       fonts: fonts,
       defaultFont: settings.defaultFont,
@@ -596,25 +620,45 @@ class PaginatedPdfExamEngine {
       mainAxisSize: pw.MainAxisSize.min,
       children: <pw.Widget>[
         for (var index = 0; index < content.items.length; index++)
-          _buildItem(document, content.items[index], index, layout, itemStyle, fonts),
+          _buildItem(
+            document,
+            content,
+            content.items[index],
+            index,
+            layout,
+            itemStyle,
+            fonts,
+            isTeacherVersion,
+          ),
       ],
     );
   }
 
   pw.Widget _buildItem(
     ExamDocument document,
+    BranchContent content,
     BranchItem item,
     int index,
     SubjectLayoutTemplate layout,
     pw.TextStyle style,
     ExamFonts fonts,
+    bool isTeacherVersion,
   ) {
     final marksSuffix = item.marks > 0
         ? ' (${document.formatNumber(item.marks)} ${layout.marksUnit})'
         : '';
+    // إجابة النقطة لصح/خطأ — في نموذج المعلم فقط.
+    var answerSuffix = '';
+    if (isTeacherVersion &&
+        content.type == QuestionType.trueFalse &&
+        item.isCorrect != null) {
+      answerSuffix = layout.isLtr
+          ? (item.isCorrect! ? ' (True)' : ' (False)')
+          : (item.isCorrect! ? ' (صح)' : ' (خطأ)');
+    }
     final text = item.text.trim().isEmpty ? '................................' : item.text;
     return _renderText(
-      '${document.formatNumber(index + 1)}- $text$marksSuffix',
+      '${document.formatNumber(index + 1)}- $text$marksSuffix$answerSuffix',
       style,
       fonts.quranic,
     );
@@ -670,6 +714,8 @@ class PaginatedPdfExamEngine {
     required ExamFonts fonts,
     required dynamic defaultFont,
     required double contentWidth,
+    double fontScale = 1.0,
+    double heightScale = 1.0,
   }) {
     final scale = PaperMetrics.pointsPerPixel;
     final minHeight = attachments.fold<double>(
@@ -696,6 +742,8 @@ class PaginatedPdfExamEngine {
               heightPt: element.height * scale,
               fonts: fonts,
               defaultFont: defaultFont,
+              fontScale: fontScale,
+              heightScale: heightScale,
             ),
           ),
       ],

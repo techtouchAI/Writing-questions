@@ -399,6 +399,11 @@ class _FontSizeMenu extends StatelessWidget {
                 style: const TextStyle(fontSize: 13),
               ),
             ),
+          // القيمة المميزة NaN: حقل حر لحجم مخصص (تعالجه شاشة المعاينة).
+          const PopupMenuItem<double?>(
+            value: double.nan,
+            child: Text('مخصص...', style: TextStyle(fontSize: 13)),
+          ),
         ],
         child: Container(
           constraints: const BoxConstraints(minWidth: 44),

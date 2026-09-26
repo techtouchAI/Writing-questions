@@ -86,14 +86,29 @@ class ExamDocument {
   /// تفعيل الترقيم التلقائي، وإلا تُحفظ الأرقام اليدوية كما هي.
   ExamDocument get normalized => copyWith(questions: questions);
 
-  /// التسمية المعروضة للسؤال: اليدوية إن ثُبّتت، وإلا من قالب المادة.
+  /// التسمية المعروضة للسؤال: اليدوية إن ثُبّتت، وإلا من نمط التسمية
+  /// العام (وزاري «السؤال الأول» أو مختصر «س1») — بنسق أرقام الورقة.
   String displayQuestionLabel(QuestionModel question) {
     final manual = question.numberOverride?.trim();
     if (manual != null && manual.isNotEmpty) {
       return manual;
     }
+    return autoQuestionLabel(question);
+  }
+
+  /// التسمية التلقائية للسؤال (دون اليدوية) — تُستخدم تلميحاً في محرر التسمية.
+  String autoQuestionLabel(QuestionModel question) {
+    if (settings.questionLabelStyle == QuestionLabelStyle.compact) {
+      if (layout.isLtr) {
+        return 'Q${question.questionNumber}';
+      }
+      return 'س${formatNumber(question.questionNumber)}';
+    }
     return layout.questionLabel(question.questionNumber);
   }
+
+  /// التسمية التلقائية للفرع من فهرسه (دون اليدوية).
+  String autoBranchLabel(int branchIndex) => layout.branchLabel(branchIndex);
 
   /// التسمية المعروضة للفرع: اليدوية إن ثُبّتت، وإلا من الفهرس.
   String displayBranchLabel(int questionIndex, int branchIndex) {

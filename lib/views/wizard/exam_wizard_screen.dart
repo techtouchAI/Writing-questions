@@ -1,7 +1,10 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/exam_document.dart';
+import '../../providers/exam_document_provider.dart';
 import '../../providers/exam_wizard_controller.dart';
 import 'exam_preview_screen.dart';
 import 'header_step_screen.dart';
@@ -17,6 +20,12 @@ enum WizardStep { header, questions, preview }
 ///
 /// يملك [ExamWizardController] ويوفّره لكل الخطوات؛ زر الرجوع في النظام
 /// يعود خطوة واحدة بدل الخروج مباشرة.
+///
+/// **الحفظ التلقائي**: فور توفر مزود المكتبة فوق الشاشة يُفعَّل الحفظ
+/// الصامت بعد كل تعديل (بتهدئة ثانيتين)، وتُسجَّل الورقة كآخر ورقة
+/// مفتوحة — فإغلاق التطبيق في أي لحظة لا يُضيع العمل، وعند العودة يجد
+/// المدرس ورقته (ولو مسودة) في المكتبة مع لافتة «متابعة العمل».
+/// عند الخروج يُفرَّغ أي حفظ معلّق فوراً.
 class ExamWizardScreen extends StatefulWidget {
   const ExamWizardScreen({super.key, this.existingDocument, this.initialStep});
 
@@ -32,6 +41,7 @@ class ExamWizardScreen extends StatefulWidget {
 class _ExamWizardScreenState extends State<ExamWizardScreen> {
   late final ExamWizardController _controller;
   late WizardStep _step;
+  bool _autoSaveWired = false;
 
   @override
   void initState() {
@@ -42,7 +52,38 @@ class _ExamWizardScreenState extends State<ExamWizardScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _wireAutoSaveOnce();
+  }
+
+  /// يفعّل الحفظ التلقائي مرة واحدة متى توفر مزود المكتبة.
+  ///
+  /// الشاشة قد تُفتح مستقلة (كما في اختبارات الواجهة) بلا مزود فوقها؛
+  /// عندها يبقى التحرير يعمل كاملاً دون حفظ تلقائي.
+  void _wireAutoSaveOnce() {
+    if (_autoSaveWired) {
+      return;
+    }
+    ExamDocumentProvider? library;
+    try {
+      library = context.read<ExamDocumentProvider>();
+    } catch (_) {
+      return;
+    }
+    _autoSaveWired = true;
+    final provider = library;
+    _controller.enableAutoSave(
+      (document) => provider.saveDocument(document.touched()),
+    );
+    // تسجيل الورقة كآخر ورقة مفتوحة (لافتة المتابعة + استعادة الجلسة).
+    provider.saveLastOpenDocumentId(_controller.document.id);
+  }
+
+  @override
   void dispose() {
+    // تفريغ أي حفظ معلّق قبل التحرير حتى لا يضيع آخر تعديل عند الخروج.
+    unawaited(_controller.flushAutoSave());
     _controller.dispose();
     super.dispose();
   }
@@ -96,6 +137,14 @@ class _ExamWizardScreenState extends State<ExamWizardScreen> {
               ..updateSettings(settings)
               ..openQuestion(0);
             _goTo(WizardStep.questions);
+          },
+          // مسودة الترويسة عند الخروج المبكر: تُحفظ في المتحكم (ومن ثم
+          // بالحفظ التلقائي) دون انتقال للخطوة التالية.
+          onDraft: (header, name, settings) {
+            _controller
+              ..updateHeader(header)
+              ..updateName(name)
+              ..updateSettings(settings);
           },
         );
       case WizardStep.questions:

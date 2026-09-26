@@ -61,10 +61,16 @@ abstract final class PaperStyles {
   ///
   /// [defaultFont] خط الورقة الافتراضي من إعداداتها. القيم الفارغة في
   /// [override] ترث من الأساس — وهو نفس قرار محرك الطباعة حرفياً.
+  ///
+  /// [fontScale]/[heightScale] معاملا القياس العامّان من إعدادات الورقة
+  /// (حجم الخط الأساسي وتباعد الأسطر): يُطبَّقان على قيم الأساس فقط،
+  /// ويبقى التنسيق المخصص لعنصر بعينه (حجم/تباعد مطلق) متقدماً عليهما.
   static TextStyle resolve(
     TextStyle base,
     PaperTextStyle? override, {
     PaperFont defaultFont = PaperFont.naskh,
+    double fontScale = 1.0,
+    double heightScale = 1.0,
   }) {
     final family = override?.font ?? defaultFont;
     final baseBold = base.fontWeight == FontWeight.bold;
@@ -72,13 +78,33 @@ abstract final class PaperStyles {
     final underline = override?.underline ?? false;
     return base.copyWith(
       fontFamily: family.family,
-      fontSize:
-          override?.fontSize != null ? PaperMetrics.px(override!.fontSize!) : base.fontSize,
+      fontSize: override?.fontSize != null
+          ? PaperMetrics.px(override!.fontSize!)
+          : (base.fontSize ?? 14) * fontScale,
       fontWeight: bold ? FontWeight.bold : FontWeight.normal,
       fontStyle:
           (override?.italic ?? false) ? FontStyle.italic : FontStyle.normal,
       decoration: underline ? TextDecoration.underline : TextDecoration.none,
-      height: override?.lineHeight ?? base.height,
+      height: override?.lineHeight ?? (base.height ?? 1.45) * heightScale,
+    );
+  }
+
+  /// يقيس نمطاً أساسياً مباشراً (بلا تنسيق عنصر) بمعاملَي الورقة العامّين.
+  ///
+  /// يُستخدم للأنماط التي تُعرض كما هي دون [resolve] (الخيارات، النقاط،
+  /// الملاحظات...) حتى تكبر الورقة كلها وتصغر معاً من مكان واحد —
+  /// وهو نفس قرار محرك الطباعة حرفياً.
+  static TextStyle scale(
+    TextStyle base, {
+    double fontScale = 1.0,
+    double heightScale = 1.0,
+  }) {
+    if (fontScale == 1.0 && heightScale == 1.0) {
+      return base;
+    }
+    return base.copyWith(
+      fontSize: (base.fontSize ?? 14) * fontScale,
+      height: (base.height ?? 1.45) * heightScale,
     );
   }
 

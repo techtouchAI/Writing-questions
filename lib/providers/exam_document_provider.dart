@@ -17,11 +17,19 @@ class ExamDocumentProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
   String? _recoveryMessage;
+  String? _lastOpenDocumentId;
 
   UnmodifiableListView<ExamDocument> get documents => UnmodifiableListView(_documents);
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   String? get recoveryMessage => _recoveryMessage;
+
+  /// هوية آخر ورقة فُتحت في المحرر (لمتابعة العمل من حيث توقف المدرس).
+  String? get lastOpenDocumentId => _lastOpenDocumentId;
+
+  /// آخر ورقة فُتحت — `null` إن حُذفت أو لم تُفتح أي ورقة بعد.
+  ExamDocument? get lastOpenDocument =>
+      _lastOpenDocumentId == null ? null : documentById(_lastOpenDocumentId!);
 
   Future<void> loadDocuments() async {
     _isLoading = true;
@@ -35,6 +43,11 @@ class ExamDocumentProvider extends ChangeNotifier {
       if (result.recoveredFromCorruption) {
         _recoveryMessage =
             'تم تجاهل ${result.discardedEntries} نموذج غير صالح أثناء استعادة البيانات.';
+      }
+      try {
+        _lastOpenDocumentId = await _storageService.loadLastOpenDocumentId();
+      } catch (_) {
+        _lastOpenDocumentId = null;
       }
     } catch (_) {
       _documents = <ExamDocument>[];
@@ -99,6 +112,19 @@ class ExamDocumentProvider extends ChangeNotifier {
     return null;
   }
 
+  /// يحفظ هوية آخر ورقة فُتحت (لافتة «متابعة العمل» في الرئيسية).
+  ///
+  /// صامت: الفشل هنا لا يقطع التحرير ولا يُظهر خطأ للمدرس.
+  Future<void> saveLastOpenDocumentId(String? id) async {
+    _lastOpenDocumentId = id;
+    notifyListeners();
+    try {
+      await _storageService.saveLastOpenDocumentId(id);
+    } catch (_) {
+      // تجاهل صامت — استعادة الجلسة تحسين اختياري لا يمنع العمل.
+    }
+  }
+
   Future<void> deleteDocument(String id) async {
     final index = _documents.indexWhere((item) => item.id == id);
     if (index == -1) {
@@ -106,6 +132,14 @@ class ExamDocumentProvider extends ChangeNotifier {
     }
     final previous = List<ExamDocument>.of(_documents);
     _documents.removeAt(index);
+    if (_lastOpenDocumentId == id) {
+      _lastOpenDocumentId = null;
+      try {
+        await _storageService.saveLastOpenDocumentId(null);
+      } catch (_) {
+        // تجاهل صامت.
+      }
+    }
     _errorMessage = null;
     notifyListeners();
 
