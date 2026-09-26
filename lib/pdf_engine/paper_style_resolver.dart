@@ -13,18 +13,22 @@ abstract final class PaperStyleResolver {
   ///
   /// [defaultFont] خط الورقة الافتراضي من الإعدادات، و[fonts] الخطوط
   /// المحمّلة فعلياً (مع الارتداد الآمن داخل [ExamFonts.fontFor]).
+  /// [fontScale]/[heightScale] معاملا القياس العامّان من إعدادات الورقة:
+  /// يُطبَّقان على قيم الأساس فقط، والتنسيق المخصص لعنصر بعينه مطلق.
   static pw.TextStyle apply(
     pw.TextStyle base,
     PaperTextStyle? override, {
     required ExamFonts fonts,
     required PaperFont defaultFont,
+    double fontScale = 1.0,
+    double heightScale = 1.0,
   }) {
     final family = override?.font ?? defaultFont;
     final baseBold = base.fontWeight == pw.FontWeight.bold;
     final bold = override?.bold ?? baseBold;
     return base.copyWith(
       font: fonts.fontFor(family, bold: bold),
-      fontSize: override?.fontSize ?? base.fontSize,
+      fontSize: override?.fontSize ?? (base.fontSize ?? 10.5) * fontScale,
       fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
       fontStyle: (override?.italic ?? false) ? pw.FontStyle.italic : pw.FontStyle.normal,
       decoration: (override?.underline ?? false)
@@ -32,7 +36,9 @@ abstract final class PaperStyleResolver {
           : base.decoration,
       lineSpacing: override?.lineHeight != null
           ? (override!.lineHeight! * 2)
-          : base.lineSpacing,
+          : base.lineSpacing == null
+              ? null
+              : base.lineSpacing! * heightScale,
     );
   }
 

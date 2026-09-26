@@ -24,6 +24,14 @@ abstract final class PaperMetrics {
 
   static double get contentWidthPx => ExamCanvasGeometry.contentWidth;
 
+  /// الارتفاع المتاح للكتل لهامش طباعة [marginMm] بالمليمتر.
+  static double pageContentHeightFor(double marginMm) =>
+      ExamCanvasGeometry.contentHeightFor(marginMm) - footerHeightPx;
+
+  /// عرض المحتوى لهامش طباعة [marginMm] بالمليمتر.
+  static double contentWidthFor(double marginMm) =>
+      ExamCanvasGeometry.contentWidthFor(marginMm);
+
   /// معرّف كتلة الترويسة في محرك التقسيم.
   static const String headerBlockId = '__header__';
 }

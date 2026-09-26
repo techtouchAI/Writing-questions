@@ -124,6 +124,14 @@ class BranchContent {
     return copyWith(items: updated);
   }
 
+  /// نسخة مع تثبيت إجابة النقطة [index] لصح/خطأ (`null` = غير محددة).
+  BranchContent withItemAnswer(int index, bool? answer) {
+    RangeError.checkValidIndex(index, items, 'index');
+    final updated = List<BranchItem>.of(items);
+    updated[index] = updated[index].copyWith(isCorrect: () => answer);
+    return copyWith(items: updated);
+  }
+
   /// نسخة مع نقل النقطة من [from] إلى [to].
   BranchContent withItemMoved(int from, int to) {
     RangeError.checkValidIndex(from, items, 'from');

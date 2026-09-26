@@ -57,6 +57,32 @@ class ExamTextStyles {
     footer: _textStyle(fontSize: 8.5, color: mutedColor),
   );
 
+  /// نسخة مقاسة بمعاملَي الورقة العامّين (حجم الخط الأساسي وتباعد
+  /// الأسطر) — التذييل (أرقام الصفحات) يبقى ثابتاً كما هو معتاد.
+  ExamTextStyles scaled({double fontScale = 1.0, double heightScale = 1.0}) {
+    if (fontScale == 1.0 && heightScale == 1.0) {
+      return this;
+    }
+    pw.TextStyle scale(pw.TextStyle style) => style.copyWith(
+          fontSize: (style.fontSize ?? 10.5) * fontScale,
+          lineSpacing: style.lineSpacing == null
+              ? null
+              : style.lineSpacing! * heightScale,
+        );
+    return ExamTextStyles(
+      headerTitle: scale(headerTitle),
+      headerBody: scale(headerBody),
+      badge: scale(badge),
+      category: scale(category),
+      question: scale(question),
+      option: scale(option),
+      body: scale(body),
+      small: scale(small),
+      note: scale(note),
+      footer: footer,
+    );
+  }
+
   /// بناء أسلوب نص في وقت التشغيل.
   ///
   /// يمرّ عبر دالة بدل const مباشرة لأن مكتبة pdf 3.11.x لا تحتمل

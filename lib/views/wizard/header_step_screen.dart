@@ -21,6 +21,7 @@ class HeaderStepScreen extends StatefulWidget {
     required this.initialName,
     required this.initialSettings,
     required this.onNext,
+    this.onDraft,
   });
 
   final ExamHeaderModel initialHeader;
@@ -30,9 +31,48 @@ class HeaderStepScreen extends StatefulWidget {
   /// يُستدعى بالترويسة النهائية واسم النموذج والإعدادات عند [التالي].
   final void Function(ExamHeaderModel header, String name, PaperSettings settings) onNext;
 
+  /// يُستدعى بالمسودة الحالية عند التخلص من الشاشة دون [التالي] (خروج
+  /// مبكر بزر الرجوع) حتى لا يضيع ما كتبه المدرس قبل الحفظ التلقائي.
+  final void Function(ExamHeaderModel header, String name, PaperSettings settings)? onDraft;
+
   @override
   State<HeaderStepScreen> createState() => _HeaderStepScreenState();
 }
+
+/// حقل واحد من نموذج معلومات الترويسة التفصيلية.
+class _HeaderInfoField {
+  const _HeaderInfoField(this.key, this.label, this.hint);
+  final String key;
+  final String label;
+  final String hint;
+}
+
+/// حقول معلومات الترويسة مجمّعة بالأقسام (الجهة/الامتحان/الوقت/الطالب).
+const List<MapEntry<String, List<_HeaderInfoField>>> _headerInfoSections =
+    <MapEntry<String, List<_HeaderInfoField>>>[
+  MapEntry<String, List<_HeaderInfoField>>('معلومات الجهة', <_HeaderInfoField>[
+    _HeaderInfoField('country', 'الدولة / الجهة', 'جمهورية العراق'),
+    _HeaderInfoField('ministry', 'الوزارة', 'وزارة التربية'),
+    _HeaderInfoField('directorate', 'المديرية العامة للتربية', 'مديرية تربية بابل'),
+    _HeaderInfoField('school', 'اسم المدرسة', 'إعدادية الحلة للبنين'),
+  ]),
+  MapEntry<String, List<_HeaderInfoField>>('معلومات الامتحان', <_HeaderInfoField>[
+    _HeaderInfoField('grade', 'الصف والمرحلة', 'الصف الثالث المتوسط'),
+    _HeaderInfoField('branch', 'الفرع', 'العلمي'),
+    _HeaderInfoField('year', 'العام الدراسي', '2026 / 2027'),
+    _HeaderInfoField('round', 'الدور', 'الدور الأول'),
+    _HeaderInfoField('examType', 'نوع الامتحان', 'امتحانات نصف السنة'),
+  ]),
+  MapEntry<String, List<_HeaderInfoField>>('الوقت والدرجة', <_HeaderInfoField>[
+    _HeaderInfoField('time', 'الوقت', 'ساعتان ونصف'),
+    _HeaderInfoField('totalMarks', 'الدرجة الكلية', '100'),
+  ]),
+  MapEntry<String, List<_HeaderInfoField>>('معلومات الطالب', <_HeaderInfoField>[
+    _HeaderInfoField('studentName', 'اسم الطالب', 'يُترك فارغاً ليملأه الطالب'),
+    _HeaderInfoField('studentNumber', 'الرقم الامتحاني', 'يُترك فارغاً ليملأه الطالب'),
+    _HeaderInfoField('division', 'الشعبة', 'أ'),
+  ]),
+];
 
 class _HeaderStepScreenState extends State<HeaderStepScreen> {
   final _formKey = GlobalKey<FormState>();
@@ -42,12 +82,14 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
   late final TextEditingController _titleController;
   late final TextEditingController _notesController;
   late final Map<HeaderSlot, List<TextEditingController>> _columns;
+  late final Map<String, TextEditingController> _info;
   late bool _customSubject;
   late PaperFont _font;
   late double _fontSize;
   late bool _bold;
   late PaperAlign _align;
   late bool _headerBorder;
+  bool _submitted = false;
 
   @override
   void initState() {
@@ -64,6 +106,17 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
           for (final line in header.column(slot).lines) TextEditingController(text: line),
         ],
     };
+    _info = <String, TextEditingController>{
+      for (final section in _headerInfoSections)
+        for (final field in section.value)
+          field.key: TextEditingController(
+            text: field.key == 'country'
+                ? 'جمهورية العراق'
+                : field.key == 'ministry'
+                    ? 'وزارة التربية'
+                    : '',
+          ),
+    };
     _customSubject = !SubjectCatalog.knownSubjects.contains(header.subject);
     _font = header.style.font ?? widget.initialSettings.defaultFont;
     _fontSize = (header.style.fontSize ?? 10).clamp(8.0, 16.0).toDouble();
@@ -74,6 +127,15 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
 
   @override
   void dispose() {
+    // خروج مبكر: حفظ المسودة (بشرط وجود مادة واسم صالحين) قبل التحرير.
+    final draft = widget.onDraft;
+    if (draft != null && !_submitted) {
+      final name = _nameController.text.trim();
+      final subject = _subjectController.text.trim();
+      if (name.isNotEmpty && subject.isNotEmpty) {
+        draft(_collect(), name, _collectSettings());
+      }
+    }
     _nameController.dispose();
     _subjectController.dispose();
     _instructionsController.dispose();
@@ -83,6 +145,9 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
       for (final controller in controllers) {
         controller.dispose();
       }
+    }
+    for (final controller in _info.values) {
+      controller.dispose();
     }
     super.dispose();
   }
@@ -102,6 +167,66 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
 
   PaperSettings _collectSettings() {
     return widget.initialSettings.copyWith(headerBorder: _headerBorder);
+  }
+
+  /// يوزّع معلومات النموذج التفصيلية على أعمدة الترويسة والعنوان.
+  ///
+  /// الكتابة فوق الأعمدة والعنوان فقط؛ التعليمات والملاحظات لا تُمسّ
+  /// (عدا ملء الدرجة الكلية في الملاحظات إن كانت فارغة)، وتبقى كل الأسطر
+  /// قابلة للتحرير أو التفريغ يدوياً بعد التوزيع.
+  void _distributeHeaderInfo() {
+    String value(String key) => _info[key]!.text.trim();
+    final country = value('country');
+    final ministry = value('ministry');
+    final directorate = value('directorate');
+    final school = value('school');
+    final grade = value('grade');
+    final branch = value('branch');
+    final year = value('year');
+    final round = value('round');
+    final examType = value('examType');
+    final time = value('time');
+    final totalMarks = value('totalMarks');
+    final studentName = value('studentName');
+    final studentNumber = value('studentNumber');
+    final division = value('division');
+    final subject = _subjectController.text.trim();
+
+    void fillColumn(HeaderSlot slot, List<String> lines) {
+      final controllers = _columns[slot]!;
+      for (var i = 0; i < controllers.length; i++) {
+        controllers[i].text = i < lines.length ? lines[i] : '';
+      }
+    }
+
+    final examLine = <String>[examType, year].where((part) => part.isNotEmpty).join(' ');
+    setState(() {
+      fillColumn(HeaderSlot.right, <String>[country, ministry, directorate]);
+      fillColumn(HeaderSlot.center, <String>[school, examLine, round]);
+      fillColumn(HeaderSlot.left, <String>[
+        time.isEmpty ? 'الوقت:' : 'الوقت: $time',
+        studentName.isEmpty ? 'الاسم:' : 'الاسم: $studentName',
+        studentNumber.isEmpty ? 'الرقم الامتحاني:' : 'الرقم الامتحاني: $studentNumber',
+      ]);
+      if (subject.isNotEmpty) {
+        final titleParts = <String>['أسئلة امتحان مادة $subject'];
+        final gradePart = <String>[
+          grade,
+          if (branch.isNotEmpty) '($branch)',
+          if (division.isNotEmpty) 'شعبة $division',
+        ].where((part) => part.isNotEmpty).join(' ');
+        if (gradePart.isNotEmpty) {
+          titleParts.add(gradePart);
+        }
+        _titleController.text = titleParts.join(' — ');
+      }
+      if (_notesController.text.trim().isEmpty && totalMarks.isNotEmpty) {
+        _notesController.text = 'الدرجة الكلية: $totalMarks';
+      }
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم توزيع المعلومات على أعمدة الترويسة والعنوان.')),
+    );
   }
 
   void _applyMinisterialDefaults() {
@@ -125,6 +250,7 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
     if (!(_formKey.currentState?.validate() ?? false)) {
       return;
     }
+    _submitted = true;
     widget.onNext(_collect(), _nameController.text.trim(), _collectSettings());
   }
 
@@ -182,6 +308,7 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
                 ],
               ),
               const SizedBox(height: 8),
+              _buildInfoCard(),
               _buildColumnCard(
                 slot: HeaderSlot.right,
                 title: 'العمود الأيمن',
@@ -292,6 +419,69 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
           setState(() => _subjectController.text = value);
         }
       },
+    );
+  }
+
+  /// بطاقة نموذج معلومات الترويسة التفصيلية مع زر التوزيع التلقائي.
+  Widget _buildInfoCard() {
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text(
+              'معلومات الترويسة التفصيلية',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'املأ الحقول ثم وزّعها على الأعمدة — وتبقى قابلة للتحرير يدوياً.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+            for (final section in _headerInfoSections) ...<Widget>[
+              const SizedBox(height: 10),
+              Text(
+                section.key,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              for (final field in section.value)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: TextFormField(
+                    controller: _info[field.key],
+                    decoration: InputDecoration(
+                      labelText: field.label,
+                      hintText: field.hint,
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+            ],
+            const SizedBox(height: 4),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: _distributeHeaderInfo,
+                icon: const Icon(Icons.view_column_outlined),
+                label: const Text('توزيع المعلومات على أعمدة الترويسة والعنوان'),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

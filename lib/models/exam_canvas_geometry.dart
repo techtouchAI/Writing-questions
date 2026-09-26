@@ -25,6 +25,16 @@ abstract final class ExamCanvasGeometry {
 
   static double get contentHeight => height - 2 * margin;
 
+  /// هامش اللوحة بالبكسل المنطقي لهامش طباعة [marginMm] بالمليمتر.
+  static double marginFor(double marginMm) => marginMm * 96 / 25.4;
+
+  /// عرض المحتوى داخل هامش [marginMm].
+  static double contentWidthFor(double marginMm) => width - 2 * marginFor(marginMm);
+
+  /// ارتفاع المحتوى داخل هامش [marginMm].
+  static double contentHeightFor(double marginMm) =>
+      height - 2 * marginFor(marginMm);
+
   /// موقع الإفلات الافتراضي لعنصر جديد (وسط اللوحة عمودياً قليلاً).
   static const double defaultElementDx = 322;
   static double get defaultElementDy => margin + 260;

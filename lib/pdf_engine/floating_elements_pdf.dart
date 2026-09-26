@@ -24,6 +24,8 @@ abstract final class FloatingElementsPdf {
     required double heightPt,
     ExamFonts? fonts,
     PaperFont defaultFont = PaperFont.naskh,
+    double fontScale = 1.0,
+    double heightScale = 1.0,
   }) {
     final pw.Widget content;
     switch (element.type) {
@@ -36,6 +38,8 @@ abstract final class FloatingElementsPdf {
           heightPt: heightPt,
           fonts: fonts,
           defaultFont: defaultFont,
+          fontScale: fontScale,
+          heightScale: heightScale,
         );
     }
     if (element.rotationDegrees == 0) {
@@ -68,10 +72,20 @@ abstract final class FloatingElementsPdf {
     required double heightPt,
     required ExamFonts? fonts,
     required PaperFont defaultFont,
+    double fontScale = 1.0,
+    double heightScale = 1.0,
   }) {
     final shape = element.shape ?? FloatingShapeType.square;
     if (shape == FloatingShapeType.textBox) {
-      return _buildTextBox(element, widthPt, heightPt, fonts, defaultFont);
+      return _buildTextBox(
+        element,
+        widthPt,
+        heightPt,
+        fonts,
+        defaultFont,
+        fontScale: fontScale,
+        heightScale: heightScale,
+      );
     }
     final svg = element.svgSource ??
         shapeToSvg(
@@ -92,13 +106,17 @@ abstract final class FloatingElementsPdf {
     double widthPt,
     double heightPt,
     ExamFonts? fonts,
-    PaperFont defaultFont,
-  ) {
+    PaperFont defaultFont, {
+    double fontScale = 1.0,
+    double heightScale = 1.0,
+  }) {
     final style = PaperStyleResolver.apply(
       const pw.TextStyle(fontSize: 10.5, lineSpacing: 2),
       element.textStyle,
       fonts: fonts ?? _fallbackFonts,
       defaultFont: element.textStyle.font ?? defaultFont,
+      fontScale: fontScale,
+      heightScale: heightScale,
     );
     final text = element.label.trim().isEmpty ? ' ' : element.label;
     return pw.SizedBox(

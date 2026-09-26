@@ -14,12 +14,22 @@ import 'paper_shape_painter.dart';
 /// والصور تُعرض من البايتات المخزنة ([FloatingElement.bytes])، ومربعات
 /// النص تعرض نصها بتنسيقها — والتدوير حول المركز كما في الطباعة.
 class FloatingElementView extends StatelessWidget {
-  const FloatingElementView({super.key, required this.element, this.defaultFont});
+  const FloatingElementView({
+    super.key,
+    required this.element,
+    this.defaultFont,
+    this.fontScale = 1.0,
+    this.heightScale = 1.0,
+  });
 
   final FloatingElement element;
 
   /// خط الورقة الافتراضي (لمربعات النص).
   final PaperFont? defaultFont;
+
+  /// معاملا القياس العامّان من إعدادات الورقة (لنص مربع النص).
+  final double fontScale;
+  final double heightScale;
 
   @override
   Widget build(BuildContext context) {
@@ -62,6 +72,8 @@ class FloatingElementView extends StatelessWidget {
       PaperStyles.body(SubjectLayoutTemplate.generic),
       element.textStyle,
       defaultFont: defaultFont ?? PaperFont.naskh,
+      fontScale: fontScale,
+      heightScale: heightScale,
     );
     final text = element.label.trim().isEmpty ? 'مربع نص...' : element.label;
     return Container(

@@ -480,6 +480,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return PaperTextStyle.empty;
   }
 
+  /// معاملا القياس العامّان من إعدادات الورقة (حجم الخط الأساسي وتباعد
+  /// الأسطر) — يُمرَّران لكل أنماط اللوحة حتى تكبر الورقة وتصغر معاً.
+  double get _fontScale => _controller!.document.settings.fontScale;
+  double get _heightScale => _controller!.document.settings.heightScale;
+
+  /// يقيس نمطاً أساسياً مباشراً بمعاملَي الورقة (للأنماط بلا [resolve]).
+  TextStyle _scaled(TextStyle base) => PaperStyles.scale(
+        base,
+        fontScale: _fontScale,
+        heightScale: _heightScale,
+      );
+
   bool? _activeFrame() {
     final controller = _controller!;
     final document = controller.document;
@@ -566,6 +578,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   // ------------------------------------------------------------------
 
   void _showMessage(String message, {bool isError = false}) {
+    if (!mounted) {
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -808,6 +823,85 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _updateAttachmentElement(ref, element.copyWith(label: saved));
   }
 
+  /// تثبيت تسمية يدوية للسؤال («أولاً»، «س1»...) — فارغ = تلقائي.
+  Future<void> _editQuestionLabel(int questionIndex) async {
+    final controller = _controller!;
+    final document = controller.document;
+    final question = document.questions[questionIndex];
+    final field = TextEditingController(text: question.numberOverride ?? '');
+    final saved = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تسمية السؤال'),
+        content: TextField(
+          controller: field,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: 'تلقائي: ${document.autoQuestionLabel(question)}',
+            helperText: 'اتركه فارغاً للعودة للترقيم التلقائي.',
+            border: const OutlineInputBorder(),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(field.text),
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+    field.dispose();
+    if (saved == null) {
+      return;
+    }
+    controller.updateQuestionNumberOverride(questionIndex, saved);
+  }
+
+  /// تثبيت تسمية يدوية للفرع («أولاً»، «أ»...) — فارغ = تلقائي من الفهرس.
+  Future<void> _editBranchLabel(BranchRef ref) async {
+    final controller = _controller!;
+    final document = controller.document;
+    if (!document.containsRef(ref)) {
+      return;
+    }
+    final branch = document.branchAt(ref);
+    final field = TextEditingController(text: branch.labelOverride ?? '');
+    final saved = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تسمية الفرع'),
+        content: TextField(
+          controller: field,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: 'تلقائي: ${document.autoBranchLabel(ref.branchIndex)}',
+            helperText: 'مثال: أولاً، ثانياً — فارغ = تلقائي.',
+            border: const OutlineInputBorder(),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(field.text),
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+    field.dispose();
+    if (saved == null) {
+      return;
+    }
+    controller.updateBranchLabelOverride(ref, saved);
+  }
+
   void _addBranchToSelected() {
     final controller = _controller!;
     final target = controller.selectedBranch?.questionIndex ?? controller.questions.length - 1;
@@ -937,6 +1031,54 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
   }
 
+  /// حوار إدخال حجم خط حر (6..32) للتحديد الحالي.
+  Future<void> _showCustomFontSize() async {
+    final targets = _styleTargets();
+    final hasTarget = targets.branches.isNotEmpty ||
+        targets.questions.isNotEmpty ||
+        targets.header ||
+        targets.boxes.isNotEmpty;
+    if (!hasTarget) {
+      _showMessage('حدد سؤالاً أو فرعاً أولاً لتطبيق الحجم.');
+      return;
+    }
+    final field = TextEditingController(
+      text: _activeStyle().fontSize?.toStringAsFixed(0) ?? '',
+    );
+    final saved = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('حجم خط مخصص'),
+        content: LtrNumericField(
+          controller: field,
+          hintText: 'مثال: 13 (بين 6 و 32)',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(field.text),
+            child: const Text('تطبيق'),
+          ),
+        ],
+      ),
+    );
+    field.dispose();
+    if (saved == null) {
+      return;
+    }
+    final size = double.tryParse(
+      saved.trim().replaceAll('،', '.').replaceAll(',', '.'),
+    );
+    if (size == null || size < 6 || size > 32) {
+      _showMessage('أدخل حجماً بين 6 و 32.', isError: true);
+      return;
+    }
+    _applyStyle((current) => current.copyWith(fontSize: () => size));
+  }
+
   Future<void> _showReview() async {
     if (_isBusy) {
       return;
@@ -964,9 +1106,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               ),
               _reviewRow('حجم الورق', 'A4'),
               _reviewRow('الخط الافتراضي', document.settings.defaultFont.arabicLabel),
+              _reviewRow('نمط التسمية', document.settings.questionLabelStyle.arabicLabel),
               _reviewRow(
                 'الهوامش',
                 '${document.settings.marginMm.toStringAsFixed(0)} مم',
+              ),
+              _reviewRow(
+                'تباعد الأسطر',
+                document.settings.lineSpacing.toStringAsFixed(2),
               ),
             ],
           ),
@@ -1006,6 +1153,39 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
+    );
+  }
+
+  Widget _settingsSlider({
+    required String label,
+    required String value,
+    required double sliderValue,
+    required double min,
+    required double max,
+    required int divisions,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
+            Text(
+              value,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        Slider(
+          value: sliderValue,
+          min: min,
+          max: max,
+          divisions: divisions,
+          label: value,
+          onChanged: onChanged,
+        ),
+      ],
     );
   }
 
@@ -1057,6 +1237,31 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   },
                 ),
                 const SizedBox(height: 8),
+                DropdownButtonFormField<QuestionLabelStyle>(
+                  value: settings.questionLabelStyle,
+                  decoration: const InputDecoration(
+                    labelText: 'نمط تسمية الأسئلة',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  items: QuestionLabelStyle.values
+                      .map((style) => DropdownMenuItem<QuestionLabelStyle>(
+                            value: style,
+                            child: Text(
+                              style.arabicLabel,
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ))
+                      .toList(growable: false),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(
+                        () => settings = settings.copyWith(questionLabelStyle: value),
+                      );
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
                 DropdownButtonFormField<PaperFont>(
                   value: settings.defaultFont,
                   decoration: const InputDecoration(
@@ -1078,6 +1283,39 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       setDialogState(() => settings = settings.copyWith(defaultFont: value));
                     }
                   },
+                ),
+                _settingsSlider(
+                  label: 'هوامش الصفحة',
+                  value: '${settings.marginMm.toStringAsFixed(0)} مم',
+                  sliderValue: settings.marginMm,
+                  min: 8,
+                  max: 25,
+                  divisions: 17,
+                  onChanged: (value) => setDialogState(
+                    () => settings = settings.copyWith(marginMm: value),
+                  ),
+                ),
+                _settingsSlider(
+                  label: 'حجم الخط الأساسي',
+                  value: settings.baseFontSize.toStringAsFixed(1),
+                  sliderValue: settings.baseFontSize,
+                  min: 8,
+                  max: 16,
+                  divisions: 16,
+                  onChanged: (value) => setDialogState(
+                    () => settings = settings.copyWith(baseFontSize: value),
+                  ),
+                ),
+                _settingsSlider(
+                  label: 'تباعد الأسطر العام',
+                  value: settings.lineSpacing.toStringAsFixed(2),
+                  sliderValue: settings.lineSpacing,
+                  min: 1,
+                  max: 2.5,
+                  divisions: 15,
+                  onChanged: (value) => setDialogState(
+                    () => settings = settings.copyWith(lineSpacing: value),
+                  ),
                 ),
                 SwitchListTile(
                   dense: true,
@@ -1248,9 +1486,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               (current) => current.copyWith(font: () => font),
             ),
             activeFontSize: activeStyle.fontSize,
-            onFontSizeChanged: (size) => _applyStyle(
-              (current) => current.copyWith(fontSize: () => size),
-            ),
+            onFontSizeChanged: (size) {
+              // القيمة المميزة NaN تعني «حجم مخصص» من قائمة الشريط.
+              if (size != null && size.isNaN) {
+                _showCustomFontSize();
+                return;
+              }
+              _applyStyle((current) => current.copyWith(fontSize: () => size));
+            },
             isBold: activeStyle.bold,
             onToggleBold: () => _applyStyle(
               (current) => current.copyWith(bold: () => !(current.bold ?? false)),
@@ -1431,7 +1674,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       content = FittedBox(
         fit: BoxFit.scaleDown,
         alignment: Alignment.topCenter,
-        child: SizedBox(width: PaperMetrics.contentWidthPx, child: content),
+        child: SizedBox(
+          width: PaperMetrics.contentWidthFor(document.settings.marginMm),
+          child: content,
+        ),
       );
     }
 
@@ -1450,7 +1696,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ],
         ),
         child: Padding(
-          padding: const EdgeInsets.all(ExamCanvasGeometry.margin),
+          padding: EdgeInsets.all(
+            ExamCanvasGeometry.marginFor(document.settings.marginMm),
+          ),
           child: Stack(
             clipBehavior: Clip.hardEdge,
             children: <Widget>[
@@ -1504,11 +1752,20 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final header = document.header;
     final defaultFont = document.settings.defaultFont;
     final lineStyle = PaperStyles.resolve(PaperStyles.headerLine, header.style,
-        defaultFont: defaultFont);
+        defaultFont: defaultFont,
+        fontScale: _fontScale,
+        heightScale: _heightScale,
+      );
     final centerStyle = PaperStyles.resolve(PaperStyles.headerCenter, header.style,
-        defaultFont: defaultFont);
+        defaultFont: defaultFont,
+        fontScale: _fontScale,
+        heightScale: _heightScale,
+      );
     final titleStyle = PaperStyles.resolve(PaperStyles.headerTitle, header.style,
-        defaultFont: defaultFont);
+        defaultFont: defaultFont,
+        fontScale: _fontScale,
+        heightScale: _heightScale,
+      );
 
     Widget column(HeaderSlot slot, {required bool center}) {
       final lines = header.column(slot).lines;
@@ -1591,14 +1848,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                         '${layout.marksUnit}  |  عدد الأسئلة: '
                         '${document.formatNumber(document.questions.length)}',
                 textAlign: TextAlign.center,
-                style: PaperStyles.small,
+                style: _scaled(PaperStyles.small),
               ),
             ],
             _paperField(
               key: const ValueKey<String>(_instructionsKey),
               controller:
                   _field(_instructionsKey, header.instructions, controller.updateInstructions),
-              style: PaperStyles.note,
+              style: _scaled(PaperStyles.note),
               textAlign: TextAlign.center,
               hint: 'ملاحظة / تعليمات للطلاب...',
             ),
@@ -1606,7 +1863,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               _paperField(
                 key: const ValueKey<String>(_headerNotesKey),
                 controller: _field(_headerNotesKey, header.notes, controller.updateHeaderNotes),
-                style: PaperStyles.note,
+                style: _scaled(PaperStyles.note),
                 textAlign: TextAlign.center,
                 hint: 'ملاحظات إضافية (وقت/درجة/...)...',
               ),
@@ -1632,9 +1889,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final selected = _isQuestionSelected(questionIndex);
     final defaultFont = document.settings.defaultFont;
     final titleStyle = PaperStyles.resolve(PaperStyles.question, question.style,
-        defaultFont: defaultFont);
+        defaultFont: defaultFont,
+        fontScale: _fontScale,
+        heightScale: _heightScale,
+      );
     final promptStyle = PaperStyles.resolve(PaperStyles.prompt, question.style,
-        defaultFont: defaultFont);
+        defaultFont: defaultFont,
+        fontScale: _fontScale,
+        heightScale: _heightScale,
+      );
 
     final label = document.displayQuestionLabel(question);
     final marksPart = document.settings.showQuestionMarks
@@ -1654,7 +1917,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               category,
               (value) => controller.updateQuestionCategory(questionIndex, value),
             ),
-            style: PaperStyles.category,
+            style: _scaled(PaperStyles.category),
             hint: 'القسم الوزاري...',
           ),
         GestureDetector(
@@ -1675,7 +1938,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                         '$label$marksPart',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: PaperStyles.question,
+                        style: _scaled(PaperStyles.question),
                       ),
                     ),
                   ),
@@ -1693,10 +1956,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               else
                 Icon(Icons.drag_indicator, size: 18, color: Colors.grey.shade300),
               Expanded(
-                child: Text(
-                  '$label$marksPart',
-                  style: titleStyle,
-                  textAlign: PaperStyles.toTextAlign(question.style.align),
+                child: Tooltip(
+                  message: 'انقر لتعديل تسمية السؤال',
+                  child: GestureDetector(
+                    onTap: () => _editQuestionLabel(questionIndex),
+                    child: Text(
+                      '$label$marksPart',
+                      style: titleStyle,
+                      textAlign: PaperStyles.toTextAlign(question.style.align),
+                    ),
+                  ),
                 ),
               ),
               IconButton(
@@ -1710,6 +1979,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.copy_outlined, size: 16),
                 onPressed: () => controller.duplicateQuestion(questionIndex),
+              ),
+              IconButton(
+                tooltip: 'تثبيت تسمية السؤال',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.label_outline, size: 16),
+                onPressed: () => _editQuestionLabel(questionIndex),
               ),
               if (controller.questions.length > 1)
                 IconButton(
@@ -1751,6 +2026,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               questionIndex,
               question.dividerAfter!.copyWith(
                 thickness: question.dividerAfter!.thickness >= 3 ? 1.2 : 3,
+              ),
+            ),
+            onCycleWidth: () => controller.setQuestionDivider(
+              questionIndex,
+              question.dividerAfter!.copyWith(
+                widthFraction: _nextDividerWidth(question.dividerAfter!.widthFraction),
               ),
             ),
           ),
@@ -1862,7 +2143,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   '$label) ${branch.content.text}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: PaperStyles.body(layout),
+                  style: _scaled(PaperStyles.body(layout)),
                 ),
               ),
             ),
@@ -1942,6 +2223,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       PaperStyles.body(layout),
       branch.style,
       defaultFont: document.settings.defaultFont,
+      fontScale: _fontScale,
+      heightScale: _heightScale,
     );
     final text = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1952,7 +2235,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             Padding(padding: const EdgeInsets.only(top: 2), child: dragHandle),
             SizedBox(
               width: 26,
-              child: Text('$label)', style: bodyStyle.copyWith(fontWeight: FontWeight.bold)),
+              child: Tooltip(
+                message: 'انقر لتعديل تسمية الفرع',
+                child: GestureDetector(
+                  onTap: () => _editBranchLabel(ref),
+                  child: Text(
+                    '$label)',
+                    style: bodyStyle.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
             ),
             Expanded(
               child: _paperField(
@@ -1987,12 +2279,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 style: bodyStyle,
               ),
             ),
-            Text(layout.marksUnit, style: PaperStyles.small),
+            Text(layout.marksUnit, style: _scaled(PaperStyles.small)),
             IconButton(
               tooltip: 'نسخ الفرع',
               visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.copy_outlined, size: 14),
               onPressed: () => controller.duplicateBranch(ref),
+            ),
+            IconButton(
+              tooltip: 'تثبيت تسمية الفرع',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.label_outline, size: 14),
+              onPressed: () => _editBranchLabel(ref),
             ),
             if (document.questions[ref.questionIndex].branches.length > 1)
               IconButton(
@@ -2037,6 +2335,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 thickness: branch.dividerAfter!.thickness >= 3 ? 1.2 : 3,
               ),
             ),
+            onCycleWidth: () => controller.setBranchDivider(
+              ref,
+              branch.dividerAfter!.copyWith(
+                widthFraction: _nextDividerWidth(branch.dividerAfter!.widthFraction),
+              ),
+            ),
           ),
       ],
     );
@@ -2074,6 +2378,50 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
+  /// مفتاحا صح/خطأ المصغّران لإجابة النقطة (نموذج المعلم فقط).
+  ///
+  /// النقر على المحدد يمسح الإجابة (غير محددة).
+  Widget _buildItemAnswerToggle(
+    ExamWizardController controller,
+    BranchRef ref,
+    int index,
+    BranchItem item,
+  ) {
+    Widget chip(String text, bool value) {
+      final selected = item.isCorrect == value;
+      return GestureDetector(
+        onTap: () => controller.updateBranchItemAnswer(
+          ref,
+          index,
+          selected ? null : value,
+        ),
+        child: Container(
+          margin: const EdgeInsets.only(left: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: selected ? PaperStyles.answer : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected ? PaperStyles.answer : Colors.grey.shade400,
+            ),
+          ),
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 10,
+              color: selected ? Colors.white : Colors.grey.shade700,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[chip('صح', true), chip('خطأ', false)],
+    );
+  }
+
   Widget _buildItemRow(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
@@ -2096,6 +2444,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               child: Text('${document.formatNumber(index + 1)}-', style: bodyStyle),
             ),
           ),
+          // إجابة النقطة لصح/خطأ — تظهر وتُحرَّر في نموذج المعلم فقط.
+          if (_showTeacherAnswers &&
+              controller.document.branchAt(ref).content.type ==
+                  QuestionType.trueFalse)
+            _buildItemAnswerToggle(controller, ref, index, item),
           Expanded(
             child: _paperField(
               key: ValueKey<String>(_itemKey(item.id)),
@@ -2134,11 +2487,36 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
+  /// عرض الفاصل التالي في دورة (كامل ← ثلثان ← ثلث ← كامل).
+  static double _nextDividerWidth(double current) {
+    if ((current - 1.0).abs() < 0.01) {
+      return 0.66;
+    }
+    if ((current - 0.66).abs() < 0.05) {
+      return 0.33;
+    }
+    return 1.0;
+  }
+
+  static String _dividerWidthLabel(double widthFraction) {
+    if ((widthFraction - 1.0).abs() < 0.01) {
+      return 'كامل';
+    }
+    if ((widthFraction - 0.66).abs() < 0.05) {
+      return 'ثلثان';
+    }
+    if ((widthFraction - 0.33).abs() < 0.05) {
+      return 'ثلث';
+    }
+    return 'العرض';
+  }
+
   Widget _buildDividerWidget({
     required String key,
     required PaperDivider divider,
     required VoidCallback onDelete,
     required VoidCallback onThicken,
+    required VoidCallback onCycleWidth,
   }) {
     final selected = _selectedDividerKey == key;
     return GestureDetector(
@@ -2165,6 +2543,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                     onPressed: onThicken,
                     icon: const Icon(Icons.line_weight, size: 14),
                     label: const Text('السماكة', style: TextStyle(fontSize: 11)),
+                  ),
+                  TextButton.icon(
+                    onPressed: onCycleWidth,
+                    icon: const Icon(Icons.swap_horiz, size: 14),
+                    label: Text(
+                      _dividerWidthLabel(divider.widthFraction),
+                      style: const TextStyle(fontSize: 11),
+                    ),
                   ),
                   TextButton.icon(
                     onPressed: () {
@@ -2215,7 +2601,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         onPanUpdate: _locked
             ? null
             : (details) {
-                final maxDx = PaperMetrics.contentWidthPx - element.width;
+                final maxDx = PaperMetrics.contentWidthFor(
+                      controller.document.settings.marginMm,
+                    ) -
+                    element.width;
                 _updateAttachmentElement(
                   ref,
                   element.copyWith(
@@ -2237,6 +2626,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 child: FloatingElementView(
                   element: element,
                   defaultFont: controller.document.settings.defaultFont,
+                  fontScale: _fontScale,
+                  heightScale: _heightScale,
                 ),
               ),
             ),
@@ -2313,10 +2704,128 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   child: const Icon(Icons.south_east, size: 18, color: PaperStyles.accent),
                 ),
               ),
+            if (selected && !_locked)
+              _buildAttachmentToolbar(ref, element),
           ],
         ),
       ),
     );
+  }
+
+  /// شريط أدوات مصغّر فوق العنصر المحدد (استبدال/محاذاة/سماكة).
+  ///
+  /// يظهر أعلى العنصر عادة، وأسفله إن كان ملاصقاً لأعلى الصفحة حتى لا يُقصّ.
+  Widget _buildAttachmentToolbar(_AttachmentRef ref, FloatingElement element) {
+    final below = element.dy < 44;
+    return Positioned(
+      top: below ? null : -38,
+      bottom: below ? -38 : null,
+      right: 0,
+      child: Material(
+        elevation: 3,
+        borderRadius: BorderRadius.circular(16),
+        color: Theme.of(context).colorScheme.surface,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (element.isImage)
+              _attachTool(
+                Icons.image_outlined,
+                'استبدال الصورة',
+                () => _replaceImage(ref, element),
+              ),
+            if (!element.isImage && !element.isTextBox) ...<Widget>[
+              _attachTool(
+                Icons.remove,
+                'تقليل سماكة الحد',
+                () => _updateAttachmentElement(
+                  ref,
+                  element.copyWith(
+                    strokeWidth:
+                        (element.strokeWidth - 0.5).clamp(0.5, 12.0).toDouble(),
+                  ),
+                ),
+              ),
+              _attachTool(
+                Icons.add,
+                'زيادة سماكة الحد',
+                () => _updateAttachmentElement(
+                  ref,
+                  element.copyWith(
+                    strokeWidth:
+                        (element.strokeWidth + 0.5).clamp(0.5, 12.0).toDouble(),
+                  ),
+                ),
+              ),
+            ],
+            _attachTool(
+              Icons.format_align_right,
+              'محاذاة لليمين',
+              () => _alignAttachment(ref, element, 'right'),
+            ),
+            _attachTool(
+              Icons.format_align_center,
+              'توسيط العنصر',
+              () => _alignAttachment(ref, element, 'center'),
+            ),
+            _attachTool(
+              Icons.format_align_left,
+              'محاذاة لليسار',
+              () => _alignAttachment(ref, element, 'left'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _attachTool(IconData icon, String tooltip, VoidCallback onTap) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Icon(icon, size: 16, color: PaperStyles.accent),
+        ),
+      ),
+    );
+  }
+
+  /// يستبدل صورة العنصر [ref] بصورة جديدة (الموضع والمقاس كما هما).
+  Future<void> _replaceImage(_AttachmentRef ref, FloatingElement element) async {
+    final bytes = await pickImageBytes();
+    if (bytes == null) {
+      return;
+    }
+    _updateAttachmentElement(
+      ref,
+      element.copyWith(bytes: Uint8List.fromList(bytes)),
+    );
+    _showMessage('تم استبدال الصورة.');
+  }
+
+  /// يحاذي العنصر أفقياً ([edge]: يمين/وسط/يسار) داخل عرض المحتوى.
+  ///
+  /// تحترم المحاذاة اتجاه الورقة (RTL/LTR) وهوامشها الحالية.
+  void _alignAttachment(_AttachmentRef ref, FloatingElement element, String edge) {
+    final controller = _controller!;
+    final contentWidth = PaperMetrics.contentWidthFor(
+      controller.document.settings.marginMm,
+    );
+    final maxDx =
+        (contentWidth - element.width).clamp(0.0, contentWidth).toDouble();
+    final isLtr = controller.document.layout.isLtr;
+    final double dx;
+    if (edge == 'center') {
+      dx = maxDx / 2;
+    } else if (edge == 'right') {
+      dx = isLtr ? maxDx : 0.0;
+    } else {
+      dx = isLtr ? 0.0 : maxDx;
+    }
+    _updateAttachmentElement(ref, element.copyWith(dx: dx));
   }
 
   /// عرض منسّق لنص الفرع: الآيات القرآنية بالخط القرآني (Amiri) دائماً.
@@ -2337,7 +2846,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       style: bodyStyle,
       mathTextStyle: bodyStyle,
       quranStyle: mushafVerse
-          ? PaperStyles.verse(layout)
+          ? _scaled(PaperStyles.verse(layout))
           : PaperStyles.quranic(bodyStyle),
       textAlign: mushafVerse ? TextAlign.center : TextAlign.start,
     );
@@ -2359,7 +2868,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     BranchModel branch,
   ) {
     final content = branch.content;
-    final answerStyle = PaperStyles.answerBody(layout);
+    final answerStyle = _scaled(PaperStyles.answerBody(layout));
     if (content.plainText && !_showTeacherAnswers) {
       return const SizedBox.shrink();
     }
@@ -2386,7 +2895,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       padding: const EdgeInsets.only(top: 1),
                       child: Text(
                         '( ${layout.branchLabel(index)} )',
-                        style: PaperStyles.option,
+                        style: _scaled(PaperStyles.option),
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -2400,7 +2909,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                         ),
                         style: _showTeacherAnswers && content.options[index].isCorrect
                             ? answerStyle
-                            : PaperStyles.option,
+                            : _scaled(PaperStyles.option),
                         hint: layout.isLtr ? 'Option...' : 'نص الخيار...',
                         registerInserter: true,
                       ),
@@ -2459,7 +2968,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           layout.isLtr
               ? 'Answer: (     ) True      (     ) False'
               : 'الإجابة: (     ) صح      (     ) خطأ',
-          style: PaperStyles.body(layout),
+          style: _scaled(PaperStyles.body(layout)),
         );
       case QuestionType.fillInTheBlank:
         if (_showTeacherAnswers) {
@@ -2471,7 +2980,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         return Text(
           '${layout.isLtr ? 'Answer' : 'الإجابة'}: '
           '............................................................................',
-          style: PaperStyles.body(layout),
+          style: _scaled(PaperStyles.body(layout)),
           maxLines: 1,
           overflow: TextOverflow.clip,
         );
@@ -2488,7 +2997,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             layout.essayAnswerLines,
             (_) => Text(
               '................................................................................................',
-              style: PaperStyles.small,
+              style: _scaled(PaperStyles.small),
               maxLines: 1,
               overflow: TextOverflow.clip,
             ),

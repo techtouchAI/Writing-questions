@@ -16,13 +16,19 @@ class BranchEditorCard extends StatefulWidget {
   const BranchEditorCard({
     super.key,
     required this.label,
+    required this.autoLabel,
     required this.branch,
     required this.onChanged,
     this.onRemove,
     this.enabled = true,
   });
 
+  /// التسمية المعروضة للفرع (يدوية إن ثُبّتت، وإلا تلقائية من الفهرس).
   final String label;
+
+  /// التسمية التلقائية من الفهرس (تلميح حقل التسمية المخصصة).
+  final String autoLabel;
+
   final BranchModel branch;
   final ValueChanged<BranchModel> onChanged;
   final VoidCallback? onRemove;
@@ -36,6 +42,7 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
   late final TextEditingController _textController;
   late final TextEditingController _marksController;
   late final TextEditingController _modelAnswerController;
+  late final TextEditingController _labelController;
   final TextEditingController _countController = TextEditingController();
   final Map<String, TextEditingController> _itemFields = <String, TextEditingController>{};
 
@@ -46,6 +53,8 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
     _marksController = TextEditingController(text: _formatMarks(widget.branch.marks));
     _modelAnswerController =
         TextEditingController(text: widget.branch.content.modelAnswer);
+    _labelController =
+        TextEditingController(text: widget.branch.labelOverride ?? '');
   }
 
   @override
@@ -57,6 +66,10 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
     }
     if (widget.branch.content.modelAnswer != _modelAnswerController.text) {
       _modelAnswerController.text = widget.branch.content.modelAnswer;
+    }
+    final labelOverride = widget.branch.labelOverride ?? '';
+    if (labelOverride != _labelController.text) {
+      _labelController.text = labelOverride;
     }
     final parsedMarks = _parseMarks(_marksController.text);
     if (parsedMarks == null || parsedMarks != widget.branch.marks) {
@@ -75,6 +88,7 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
     _textController.dispose();
     _marksController.dispose();
     _modelAnswerController.dispose();
+    _labelController.dispose();
     _countController.dispose();
     for (final field in _itemFields.values) {
       field.dispose();
@@ -181,6 +195,22 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
                     onPressed: widget.enabled ? widget.onRemove : null,
                   ),
               ],
+            ),
+            const SizedBox(height: 10),
+            TextFormField(
+              controller: _labelController,
+              enabled: widget.enabled,
+              decoration: InputDecoration(
+                labelText: 'تسمية الفرع (فارغ = تلقائي)',
+                hintText: 'تلقائي: ${widget.autoLabel}',
+                isDense: true,
+                border: const OutlineInputBorder(),
+              ),
+              onChanged: (value) => widget.onChanged(
+                widget.branch.copyWith(
+                  labelOverride: () => value.trim().isEmpty ? null : value.trim(),
+                ),
+              ),
             ),
             const SizedBox(height: 10),
             DropdownButtonFormField<QuestionType>(
@@ -355,6 +385,36 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
                     child: Text('${index + 1}-',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                   ),
+                  // إجابة النقطة لنموذج المعلم (صح/خطأ فقط).
+                  if (_content.type == QuestionType.trueFalse)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 6),
+                      child: SegmentedButton<bool?>(
+                        style: SegmentedButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        showSelectedIcon: false,
+                        segments: const <ButtonSegment<bool?>>[
+                          ButtonSegment<bool?>(
+                            value: true,
+                            label: Text('صح', style: TextStyle(fontSize: 11)),
+                          ),
+                          ButtonSegment<bool?>(
+                            value: false,
+                            label: Text('خطأ', style: TextStyle(fontSize: 11)),
+                          ),
+                        ],
+                        selected: items[index].isCorrect == null
+                            ? const <bool?>{}
+                            : <bool?>{items[index].isCorrect},
+                        onSelectionChanged: widget.enabled
+                            ? (selection) => _emitContent(
+                                  _content.withItemAnswer(index, selection.single),
+                                )
+                            : null,
+                      ),
+                    ),
                   Expanded(
                     child: TextFormField(
                       controller: _itemField(items[index]),

@@ -233,7 +233,60 @@ class ExamWizardController extends ChangeNotifier {
     if (settings == _document.settings) {
       return;
     }
-    _commit(_document.copyWith(settings: settings));
+    var next = _document.copyWith(settings: settings);
+    // التبديل بين الترقيم التلقائي واليدوي للفروع سلوك حقيقي: عند التعطيل
+    // تُثبَّت التسميات المعروضة حالياً على كل فرع فتسافر معه عند النقل
+    // (كالأرقام المكتوبة يدوياً) ولا يعيد الحذف ترقيم الباقي، وعند التفعيل
+    // تُمسح التثبيتات فتعود التسميات مشتقة من الفهرس.
+    if (settings.autoLetterBranches != _document.settings.autoLetterBranches) {
+      next = settings.autoLetterBranches
+          ? _clearedBranchLabels(next)
+          : _frozenBranchLabels(next);
+    }
+    _commit(next);
+  }
+
+  /// يثبّت التسمية المعروضة لكل فرع كتسمية يدوية (وضع الترقيم اليدوي).
+  static ExamDocument _frozenBranchLabels(ExamDocument document) {
+    var next = document;
+    for (var qi = 0; qi < next.questions.length; qi++) {
+      final question = next.questions[qi];
+      var changed = false;
+      final branches = List<BranchModel>.of(question.branches);
+      for (var bi = 0; bi < branches.length; bi++) {
+        if (branches[bi].labelOverride == null ||
+            branches[bi].labelOverride!.trim().isEmpty) {
+          branches[bi] = branches[bi].copyWith(
+            labelOverride: () => next.layout.branchLabel(bi),
+          );
+          changed = true;
+        }
+      }
+      if (changed) {
+        next = next.withQuestionAt(qi, question.copyWith(branches: branches));
+      }
+    }
+    return next;
+  }
+
+  /// يمسح كل التسميات اليدوية للفروع (عودة للاشتقاق التلقائي من الفهرس).
+  static ExamDocument _clearedBranchLabels(ExamDocument document) {
+    var next = document;
+    for (var qi = 0; qi < next.questions.length; qi++) {
+      final question = next.questions[qi];
+      var changed = false;
+      final branches = List<BranchModel>.of(question.branches);
+      for (var bi = 0; bi < branches.length; bi++) {
+        if (branches[bi].labelOverride != null) {
+          branches[bi] = branches[bi].copyWith(labelOverride: () => null);
+          changed = true;
+        }
+      }
+      if (changed) {
+        next = next.withQuestionAt(qi, question.copyWith(branches: branches));
+      }
+    }
+    return next;
   }
 
   // ============================ الأسئلة ============================
@@ -610,6 +663,28 @@ class ExamWizardController extends ChangeNotifier {
     updateBranchContent(ref, branch.content.withItemCount(count));
   }
 
+  /// يثبّت إجابة نقطة لصح/خطأ (نموذج المعلم فقط).
+  void updateBranchItemAnswer(BranchRef ref, int itemIndex, bool? answer) {
+    if (!_document.containsRef(ref)) {
+      return;
+    }
+    final branch = _document.branchAt(ref);
+    final content = branch.content;
+    if (itemIndex < 0 || itemIndex >= content.items.length) {
+      return;
+    }
+    if (content.items[itemIndex].isCorrect == answer) {
+      return;
+    }
+    _commit(
+      _document.withBranchAt(
+        ref,
+        branch.copyWith(content: content.withItemAnswer(itemIndex, answer)),
+      ),
+      coalesceKey: 'item-answer-${ref.questionIndex}-${ref.branchIndex}-$itemIndex',
+    );
+  }
+
   void updateBranchItemText(BranchRef ref, int itemIndex, String text) {
     if (!_document.containsRef(ref)) {
       return;
@@ -838,7 +913,7 @@ class ExamWizardController extends ChangeNotifier {
         for (final question in questions)
           PageBlock(id: question.id, height: _blockHeights[question.id] ?? 0),
       ],
-      pageHeight: PaperMetrics.pageContentHeightPx,
+      pageHeight: PaperMetrics.pageContentHeightFor(_document.settings.marginMm),
       spacing: PaperMetrics.blockSpacingPx,
     );
   }

@@ -33,15 +33,53 @@ enum PaperNumerals {
   }
 }
 
+/// نمط تسمية الأسئلة في الورقة.
+///
+/// - [ministerial]: «السؤال الأول، السؤال الثاني...» (النموذج الوزاري).
+/// - [compact]: «س1، س2...» (مختصر، وQ1/Q2 للأوراق اللاتينية).
+///
+/// التسمية اليدوية المثبتة على سؤال بعينه (numberOverride) تتقدم دائماً
+/// على النمط العام أياً كان.
+enum QuestionLabelStyle {
+  ministerial,
+  compact;
+
+  String get arabicLabel {
+    switch (this) {
+      case QuestionLabelStyle.ministerial:
+        return 'وزاري (السؤال الأول)';
+      case QuestionLabelStyle.compact:
+        return 'مختصر (س1)';
+    }
+  }
+
+  static QuestionLabelStyle parse(Object? value) {
+    final normalized = value?.toString().trim() ?? '';
+    for (final style in QuestionLabelStyle.values) {
+      if (style.name == normalized) {
+        return style;
+      }
+    }
+    return QuestionLabelStyle.ministerial;
+  }
+}
+
 /// إعدادات الورقة العامة (ترويسة/ترقيم/هوامش/خط افتراضي).
 ///
 /// كلها اختيارية ولها قيم افتراضية معقولة؛ المدرس يغيّر ما يشاء فقط.
 /// القراءة متسامحة حتى تُفتح المستندات القديمة (بلا إعدادات) دائماً.
+///
+/// [baseFontSize] و[lineSpacing] يعملان كمعاملَي قياس عامّين حول القيم
+/// المرجعية ([referenceFontSize]/[referenceLineSpacing]): القيمة
+/// الافتراضية تعني معامل 1.0 (بلا تغيير)، والتنسيق المخصص لعنصر بعينه
+/// (حجم/تباعد مطلق) يتقدم دائماً على القياس العام — في الشاشة والـ PDF
+/// وملف Word بالقرار نفسه.
 class PaperSettings {
   const PaperSettings({
     this.autoNumberQuestions = true,
     this.autoLetterBranches = true,
     this.numerals = PaperNumerals.auto,
+    this.questionLabelStyle = QuestionLabelStyle.ministerial,
     this.showTotalMarks = true,
     this.showPageNumbers = true,
     this.showQuestionMarks = true,
@@ -50,8 +88,17 @@ class PaperSettings {
     this.defaultFont = PaperFont.naskh,
     this.baseFontSize = 10.5,
     this.lineSpacing = 1.45,
-    this.marginMm = 15.0,
+    this.marginMm = defaultMarginMm,
   });
+
+  /// حجم خط المتن المرجعي بالنقاط (معامل القياس = baseFontSize / هذا).
+  static const double referenceFontSize = 10.5;
+
+  /// تباعد الأسطر المرجعي (معامل القياس = lineSpacing / هذا).
+  static const double referenceLineSpacing = 1.45;
+
+  /// هامش الصفحة الافتراضي بالمليمتر.
+  static const double defaultMarginMm = 15;
 
   /// إعادة ترقيم الأسئلة تلقائياً (س1..سN) بعد الحذف/النقل.
   final bool autoNumberQuestions;
@@ -60,6 +107,10 @@ class PaperSettings {
   final bool autoLetterBranches;
 
   final PaperNumerals numerals;
+
+  /// نمط تسمية الأسئلة (وزاري/مختصر).
+  final QuestionLabelStyle questionLabelStyle;
+
   final bool showTotalMarks;
   final bool showPageNumbers;
   final bool showQuestionMarks;
@@ -81,10 +132,17 @@ class PaperSettings {
   /// هامش الصفحة بالمليمتر (8..25).
   final double marginMm;
 
+  /// معامل قياس أحجام الخطوط العامة (1.0 عند القيمة الافتراضية).
+  double get fontScale => baseFontSize / referenceFontSize;
+
+  /// معامل قياس تباعد الأسطر العام (1.0 عند القيمة الافتراضية).
+  double get heightScale => lineSpacing / referenceLineSpacing;
+
   PaperSettings copyWith({
     bool? autoNumberQuestions,
     bool? autoLetterBranches,
     PaperNumerals? numerals,
+    QuestionLabelStyle? questionLabelStyle,
     bool? showTotalMarks,
     bool? showPageNumbers,
     bool? showQuestionMarks,
@@ -99,6 +157,7 @@ class PaperSettings {
       autoNumberQuestions: autoNumberQuestions ?? this.autoNumberQuestions,
       autoLetterBranches: autoLetterBranches ?? this.autoLetterBranches,
       numerals: numerals ?? this.numerals,
+      questionLabelStyle: questionLabelStyle ?? this.questionLabelStyle,
       showTotalMarks: showTotalMarks ?? this.showTotalMarks,
       showPageNumbers: showPageNumbers ?? this.showPageNumbers,
       showQuestionMarks: showQuestionMarks ?? this.showQuestionMarks,
@@ -116,6 +175,7 @@ class PaperSettings {
       'autoNumberQuestions': autoNumberQuestions,
       'autoLetterBranches': autoLetterBranches,
       'numerals': numerals.name,
+      'questionLabelStyle': questionLabelStyle.name,
       'showTotalMarks': showTotalMarks,
       'showPageNumbers': showPageNumbers,
       'showQuestionMarks': showQuestionMarks,
@@ -133,6 +193,7 @@ class PaperSettings {
       autoNumberQuestions: _bool(map['autoNumberQuestions'], fallback: true),
       autoLetterBranches: _bool(map['autoLetterBranches'], fallback: true),
       numerals: PaperNumerals.parse(map['numerals']),
+      questionLabelStyle: QuestionLabelStyle.parse(map['questionLabelStyle']),
       showTotalMarks: _bool(map['showTotalMarks'], fallback: true),
       showPageNumbers: _bool(map['showPageNumbers'], fallback: true),
       showQuestionMarks: _bool(map['showQuestionMarks'], fallback: true),
@@ -163,6 +224,7 @@ class PaperSettings {
         other.autoNumberQuestions == autoNumberQuestions &&
         other.autoLetterBranches == autoLetterBranches &&
         other.numerals == numerals &&
+        other.questionLabelStyle == questionLabelStyle &&
         other.showTotalMarks == showTotalMarks &&
         other.showPageNumbers == showPageNumbers &&
         other.showQuestionMarks == showQuestionMarks &&
@@ -179,6 +241,7 @@ class PaperSettings {
         autoNumberQuestions,
         autoLetterBranches,
         numerals,
+        questionLabelStyle,
         showTotalMarks,
         showPageNumbers,
         showQuestionMarks,

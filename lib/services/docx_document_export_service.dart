@@ -93,6 +93,9 @@ class DocxDocumentExportService {
     _addTextFile(archive, 'word/_rels/document.xml.rels', builder.documentRelationshipsXml);
     _addTextFile(archive, 'word/styles.xml', _stylesXml(document));
     _addTextFile(archive, 'word/document.xml', builder.documentXml);
+    if (builder.footerXml != null) {
+      _addTextFile(archive, 'word/footer1.xml', builder.footerXml!);
+    }
     for (var i = 0; i < builder.images.length; i++) {
       final image = builder.images[i];
       archive.addFile(
@@ -184,6 +187,11 @@ class _DocxBuilder {
   late final String contentTypesXml;
   late final String documentRelationshipsXml;
 
+  /// تذييل ترقيم الصفحات (`null` = لا ترقيم حسب إعدادات الورقة).
+  String? footerXml;
+
+  static const String _footerRelationId = 'rIdFooter';
+
   Future<void> build() async {
     final body = StringBuffer();
     body.write(_buildHeaderTable());
@@ -217,6 +225,9 @@ class _DocxBuilder {
     }
 
     final marginTwips = (document.settings.marginMm / 25.4 * 1440).round();
+    if (document.settings.showPageNumbers) {
+      footerXml = _buildFooter();
+    }
     documentXml =
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
@@ -229,7 +240,9 @@ class _DocxBuilder {
         '<w:sectPr>'
         '<w:pgSz w:w="11906" w:h="16838"/>'
         '<w:pgMar w:top="$marginTwips" w:right="$marginTwips" w:bottom="$marginTwips" w:left="$marginTwips"/>'
+        '${document.settings.pageBorder ? '<w:pgBorders w:offsetFrom="page"><w:top w:val="single" w:sz="12" w:space="24" w:color="1E3A8A"/><w:left w:val="single" w:sz="12" w:space="24" w:color="1E3A8A"/><w:bottom w:val="single" w:sz="12" w:space="24" w:color="1E3A8A"/><w:right w:val="single" w:sz="12" w:space="24" w:color="1E3A8A"/></w:pgBorders>' : ''}'
         '<w:bidi/>'
+        '${footerXml == null ? '' : '<w:footerReference r:id="$_footerRelationId" w:type="default"/>'}'
         '</w:sectPr>'
         '</w:body>'
         '</w:document>';
@@ -247,7 +260,7 @@ class _DocxBuilder {
     }
     overrides.write('''
   <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>${footerXml == null ? '' : '\n  <Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>'}
 </Types>''');
     contentTypesXml = overrides.toString();
 
@@ -261,8 +274,36 @@ class _DocxBuilder {
         '\n  <Relationship Id="${images[i].relationId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image${i + 1}.${images[i].extension}"/>',
       );
     }
+    if (footerXml != null) {
+      rels.write(
+        '\n  <Relationship Id="$_footerRelationId" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>',
+      );
+    }
     rels.write('\n</Relationships>');
     documentRelationshipsXml = rels.toString();
+  }
+
+  /// تذييل ترقيم الصفحات («صفحة X من Y») بحقول Word الحية.
+  String _buildFooter() {
+    final layout = document.layout;
+    final before = layout.isLtr ? 'Page ' : 'صفحة ';
+    final middle = layout.isLtr ? ' of ' : ' من ';
+    String run(String text) =>
+        '<w:r><w:rPr><w:rtl/><w:sz w:val="18"/><w:color w:val="4B5563"/>'
+        '<w:rFonts w:cs="${DocxDocumentExportService._fontName(document.settings.defaultFont)}"/>'
+        '</w:rPr><w:t xml:space="preserve">${_escapeXml(text)}</w:t></w:r>';
+    String field(String instruction) =>
+        '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+        '<w:r><w:instrText xml:space="preserve"> $instruction </w:instrText></w:r>'
+        '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+        '${run('1')}'
+        '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/></w:pPr>'
+        '${run(before)}${field('PAGE')}${run(middle)}${field('NUMPAGES')}'
+        '</w:p>'
+        '</w:ftr>';
   }
 
   // ------------------------------- الترويسة -------------------------------
@@ -276,12 +317,11 @@ class _DocxBuilder {
     final versionLabel = isTeacherVersion
         ? 'نموذج الإجابة وتوزيع الدرجات للمعلم'
         : 'عدد الأسئلة: ${document.formatNumber(document.questions.length)}';
-
-    return '''
-<w:tbl>
-  <w:tblPr>
-    <w:tblW w:w="5000" w:type="pct"/>
-    <w:bidiVisual/>
+    final titleAlign = header.style.align == null
+        ? 'center'
+        : _wordAlign(header.style.align);
+    final borders = document.settings.headerBorder
+        ? '''
     <w:tblBorders>
       <w:top w:val="single" w:sz="8" w:space="0" w:color="1E3A8A"/>
       <w:left w:val="single" w:sz="8" w:space="0" w:color="1E3A8A"/>
@@ -289,7 +329,14 @@ class _DocxBuilder {
       <w:right w:val="single" w:sz="8" w:space="0" w:color="1E3A8A"/>
       <w:insideH w:val="single" w:sz="4" w:space="0" w:color="E5E7EB"/>
       <w:insideV w:val="single" w:sz="4" w:space="0" w:color="E5E7EB"/>
-    </w:tblBorders>
+    </w:tblBorders>'''
+        : '';
+
+    return '''
+<w:tbl>
+  <w:tblPr>
+    <w:tblW w:w="5000" w:type="pct"/>
+    <w:bidiVisual/>$borders
   </w:tblPr>
   <w:tr>
     <w:tc>
@@ -298,7 +345,7 @@ class _DocxBuilder {
     </w:tc>
     <w:tc>
       <w:tcPr><w:tcW w:w="1600" w:type="pct"/></w:tcPr>
-      ${_tableParagraph(title, bold: true, size: 28, alignment: 'center', color: '1E3A8A')}
+      ${_tableParagraph(title, bold: true, size: 28, alignment: titleAlign, color: '1E3A8A')}
       ${_tableParagraph(header.center.lines[0], alignment: 'center')}
       ${_tableParagraph(header.center.lines[2], alignment: 'center')}
       ${_tableParagraph(versionLabel, italic: true, alignment: 'center', color: isTeacherVersion ? 'DC2626' : '4B5563')}
@@ -335,10 +382,24 @@ class _DocxBuilder {
     String alignment = 'right',
     String? color,
   }) {
-    return '<w:p><w:pPr><w:bidi/><w:jc w:val="$alignment"/></w:pPr>'
-        '<w:r><w:rPr><w:rtl/>${bold ? '<w:b/>' : ''}${italic ? '<w:i/>' : ''}'
+    // تنسيق الترويسة (خط/حجم/عريض) كما صممه المدرس، مع قياس حجم الأساس
+    // بمعامل الورقة العام وتباعد أسطرها.
+    final headerStyle = document.header.style;
+    final effectiveBold = headerStyle.bold ?? bold;
+    final effectiveItalic = headerStyle.italic ?? italic;
+    final effectiveSize = headerStyle.fontSize != null
+        ? (headerStyle.fontSize! * 2).round().clamp(12, 96)
+        : (size * document.settings.fontScale).round().clamp(12, 96);
+    final font = DocxDocumentExportService._fontName(
+      headerStyle.font ?? document.settings.defaultFont,
+    );
+    final line = (240 * document.settings.lineSpacing).round();
+    return '<w:p><w:pPr><w:bidi/><w:jc w:val="$alignment"/>'
+        '<w:spacing w:line="$line" w:lineRule="auto"/></w:pPr>'
+        '<w:r><w:rPr><w:rtl/>${effectiveBold ? '<w:b/>' : ''}${effectiveItalic ? '<w:i/>' : ''}'
+        '${headerStyle.underline == true ? '<w:u w:val="single"/>' : ''}'
         '${color == null ? '' : '<w:color w:val="$color"/>'}'
-        '<w:sz w:val="$size"/><w:rFonts w:cs="${DocxDocumentExportService._fontName(document.settings.defaultFont)}"/></w:rPr>'
+        '<w:sz w:val="$effectiveSize"/><w:rFonts w:cs="$font"/></w:rPr>'
         '<w:t xml:space="preserve">${_escapeXml(text)}</w:t></w:r></w:p>';
   }
 
@@ -359,6 +420,7 @@ class _DocxBuilder {
       color: '111827',
       before: 180,
       after: 60,
+      border: question.showFrame,
     );
     if (question.prompt.trim().isNotEmpty) {
       _writeStyledParagraph(
@@ -411,6 +473,7 @@ class _DocxBuilder {
         indent: 400,
         before: 40,
         after: 40,
+        border: branch.showFrame,
       );
     } else if (marksSuffix.isNotEmpty) {
       _writeStyledParagraph(
@@ -421,6 +484,7 @@ class _DocxBuilder {
         indent: 400,
         before: 40,
         after: 40,
+        border: branch.showFrame,
       );
     }
     for (var i = 0; i < content.items.length; i++) {
@@ -428,10 +492,19 @@ class _DocxBuilder {
       final itemMarks = item.marks > 0
           ? ' [${document.formatNumber(item.marks)} ${layout.marksUnit}]'
           : '';
+      // إجابة النقطة لصح/خطأ — في نموذج المعلم فقط.
+      var itemAnswer = '';
+      if (isTeacherVersion &&
+          content.type == QuestionType.trueFalse &&
+          item.isCorrect != null) {
+        itemAnswer = layout.isLtr
+            ? (item.isCorrect! ? ' (True)' : ' (False)')
+            : (item.isCorrect! ? ' (صح)' : ' (خطأ)');
+      }
       final text = item.text.trim().isEmpty ? '................................' : item.text;
       _writeStyledParagraph(
         body,
-        '${document.formatNumber(i + 1)}- $text$itemMarks',
+        '${document.formatNumber(i + 1)}- $text$itemMarks$itemAnswer',
         style: branch.style,
         size: 22,
         indent: 800,
@@ -629,10 +702,14 @@ class _DocxBuilder {
     final font = DocxDocumentExportService._fontName(
       element.textStyle.font ?? document.settings.defaultFont,
     );
-    final size = (((element.textStyle.fontSize ?? 11) * 2).round()).clamp(16, 72);
+    final baseSize =
+        element.textStyle.fontSize ?? 11 * document.settings.fontScale;
+    final size = (baseSize * 2).round().clamp(16, 72);
+    final line = (240 * document.settings.lineSpacing).round();
     body.write(
       '<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:bidiVisual/>$border</w:tblPr>'
-      '<w:tr><w:tc><w:p><w:pPr><w:bidi/><w:jc w:val="$align"/></w:pPr>'
+      '<w:tr><w:tc><w:p><w:pPr><w:bidi/><w:jc w:val="$align"/>'
+      '<w:spacing w:line="$line" w:lineRule="auto"/></w:pPr>'
       '<w:r><w:rPr><w:rtl/>'
       '${element.textStyle.bold == true ? '<w:b/>' : ''}'
       '${element.textStyle.italic == true ? '<w:i/>' : ''}'
@@ -694,6 +771,7 @@ class _DocxBuilder {
     int? indent,
     int? before,
     int? after,
+    bool border = false,
   }) {
     _writeParagraph(
       body,
@@ -701,7 +779,12 @@ class _DocxBuilder {
       bold: style?.bold ?? bold,
       italic: style?.italic ?? false,
       underline: style?.underline ?? false,
-      size: style?.fontSize != null ? (style!.fontSize! * 2).round().clamp(12, 96) : size,
+      size: style?.fontSize != null
+          ? (style!.fontSize! * 2).round().clamp(12, 96)
+          : size,
+      // الحجم المخصص لعنصر بعينه مطلق، وحجم الأساس يُقاس بمعامل الورقة.
+      scaleSize: style?.fontSize == null,
+      border: border,
       color: color,
       indent: indent,
       before: before,
@@ -738,6 +821,8 @@ class _DocxBuilder {
     bool italic = false,
     bool underline = false,
     int size = 22,
+    bool scaleSize = true,
+    bool border = false,
     String? color,
     bool highlight = false,
     int? indent,
@@ -746,15 +831,27 @@ class _DocxBuilder {
     String alignment = 'right',
     String? font,
   }) {
+    final effectiveSize = scaleSize
+        ? (size * document.settings.fontScale).round().clamp(12, 96)
+        : size.clamp(12, 96);
+    // تباعد الأسطر العام من إعدادات الورقة (240 = مفرد).
+    final line = (240 * document.settings.lineSpacing).round();
     body.write('<w:p><w:pPr><w:bidi/><w:jc w:val="$alignment"/>');
+    if (border) {
+      body.write(
+        '<w:pBdr><w:top w:val="single" w:sz="6" w:space="4" w:color="1E3A8A"/>'
+        '<w:left w:val="single" w:sz="6" w:space="4" w:color="1E3A8A"/>'
+        '<w:bottom w:val="single" w:sz="6" w:space="4" w:color="1E3A8A"/>'
+        '<w:right w:val="single" w:sz="6" w:space="4" w:color="1E3A8A"/>'
+        '</w:pBdr>',
+      );
+    }
     if (indent != null) {
       body.write('<w:ind w:right="$indent"/>');
     }
-    if (before != null || after != null) {
-      body.write(
-        '<w:spacing${before == null ? '' : ' w:before="$before"'}${after == null ? '' : ' w:after="$after"'} />',
-      );
-    }
+    body.write(
+      '<w:spacing${before == null ? '' : ' w:before="$before"'}${after == null ? '' : ' w:after="$after"'} w:line="$line" w:lineRule="auto"/>',
+    );
     body.write('</w:pPr><w:r><w:rPr><w:rtl/>');
     if (bold) {
       body.write('<w:b/>');
@@ -771,7 +868,7 @@ class _DocxBuilder {
     if (color != null) {
       body.write('<w:color w:val="$color"/>');
     }
-    body.write('<w:sz w:val="$size"/><w:rFonts w:cs="${font ?? DocxDocumentExportService._fontName(document.settings.defaultFont)}"/></w:rPr>');
+    body.write('<w:sz w:val="$effectiveSize"/><w:rFonts w:cs="${font ?? DocxDocumentExportService._fontName(document.settings.defaultFont)}"/></w:rPr>');
     body.write('<w:t xml:space="preserve">${_escapeXml(text)}</w:t>');
     body.write('</w:r></w:p>');
   }

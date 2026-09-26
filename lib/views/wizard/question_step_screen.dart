@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/exam_document.dart';
+import '../../models/question_model.dart';
 import '../../providers/exam_wizard_controller.dart';
 import '../widgets/ltr_numeric_field.dart';
 import 'branch_editor_card.dart';
@@ -45,15 +46,11 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
 
   bool _validate(BuildContext context, ExamWizardController controller) {
     final question = controller.currentQuestion;
+    // الشرط الوحيد: محتوى مكتوب (نص سؤال أو فرع) حتى لا تُنشأ صفحات فارغة.
+    // الدرجة اختيارية تماماً — المدرس حر في تثبيتها الآن أو لاحقاً من المعاينة.
     if (!question.hasContent) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('اكتب نص السؤال أو محتوى فرع واحد على الأقل قبل المتابعة.')),
-      );
-      return false;
-    }
-    if (question.marks <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('حدّد درجة فرع واحد على الأقل لهذا السؤال.')),
       );
       return false;
     }
@@ -152,6 +149,8 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
               onChanged: (value) => controller.updateQuestionPrompt(questionIndex, value),
             ),
             const SizedBox(height: 12),
+            _buildQuestionLabelField(controller, questionIndex, question),
+            const SizedBox(height: 12),
             Row(
               children: <Widget>[
                 Expanded(
@@ -213,12 +212,14 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
             for (var index = 0; index < question.branches.length; index++)
               BranchEditorCard(
                 key: ValueKey<String>('branch-editor-${question.branches[index].id}'),
-                label: layout.branchLabel(index),
+                label: controller.document.displayBranchLabel(questionIndex, index),
+                autoLabel: layout.branchLabel(index),
                 branch: question.branches[index],
                 onChanged: (branch) {
                   final ref = BranchRef(questionIndex: questionIndex, branchIndex: index);
                   controller.updateBranchContent(ref, branch.content);
                   controller.updateBranchMarks(ref, branch.marks);
+                  controller.updateBranchLabelOverride(ref, branch.labelOverride);
                 },
                 onRemove: question.branches.length > 1
                     ? () => controller.removeBranch(
@@ -288,6 +289,27 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// تثبيت تسمية مخصصة للسؤال (فارغ = الترقيم التلقائي من النمط العام).
+  Widget _buildQuestionLabelField(
+    ExamWizardController controller,
+    int questionIndex,
+    QuestionModel question,
+  ) {
+    return TextFormField(
+      key: ValueKey<String>('question-label-${question.id}'),
+      initialValue: question.numberOverride ?? '',
+      decoration: InputDecoration(
+        labelText: 'تسمية السؤال (فارغ = تلقائي)',
+        hintText:
+            'تلقائي: ${controller.document.autoQuestionLabel(question)}',
+        isDense: true,
+        border: const OutlineInputBorder(),
+      ),
+      onChanged: (value) =>
+          controller.updateQuestionNumberOverride(questionIndex, value),
     );
   }
 

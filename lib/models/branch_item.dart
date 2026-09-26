@@ -9,6 +9,7 @@ class BranchItem {
     String? id,
     this.text = '',
     this.marks = 0.0,
+    this.isCorrect,
   }) : id = id ?? const Uuid().v4() {
     if (!marks.isFinite || marks < 0) {
       throw ArgumentError.value(marks, 'marks', 'درجة النقطة يجب أن تكون رقماً موجباً.');
@@ -23,13 +24,18 @@ class BranchItem {
   /// درجة النقطة (0 = بلا درجة معلنة).
   final double marks;
 
+  /// إجابة النقطة لفروع صح/خطأ (`true` = صح، `false` = خطأ، `null` =
+  /// غير محددة) — تظهر في نموذج المعلم فقط.
+  final bool? isCorrect;
+
   bool get isEmpty => text.trim().isEmpty;
 
-  BranchItem copyWith({String? text, double? marks}) {
+  BranchItem copyWith({String? text, double? marks, bool? Function()? isCorrect}) {
     return BranchItem(
       id: id,
       text: text ?? this.text,
       marks: marks ?? this.marks,
+      isCorrect: isCorrect == null ? this.isCorrect : isCorrect(),
     );
   }
 
@@ -38,6 +44,7 @@ class BranchItem {
       'id': id,
       'text': text,
       'marks': marks,
+      if (isCorrect != null) 'isCorrect': isCorrect,
     };
   }
 
@@ -54,6 +61,7 @@ class BranchItem {
           : null,
       text: rawText?.toString() ?? '',
       marks: marks == null || !marks.isFinite || marks < 0 ? 0.0 : marks,
+      isCorrect: map['isCorrect'] is bool ? map['isCorrect'] as bool : null,
     );
   }
 
