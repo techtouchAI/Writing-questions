@@ -39,6 +39,7 @@ class SmartExamToolbar extends StatelessWidget {
     this.onAddBranch,
     this.onAddTextBox,
     this.onAddDivider,
+    this.onEquationEditor,
   });
 
   final FormulaInserter inserter;
@@ -49,6 +50,13 @@ class SmartExamToolbar extends StatelessWidget {
   final VoidCallback? onAddBranch;
   final VoidCallback? onAddTextBox;
   final VoidCallback? onAddDivider;
+
+  /// يفتح محرر المعادلات المرئي: [template] صيغة جاهزة للتحميل فيه
+  /// (أو null لمعادلة فارغة)، و[preferBlock] يقترح النمط المنفرد،
+  /// و[editExisting] يحرّر صيغة موجودة في الحقل بدل إدراج جديدة.
+  /// بغيابه تُدرج الصيغ خاماً عبر [inserter] كما في السابق.
+  final void Function({String? template, bool preferBlock, bool editExisting})?
+      onEquationEditor;
 
   @override
   Widget build(BuildContext context) {
@@ -83,14 +91,17 @@ class SmartExamToolbar extends StatelessWidget {
                   _FormulaTab(
                     inserter: inserter,
                     formulas: _mathFormulas,
+                    onEquationEditor: onEquationEditor,
                   ),
                   _FormulaTab(
                     inserter: inserter,
                     formulas: _chemistryFormulas,
+                    onEquationEditor: onEquationEditor,
                   ),
                   _FormulaTab(
                     inserter: inserter,
                     formulas: _physicsFormulas,
+                    onEquationEditor: onEquationEditor,
                   ),
                   _MediaTab(
                     onAddImage: onAddImage,
@@ -200,24 +211,51 @@ class _TextTab extends StatelessWidget {
 }
 
 class _FormulaTab extends StatelessWidget {
-  const _FormulaTab({required this.inserter, required this.formulas});
+  const _FormulaTab({
+    required this.inserter,
+    required this.formulas,
+    required this.onEquationEditor,
+  });
 
   final FormulaInserter inserter;
   final List<FormulaSnippet> formulas;
+  final void Function({String? template, bool preferBlock, bool editExisting})?
+      onEquationEditor;
 
   @override
   Widget build(BuildContext context) {
+    final editor = onEquationEditor;
     return ListView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       children: <Widget>[
+        // معادلة حرة من الصفر في المحرر المرئي (الضغط الطويل: منفردة).
+        if (editor != null)
+          _ChipButton(
+            icon: Icons.edit,
+            label: 'محرر المعادلات',
+            onTap: () => editor(),
+            onLongPress: () => editor(preferBlock: true),
+          ),
+        // تحرير صيغة موجودة في الحقل النشط (اختيار تلقائي/يدوي).
+        if (editor != null)
+          _ChipButton(
+            icon: Icons.edit_note,
+            label: 'تحرير معادلة',
+            onTap: () => editor(editExisting: true),
+          ),
         for (final formula in formulas)
           _ChipButton(
             icon: Icons.functions,
             label: formula.label,
-            // إدراج سطرية $...$ بالضغط الطويل منفرداً $$...$$.
-            onTap: () => inserter.insert('\$${formula.latex}\$'),
-            onLongPress: () => inserter.insert('\$\$${formula.latex}\$\$'),
+            // المحرر المرئي أولاً (الضغط: سطرية، الطويل: منفردة)،
+            // وبغيابه إدراج خام $...$ / $$...$$ كما في السابق.
+            onTap: editor == null
+                ? () => inserter.insert('\$${formula.latex}\$')
+                : () => editor(template: formula.latex),
+            onLongPress: editor == null
+                ? () => inserter.insert('\$\$${formula.latex}\$\$')
+                : () => editor(template: formula.latex, preferBlock: true),
           ),
       ],
     );

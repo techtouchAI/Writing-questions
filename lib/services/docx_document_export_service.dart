@@ -345,7 +345,7 @@ class _DocxBuilder {
     </w:tc>
     <w:tc>
       <w:tcPr><w:tcW w:w="1600" w:type="pct"/></w:tcPr>
-      ${_tableParagraph(title, bold: true, size: 28, alignment: titleAlign, color: '1E3A8A')}
+      ${title.trim().isEmpty ? '' : _tableParagraph(title, bold: true, size: 28, alignment: titleAlign, color: '1E3A8A')}
       ${_tableParagraph(header.center.lines[0], alignment: 'center')}
       ${_tableParagraph(header.center.lines[2], alignment: 'center')}
       ${_tableParagraph(versionLabel, italic: true, alignment: 'center', color: isTeacherVersion ? 'DC2626' : '4B5563')}
@@ -458,37 +458,32 @@ class _DocxBuilder {
   ) async {
     final layout = document.layout;
     final content = branch.content;
+    // الفرع الفارغ تماماً يُحذف من الملف كاملاً ولا يترك فقرات فارغة.
+    if (!content.hasExportableContent(teacher: isTeacherVersion)) {
+      return;
+    }
     final label = questionIndex >= 0
         ? document.displayBranchLabel(questionIndex, branchIndex)
         : layout.branchLabel(branchIndex);
     final marksSuffix = branch.marks > 0
         ? ' [${document.formatNumber(branch.marks)} ${layout.marksUnit}]'
         : '';
-    if (content.text.trim().isNotEmpty || content.items.isEmpty) {
-      _writeStyledParagraph(
-        body,
-        '$label) ${content.text}$marksSuffix',
-        style: branch.style,
-        size: 22,
-        indent: 400,
-        before: 40,
-        after: 40,
-        border: branch.showFrame,
-      );
-    } else if (marksSuffix.isNotEmpty) {
-      _writeStyledParagraph(
-        body,
-        '$label)$marksSuffix',
-        style: branch.style,
-        size: 22,
-        indent: 400,
-        before: 40,
-        after: 40,
-        border: branch.showFrame,
-      );
-    }
+    final hasText = content.text.trim().isNotEmpty;
+    _writeStyledParagraph(
+      body,
+      hasText ? '$label) ${content.text}$marksSuffix' : '$label)$marksSuffix',
+      style: branch.style,
+      size: 22,
+      indent: 400,
+      before: 40,
+      after: 40,
+      border: branch.showFrame,
+    );
     for (var i = 0; i < content.items.length; i++) {
       final item = content.items[i];
+      if (!item.showsInExport(teacher: isTeacherVersion, type: content.type)) {
+        continue;
+      }
       final itemMarks = item.marks > 0
           ? ' [${document.formatNumber(item.marks)} ${layout.marksUnit}]'
           : '';
@@ -501,10 +496,14 @@ class _DocxBuilder {
             ? (item.isCorrect! ? ' (True)' : ' (False)')
             : (item.isCorrect! ? ' (صح)' : ' (خطأ)');
       }
-      final text = item.text.trim().isEmpty ? '................................' : item.text;
+      final itemLabel = document.displayItemLabel(item, i);
+      final chunks = <String>[
+        if (itemLabel.isNotEmpty) itemLabel,
+        if (item.text.trim().isNotEmpty) item.text,
+      ];
       _writeStyledParagraph(
         body,
-        '${document.formatNumber(i + 1)}- $text$itemMarks$itemAnswer',
+        '${chunks.join(' ')}$itemMarks$itemAnswer',
         style: branch.style,
         size: 22,
         indent: 800,
@@ -512,42 +511,46 @@ class _DocxBuilder {
         after: 30,
       );
     }
-    if (!(content.plainText && !isTeacherVersion)) {
-      _buildTypeBody(body, content);
-    }
-    if (isTeacherVersion && content.plainText && content.modelAnswer.trim().isNotEmpty) {
-      _writeParagraph(
-        body,
-        'الإجابة النموذجية: ${content.modelAnswer}',
-        bold: true,
-        size: 22,
-        color: '065F46',
-        highlight: true,
-        indent: 800,
-        before: 40,
-        after: 40,
-      );
+    // مطابقة اللوحة ومحرك PDF حرفياً (انظر PaginatedPdfExamEngine).
+    final showTypeBody = !(content.plainText && !isTeacherVersion) &&
+        !(isTeacherVersion &&
+            content.plainText &&
+            content.type == QuestionType.multipleChoice);
+    if (showTypeBody) {
+      _buildTypeBody(body, content, branch.style);
     }
     _buildDivider(body, branch.dividerAfter);
   }
 
-  void _buildTypeBody(StringBuffer body, BranchContent content) {
+  void _buildTypeBody(
+      StringBuffer body, BranchContent content, PaperTextStyle? style) {
+    final alignment = _wordAlign(style?.align);
+    final lineHeight = style?.lineHeight;
+    final styleColor = style?.colorHex;
     switch (content.type) {
       case QuestionType.multipleChoice:
-        final options =
-            content.options.where((o) => o.text.trim().isNotEmpty).toList();
-        for (var i = 0; i < options.length; i++) {
-          final correct = isTeacherVersion && options[i].isCorrect;
+        // الخيارات الفارغة تُحذف، لكن التسميات تبقى بفهارسها الأصلية
+        // (مطابقة اللوحة) ولا يعاد ترقيم المخصص منها أبداً.
+        for (var i = 0; i < content.options.length; i++) {
+          final option = content.options[i];
+          if (option.text.trim().isEmpty) {
+            continue;
+          }
+          final correct = isTeacherVersion && option.isCorrect;
+          final optionLabel = document.displayOptionLabel(option, i);
+          final prefix = optionLabel.isEmpty ? '' : '$optionLabel  ';
           _writeParagraph(
             body,
-            '( ${document.layout.branchLabel(i)} )  ${options[i].text}${correct ? '  ✔ الإجابة الصحيحة' : ''}',
+            '$prefix${option.text}${correct ? '  ✔ الإجابة الصحيحة' : ''}',
             bold: correct,
             size: 22,
-            color: correct ? '065F46' : null,
+            color: styleColor ?? (correct ? '065F46' : null),
             highlight: correct,
             indent: 800,
             before: 30,
             after: 30,
+            alignment: alignment,
+            lineHeight: lineHeight,
           );
         }
       case QuestionType.trueFalse:
@@ -559,6 +562,8 @@ class _DocxBuilder {
             indent: 800,
             before: 40,
             after: 40,
+            alignment: alignment,
+            lineHeight: lineHeight,
           );
           return;
         }
@@ -568,11 +573,13 @@ class _DocxBuilder {
           'الإجابة الصحيحة: ${answer ? 'صح' : 'خطأ'} ✔',
           bold: true,
           size: 22,
-          color: '065F46',
+          color: styleColor ?? '065F46',
           highlight: true,
           indent: 800,
           before: 40,
           after: 40,
+          alignment: alignment,
+          lineHeight: lineHeight,
         );
       case QuestionType.fillInTheBlank:
         if (!isTeacherVersion) {
@@ -583,31 +590,43 @@ class _DocxBuilder {
             indent: 800,
             before: 60,
             after: 60,
+            alignment: alignment,
+            lineHeight: lineHeight,
           );
+          return;
+        }
+        if (content.modelAnswer.trim().isEmpty) {
           return;
         }
         _writeParagraph(
           body,
-          'الإجابة النموذجية: ${_modelOrDash(content.modelAnswer)}',
+          'الإجابة النموذجية: ${content.modelAnswer.trim()}',
           bold: true,
           size: 22,
-          color: '065F46',
+          color: styleColor ?? '065F46',
           highlight: true,
           indent: 800,
           before: 40,
           after: 40,
+          alignment: alignment,
+          lineHeight: lineHeight,
         );
       case QuestionType.essay:
         if (isTeacherVersion) {
+          if (content.modelAnswer.trim().isEmpty) {
+            return;
+          }
           _writeParagraph(
             body,
-            'الإجابة النموذجية وعناصر التقييم: ${_modelOrDash(content.modelAnswer)}',
+            'الإجابة النموذجية وعناصر التقييم: ${content.modelAnswer.trim()}',
             bold: true,
             size: 22,
-            color: '065F46',
+            color: styleColor ?? '065F46',
             indent: 800,
             before: 40,
             after: 40,
+            alignment: alignment,
+            lineHeight: lineHeight,
           );
           return;
         }
@@ -619,13 +638,12 @@ class _DocxBuilder {
             color: '9CA3AF',
             before: 40,
             after: 40,
+            alignment: alignment,
+            lineHeight: lineHeight,
           );
         }
     }
   }
-
-  String _modelOrDash(String model) =>
-      model.trim().isEmpty ? 'غير محدد' : model.trim();
 
   void _buildDivider(StringBuffer body, PaperDivider? divider) {
     if (divider == null) {
@@ -824,6 +842,7 @@ class _DocxBuilder {
     bool scaleSize = true,
     bool border = false,
     String? color,
+    double? lineHeight,
     bool highlight = false,
     int? indent,
     int? before,
@@ -834,8 +853,8 @@ class _DocxBuilder {
     final effectiveSize = scaleSize
         ? (size * document.settings.fontScale).round().clamp(12, 96)
         : size.clamp(12, 96);
-    // تباعد الأسطر العام من إعدادات الورقة (240 = مفرد).
-    final line = (240 * document.settings.lineSpacing).round();
+    // تباعد أسطر العنصر المخصص يسود، وإلا العام من إعدادات الورقة (240 = مفرد).
+    final line = (240 * (lineHeight ?? document.settings.lineSpacing)).round();
     body.write('<w:p><w:pPr><w:bidi/><w:jc w:val="$alignment"/>');
     if (border) {
       body.write(

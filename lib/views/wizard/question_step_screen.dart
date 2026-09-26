@@ -11,7 +11,8 @@ import 'branch_editor_card.dart';
 ///
 /// - العنوان ديناميكي: «إعداد السؤال الأول» ثم «الثاني»...
 /// - حقل حر لنص السؤال/تعليماته («أجب عن فرعين فقط:»...) بلا صيغة مفروضة.
-/// - يبدأ بفرع (أ) افتراضياً؛ [إضافة فرع جديد] يضيف (ب) ثم (ج) بنفس الأدوات.
+/// - يبدأ بلا فروع؛ [إضافة فرع جديد] يضيف (أ) ثم (ب) بنفس الأدوات،
+///   وتظهر بطاقات الفروع فقط بعد إنشائها صراحة.
 /// - الدرجة تلقائية (مجموع الفروع) ما لم يثبّت المدرس درجة يدوية.
 /// - [التالي] يحفظ السؤال ويفتح سؤالاً جديداً فارغاً، و[إنهاء وعرض النموذج]
 ///   ينتقل إلى محرك المعاينة A4.
@@ -221,11 +222,21 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
                   controller.updateBranchMarks(ref, branch.marks);
                   controller.updateBranchLabelOverride(ref, branch.labelOverride);
                 },
-                onRemove: question.branches.length > 1
-                    ? () => controller.removeBranch(
-                          BranchRef(questionIndex: questionIndex, branchIndex: index),
-                        )
-                    : null,
+                // لا حد أدنى للفروع: يُحذف الأخير أيضاً.
+                onRemove: () => controller.removeBranch(
+                  BranchRef(questionIndex: questionIndex, branchIndex: index),
+                ),
+              ),
+            // السؤال الجديد بلا فروع؛ التلميح يوجّه لأول إنشاء صريح.
+            if (question.branches.isEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  layout.isLtr
+                      ? 'No branches yet — create the first one below.'
+                      : 'لا فروع بعد — أنشئ الفرع الأول بالزر أدناه.',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
               ),
             OutlinedButton.icon(
               onPressed: () => controller.addBranch(questionIndex),

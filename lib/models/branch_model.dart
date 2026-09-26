@@ -58,6 +58,30 @@ class BranchContent {
     return correct.isEmpty || correct.first.text.trim() != 'خطأ';
   }
 
+  /// هل يحمل الفرع محتوى يستحق الظهور في المخرجات (PDF/Word/طباعة)؟
+  ///
+  /// الفرع الفارغ تماماً (بلا نص ولا نقاط ظاهرة ولا خيارات مكتوبة ولا
+  /// إجابة نموذجية معروضة) يُحذف من المطبوع كاملاً ولا يترك أي مسافة.
+  /// خيارا صح/خطأ الثابتان («صح»/«خطأ») ليسا محتوى بذاتهما.
+  bool hasExportableContent({required bool teacher}) {
+    if (text.trim().isNotEmpty) {
+      return true;
+    }
+    if (items.any((item) => item.showsInExport(teacher: teacher, type: type))) {
+      return true;
+    }
+    if (type == QuestionType.multipleChoice &&
+        options.any((option) => option.text.trim().isNotEmpty)) {
+      return true;
+    }
+    if (teacher &&
+        (type == QuestionType.fillInTheBlank || type == QuestionType.essay) &&
+        modelAnswer.trim().isNotEmpty) {
+      return true;
+    }
+    return false;
+  }
+
   bool get isEmpty =>
       text.trim().isEmpty &&
       modelAnswer.trim().isEmpty &&

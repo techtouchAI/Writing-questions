@@ -86,6 +86,7 @@ abstract final class PaperStyles {
           (override?.italic ?? false) ? FontStyle.italic : FontStyle.normal,
       decoration: underline ? TextDecoration.underline : TextDecoration.none,
       height: override?.lineHeight ?? (base.height ?? 1.45) * heightScale,
+      color: override?.color != null ? Color(override!.color!) : base.color,
     );
   }
 

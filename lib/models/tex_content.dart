@@ -52,6 +52,99 @@ abstract final class TexContent {
     }
     return segments;
   }
+
+  /// يحدد مواقع صيغ LaTeX داخل [source] بفهارسها الأصلية.
+  ///
+  /// يُستخدم لفتح معادلة موجودة في المحرر المرئي ثم استبدالها بنتيجته
+  /// في الموضع نفسه تماماً — بنفس منطق [split] (الكتل أولاً ثم السطرية).
+  static List<TexMathSpan> findSpans(String source) {
+    // تطبيع يحفظ خريطة الفهارس: `\\$` حرفان يُستبدلان بمحرف واحد،
+    // فيُحفظ لكل محرف مطبّع فهرسه الأصلي لاسترجاع المواضع بدقة.
+    final normalizedBuffer = StringBuffer();
+    final indexMap = <int>[];
+    var cursor = 0;
+    while (cursor < source.length) {
+      if (source[cursor] == '\\' &&
+          cursor + 1 < source.length &&
+          source[cursor + 1] == r'$') {
+        normalizedBuffer.write('\u0000');
+        indexMap.add(cursor);
+        cursor += 2;
+      } else {
+        normalizedBuffer.write(source[cursor]);
+        indexMap.add(cursor);
+        cursor += 1;
+      }
+    }
+    final normalized = normalizedBuffer.toString();
+    int toSource(int normalizedIndex) => normalizedIndex < indexMap.length
+        ? indexMap[normalizedIndex]
+        : source.length;
+
+    final spans = <TexMathSpan>[];
+    void collectInline(String gap, int base) {
+      for (final match in _inlinePattern.allMatches(gap)) {
+        spans.add(
+          TexMathSpan(
+            start: toSource(base + match.start),
+            end: toSource(base + match.end),
+            latex: (match.group(1) ?? '').replaceAll('\u0000', r'\$'),
+            isBlock: false,
+          ),
+        );
+      }
+    }
+
+    cursor = 0;
+    for (final match in _blockPattern.allMatches(normalized)) {
+      if (match.start > cursor) {
+        collectInline(normalized.substring(cursor, match.start), cursor);
+      }
+      spans.add(
+        TexMathSpan(
+          start: toSource(match.start),
+          end: toSource(match.end),
+          latex: (match.group(1) ?? '').replaceAll('\u0000', r'\$'),
+          isBlock: true,
+        ),
+      );
+      cursor = match.end;
+    }
+    if (cursor < normalized.length) {
+      collectInline(normalized.substring(cursor), cursor);
+    }
+    spans.sort((a, b) => a.start.compareTo(b.start));
+    return spans;
+  }
+}
+
+/// موقع صيغة LaTeX واحدة داخل النص الأصلي.
+///
+/// [start]/[end] يغطيان الصيغة مع علامات الدولارات، و[latex] هو جسم
+/// الصيغة وحده — جاهز للتحميل في المحرر المرئي والاستبدال بعده.
+class TexMathSpan {
+  const TexMathSpan({
+    required this.start,
+    required this.end,
+    required this.latex,
+    required this.isBlock,
+  });
+
+  final int start;
+  final int end;
+  final String latex;
+  final bool isBlock;
+
+  @override
+  bool operator ==(Object other) =>
+      other is TexMathSpan &&
+      other.start == start &&
+      other.end == end &&
+      other.latex == latex &&
+      other.isBlock == isBlock;
+
+  @override
+  int get hashCode => Object.hash(start, end, latex, isBlock);
 }
 
 /// مقطع واحد من نص علمي: إما نص عادي أو صيغة LaTeX.

@@ -123,12 +123,16 @@ void main() {
       await tester.tap(find.text('التالي: إعداد السؤال الأول'));
       await tester.pumpAndSettle();
 
-      // الخطوة 2: العنوان ديناميكي ويبدأ بالفرع (أ).
+      // الخطوة 2: العنوان ديناميكي ويبدأ بلا فروع (تُنشأ صراحة).
       expect(find.text('إعداد السؤال الأول'), findsOneWidget);
-      expect(find.text('الفرع (أ)'), findsOneWidget);
+      expect(find.text('الفرع (أ)'), findsNothing);
+      expect(find.textContaining('لا فروع بعد'), findsOneWidget);
 
-      // إضافة فرع جديد يضيف (ب) بنفس الأدوات.
+      // إضافة فرع جديد تنشئ (أ) ثم (ب) بنفس الأدوات.
       await tester.ensureVisible(find.textContaining('إضافة فرع جديد'));
+      await tester.tap(find.textContaining('إضافة فرع جديد'));
+      await tester.pumpAndSettle();
+      expect(find.text('الفرع (أ)'), findsOneWidget);
       await tester.tap(find.textContaining('إضافة فرع جديد'));
       await tester.pumpAndSettle();
       expect(find.text('الفرع (ب)'), findsOneWidget);
@@ -145,8 +149,8 @@ void main() {
       await tester.tap(find.text('التالي: سؤال جديد'));
       await tester.pumpAndSettle();
       expect(find.text('إعداد السؤال الثاني'), findsOneWidget);
-      expect(find.text('الفرع (أ)'), findsOneWidget);
-      expect(find.text('الفرع (ب)'), findsNothing);
+      expect(find.text('الفرع (أ)'), findsNothing);
+      expect(find.textContaining('لا فروع بعد'), findsOneWidget);
 
       // إنهاء وعرض النموذج من سؤال فارغ مرفوض، ومن السؤال الأول مقبول.
       await tester.tap(find.text('السؤال الأول'));

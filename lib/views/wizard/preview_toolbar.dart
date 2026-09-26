@@ -39,6 +39,10 @@ class PreviewToolbar extends StatelessWidget {
     required this.onToggleUnderline,
     required this.activeAlign,
     required this.onAlignChanged,
+    required this.activeLineHeight,
+    required this.onLineHeightChanged,
+    required this.activeColor,
+    required this.onColorChanged,
     required this.hasFrame,
     required this.onToggleFrame,
     required this.onAddImage,
@@ -88,6 +92,14 @@ class PreviewToolbar extends StatelessWidget {
   final VoidCallback onToggleUnderline;
   final PaperAlign? activeAlign;
   final ValueChanged<PaperAlign> onAlignChanged;
+
+  /// تباعد أسطر التحديد (`null` = تلقائي/الورقة، NaN = مخصص...).
+  final double? activeLineHeight;
+  final ValueChanged<double?> onLineHeightChanged;
+
+  /// لون نص التحديد ARGB (`null` = تلقائي، -1 = مخصص...).
+  final int? activeColor;
+  final ValueChanged<int?> onColorChanged;
   final bool? hasFrame;
   final VoidCallback onToggleFrame;
 
@@ -106,6 +118,24 @@ class PreviewToolbar extends StatelessWidget {
 
   static const List<double> fontSizes = <double>[
     8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28,
+  ];
+
+  /// إعدادات تباعد الأسطر المسبقة (1.0 مفرد ... 3.0) + مخصص.
+  static const List<double> lineSpacings = <double>[
+    1.0, 1.15, 1.5, 2.0, 2.5, 3.0,
+  ];
+
+  /// قيمة «مخصص...» في قائمة اللون — تفتح شاشة المعاينة حوار HEX.
+  static const int customColorSentinel = -1;
+
+  /// ألوان النص الجاهزة (ARGB) — تبقى حياً في اللوحة والمطبوع.
+  static const List<(int, String)> textColors = <(int, String)>[
+    (0xFF000000, 'أسود'),
+    (0xFF1E3A8A, 'كحلي'),
+    (0xFFB91C1C, 'خمري'),
+    (0xFF15803D, 'أخضر'),
+    (0xFF7E22CE, 'بنفسجي'),
+    (0xFFC2410C, 'برتقالي'),
   ];
 
   @override
@@ -202,6 +232,14 @@ class PreviewToolbar extends StatelessWidget {
               tooltip: 'ضبط',
               onTap: isBusy ? null : () => onAlignChanged(PaperAlign.justify),
               selected: activeAlign == PaperAlign.justify,
+            ),
+            _LineSpacingMenu(
+              activeLineHeight: activeLineHeight,
+              onChanged: isBusy ? null : onLineHeightChanged,
+            ),
+            _ColorMenu(
+              activeColor: activeColor,
+              onChanged: isBusy ? null : onColorChanged,
             ),
             _ToolButton(
               icon: Icons.border_outer,
@@ -415,6 +453,122 @@ class _FontSizeMenu extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LineSpacingMenu extends StatelessWidget {
+  const _LineSpacingMenu({required this.activeLineHeight, required this.onChanged});
+
+  final double? activeLineHeight;
+  final ValueChanged<double?>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = activeLineHeight;
+    final label = value == null
+        ? 'تباعد'
+        : (value == value.truncateToDouble()
+            ? value.toInt().toString()
+            : value.toString());
+    // ملاحظة: PopupMenuButton يبني Tooltip داخليًا من خاصية tooltip —
+    // لا نغلّفه بـ Tooltip مكرر (نظافة الوصول ودقة الاختبارات).
+    return PopupMenuButton<double?>(
+      enabled: onChanged != null,
+      tooltip: 'تباعد الأسطر',
+      onSelected: (selected) => onChanged?.call(selected),
+      itemBuilder: (_) => <PopupMenuEntry<double?>>[
+        const PopupMenuItem<double?>(
+          value: null,
+          child: Text('تلقائي', style: TextStyle(fontSize: 13)),
+        ),
+        const PopupMenuDivider(),
+        for (final spacing in PreviewToolbar.lineSpacings)
+          PopupMenuItem<double?>(
+            value: spacing,
+            child: Text(
+              '${activeLineHeight == spacing ? '✓ ' : ''}$spacing',
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+        // القيمة المميزة NaN: حقل حر لتباعد مخصص (تعالجه شاشة المعاينة).
+        const PopupMenuItem<double?>(
+          value: double.nan,
+          child: Text('مخصص...', style: TextStyle(fontSize: 13)),
+        ),
+      ],
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 44),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(
+          label,
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+}
+
+class _ColorMenu extends StatelessWidget {
+  const _ColorMenu({required this.activeColor, required this.onChanged});
+
+  final int? activeColor;
+  final ValueChanged<int?>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final current = activeColor;
+    // ملاحظة: PopupMenuButton يبني Tooltip داخليًا من خاصية tooltip —
+    // لا نغلّفه بـ Tooltip مكرر (نظافة الوصول ودقة الاختبارات).
+    return PopupMenuButton<int?>(
+      enabled: onChanged != null,
+      tooltip: 'لون النص',
+      icon: Icon(
+        Icons.format_color_text,
+        size: 20,
+        color: current == null ? null : Color(current),
+      ),
+      onSelected: (selected) => onChanged?.call(selected),
+      itemBuilder: (_) => <PopupMenuEntry<int?>>[
+        PopupMenuItem<int?>(
+          value: null,
+          child: Text(
+            current == null ? '✓ تلقائي' : 'تلقائي',
+            style: const TextStyle(fontSize: 13),
+          ),
+        ),
+        const PopupMenuDivider(),
+        for (final swatch in PreviewToolbar.textColors)
+          PopupMenuItem<int?>(
+            value: swatch.$1,
+            child: Row(
+              children: <Widget>[
+                Container(
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: Color(swatch.$1),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: colorScheme.outlineVariant),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${current == swatch.$1 ? '✓ ' : ''}${swatch.$2}',
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+        const PopupMenuDivider(),
+        // القيمة المميزة -1: حوار HEX مخصص (تعالجه شاشة المعاينة).
+        const PopupMenuItem<int?>(
+          value: PreviewToolbar.customColorSentinel,
+          child: Text('مخصص...', style: TextStyle(fontSize: 13)),
+        ),
+      ],
     );
   }
 }

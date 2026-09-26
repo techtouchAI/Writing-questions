@@ -118,6 +118,15 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
     return marks != null && marks.isFinite && marks >= 0 ? marks : null;
   }
 
+  /// فارغ = تلقائي (`null`)، `-` = إخفاء (`''`)، وإلا النص المخصص.
+  static String? _normalizeLabel(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    return trimmed == '-' ? '' : trimmed;
+  }
+
   static String _formatMarks(double marks) {
     if (marks == 0) {
       return '';
@@ -380,10 +389,34 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
               padding: const EdgeInsets.only(top: 6),
               child: Row(
                 children: <Widget>[
+                  // ترقيم النقطة: مخصص حرفي، فارغ = تلقائي، `-` = إخفاء.
                   SizedBox(
-                    width: 30,
-                    child: Text('${index + 1}-',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    width: 64,
+                    child: TextFormField(
+                      key: ValueKey<String>('item-label-${items[index].id}'),
+                      initialValue: items[index].labelOverride ?? '',
+                      enabled: widget.enabled,
+                      decoration: InputDecoration(
+                        hintText: '${index + 1}-',
+                        isDense: true,
+                        border: const OutlineInputBorder(),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
+                      ),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                      onChanged: (value) {
+                        final updated = List<BranchItem>.of(items);
+                        updated[index] = updated[index].copyWith(
+                          labelOverride: () => _normalizeLabel(value),
+                        );
+                        _emitContent(_content.copyWith(items: updated));
+                      },
+                    ),
                   ),
                   // إجابة النقطة لنموذج المعلم (صح/خطأ فقط).
                   if (_content.type == QuestionType.trueFalse)

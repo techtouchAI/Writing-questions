@@ -1,3 +1,4 @@
+import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import '../models/paper_font.dart';
@@ -39,6 +40,7 @@ abstract final class PaperStyleResolver {
           : base.lineSpacing == null
               ? null
               : base.lineSpacing! * heightScale,
+      color: override?.color != null ? PdfColor.fromInt(override!.color!) : base.color,
     );
   }
 

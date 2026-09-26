@@ -55,6 +55,7 @@ class PaperTextStyle {
     this.underline,
     this.align,
     this.lineHeight,
+    this.color,
   });
 
   /// النمط الفارغ: يرث كل شيء من الورقة.
@@ -72,6 +73,14 @@ class PaperTextStyle {
   /// تباعد الأسطر (1.0..2.5 منطقياً).
   final double? lineHeight;
 
+  /// لون النص ARGB (`null` = لون الورقة الافتراضي).
+  final int? color;
+
+  /// اللون بصيغة RRGGBB ست عشرية لمصدّرات XML (`null` = بلا لون مخصص).
+  String? get colorHex => color == null
+      ? null
+      : (color! & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase();
+
   bool get isEmpty =>
       font == null &&
       fontSize == null &&
@@ -79,7 +88,8 @@ class PaperTextStyle {
       italic == null &&
       underline == null &&
       align == null &&
-      lineHeight == null;
+      lineHeight == null &&
+      color == null;
 
   bool get isNotEmpty => !isEmpty;
 
@@ -96,6 +106,7 @@ class PaperTextStyle {
       underline: other.underline ?? underline,
       align: other.align ?? align,
       lineHeight: other.lineHeight ?? lineHeight,
+      color: other.color ?? color,
     );
   }
 
@@ -107,6 +118,7 @@ class PaperTextStyle {
     bool? Function()? underline,
     PaperAlign? Function()? align,
     double? Function()? lineHeight,
+    int? Function()? color,
   }) {
     return PaperTextStyle(
       font: font != null ? font() : this.font,
@@ -116,6 +128,7 @@ class PaperTextStyle {
       underline: underline != null ? underline() : this.underline,
       align: align != null ? align() : this.align,
       lineHeight: lineHeight != null ? lineHeight() : this.lineHeight,
+      color: color != null ? color() : this.color,
     );
   }
 
@@ -128,6 +141,7 @@ class PaperTextStyle {
       if (underline != null) 'underline': underline,
       if (align != null) 'align': align!.name,
       if (lineHeight != null) 'lineHeight': lineHeight,
+      if (color != null) 'color': color,
     };
   }
 
@@ -141,6 +155,7 @@ class PaperTextStyle {
       underline: _optionalBool(map['underline']),
       align: map.containsKey('align') ? PaperAlign.parse(map['align']) : null,
       lineHeight: _optionalDouble(map['lineHeight'], min: 1, max: 3),
+      color: _optionalColor(map['color']),
     );
   }
 
@@ -165,11 +180,13 @@ class PaperTextStyle {
         other.italic == italic &&
         other.underline == underline &&
         other.align == align &&
-        other.lineHeight == lineHeight;
+        other.lineHeight == lineHeight &&
+        other.color == color;
   }
 
   @override
-  int get hashCode => Object.hash(font, fontSize, bold, italic, underline, align, lineHeight);
+  int get hashCode =>
+      Object.hash(font, fontSize, bold, italic, underline, align, lineHeight, color);
 
   static double? _optionalDouble(Object? value, {required double min, required double max}) {
     final parsed = value is num ? value.toDouble() : double.tryParse(value?.toString() ?? '');
@@ -177,6 +194,32 @@ class PaperTextStyle {
       return null;
     }
     return parsed.clamp(min, max).toDouble();
+  }
+
+  /// يقرأ لوناً مخزناً (عدد ARGB أو نص ست عشري)؛ التالف يُتجاهل.
+  static int? _optionalColor(Object? value) {
+    if (value is int) {
+      if (value < 0 || value > 0xFFFFFFFF) {
+        return null;
+      }
+      // القيم بلا قناة ألفا تُفترض معتمة.
+      return value <= 0xFFFFFF ? 0xFF000000 | value : value;
+    }
+    if (value is! String) {
+      return null;
+    }
+    var text = value.trim();
+    if (text.startsWith('#')) {
+      text = text.substring(1);
+    }
+    if (text.length != 6 && text.length != 8) {
+      return null;
+    }
+    final parsed = int.tryParse(text, radix: 16);
+    if (parsed == null) {
+      return null;
+    }
+    return text.length == 6 ? 0xFF000000 | parsed : parsed;
   }
 
   static bool? _optionalBool(Object? value) {
