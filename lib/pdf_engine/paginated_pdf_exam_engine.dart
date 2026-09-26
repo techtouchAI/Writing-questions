@@ -79,6 +79,15 @@ class PaginatedPdfExamEngine {
         QuranText.containsQuran(document.header.notes)) {
       return true;
     }
+    // أسطر الترويسة الثلاثة×الآن تُرسم بالمحلل نفسه (معاينة وعنواناً
+    // وصيغاً) — فالحاجة للخط القرآني تُحتسب منها أيضاً.
+    for (final slot in HeaderSlot.values) {
+      for (final line in document.header.column(slot).lines) {
+        if (QuranText.containsQuran(line)) {
+          return true;
+        }
+      }
+    }
     for (final question in document.questions) {
       if (QuranText.containsQuran(question.prompt)) {
         return true;
@@ -342,8 +351,11 @@ class PaginatedPdfExamEngine {
           crossAxisAlignment: pw.CrossAxisAlignment.stretch,
           mainAxisSize: pw.MainAxisSize.min,
           children: <pw.Widget>[
+            // الصيغ داخل أسطر الترويسة تُرسم كمعادلات (SVG) كما في متن
+            // الأسئلة — لا نص LaTeX خام على الورقة.
             for (final line in lines)
-              pw.Text(line, style: style, textAlign: align, maxLines: 2),
+              _renderText(line, style, fonts.quranic,
+                  align: align, maxLines: 2),
           ],
         ),
       );
@@ -358,7 +370,7 @@ class PaginatedPdfExamEngine {
       if (title.isNotEmpty)
         pw.Padding(
           padding: const pw.EdgeInsets.only(bottom: 4),
-          child: pw.Text(title, style: titleStyle, textAlign: titleAlign),
+          child: _renderText(title, titleStyle, fonts.quranic, align: titleAlign),
         ),
       pw.Container(
         decoration: settings.headerBorder
@@ -396,12 +408,14 @@ class PaginatedPdfExamEngine {
       if (instructions.isNotEmpty)
         pw.Padding(
           padding: const pw.EdgeInsets.only(top: 2),
-          child: pw.Text(instructions, textAlign: pw.TextAlign.center, style: styles.note),
+          child: _renderText(instructions, styles.note, fonts.quranic,
+              align: pw.TextAlign.center),
         ),
       if (notes.isNotEmpty)
         pw.Padding(
           padding: const pw.EdgeInsets.only(top: 2),
-          child: pw.Text(notes, textAlign: pw.TextAlign.center, style: styles.note),
+          child: _renderText(notes, styles.note, fonts.quranic,
+              align: pw.TextAlign.center),
         ),
       pw.Divider(thickness: 1.5, color: ExamTextStyles.primaryColor, height: 8),
     ];
@@ -849,10 +863,11 @@ class PaginatedPdfExamEngine {
         if (fillModel.isEmpty) {
           return pw.SizedBox();
         }
-        return pw.Text(
+        return _renderText(
           '${layout.isLtr ? 'Model answer' : 'الإجابة النموذجية'}: $fillModel •',
-          style: styledAnswer,
-          textAlign: align,
+          styledAnswer,
+          fonts.quranic,
+          align: align,
         );
       case QuestionType.essay:
         if (isTeacherVersion) {
@@ -860,11 +875,12 @@ class PaginatedPdfExamEngine {
           if (essayModel.isEmpty) {
             return pw.SizedBox();
           }
-          return pw.Text(
+          return _renderText(
             '${layout.isLtr ? 'Model answer' : 'الإجابة النموذجية وعناصر التقييم'}: '
             '$essayModel •',
-            style: styledAnswer,
-            textAlign: align,
+            styledAnswer,
+            fonts.quranic,
+            align: align,
           );
         }
         return pw.Column(
@@ -928,11 +944,13 @@ class PaginatedPdfExamEngine {
     pw.Font? quranFont, {
     bool centerVerse = false,
     pw.TextAlign? align,
+    int? maxLines,
   }) {
     final segments = TexContent.split(text);
     final hasMath = segments.any((segment) => segment.isMath);
     if (!hasMath) {
-      return _plainText(text, style, quranFont, centerVerse: centerVerse, align: align);
+      return _plainText(text, style, quranFont,
+          centerVerse: centerVerse, align: align, maxLines: maxLines);
     }
     final fontSize = style.fontSize ?? 10.5;
     final rows = <pw.Widget>[];
@@ -957,7 +975,8 @@ class PaginatedPdfExamEngine {
     for (final segment in segments) {
       if (!segment.isMath) {
         if (segment.text.isNotEmpty) {
-          inline.add(_plainText(segment.text, style, quranFont, align: align));
+          inline.add(_plainText(segment.text, style, quranFont,
+              align: align, maxLines: maxLines));
         }
         continue;
       }
@@ -1016,12 +1035,14 @@ class PaginatedPdfExamEngine {
     pw.Font? quranFont, {
     bool centerVerse = false,
     pw.TextAlign? align,
+    int? maxLines,
   }) {
     if (quranFont == null || !QuranText.containsQuran(text)) {
       return pw.Text(
         text,
         style: style,
         textAlign: centerVerse ? pw.TextAlign.center : align,
+        maxLines: maxLines,
       );
     }
     final spans = <pw.InlineSpan>[];
@@ -1050,6 +1071,7 @@ class PaginatedPdfExamEngine {
     return pw.RichText(
       text: pw.TextSpan(children: spans),
       textAlign: centerVerse ? pw.TextAlign.center : null,
+      maxLines: maxLines,
     );
   }
 

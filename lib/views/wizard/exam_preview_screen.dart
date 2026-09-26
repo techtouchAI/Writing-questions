@@ -1810,9 +1810,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                         : ExamCanvasGeometry.width * _zoom + 24)
                     .toDouble();
                 return SingleChildScrollView(
+                  key: const ValueKey<String>('paper-v-scroll'),
                   controller: _vScroll,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   child: SingleChildScrollView(
+                    key: const ValueKey<String>('paper-h-scroll'),
                     controller: _hScroll,
                     scrollDirection: Axis.horizontal,
                     child: SizedBox(
@@ -2023,7 +2025,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            for (var index = 0; index < lines.length; index++)
+            for (var index = 0; index < lines.length; index++) ...<Widget>[
               _paperField(
                 key: ValueKey<String>(_headerKey(slot, index)),
                 controller: _field(
@@ -2034,7 +2036,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 style: center ? centerStyle : lineStyle,
                 textAlign: center ? TextAlign.center : TextAlign.start,
                 hint: 'سطر ${index + 1}',
+                registerInserter: true,
               ),
+              // معاينة مرئية لصيغ الترويسة (كما تطبعها الورقة تماماً).
+              if (_needsEquationPreview(lines[index]))
+                _equationPreview(
+                  fieldKey: _headerKey(slot, index),
+                  text: lines[index],
+                  style: center ? centerStyle : lineStyle,
+                  textAlign: center ? TextAlign.center : TextAlign.start,
+                ),
+            ],
           ],
         ),
       );
@@ -2068,6 +2080,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 textAlign: PaperStyles.toTextAlign(header.style.align, TextAlign.center),
                 hint: 'عنوان الامتحان...',
                 registerInserter: true,
+              ),
+            if (_needsEquationPreview(header.title))
+              _equationPreview(
+                fieldKey: _headerTitleKey,
+                text: header.title,
+                style: titleStyle,
+                textAlign:
+                    PaperStyles.toTextAlign(header.style.align, TextAlign.center),
               ),
             Container(
               decoration: BoxDecoration(
@@ -2107,7 +2127,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               style: _scaled(PaperStyles.note),
               textAlign: TextAlign.center,
               hint: 'ملاحظة / تعليمات للطلاب...',
+              registerInserter: true,
             ),
+            if (_needsEquationPreview(header.instructions))
+              _equationPreview(
+                fieldKey: _instructionsKey,
+                text: header.instructions,
+                style: _scaled(PaperStyles.note),
+                textAlign: TextAlign.center,
+              ),
             if (header.notes.trim().isNotEmpty || _headerSelected)
               _paperField(
                 key: const ValueKey<String>(_headerNotesKey),
@@ -2115,6 +2143,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 style: _scaled(PaperStyles.note),
                 textAlign: TextAlign.center,
                 hint: 'ملاحظات إضافية (وقت/درجة/...)...',
+                registerInserter: true,
+              ),
+            if (_needsEquationPreview(header.notes))
+              _equationPreview(
+                fieldKey: _headerNotesKey,
+                text: header.notes,
+                style: _scaled(PaperStyles.note),
+                textAlign: TextAlign.center,
               ),
             const Divider(thickness: 1.5, color: PaperStyles.primary, height: 10),
           ],
@@ -2261,6 +2297,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               : 'نص السؤال / التعليمات (أجب عن فرعين فقط: ...)...',
           registerInserter: true,
         ),
+        // نص السؤال يُطبع بصيغه المعروضة كمعادلات — معاينة مطابقة للورقة.
+        if (_needsEquationPreview(question.prompt))
+          Padding(
+            padding: const EdgeInsetsDirectional.only(top: 2),
+            child: _equationPreview(
+              fieldKey: _promptKey(question.id),
+              text: question.prompt,
+              style: promptStyle,
+              textAlign: PaperStyles.toTextAlign(question.style.align),
+            ),
+          ),
         // السؤال الجديد يبدأ بلا فروع؛ تُنشأ فقط بطلب صريح (زر +).
         if (question.branches.isEmpty)
           Padding(
@@ -2735,16 +2782,28 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   QuestionType.trueFalse)
             _buildItemAnswerToggle(controller, ref, index, item),
           Expanded(
-            child: _paperField(
-              key: ValueKey<String>(_itemKey(item.id)),
-              controller: _field(
-                _itemKey(item.id),
-                item.text,
-                (value) => controller.updateBranchItemText(ref, index, value),
-              ),
-              style: bodyStyle,
-              hint: layout.isLtr ? 'Item...' : 'نص النقطة...',
-              registerInserter: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                _paperField(
+                  key: ValueKey<String>(_itemKey(item.id)),
+                  controller: _field(
+                    _itemKey(item.id),
+                    item.text,
+                    (value) => controller.updateBranchItemText(ref, index, value),
+                  ),
+                  style: bodyStyle,
+                  hint: layout.isLtr ? 'Item...' : 'نص النقطة...',
+                  registerInserter: true,
+                ),
+                if (_needsEquationPreview(item.text))
+                  _equationPreview(
+                    fieldKey: _itemKey(item.id),
+                    text: item.text,
+                    style: bodyStyle,
+                  ),
+              ],
             ),
           ),
           IconButton(
@@ -3191,6 +3250,36 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
+  /// هل يستحق النص معاينةً منسّقة تحت الحقل؟ (صيغة LaTeX أو آية موسومة)
+  static bool _needsEquationPreview(String text) =>
+      TexContent.containsMath(text) || QuranText.containsQuran(text);
+
+  /// معاينة المعادلة المرئية أسفل حقل قابل للتحرير — نفس ما يطبعه محرك
+  /// الـ PDF حرفياً (نفس محلل [TexContent.split] ونفس مجموعة الرسوم).
+  ///
+  /// الحقل يبقى مساحة الكتابة الخام؛ والمعاينة تعرض الكسر/الجذر/الأس
+  /// بشكلها النهائي (بسط فوق خط وتحتَه مقام، لا `\frac{5}{8}`). النقر
+  /// عليها يفتح محرر المعادلات المرئي للحقل نفسه فيُحرَّر المصدر بصرياً.
+  Widget _equationPreview({
+    required String fieldKey,
+    required String text,
+    required TextStyle style,
+    TextAlign textAlign = TextAlign.start,
+  }) {
+    return Tooltip(
+      message: 'انقر لتحرير المعادلة',
+      child: GestureDetector(
+        onTap: () => _editEquationInField(fieldKey),
+        child: TexText(
+          text,
+          style: style,
+          mathTextStyle: style,
+          textAlign: textAlign,
+        ),
+      ),
+    );
+  }
+
   /// عرض حقل الخيار الواحد على اللوحة (بكسل منطقي) — قريب من توزيع
   /// الخيارات في الورقة المطبوعة مع إبقائها قابلة للتحرير في مكانها.
   static const double _optionFieldWidth = 190;
@@ -3248,18 +3337,32 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                     ),
                     const SizedBox(width: 6),
                     Expanded(
-                      child: _paperField(
-                        key: ValueKey<String>(_optionKey(branch.id, index)),
-                        controller: _field(
-                          _optionKey(branch.id, index),
-                          content.options[index].text,
-                          (value) => controller.updateBranchOptionText(ref, index, value),
-                        ),
-                        style: _showTeacherAnswers && content.options[index].isCorrect
-                            ? answerStyle
-                            : _scaled(PaperStyles.option),
-                        hint: layout.isLtr ? 'Option...' : 'نص الخيار...',
-                        registerInserter: true,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          _paperField(
+                            key: ValueKey<String>(_optionKey(branch.id, index)),
+                            controller: _field(
+                              _optionKey(branch.id, index),
+                              content.options[index].text,
+                              (value) => controller.updateBranchOptionText(ref, index, value),
+                            ),
+                            style: _showTeacherAnswers && content.options[index].isCorrect
+                                ? answerStyle
+                                : _scaled(PaperStyles.option),
+                            hint: layout.isLtr ? 'Option...' : 'نص الخيار...',
+                            registerInserter: true,
+                          ),
+                          if (_needsEquationPreview(content.options[index].text))
+                            _equationPreview(
+                              fieldKey: _optionKey(branch.id, index),
+                              text: content.options[index].text,
+                              style: _showTeacherAnswers && content.options[index].isCorrect
+                                  ? answerStyle
+                                  : _scaled(PaperStyles.option),
+                            ),
+                        ],
                       ),
                     ),
                     if (_showTeacherAnswers && content.options[index].isCorrect)
@@ -3374,16 +3477,28 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           style: answerStyle,
         ),
         Expanded(
-          child: _paperField(
-            key: ValueKey<String>(_modelAnswerKey(branch.id)),
-            controller: _field(
-              _modelAnswerKey(branch.id),
-              content.modelAnswer,
-              (value) => controller.updateBranchModelAnswer(ref, value),
-            ),
-            style: answerStyle,
-            hint: layout.isLtr ? 'Model answer...' : 'اكتب الإجابة النموذجية...',
-            registerInserter: true,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              _paperField(
+                key: ValueKey<String>(_modelAnswerKey(branch.id)),
+                controller: _field(
+                  _modelAnswerKey(branch.id),
+                  content.modelAnswer,
+                  (value) => controller.updateBranchModelAnswer(ref, value),
+                ),
+                style: answerStyle,
+                hint: layout.isLtr ? 'Model answer...' : 'اكتب الإجابة النموذجية...',
+                registerInserter: true,
+              ),
+              if (_needsEquationPreview(content.modelAnswer))
+                _equationPreview(
+                  fieldKey: _modelAnswerKey(branch.id),
+                  text: content.modelAnswer,
+                  style: answerStyle,
+                ),
+            ],
           ),
         ),
         Text(' •', style: answerStyle),
