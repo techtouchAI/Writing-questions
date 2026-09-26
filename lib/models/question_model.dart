@@ -29,10 +29,9 @@ class QuestionModel {
     this.showFrame = false,
     this.dividerAfter,
   })  : id = id ?? const Uuid().v4(),
+        // السؤال الجديد يبدأ بلا فروع؛ تُنشأ فقط بطلب صريح من المدرس.
         branches = List<BranchModel>.unmodifiable(
-          branches == null || branches.isEmpty
-              ? <BranchModel>[BranchModel()]
-              : branches,
+          branches ?? const <BranchModel>[],
         ),
         attachments = List<FloatingElement>.unmodifiable(
           attachments ?? const <FloatingElement>[],
@@ -49,7 +48,7 @@ class QuestionModel {
   final String id;
   final int questionNumber;
 
-  /// فروع السؤال؛ يوجد فرع واحد على الأقل دائماً (أ).
+  /// فروع السؤال؛ فارغة افتراضياً وتُنشأ فقط بطلب صريح من المدرس.
   final List<BranchModel> branches;
 
   /// القسم الوزاري (القواعد/الأدب/أحكام التلاوة...) — فارغ = بلا قسم.
@@ -130,11 +129,9 @@ class QuestionModel {
   }
 
   /// يحذف فرعاً؛ يرفض حذف الفرع الأخير (يبقى «أ» دائماً).
+  /// يحذف فرعاً؛ ويُسمح بسؤال بلا فروع (يُنشأ الفرع عند الطلب الصريح).
   QuestionModel withBranchRemoved(int index) {
     RangeError.checkValidIndex(index, branches, 'index');
-    if (branches.length == 1) {
-      return this;
-    }
     final updated = List<BranchModel>.of(branches)..removeAt(index);
     return copyWith(branches: updated);
   }

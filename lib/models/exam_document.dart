@@ -2,10 +2,12 @@ import 'dart:convert';
 
 import 'package:uuid/uuid.dart';
 
+import 'branch_item.dart';
 import 'branch_model.dart';
 import 'exam_header_model.dart';
 import 'paper_settings.dart';
 import 'question_model.dart';
+import 'question_option.dart';
 import 'subject_layout.dart';
 
 /// مرجع موضعي لفرع داخل النموذج: (فهرس السؤال، فهرس الفرع).
@@ -119,6 +121,22 @@ class ExamDocument {
     }
     return layout.branchLabel(branchIndex);
   }
+
+  /// الترقيم التلقائي للنقطة من فهرسها (1-، 2-...) بنسق أرقام الورقة.
+  String autoItemLabel(int itemIndex) => '${formatNumber(itemIndex + 1)}-';
+
+  /// الترقيم المعروض للنقطة: المخصص حرفياً إن ثُبّت (ولو فارغاً)،
+  /// وإلا التلقائي من الفهرس. لا يعاد ترقيم المخصص أبداً.
+  String displayItemLabel(BranchItem item, int itemIndex) =>
+      item.labelOverride ?? autoItemLabel(itemIndex);
+
+  /// التسمية التلقائية للخيار من فهرسه (( أ )، ( ب )...).
+  String autoOptionLabel(int optionIndex) => '( ${layout.branchLabel(optionIndex)} )';
+
+  /// التسمية المعروضة للخيار: المخصصة حرفياً إن ثُبّتت (ولو فارغة)،
+  /// وإلا التلقائية من الفهرس. لا يعاد ترقيم المخصصة أبداً.
+  String displayOptionLabel(QuestionOption option, int optionIndex) =>
+      option.labelOverride ?? autoOptionLabel(optionIndex);
 
   /// هل تُعرض الأرقام بالمشرقية؟ (إعداد الورقة يتقدم على قالب المادة).
   bool get usesArabicIndicNumerals {

@@ -422,8 +422,11 @@ class ExamWizardController extends ChangeNotifier {
     RangeError.checkValidIndex(questionIndex, questions, 'questionIndex');
     // «إضافة فرع جديد بنفس خيارات الفرع السابق»: يبدأ الفرع الجديد بنوع
     // الفرع الأخير (وبنموذج خياراته الافتراضي) بدل نوع ثابت، فيبقى (ب) و(ج)
-    // على الأدوات نفسها التي اختارها المعلم للفرع (أ).
-    final resolvedType = type ?? questions[questionIndex].branches.last.content.type;
+    // على الأدوات نفسها التي اختارها المعلم للفرع (أ) — والفرع الأول في
+    // سؤال بلا فروع يبدأ مقالياً.
+    final branches = questions[questionIndex].branches;
+    final resolvedType =
+        type ?? (branches.isEmpty ? QuestionType.essay : branches.last.content.type);
     _commit(_document.withQuestionAt(
       questionIndex,
       questions[questionIndex].withBranchAdded(BranchModel(content: BranchContent.empty(resolvedType))),
@@ -443,7 +446,9 @@ class ExamWizardController extends ChangeNotifier {
   /// ينقل فرعاً داخل سؤاله (المحتوى كما هو، الموضع فقط يتغير).
   void moveBranch(int questionIndex, int from, int to) {
     RangeError.checkValidIndex(questionIndex, questions, 'questionIndex');
-    if (from == to) {
+    final count = questions[questionIndex].branches.length;
+    // مراجع السحب قد تقدُم بعد تعديل متزامن — تُرفض بهدوء بدل الرمي.
+    if (from == to || from < 0 || from >= count || to < 0 || to > count) {
       return;
     }
     _commit(_document.withBranchMoved(questionIndex, from, to));
@@ -560,6 +565,47 @@ class ExamWizardController extends ChangeNotifier {
     );
   }
 
+  /// تسمية مخصصة للخيار: فارغ = تلقائي، `-` = بلا تسمية.
+  void updateBranchOptionLabel(BranchRef ref, int optionIndex, String label) {
+    if (!_document.containsRef(ref)) {
+      return;
+    }
+    final content = _document.branchAt(ref).content;
+    if (optionIndex < 0 || optionIndex >= content.options.length) {
+      return;
+    }
+    final options = List<QuestionOption>.of(content.options);
+    options[optionIndex] = options[optionIndex].copyWith(
+      labelOverride: () => _normalizeLabelOverride(label),
+    );
+    updateBranchContent(ref, content.copyWith(options: options));
+  }
+
+  /// تسمية مخصصة للنقطة: فارغ = تلقائي، `-` = بلا تسمية.
+  void updateBranchItemLabel(BranchRef ref, int itemIndex, String label) {
+    if (!_document.containsRef(ref)) {
+      return;
+    }
+    final content = _document.branchAt(ref).content;
+    if (itemIndex < 0 || itemIndex >= content.items.length) {
+      return;
+    }
+    final items = List<BranchItem>.of(content.items);
+    items[itemIndex] = items[itemIndex].copyWith(
+      labelOverride: () => _normalizeLabelOverride(label),
+    );
+    updateBranchContent(ref, content.copyWith(items: items));
+  }
+
+  /// فارغ = تلقائي (`null`)، `-` = إخفاء (`''`)، وإلا النص المخصص.
+  static String? _normalizeLabelOverride(String label) {
+    final trimmed = label.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    return trimmed == '-' ? '' : trimmed;
+  }
+
   /// يحدّث نص خيار واحد داخل فرع (خيارات الاختيار من متعدد قابلة للتحرير
   /// مباشرة على الورقة، وتبقى علامة الإجابة الصحيحة كما هي).
   void updateBranchOptionText(BranchRef ref, int optionIndex, String text) {
@@ -602,9 +648,8 @@ class ExamWizardController extends ChangeNotifier {
       return;
     }
     final content = _document.branchAt(ref).content;
-    if (content.options.length <= 1 ||
-        optionIndex < 0 ||
-        optionIndex >= content.options.length) {
+    // لا حد أدنى للخيارات: تُحذف كلها إن أراد المدرس.
+    if (optionIndex < 0 || optionIndex >= content.options.length) {
       return;
     }
     final options = List<QuestionOption>.of(content.options)..removeAt(optionIndex);

@@ -11,7 +11,9 @@ import '../models/exam_document.dart';
 import '../models/exam_header_model.dart';
 import '../models/floating_element.dart';
 import '../models/paper_divider.dart';
+import '../models/paper_text_style.dart';
 import '../models/question_model.dart';
+import '../models/question_option.dart';
 import '../models/question_type.dart';
 import '../models/quran_text.dart';
 import '../models/subject_layout.dart';
@@ -331,14 +333,17 @@ class PaginatedPdfExamEngine {
     );
 
     pw.Widget column(HeaderColumn source, pw.TextStyle style, pw.TextAlign align) {
+      // الأسطر الفارغة تُحذف تماماً ولا تترك مسافة بيضاء.
+      final lines =
+          source.lines.where((line) => line.trim().isNotEmpty).toList(growable: false);
       return pw.Expanded(
         flex: align == pw.TextAlign.center ? 4 : 3,
         child: pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.stretch,
           mainAxisSize: pw.MainAxisSize.min,
           children: <pw.Widget>[
-            for (final line in source.lines)
-              pw.Text(line.isEmpty ? ' ' : line, style: style, textAlign: align, maxLines: 2),
+            for (final line in lines)
+              pw.Text(line, style: style, textAlign: align, maxLines: 2),
           ],
         ),
       );
@@ -455,7 +460,12 @@ class PaginatedPdfExamEngine {
       if (prompt.isNotEmpty)
         pw.Padding(
           padding: const pw.EdgeInsets.only(top: 2),
-          child: _renderText(prompt, promptStyle, fonts.quranic),
+          child: _renderText(
+            prompt,
+            promptStyle,
+            fonts.quranic,
+            align: PaperStyleResolver.toPdfAlign(question.style.align),
+          ),
         ),
       for (var index = 0; index < question.branches.length; index++)
         pw.Padding(
@@ -515,16 +525,25 @@ class PaginatedPdfExamEngine {
   ) {
     final settings = document.settings;
     final content = branch.content;
+    // الفرع الفارغ تماماً يُحذف من المطبوع كاملاً (مع فاصله) ولا يترك مسافة.
+    if (!content.hasExportableContent(teacher: isTeacherVersion)) {
+      return pw.SizedBox();
+    }
     final marksSuffix = branch.marks > 0
         ? ' (${document.formatNumber(branch.marks)} ${layout.marksUnit})'
         : '';
+    final hasText = content.text.trim().isNotEmpty;
+    // سطر التسمية: النص عند وجوده، وإلا التسمية الهيكلية وحدها بلا فراغ شارد.
+    final labelLine =
+        hasText ? '$label) ${content.text}$marksSuffix' : '$label)$marksSuffix';
     // المقاطع الموسومة بالآيات تُرسم بالخط القرآني في كل القوالب، وأما
     // «أسلوب المصحف» — توسيط الآية القائمة بذاتها وتكبيرها — فيتبع تفضيل
     // القالب ([SubjectLayoutTemplate.prefersQuranicFont] أي التربية
     // الإسلامية). وهو **نفس قرار لوحة المعاينة** حرفياً؛ والتوسيط والحجم لا
     // يتعلقان بتوفر الخط (الخط وحده يرتد إلى خط الورقة إن غاب الأصل).
-    final standaloneVerse =
-        layout.prefersQuranicFont && QuranText.isStandaloneVerse(content.text);
+    final standaloneVerse = hasText &&
+        layout.prefersQuranicFont &&
+        QuranText.isStandaloneVerse(content.text);
     final baseBody = standaloneVerse
         ? styles.body.copyWith(
             fontSize: 12 * settings.fontScale,
@@ -538,15 +557,24 @@ class PaginatedPdfExamEngine {
       fonts: fonts,
       defaultFont: settings.defaultFont,
     );
+    final branchAlign = PaperStyleResolver.toPdfAlign(branch.style.align);
+    // مطابقة اللوحة حرفياً: النص الحر يُخفي مساحة الإجابة عن الطالب،
+    // وخيارات الاختيار تُخفى في نموذج المعلم للفرع الحر.
+    final showTypeBody = !(content.plainText && !isTeacherVersion) &&
+        !(isTeacherVersion &&
+            content.plainText &&
+            content.type == QuestionType.multipleChoice);
 
     final children = <pw.Widget>[
       _renderText(
-        '$label) ${content.text}$marksSuffix',
+        labelLine,
         bodyStyle,
         fonts.quranic,
         centerVerse: standaloneVerse,
+        align: branchAlign,
       ),
-      if (content.items.isNotEmpty)
+      if (content.items.any(
+          (item) => item.showsInExport(teacher: isTeacherVersion, type: content.type)))
         pw.Padding(
           padding: const pw.EdgeInsetsDirectional.only(start: 14, top: 1),
           child: _buildItems(
@@ -556,14 +584,15 @@ class PaginatedPdfExamEngine {
             styles,
             fonts,
             isTeacherVersion,
+            branch.style,
           ),
         ),
-      if (!(content.plainText && !isTeacherVersion))
+      if (showTypeBody)
         pw.Padding(
           padding: const pw.EdgeInsetsDirectional.only(start: 14, top: 1),
-          child: _buildTypeBody(document, content, layout, styles, fonts, isTeacherVersion),
+          child: _buildTypeBody(
+              document, content, layout, styles, fonts, isTeacherVersion, branch.style),
         ),
-      if (isTeacherVersion && content.plainText) _buildPlainTeacherAnswer(document, content, layout, styles),
       if (branch.dividerAfter != null)
         _buildDivider(branch.dividerAfter!, _contentWidthFor(document)),
     ];
@@ -598,7 +627,7 @@ class PaginatedPdfExamEngine {
     );
   }
 
-  /// النقاط داخل الفرع (1- 2- 3-...) بترقيم نسق الورقة.
+  /// النقاط داخل الفرع بترقيمها (تلقائي أو مخصص) — والفارغة تُحذف.
   pw.Widget _buildItems(
     ExamDocument document,
     BranchContent content,
@@ -606,30 +635,35 @@ class PaginatedPdfExamEngine {
     ExamTextStyles styles,
     ExamFonts fonts,
     bool isTeacherVersion,
+    PaperTextStyle? branchStyle,
   ) {
     final settings = document.settings;
     final itemStyle = PaperStyleResolver.apply(
       styles.body.copyWith(
           lineSpacing: layout.lineHeightFactor * 2 * settings.heightScale),
-      null,
+      branchStyle,
       fonts: fonts,
       defaultFont: settings.defaultFont,
     );
+    final align = PaperStyleResolver.toPdfAlign(branchStyle?.align);
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       mainAxisSize: pw.MainAxisSize.min,
       children: <pw.Widget>[
         for (var index = 0; index < content.items.length; index++)
-          _buildItem(
-            document,
-            content,
-            content.items[index],
-            index,
-            layout,
-            itemStyle,
-            fonts,
-            isTeacherVersion,
-          ),
+          if (content.items[index]
+              .showsInExport(teacher: isTeacherVersion, type: content.type))
+            _buildItem(
+              document,
+              content,
+              content.items[index],
+              index,
+              layout,
+              itemStyle,
+              fonts,
+              isTeacherVersion,
+              align,
+            ),
       ],
     );
   }
@@ -643,6 +677,7 @@ class PaginatedPdfExamEngine {
     pw.TextStyle style,
     ExamFonts fonts,
     bool isTeacherVersion,
+    pw.TextAlign? align,
   ) {
     final marksSuffix = item.marks > 0
         ? ' (${document.formatNumber(item.marks)} ${layout.marksUnit})'
@@ -656,34 +691,20 @@ class PaginatedPdfExamEngine {
           ? (item.isCorrect! ? ' (True)' : ' (False)')
           : (item.isCorrect! ? ' (صح)' : ' (خطأ)');
     }
-    final text = item.text.trim().isEmpty ? '................................' : item.text;
-    return _renderText(
-      '${document.formatNumber(index + 1)}- $text$marksSuffix$answerSuffix',
-      style,
-      fonts.quranic,
-    );
-  }
-
-  /// الإجابة النموذجية للفرع الحر في نسخة المعلم.
-  pw.Widget _buildPlainTeacherAnswer(
-    ExamDocument document,
-    BranchContent content,
-    SubjectLayoutTemplate layout,
-    ExamTextStyles styles,
-  ) {
-    final model = content.modelAnswer.trim();
-    if (model.isEmpty) {
+    final itemLabel = document.displayItemLabel(item, index);
+    final chunks = <String>[
+      if (itemLabel.isNotEmpty) itemLabel,
+      if (item.text.trim().isNotEmpty) item.text,
+    ];
+    final line = '${chunks.join(' ')}$marksSuffix$answerSuffix';
+    if (line.trim().isEmpty) {
       return pw.SizedBox();
     }
-    return pw.Padding(
-      padding: const pw.EdgeInsetsDirectional.only(start: 14, top: 1),
-      child: pw.Text(
-        '${layout.isLtr ? 'Model answer' : 'الإجابة النموذجية'}: $model •',
-        style: styles.body.copyWith(
-          color: ExamTextStyles.successColor,
-          fontWeight: pw.FontWeight.bold,
-        ),
-      ),
+    return _renderText(
+      line,
+      style,
+      fonts.quranic,
+      align: align,
     );
   }
 
@@ -757,27 +778,44 @@ class PaginatedPdfExamEngine {
     ExamTextStyles styles,
     ExamFonts fonts,
     bool isTeacherVersion,
+    PaperTextStyle? branchStyle,
   ) {
-    final answerStyle = styles.body.copyWith(
-      color: ExamTextStyles.successColor,
-      fontWeight: pw.FontWeight.bold,
-    );
+    final styledAnswer = branchStyle?.color != null
+        ? styles.body.copyWith(
+            color: PdfColor.fromInt(branchStyle!.color!),
+            fontWeight: pw.FontWeight.bold,
+          )
+        : styles.body.copyWith(
+            color: ExamTextStyles.successColor,
+            fontWeight: pw.FontWeight.bold,
+          );
+    pw.TextStyle withBranchColor(pw.TextStyle base) => branchStyle?.color != null
+        ? base.copyWith(color: PdfColor.fromInt(branchStyle!.color!))
+        : base;
+    final align = PaperStyleResolver.toPdfAlign(branchStyle?.align);
     switch (content.type) {
       case QuestionType.multipleChoice:
-        final options = content.options
-            .where((option) => option.text.trim().isNotEmpty)
-            .toList(growable: false);
+        // الخيارات الفارغة تُحذف، لكن التسميات تبقى بفهارسها الأصلية
+        // (مطابقة اللوحة) ولا يعاد ترقيم المخصص منها أبداً.
         return pw.Wrap(
           spacing: 14,
           runSpacing: 2,
           children: <pw.Widget>[
-            for (var index = 0; index < options.length; index++)
-              _renderText(
-                '( ${layout.branchLabel(index)} ) ${options[index].text}'
-                '${isTeacherVersion && options[index].isCorrect ? ' •' : ''}',
-                isTeacherVersion && options[index].isCorrect ? answerStyle : styles.option,
-                fonts.quranic,
-              ),
+            for (var index = 0; index < content.options.length; index++)
+              if (content.options[index].text.trim().isNotEmpty)
+                _renderText(
+                  _optionLine(
+                    document,
+                    content.options[index],
+                    index,
+                    isTeacherVersion && content.options[index].isCorrect,
+                  ),
+                  isTeacherVersion && content.options[index].isCorrect
+                      ? styledAnswer
+                      : withBranchColor(styles.option),
+                  fonts.quranic,
+                  align: align,
+                ),
           ],
         );
       case QuestionType.trueFalse:
@@ -786,7 +824,8 @@ class PaginatedPdfExamEngine {
             layout.isLtr
                 ? 'Answer: (     ) True      (     ) False'
                 : 'الإجابة: (     ) صح      (     ) خطأ',
-            style: styles.body,
+            style: withBranchColor(styles.body),
+            textAlign: align,
           );
         }
         final answer = content.trueFalseAnswer;
@@ -794,29 +833,38 @@ class PaginatedPdfExamEngine {
           layout.isLtr
               ? 'Answer: ${answer ? 'True' : 'False'} •'
               : 'الإجابة الصحيحة: ${answer ? 'صح' : 'خطأ'} •',
-          style: answerStyle,
+          style: styledAnswer,
+          textAlign: align,
         );
       case QuestionType.fillInTheBlank:
         if (!isTeacherVersion) {
           return pw.Text(
             '${layout.isLtr ? 'Answer' : 'الإجابة'}: '
             '............................................................................',
-            style: styles.body,
+            style: withBranchColor(styles.body),
+            textAlign: align,
           );
         }
-        final model = content.modelAnswer.trim();
+        final fillModel = content.modelAnswer.trim();
+        if (fillModel.isEmpty) {
+          return pw.SizedBox();
+        }
         return pw.Text(
-          '${layout.isLtr ? 'Model answer' : 'الإجابة النموذجية'}: '
-          '${model.isEmpty ? '—' : model} •',
-          style: answerStyle,
+          '${layout.isLtr ? 'Model answer' : 'الإجابة النموذجية'}: $fillModel •',
+          style: styledAnswer,
+          textAlign: align,
         );
       case QuestionType.essay:
         if (isTeacherVersion) {
-          final model = content.modelAnswer.trim();
+          final essayModel = content.modelAnswer.trim();
+          if (essayModel.isEmpty) {
+            return pw.SizedBox();
+          }
           return pw.Text(
             '${layout.isLtr ? 'Model answer' : 'الإجابة النموذجية وعناصر التقييم'}: '
-            '${model.isEmpty ? '—' : model} •',
-            style: answerStyle,
+            '$essayModel •',
+            style: styledAnswer,
+            textAlign: align,
           );
         }
         return pw.Column(
@@ -826,11 +874,24 @@ class PaginatedPdfExamEngine {
             layout.essayAnswerLines,
             (_) => pw.Text(
               '................................................................................................',
-              style: styles.small,
+              style: withBranchColor(styles.small),
+              textAlign: align,
             ),
           ),
         );
     }
+  }
+
+  /// سطر الخيار: تسميته (تلقائية بفهرسها الأصلي أو مخصصة) ثم نصه.
+  String _optionLine(
+    ExamDocument document,
+    QuestionOption option,
+    int index,
+    bool markCorrect,
+  ) {
+    final label = document.displayOptionLabel(option, index);
+    final prefix = label.isEmpty ? '' : '$label ';
+    return '$prefix${option.text}${markCorrect ? ' •' : ''}';
   }
 
   pw.Widget _buildFooter(
@@ -859,17 +920,19 @@ class PaginatedPdfExamEngine {
   /// نص الورقة: مقاطع LaTeX ($...$) تُرسم SVG متجهة، وآيات القرآن الموسومة
   /// بـ `﴿ ... ﴾` تُرسم بالخط القرآني (Amiri) إن توفّر، والباقي نص عادي.
   ///
-  /// [centerVerse] يوسّط آية قائمة بذاتها كما في لوحة المعاينة.
+  /// [centerVerse] يوسّط آية قائمة بذاتها كما في لوحة المعاينة، و[align]
+  /// محاذاة الكتلة المختارة من شريط التنسيق.
   pw.Widget _renderText(
     String text,
     pw.TextStyle style,
     pw.Font? quranFont, {
     bool centerVerse = false,
+    pw.TextAlign? align,
   }) {
     final segments = TexContent.split(text);
     final hasMath = segments.any((segment) => segment.isMath);
     if (!hasMath) {
-      return _plainText(text, style, quranFont, centerVerse: centerVerse);
+      return _plainText(text, style, quranFont, centerVerse: centerVerse, align: align);
     }
     final fontSize = style.fontSize ?? 10.5;
     final rows = <pw.Widget>[];
@@ -883,6 +946,7 @@ class PaginatedPdfExamEngine {
         pw.Wrap(
           spacing: 1,
           runSpacing: 2,
+          alignment: _wrapAlign(align),
           crossAxisAlignment: pw.WrapCrossAlignment.center,
           children: List<pw.Widget>.of(inline),
         ),
@@ -893,7 +957,7 @@ class PaginatedPdfExamEngine {
     for (final segment in segments) {
       if (!segment.isMath) {
         if (segment.text.isNotEmpty) {
-          inline.add(_plainText(segment.text, style, quranFont));
+          inline.add(_plainText(segment.text, style, quranFont, align: align));
         }
         continue;
       }
@@ -912,10 +976,34 @@ class PaginatedPdfExamEngine {
     }
     flushInline();
     return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      crossAxisAlignment: _columnAlign(align),
       mainAxisSize: pw.MainAxisSize.min,
       children: rows,
     );
+  }
+
+  static pw.CrossAxisAlignment _columnAlign(pw.TextAlign? align) {
+    switch (align) {
+      case pw.TextAlign.center:
+        return pw.CrossAxisAlignment.center;
+      case pw.TextAlign.right:
+      case pw.TextAlign.end:
+        return pw.CrossAxisAlignment.end;
+      default:
+        return pw.CrossAxisAlignment.start;
+    }
+  }
+
+  static pw.WrapAlignment _wrapAlign(pw.TextAlign? align) {
+    switch (align) {
+      case pw.TextAlign.center:
+        return pw.WrapAlignment.center;
+      case pw.TextAlign.right:
+      case pw.TextAlign.end:
+        return pw.WrapAlignment.end;
+      default:
+        return pw.WrapAlignment.start;
+    }
   }
 
   /// نص عادي — وإذا حمل آيات موسومة رُسمت مقاطعها بالخط القرآني [quranFont]
@@ -927,12 +1015,13 @@ class PaginatedPdfExamEngine {
     pw.TextStyle style,
     pw.Font? quranFont, {
     bool centerVerse = false,
+    pw.TextAlign? align,
   }) {
     if (quranFont == null || !QuranText.containsQuran(text)) {
       return pw.Text(
         text,
         style: style,
-        textAlign: centerVerse ? pw.TextAlign.center : null,
+        textAlign: centerVerse ? pw.TextAlign.center : align,
       );
     }
     final spans = <pw.InlineSpan>[];

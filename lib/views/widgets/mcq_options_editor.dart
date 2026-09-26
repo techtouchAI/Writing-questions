@@ -46,15 +46,10 @@ class _McqOptionsEditorState extends State<McqOptionsEditor> {
   }
 
   void _removeOption(int index) {
-    if (_localOptions.length <= 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يجب أن يحتوي سؤال الخيارات على خيارين على الأقل.'),
-        ),
-      );
+    // لا حد أدنى للخيارات: تُحذف كلها إن أراد المدرس.
+    if (index < 0 || index >= _localOptions.length) {
       return;
     }
-
     setState(() {
       _localOptions = <QuestionOption>[
         ..._localOptions.sublist(0, index),
@@ -73,6 +68,15 @@ class _McqOptionsEditorState extends State<McqOptionsEditor> {
       ];
     });
     _notifyChanged();
+  }
+
+  /// فارغ = تلقائي (`null`)، `-` = إخفاء (`''`)، وإلا النص المخصص.
+  static String? _normalizeLabel(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    return trimmed == '-' ? '' : trimmed;
   }
 
   void _notifyChanged() {
@@ -142,6 +146,31 @@ class _McqOptionsEditorState extends State<McqOptionsEditor> {
                     ),
                   ),
                 ),
+                const SizedBox(width: 6),
+                // تسمية الخيار: مخصصة حرفياً، فارغ = تلقائي، `-` = إخفاء.
+                SizedBox(
+                  width: 70,
+                  child: TextFormField(
+                    key: ValueKey<String>('label-${option.id}'),
+                    initialValue: option.labelOverride ?? '',
+                    enabled: widget.enabled,
+                    decoration: const InputDecoration(
+                      hintText: 'تسمية',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 10,
+                      ),
+                    ),
+                    onChanged: (text) => _updateOption(
+                      index,
+                      option.copyWith(
+                        labelOverride: () => _normalizeLabel(text),
+                      ),
+                    ),
+                  ),
+                ),
                 IconButton(
                   icon: const Icon(
                     Icons.remove_circle_outline,
@@ -164,12 +193,8 @@ class _McqOptionsEditorState extends State<McqOptionsEditor> {
     if (options.isNotEmpty) {
       return options.map((option) => option.copyWith()).toList(growable: false);
     }
-    return <QuestionOption>[
-      QuestionOption(text: '', isCorrect: true),
-      QuestionOption(text: ''),
-      QuestionOption(text: ''),
-      QuestionOption(text: ''),
-    ];
+    // بلا خيارات (حُذفت كلها): صف فارغ واحد لبداية جديدة.
+    return <QuestionOption>[QuestionOption(text: '')];
   }
 
   static bool _sameOptions(
@@ -184,7 +209,8 @@ class _McqOptionsEditorState extends State<McqOptionsEditor> {
       final secondOption = second[index];
       if (firstOption.id != secondOption.id ||
           firstOption.text != secondOption.text ||
-          firstOption.isCorrect != secondOption.isCorrect) {
+          firstOption.isCorrect != secondOption.isCorrect ||
+          firstOption.labelOverride != secondOption.labelOverride) {
         return false;
       }
     }

@@ -9,12 +9,16 @@ import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 
 void main() {
   group('ExamWizardController wizard flow', () {
-    test('starts with one question that has a single branch (أ)', () {
+    test('starts with one branchless question; branches are added explicitly', () {
       final controller = ExamWizardController();
       expect(controller.questions, hasLength(1));
-      expect(controller.currentQuestion.branches, hasLength(1));
+      expect(controller.currentQuestion.branches, isEmpty);
       expect(controller.layout.questionLabel(controller.currentQuestion.questionNumber),
           'السؤال الأول');
+
+      controller.addBranch(0);
+      expect(controller.currentQuestion.branches, hasLength(1));
+      expect(controller.layout.branchLabel(0), 'أ');
     });
 
     test('goToNextQuestion appends an empty question and opens it', () {
@@ -36,19 +40,21 @@ void main() {
       expect(controller.questions, hasLength(2));
     });
 
-    test('addBranch adds ب then ج with the same tooling', () {
+    test('addBranch adds أ then ب with the same tooling', () {
       final controller = ExamWizardController();
       controller.addBranch(0, type: QuestionType.multipleChoice);
       controller.addBranch(0);
 
       final branches = controller.currentQuestion.branches;
-      expect(branches, hasLength(3));
+      expect(branches, hasLength(2));
+      expect(branches[0].content.type, QuestionType.multipleChoice);
       expect(branches[1].content.type, QuestionType.multipleChoice);
-      expect(controller.layout.branchLabel(2), 'ج');
+      expect(controller.layout.branchLabel(1), 'ب');
     });
 
     test('branch edits are applied immutably and roll up into totals', () {
       final controller = ExamWizardController();
+      controller.addBranch(0);
       const ref = BranchRef(questionIndex: 0, branchIndex: 0);
       final before = controller.document;
 
@@ -65,6 +71,7 @@ void main() {
 
     test('a new branch starts with the same question type as the previous branch', () {
       final controller = ExamWizardController();
+      controller.addBranch(0);
       const first = BranchRef(questionIndex: 0, branchIndex: 0);
       controller.updateBranchType(first, QuestionType.multipleChoice);
       controller.updateBranchText(first, 'اختر الإجابة الصحيحة');
@@ -101,6 +108,7 @@ void main() {
   group('ExamWizardController in-place editing', () {
     test('updates an option text while keeping the correct-answer flag', () {
       final controller = ExamWizardController();
+      controller.addBranch(0);
       const ref = BranchRef(questionIndex: 0, branchIndex: 0);
       controller.updateBranchType(ref, QuestionType.multipleChoice);
       controller.updateBranchContent(
@@ -126,6 +134,7 @@ void main() {
 
     test('updates the model answer used by the teacher version', () {
       final controller = ExamWizardController();
+      controller.addBranch(0);
       const ref = BranchRef(questionIndex: 0, branchIndex: 0);
       expect(controller.document.branchAt(ref).content.modelAnswer, isEmpty);
 
@@ -139,7 +148,9 @@ void main() {
   group('ExamWizardController drag & drop', () {
     test('swapBranchContent keeps headings and exchanges content/marks only', () {
       final controller = ExamWizardController();
+      controller.addBranch(0);
       controller.goToNextQuestion();
+      controller.addBranch(1);
       controller.addBranch(1);
       const q1a = BranchRef(questionIndex: 0, branchIndex: 0);
       const q2b = BranchRef(questionIndex: 1, branchIndex: 1);
@@ -175,6 +186,7 @@ void main() {
       final controller = ExamWizardController();
       expect(controller.addAttachment(square()), isFalse);
 
+      controller.addBranch(0);
       const ref = BranchRef(questionIndex: 0, branchIndex: 0);
       controller.selectBranch(ref);
       final element = square();
@@ -237,6 +249,86 @@ void main() {
     final original = ExamWizardController().document;
     final restored = ExamWizardController(document: original);
     expect(restored.document.id, original.id);
-    expect(restored.document.questions.single.branches.single, isA<BranchModel>());
+    expect(restored.document.questions.single.branches, isEmpty);
+  });
+
+  group('ExamWizardController flexible labels', () {
+    test('edits an option label without renumbering its siblings', () {
+      final controller = ExamWizardController();
+      controller.addBranch(0, type: QuestionType.multipleChoice);
+      const ref = BranchRef(questionIndex: 0, branchIndex: 0);
+
+      controller.updateBranchOptionLabel(ref, 1, 'B.');
+      final document = controller.document;
+      final options = document.branchAt(ref).content.options;
+      expect(options[1].labelOverride, 'B.');
+      expect(document.displayOptionLabel(options[1], 1), 'B.');
+      // البقية تلقائية بفهارسها الأصلية.
+      expect(document.displayOptionLabel(options[0], 0), '( أ )');
+      expect(document.displayOptionLabel(options[2], 2), '( ج )');
+
+      // فارغ = عودة للتلقائي، `-` = إخفاء.
+      controller.updateBranchOptionLabel(ref, 1, '  ');
+      expect(
+        controller.document.branchAt(ref).content.options[1].labelOverride,
+        isNull,
+      );
+      controller.updateBranchOptionLabel(ref, 1, '-');
+      expect(
+        controller.document.branchAt(ref).content.options[1].labelOverride,
+        '',
+      );
+      expect(
+        controller.document.displayOptionLabel(
+          controller.document.branchAt(ref).content.options[1],
+          1,
+        ),
+        '',
+      );
+    });
+
+    test('edits an item label literally and ignores out-of-range edits', () {
+      final controller = ExamWizardController();
+      controller.addBranch(0);
+      const ref = BranchRef(questionIndex: 0, branchIndex: 0);
+      controller.addBranchItem(ref);
+
+      controller.updateBranchItemLabel(ref, 0, 'أ-');
+      final document = controller.document;
+      expect(
+        document.displayItemLabel(document.branchAt(ref).content.items[0], 0),
+        'أ-',
+      );
+
+      controller.updateBranchItemLabel(ref, 5, 'x');
+      controller.updateBranchItemLabel(
+        const BranchRef(questionIndex: 0, branchIndex: 4),
+        0,
+        'x',
+      );
+      expect(document.branchAt(ref).content.items, hasLength(1));
+    });
+
+    test('removes the last branch and the last option (no minimums)', () {
+      final controller = ExamWizardController();
+      controller.addBranch(0, type: QuestionType.multipleChoice);
+      const ref = BranchRef(questionIndex: 0, branchIndex: 0);
+
+      for (var remaining = 4; remaining > 0; remaining--) {
+        controller.removeBranchOption(ref, 0);
+      }
+      expect(controller.document.branchAt(ref).content.options, isEmpty);
+
+      controller.removeBranch(ref);
+      expect(controller.questions.single.branches, isEmpty);
+    });
+
+    test('ignores branch moves with stale indices instead of throwing', () {
+      final controller = ExamWizardController();
+      controller.addBranch(0);
+      controller.moveBranch(0, 0, 5);
+      controller.moveBranch(0, 4, 0);
+      expect(controller.questions.single.branches, hasLength(1));
+    });
   });
 }

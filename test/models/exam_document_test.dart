@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
@@ -114,18 +115,63 @@ void main() {
   });
 
   group('QuestionModel / BranchModel', () {
-    test('a question always has at least one branch and rolls up marks', () {
+    test('a question starts branchless and rolls up marks', () {
       final question = QuestionModel(questionNumber: 1);
-      expect(question.branches, hasLength(1));
+      expect(question.branches, isEmpty);
       expect(question.marks, 0);
 
       final grown = question
           .withBranchAdded(BranchModel(marks: 2))
           .withBranchAdded(BranchModel(marks: 1.5));
-      expect(grown.branches, hasLength(3));
+      expect(grown.branches, hasLength(2));
       expect(grown.marks, 3.5);
-      expect(grown.withBranchRemoved(0).branches, hasLength(2));
-      expect(QuestionModel(questionNumber: 1).withBranchRemoved(0).branches, hasLength(1));
+      expect(grown.withBranchRemoved(0).branches, hasLength(1));
+      // حذف الفرع الأخير مسموح: يبقى السؤال بلا فروع.
+      expect(grown.withBranchRemoved(0).withBranchRemoved(0).branches, isEmpty);
+    });
+
+    test('shows custom item and option labels literally (no renumbering)', () {
+      final document = _twoQuestionDocument();
+      final option = document.questions[1].branches[0].content.options[0];
+      expect(document.displayOptionLabel(option, 0), '( أ )');
+
+      final customOption = option.copyWith(labelOverride: () => 'A.');
+      expect(document.displayOptionLabel(customOption, 0), 'A.');
+      final hiddenOption = option.copyWith(labelOverride: () => '');
+      expect(document.displayOptionLabel(hiddenOption, 0), '');
+
+      final item = BranchItem(text: 'عبارة');
+      expect(document.displayItemLabel(item, 2), document.autoItemLabel(2));
+      expect(
+        document.displayItemLabel(item.copyWith(labelOverride: () => 'ثالثاً:'), 2),
+        'ثالثاً:',
+      );
+    });
+
+    test('detects branches with no exportable content', () {
+      expect(
+        BranchContent(type: QuestionType.essay, text: '  ')
+            .hasExportableContent(teacher: false),
+        isFalse,
+      );
+      expect(
+        BranchContent(type: QuestionType.essay, text: 'نص')
+            .hasExportableContent(teacher: false),
+        isTrue,
+      );
+      // إجابة صح/خطأ وحدها لا تكفي في نسخة الطالب.
+      final trueFalseOnly = BranchContent(
+        type: QuestionType.trueFalse,
+        items: <BranchItem>[BranchItem(isCorrect: true)],
+      );
+      expect(trueFalseOnly.hasExportableContent(teacher: false), isFalse);
+      expect(trueFalseOnly.hasExportableContent(teacher: true), isTrue);
+      // النموذجية الفارغة تُحذف من نسخة المعلم.
+      expect(
+        BranchContent(type: QuestionType.essay, modelAnswer: '  ')
+            .hasExportableContent(teacher: true),
+        isFalse,
+      );
     });
 
     test('changing the content type resets options to the type defaults', () {

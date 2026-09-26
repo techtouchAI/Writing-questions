@@ -33,6 +33,7 @@ import '../widgets/ltr_numeric_field.dart';
 import '../widgets/pdf_preview_screen.dart';
 import '../widgets/smart_exam_toolbar.dart';
 import '../widgets/tex_text.dart';
+import '../widgets/visual_equation_editor.dart';
 import 'measure_size.dart';
 import 'paper_styles.dart';
 import 'preview_toolbar.dart';
@@ -1079,6 +1080,285 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _applyStyle((current) => current.copyWith(fontSize: () => size));
   }
 
+  /// تباعد أسطر مخصص (حوار حر) — يطبق على التحديد الحالي.
+  Future<void> _showCustomLineHeight() async {
+    final targets = _styleTargets();
+    final hasTarget = targets.branches.isNotEmpty ||
+        targets.questions.isNotEmpty ||
+        targets.header ||
+        targets.boxes.isNotEmpty;
+    if (!hasTarget) {
+      _showMessage('حدد سؤالاً أو فرعاً أولاً لتطبيق التباعد.');
+      return;
+    }
+    final field = TextEditingController(
+      text: _activeStyle().lineHeight?.toString() ?? '',
+    );
+    final saved = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تباعد أسطر مخصص'),
+        content: LtrNumericField(
+          controller: field,
+          hintText: 'مثال: 1.3 (بين 0.5 و 4.0)',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(field.text),
+            child: const Text('تطبيق'),
+          ),
+        ],
+      ),
+    );
+    field.dispose();
+    if (saved == null) {
+      return;
+    }
+    final value = double.tryParse(
+      saved.trim().replaceAll('،', '.').replaceAll(',', '.'),
+    );
+    if (value == null || value < 0.5 || value > 4.0) {
+      _showMessage('أدخل تباعداً بين 0.5 و 4.0.', isError: true);
+      return;
+    }
+    _applyStyle((current) => current.copyWith(lineHeight: () => value));
+  }
+
+  /// لون نص مخصص HEX (حوار حر) — يطبق على التحديد الحالي.
+  Future<void> _showCustomColor() async {
+    final targets = _styleTargets();
+    final hasTarget = targets.branches.isNotEmpty ||
+        targets.questions.isNotEmpty ||
+        targets.header ||
+        targets.boxes.isNotEmpty;
+    if (!hasTarget) {
+      _showMessage('حدد سؤالاً أو فرعاً أولاً لتطبيق اللون.');
+      return;
+    }
+    final field = TextEditingController(text: _activeStyle().colorHex ?? '');
+    final saved = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('لون نص مخصص'),
+        content: LtrNumericField(
+          controller: field,
+          hintText: 'مثال: 1E3A8A أو #B91C1C',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(field.text),
+            child: const Text('تطبيق'),
+          ),
+        ],
+      ),
+    );
+    field.dispose();
+    if (saved == null) {
+      return;
+    }
+    var hex = saved.trim();
+    if (hex.startsWith('#')) {
+      hex = hex.substring(1);
+    }
+    final parsed = int.tryParse(hex, radix: 16);
+    if (parsed == null || (hex.length != 6 && hex.length != 8)) {
+      _showMessage('أدخل لون HEX صحيحاً (6 خانات مثل 1E3A8A).', isError: true);
+      return;
+    }
+    final argb = hex.length == 6 ? 0xFF000000 | parsed : parsed;
+    _applyStyle((current) => current.copyWith(color: () => argb));
+  }
+
+  /// ترقيم النقطة: مخصص حرفي، فارغ = تلقائي، `-` = إخفاء.
+  Future<void> _editItemLabel(BranchRef ref, int index) async {
+    final controller = _controller!;
+    final document = controller.document;
+    if (!document.containsRef(ref)) {
+      return;
+    }
+    final content = document.branchAt(ref).content;
+    if (index < 0 || index >= content.items.length) {
+      return;
+    }
+    final item = content.items[index];
+    final field = TextEditingController(text: item.labelOverride ?? '');
+    final saved = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('ترقيم النقطة'),
+        content: TextField(
+          controller: field,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: 'تلقائي: ${document.autoItemLabel(index)}',
+            helperText: 'مثال: أ-، 1) — فارغ = تلقائي، - = إخفاء.',
+            border: const OutlineInputBorder(),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(field.text),
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+    field.dispose();
+    if (saved == null) {
+      return;
+    }
+    controller.updateBranchItemLabel(ref, index, saved);
+  }
+
+  /// تسمية الخيار: مخصصة حرفياً، فارغ = تلقائي، `-` = إخفاء.
+  Future<void> _editOptionLabel(BranchRef ref, int index) async {
+    final controller = _controller!;
+    final document = controller.document;
+    if (!document.containsRef(ref)) {
+      return;
+    }
+    final content = document.branchAt(ref).content;
+    if (index < 0 || index >= content.options.length) {
+      return;
+    }
+    final option = content.options[index];
+    final field = TextEditingController(text: option.labelOverride ?? '');
+    final saved = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تسمية الخيار'),
+        content: TextField(
+          controller: field,
+          autofocus: true,
+          decoration: InputDecoration(
+            hintText: 'تلقائي: ${document.autoOptionLabel(index)}',
+            helperText: 'مثال: ( أ )، A. — فارغ = تلقائي، - = إخفاء.',
+            border: const OutlineInputBorder(),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(field.text),
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+    field.dispose();
+    if (saved == null) {
+      return;
+    }
+    controller.updateBranchOptionLabel(ref, index, saved);
+  }
+
+  /// يفتح محرر المعادلات المرئي للحقل النشط (مسار شريط الصيغ).
+  ///
+  /// - [template] صيغة جاهزة تُحمَّل في المحرر (أو null لمعادلة فارغة).
+  /// - [preferBlock] يقترح النمط المنفرد `$$...$$`.
+  /// - [editExisting] يحرّر صيغة موجودة في الحقل بدل إدراج جديدة.
+  void _openEquationEditor({
+    String? template,
+    bool preferBlock = false,
+    bool editExisting = false,
+  }) {
+    final active = _inserter.controller;
+    if (active == null) {
+      _showMessage('انقر داخل حقل نصي أولاً لتحديد موضع المعادلة.');
+      return;
+    }
+    _editEquationInFieldController(
+      active,
+      template: template,
+      preferBlock: preferBlock,
+      editExisting: editExisting,
+    );
+  }
+
+  /// يحرّر صيغ الحقل [fieldKey] (زر الفرع/المعاينة الغنية) أو يدرج جديدة.
+  Future<void> _editEquationInField(String fieldKey) async {
+    final field = _fields[fieldKey];
+    if (field == null) {
+      return;
+    }
+    _inserter.controller = field;
+    await _editEquationInFieldController(field, editExisting: true);
+  }
+
+  Future<void> _editEquationInFieldController(
+    TextEditingController active, {
+    String? template,
+    bool preferBlock = false,
+    bool editExisting = false,
+  }) async {
+    TexMathSpan? editingSpan;
+    var initialLatex = template;
+    var initialIsBlock = preferBlock;
+    if (template == null && editExisting) {
+      final spans = TexContent.findSpans(active.text);
+      if (spans.length == 1) {
+        editingSpan = spans.single;
+      } else if (spans.length > 1) {
+        final offset = active.selection.isValid ? active.selection.start : -1;
+        final atCursor = spans
+            .where((span) => offset >= span.start && offset <= span.end)
+            .toList(growable: false);
+        if (atCursor.isNotEmpty) {
+          editingSpan = atCursor.first;
+        } else {
+          editingSpan = await showEquationSpanPicker(
+            context: context,
+            spans: spans,
+          );
+          if (editingSpan == null) {
+            return;
+          }
+        }
+      }
+      if (editingSpan != null) {
+        initialLatex = editingSpan.latex;
+        initialIsBlock = editingSpan.isBlock;
+      }
+    }
+    if (!mounted) {
+      return;
+    }
+    final snippet = await showVisualEquationEditor(
+      context: context,
+      initialLatex: initialLatex,
+      initialIsBlock: initialIsBlock,
+      saveLabel: editingSpan == null ? 'إدراج' : 'حفظ',
+    );
+    if (snippet == null || !mounted) {
+      return;
+    }
+    if (editingSpan != null) {
+      // يستبدل الصيغة في موضعها الأصلي تماماً (بفهارس findSpans).
+      active.text =
+          active.text.replaceRange(editingSpan.start, editingSpan.end, snippet);
+      active.selection =
+          TextSelection.collapsed(offset: editingSpan.start + snippet.length);
+    } else {
+      _inserter.controller = active;
+      _inserter.insert(snippet);
+    }
+  }
+
   Future<void> _showReview() async {
     if (_isBusy) {
       return;
@@ -1396,8 +1676,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
+  /// يوسّط الورقة مع الحفاظ على الزوم الحالي (لا يعيد الملاءمة).
   void _centerPaper() {
-    _fitToScreen();
     if (_vScroll.hasClients) {
       _vScroll.jumpTo(0);
     }
@@ -1511,6 +1791,24 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             onAlignChanged: (align) => _applyStyle(
               (current) => current.copyWith(align: () => align),
             ),
+            activeLineHeight: activeStyle.lineHeight,
+            onLineHeightChanged: (value) {
+              // القيمة المميزة NaN تعني «تباعد مخصص» من قائمة الشريط.
+              if (value != null && value.isNaN) {
+                _showCustomLineHeight();
+                return;
+              }
+              _applyStyle((current) => current.copyWith(lineHeight: () => value));
+            },
+            activeColor: activeStyle.color,
+            onColorChanged: (value) {
+              // القيمة المميزة -1 تعني «لون مخصص» (HEX) من قائمة الشريط.
+              if (value != null && value == PreviewToolbar.customColorSentinel) {
+                _showCustomColor();
+                return;
+              }
+              _applyStyle((current) => current.copyWith(color: () => value));
+            },
             hasFrame: _activeFrame(),
             onToggleFrame: _toggleFrame,
             onAddImage: _pickImageToSelection,
@@ -1550,6 +1848,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 }
                 controller.setBranchDivider(ref, const PaperDivider());
               },
+              onEquationEditor: _openEquationEditor,
             ),
           if (_isBusy) const LinearProgressIndicator(minHeight: 2),
           Expanded(
@@ -1918,6 +2217,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               (value) => controller.updateQuestionCategory(questionIndex, value),
             ),
             style: _scaled(PaperStyles.category),
+            textAlign: PaperStyles.toTextAlign(question.style.align),
             hint: 'القسم الوزاري...',
           ),
         GestureDetector(
@@ -2010,6 +2310,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               : 'نص السؤال / التعليمات (أجب عن فرعين فقط: ...)...',
           registerInserter: true,
         ),
+        // السؤال الجديد يبدأ بلا فروع؛ تُنشأ فقط بطلب صريح (زر +).
+        if (question.branches.isEmpty)
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 44, top: 2, bottom: 2),
+            child: Text(
+              layout.isLtr
+                  ? 'No branches yet — tap + to add one.'
+                  : 'لا فروع بعد — انقر + لإضافة فرع.',
+              style: PaperStyles.hint(promptStyle),
+            ),
+          ),
         for (var index = 0; index < question.branches.length; index++)
           _buildBranchBlock(
             controller,
@@ -2255,6 +2566,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   (value) => controller.updateBranchText(ref, value),
                 ),
                 style: bodyStyle,
+                textAlign: PaperStyles.toTextAlign(branch.style.align),
                 hint: layout.isLtr ? 'Branch text...' : 'نص الفرع...',
                 registerInserter: true,
               ),
@@ -2292,13 +2604,19 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               icon: const Icon(Icons.label_outline, size: 14),
               onPressed: () => _editBranchLabel(ref),
             ),
-            if (document.questions[ref.questionIndex].branches.length > 1)
-              IconButton(
-                tooltip: 'حذف الفرع',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.delete_outline, size: 14),
-                onPressed: () => controller.removeBranch(ref),
-              ),
+            IconButton(
+              tooltip: 'إدراج/تحرير معادلة',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.functions, size: 14),
+              onPressed: () => _editEquationInField(_branchTextKey(branch.id)),
+            ),
+            // لا حد أدنى للفروع: يُحذف الأخير أيضاً ويبقى السؤال فارغاً.
+            IconButton(
+              tooltip: 'حذف الفرع',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.delete_outline, size: 14),
+              onPressed: () => controller.removeBranch(ref),
+            ),
           ],
         ),
         // عرض منسّق للنص العلمي (LaTeX) وللآيات القرآنية (خط قرآني) تحت
@@ -2306,7 +2624,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         if (TexContent.containsMath(content.text) || QuranText.containsQuran(content.text))
           Padding(
             padding: const EdgeInsetsDirectional.only(start: 36),
-            child: _buildRichPreview(layout, content.text, bodyStyle),
+            child: TexContent.containsMath(content.text)
+                ? Tooltip(
+                    message: 'انقر لتحرير المعادلة',
+                    child: GestureDetector(
+                      onTap: () => _editEquationInField(_branchTextKey(branch.id)),
+                      child: _buildRichPreview(layout, content.text, bodyStyle),
+                    ),
+                  )
+                : _buildRichPreview(layout, content.text, bodyStyle),
           ),
         for (var index = 0; index < content.items.length; index++)
           _buildItemRow(controller, layout, ref, content.items[index], index, bodyStyle),
@@ -2437,11 +2763,19 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          SizedBox(
-            width: 30,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text('${document.formatNumber(index + 1)}-', style: bodyStyle),
+          Tooltip(
+            message: 'انقر لتعديل ترقيم النقطة',
+            child: GestureDetector(
+              onTap: () => _editItemLabel(ref, index),
+              child: Padding(
+                padding: const EdgeInsets.only(top: 2, left: 6),
+                child: document.displayItemLabel(item, index).isEmpty
+                    ? const Icon(Icons.tag, size: 12, color: Colors.grey)
+                    : Text(
+                        document.displayItemLabel(item, index),
+                        style: bodyStyle.copyWith(fontWeight: FontWeight.bold),
+                      ),
+              ),
             ),
           ),
           // إجابة النقطة لصح/خطأ — تظهر وتُحرَّر في نموذج المعلم فقط.
@@ -2867,6 +3201,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     SubjectLayoutTemplate layout,
     BranchModel branch,
   ) {
+    final document = controller.document;
     final content = branch.content;
     final answerStyle = _scaled(PaperStyles.answerBody(layout));
     if (content.plainText && !_showTeacherAnswers) {
@@ -2891,11 +3226,19 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Padding(
-                      padding: const EdgeInsets.only(top: 1),
-                      child: Text(
-                        '( ${layout.branchLabel(index)} )',
-                        style: _scaled(PaperStyles.option),
+                    Tooltip(
+                      message: 'انقر لتعديل تسمية الخيار',
+                      child: GestureDetector(
+                        onTap: () => _editOptionLabel(ref, index),
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 1),
+                          child: document.displayOptionLabel(content.options[index], index).isEmpty
+                              ? const Icon(Icons.tag, size: 12, color: Colors.grey)
+                              : Text(
+                                  document.displayOptionLabel(content.options[index], index),
+                                  style: _scaled(PaperStyles.option),
+                                ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -2925,14 +3268,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                           ),
                         ),
                       ),
-                    if (content.options.length > 1)
-                      InkWell(
-                        onTap: () => controller.removeBranchOption(ref, index),
-                        child: const Padding(
-                          padding: EdgeInsets.all(2),
-                          child: Icon(Icons.close, size: 12, color: Colors.grey),
-                        ),
+                    // لا حد أدنى للخيارات: يُحذف الأخير أيضاً.
+                    InkWell(
+                      onTap: () => controller.removeBranchOption(ref, index),
+                      child: const Padding(
+                        padding: EdgeInsets.all(2),
+                        child: Icon(Icons.close, size: 12, color: Colors.grey),
                       ),
+                    ),
                   ],
                 ),
               ),

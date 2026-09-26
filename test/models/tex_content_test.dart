@@ -37,6 +37,34 @@ void main() {
       expect(segments.first.text, r'السعر 5\$ فقط');
     });
 
+    test('findSpans locates inline and block spans with source offsets', () {
+      const source = r'حل $x^2$ ثم $$\frac{a}{b}$$ تم';
+      final spans = TexContent.findSpans(source);
+
+      expect(spans, hasLength(2));
+      expect(spans[0].isBlock, isFalse);
+      expect(spans[0].latex, 'x^2');
+      expect(source.substring(spans[0].start, spans[0].end), r'$x^2$');
+      expect(spans[1].isBlock, isTrue);
+      expect(spans[1].latex, r'\frac{a}{b}');
+      expect(source.substring(spans[1].start, spans[1].end), r'$$\frac{a}{b}$$');
+    });
+
+    test('findSpans ignores escaped dollars and maps offsets past them', () {
+      const source = r'السعر 5\$ ثم $x$';
+      final spans = TexContent.findSpans(source);
+
+      expect(spans, hasLength(1));
+      expect(spans.single.latex, 'x');
+      expect(source.substring(spans.single.start, spans.single.end), r'$x$');
+    });
+
+    test('findSpans returns no spans for plain or empty text', () {
+      expect(TexContent.findSpans('نص عادي'), isEmpty);
+      expect(TexContent.findSpans(''), isEmpty);
+      expect(TexContent.findSpans(r'\$'), isEmpty);
+    });
+
     test('supports chemistry/physics formulas inline', () {
       final segments = TexContent.split(r'الصيغة $H_2O$ والقوة $F=ma$');
 

@@ -43,7 +43,7 @@ void main() {
       expect(controller.questions, hasLength(6));
 
       // س1: 4 فروع بنصوص مميزة.
-      for (var i = 0; i < 3; i++) {
+      for (var i = 0; i < 4; i++) {
         controller.addBranch(0);
       }
       for (var b = 0; b < 4; b++) {
@@ -58,9 +58,11 @@ void main() {
       // س2: 3 فروع.
       controller.addBranch(1);
       controller.addBranch(1);
+      controller.addBranch(1);
       expect(controller.questions[1].branches, hasLength(3));
 
       // س3: فراغات من 10 نقاط.
+      controller.addBranch(2);
       const q3 = BranchRef(questionIndex: 2, branchIndex: 0);
       controller.updateBranchType(q3, QuestionType.fillInTheBlank);
       controller.setBranchItemCount(q3, 10);
@@ -69,6 +71,7 @@ void main() {
       }
 
       // س4: صح وخطأ من 7 نقاط مع إجابات نموذج المعلم.
+      controller.addBranch(3);
       const q4 = BranchRef(questionIndex: 3, branchIndex: 0);
       controller.updateBranchType(q4, QuestionType.trueFalse);
       controller.setBranchItemCount(q4, 7);
@@ -80,7 +83,7 @@ void main() {
 
       // س5: «أجب عن فرعين فقط» من 4 فروع.
       controller.updateQuestionPrompt(4, 'أجب عن فرعين فقط:');
-      for (var i = 0; i < 3; i++) {
+      for (var i = 0; i < 4; i++) {
         controller.addBranch(4);
       }
 

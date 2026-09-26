@@ -39,6 +39,7 @@ abstract final class PaperStyleResolver {
           : base.lineSpacing == null
               ? null
               : base.lineSpacing! * heightScale,
+      color: override?.color != null ? PdfColor.fromInt(override!.color!) : base.color,
     );
   }
 
