@@ -664,13 +664,3 @@ class _SelectionChip extends StatelessWidget {
     );
   }
 }
-,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(fontSize: 11, color: colorScheme.onSecondaryContainer),
-      ),
-    );
-  }
-}

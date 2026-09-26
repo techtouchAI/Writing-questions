@@ -1272,17 +1272,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// - [template] صيغة جاهزة تُحمَّل في المحرر (أو null لمعادلة فارغة).
   /// - [preferBlock] يقترح النمط المنفرد `$$...$$`.
   /// - [editExisting] يحرّر صيغة موجودة في الحقل بدل إدراج جديدة.
-  void _openEquationEditor({
+  Future<void> _openEquationEditor({
     String? template,
     bool preferBlock = false,
     bool editExisting = false,
-  }) {
+  }) async {
     final active = _inserter.controller;
     if (active == null) {
       _showMessage('انقر داخل حقل نصي أولاً لتحديد موضع المعادلة.');
       return;
     }
-    _editEquationInFieldController(
+    await _editEquationInFieldController(
       active,
       template: template,
       preferBlock: preferBlock,
