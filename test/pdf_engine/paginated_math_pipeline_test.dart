@@ -29,7 +29,7 @@ ExamDocument _document({required bool withMath}) {
   String formula(String latex, String control) =>
       withMath ? '\$' '$latex' '\$' : control;
   String blockFormula(String latex, String control) =>
-      withMath ? '$$' '$latex' '$$' : control;
+      withMath ? r'$$' '$latex' r'$$' : control;
 
   return ExamDocument(
     name: 'ورقة المعادلات',
