@@ -353,18 +353,22 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
               _buildDesignCard(),
               const SizedBox(height: 12),
               _buildLivePreview(),
-              const SizedBox(height: 24),
-              SizedBox(
-                height: 50,
-                child: FilledButton.icon(
-                  onPressed: _submit,
-                  icon: const Icon(Icons.arrow_back),
-                  label: const Text('التالي: إعداد السؤال الأول',
-                      style: TextStyle(fontSize: 16)),
-                ),
-              ),
               const SizedBox(height: 16),
             ],
+          ),
+        ),
+      ),
+      // زر المتابعة ثابت أسفل الشاشة (كخطوة الأسئلة): يبقى ظاهراً وقابلاً
+      // للنقر مهما طال النموذج، بدل دفنه تحت الحقول.
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.all(12),
+        child: SizedBox(
+          height: 50,
+          child: FilledButton.icon(
+            onPressed: _submit,
+            icon: const Icon(Icons.arrow_back),
+            label: const Text('التالي: إعداد السؤال الأول',
+                style: TextStyle(fontSize: 16)),
           ),
         ),
       ),
