@@ -102,12 +102,10 @@ void main() {
     });
 
     testWidgets('block mode wraps the result in double dollars', (tester) async {
-      await tester.pumpWidget(const _EditorHost());
+      await tester.pumpWidget(const _EditorHost(initialIsBlock: true));
       await tester.tap(find.text('فتح المحرر'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('منفردة'));
-      await tester.pumpAndSettle();
       await tester.tap(find.text('√'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'x');

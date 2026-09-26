@@ -120,6 +120,24 @@ class PreviewToolbar extends StatelessWidget {
     8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28,
   ];
 
+  /// إعدادات تباعد الأسطر المسبقة (1.0 مفرد ... 3.0) + مخصص.
+  static const List<double> lineSpacings = <double>[
+    1.0, 1.15, 1.5, 2.0, 2.5, 3.0,
+  ];
+
+  /// قيمة «مخصص...» في قائمة اللون — تفتح شاشة المعاينة حوار HEX.
+  static const int customColorSentinel = -1;
+
+  /// ألوان النص الجاهزة (ARGB) — تبقى حياً في اللوحة والمطبوع.
+  static const List<(int, String)> textColors = <(int, String)>[
+    (0xFF000000, 'أسود'),
+    (0xFF1E3A8A, 'كحلي'),
+    (0xFFB91C1C, 'خمري'),
+    (0xFF15803D, 'أخضر'),
+    (0xFF7E22CE, 'بنفسجي'),
+    (0xFFC2410C, 'برتقالي'),
+  ];
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;

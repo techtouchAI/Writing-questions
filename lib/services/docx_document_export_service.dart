@@ -918,7 +918,3 @@ class _DocxBuilder {
         .replaceAll('\n', '</w:t><w:br/><w:t xml:space="preserve">');
   }
 }
-)
-        .replaceAll('\n', '</w:t><w:br/><w:t xml:space="preserve">');
-  }
-}
