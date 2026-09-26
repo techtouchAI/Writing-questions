@@ -27,14 +27,14 @@ class _EditorHostState extends State<_EditorHost> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        body: Column(
-          children: <Widget>[
-            TextButton(onPressed: _open, child: const Text('فتح المحرر')),
-            Text('النتيجة: ${result ?? '—'}'),
-          ],
-        ),
+    // ملاحظة: MaterialApp تُبنى فوق المضيف في pumpWidget — سياق _open
+    // يحتاج MaterialLocalizations عند فتح الحوار.
+    return Scaffold(
+      body: Column(
+        children: <Widget>[
+          TextButton(onPressed: _open, child: const Text('فتح المحرر')),
+          Text('النتيجة: ${result ?? '—'}'),
+        ],
       ),
     );
   }
@@ -50,7 +50,7 @@ List<String> _slotTexts(WidgetTester tester) {
 void main() {
   group('VisualEquationEditor', () {
     testWidgets('builds a fraction visually and inserts inline math', (tester) async {
-      await tester.pumpWidget(const _EditorHost());
+      await tester.pumpWidget(const MaterialApp(home: _EditorHost()));
       await tester.tap(find.text('فتح المحرر'));
       await tester.pumpAndSettle();
       expect(find.text('محرر المعادلات'), findsOneWidget);
@@ -70,7 +70,7 @@ void main() {
     });
 
     testWidgets('loads an existing formula for visual editing', (tester) async {
-      await tester.pumpWidget(const _EditorHost(initialLatex: r'\frac{1}{2}'));
+      await tester.pumpWidget(const MaterialApp(home: _EditorHost(initialLatex: r'\frac{1}{2}')));
       await tester.tap(find.text('فتح المحرر'));
       await tester.pumpAndSettle();
 
@@ -83,7 +83,7 @@ void main() {
     });
 
     testWidgets('inserts symbols at the cursor with live structure', (tester) async {
-      await tester.pumpWidget(const _EditorHost());
+      await tester.pumpWidget(const MaterialApp(home: _EditorHost()));
       await tester.tap(find.text('فتح المحرر'));
       await tester.pumpAndSettle();
 
@@ -102,7 +102,7 @@ void main() {
     });
 
     testWidgets('block mode wraps the result in double dollars', (tester) async {
-      await tester.pumpWidget(const _EditorHost(initialIsBlock: true));
+      await tester.pumpWidget(const MaterialApp(home: _EditorHost(initialIsBlock: true)));
       await tester.tap(find.text('فتح المحرر'));
       await tester.pumpAndSettle();
 
@@ -117,7 +117,7 @@ void main() {
     });
 
     testWidgets('cancelling returns null without a result', (tester) async {
-      await tester.pumpWidget(const _EditorHost());
+      await tester.pumpWidget(const MaterialApp(home: _EditorHost()));
       await tester.tap(find.text('فتح المحرر'));
       await tester.pumpAndSettle();
 

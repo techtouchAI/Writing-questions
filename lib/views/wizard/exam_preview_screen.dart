@@ -53,6 +53,79 @@ class _AttachmentRef {
   bool get isQuestionLevel => branchIndex == null;
 }
 
+/// حوار إدخال نصي/رقمي مشترك يملك دورة حياة الـ controller داخليًا.
+///
+/// تحرير الـ controller فور عودة `showDialog` غير آمن: مسار الخروج المتحرك
+/// يعيد بناء الحقل ويعيد الاشتراك في الـ controller المحرَّر
+/// (استخدام-بعد-التحرير) — لذا يُحرَّر هنا في `dispose` فقط.
+class _TextInputDialog extends StatefulWidget {
+  const _TextInputDialog({
+    required this.title,
+    required this.initialText,
+    this.hintText,
+    this.helperText,
+    this.saveLabel = 'حفظ',
+    this.numeric = false,
+    this.maxLines,
+  });
+
+  final String title;
+  final String initialText;
+  final String? hintText;
+  final String? helperText;
+  final String saveLabel;
+  final bool numeric;
+
+  /// عدد أسطر الحقل النصي (null = سطر واحد) — يُتجاهل في الوضع الرقمي.
+  final int? maxLines;
+
+  @override
+  State<_TextInputDialog> createState() => _TextInputDialogState();
+}
+
+class _TextInputDialogState extends State<_TextInputDialog> {
+  late final TextEditingController _field =
+      TextEditingController(text: widget.initialText);
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: widget.numeric
+          ? LtrNumericField(
+              controller: _field,
+              hintText: widget.hintText,
+            )
+            : TextField(
+              controller: _field,
+              autofocus: true,
+              maxLines: widget.maxLines,
+              decoration: InputDecoration(
+                hintText: widget.hintText,
+                helperText: widget.helperText,
+                border: const OutlineInputBorder(),
+              ),
+            ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('إلغاء'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_field.text),
+          child: Text(widget.saveLabel),
+        ),
+      ],
+    );
+  }
+}
+
 /// الخطوة 3: محرك المعاينة والتحرير البصري (WYSIWYG A4 Engine).
 ///
 /// - **التقسيم الورقي الديناميكي**: كل كتلة (الترويسة/السؤال الكامل) تُقاس
@@ -791,37 +864,41 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (element == null) {
       return;
     }
-    final field = TextEditingController(text: element.label);
-    final saved = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('مربع نص'),
-        content: TextField(
-          controller: field,
-          autofocus: true,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            hintText: 'اكتب النص هنا... (ملاحظة، تمنيات...)',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(field.text),
-            child: const Text('حفظ'),
-          ),
-        ],
-      ),
+    final saved = await _showTextInputDialog(
+      title: 'مربع نص',
+      initialText: element.label,
+      hintText: 'اكتب النص هنا... (ملاحظة، تمنيات...)',
+      maxLines: 4,
     );
-    field.dispose();
     if (saved == null) {
       return;
     }
     _updateAttachmentElement(ref, element.copyWith(label: saved));
+  }
+
+  /// يعرض حوار [_TextInputDialog] المشترك ويعيد النص المحفوظ
+  /// (أو null عند الإلغاء) — الـ controller مملوك للحوار نفسه.
+  Future<String?> _showTextInputDialog({
+    required String title,
+    required String initialText,
+    String? hintText,
+    String? helperText,
+    String saveLabel = 'حفظ',
+    bool numeric = false,
+    int? maxLines,
+  }) {
+    return showDialog<String>(
+      context: context,
+      builder: (_) => _TextInputDialog(
+        title: title,
+        initialText: initialText,
+        hintText: hintText,
+        helperText: helperText,
+        saveLabel: saveLabel,
+        numeric: numeric,
+        maxLines: maxLines,
+      ),
+    );
   }
 
   /// تثبيت تسمية يدوية للسؤال («أولاً»، «س1»...) — فارغ = تلقائي.
@@ -829,33 +906,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final controller = _controller!;
     final document = controller.document;
     final question = document.questions[questionIndex];
-    final field = TextEditingController(text: question.numberOverride ?? '');
-    final saved = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('تسمية السؤال'),
-        content: TextField(
-          controller: field,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: 'تلقائي: ${document.autoQuestionLabel(question)}',
-            helperText: 'اتركه فارغاً للعودة للترقيم التلقائي.',
-            border: const OutlineInputBorder(),
-          ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(field.text),
-            child: const Text('حفظ'),
-          ),
-        ],
-      ),
+    final saved = await _showTextInputDialog(
+      title: 'تسمية السؤال',
+      initialText: question.numberOverride ?? '',
+      hintText: 'تلقائي: ${document.autoQuestionLabel(question)}',
+      helperText: 'اتركه فارغاً للعودة للترقيم التلقائي.',
     );
-    field.dispose();
     if (saved == null) {
       return;
     }
@@ -870,33 +926,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       return;
     }
     final branch = document.branchAt(ref);
-    final field = TextEditingController(text: branch.labelOverride ?? '');
-    final saved = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('تسمية الفرع'),
-        content: TextField(
-          controller: field,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: 'تلقائي: ${document.autoBranchLabel(ref.branchIndex)}',
-            helperText: 'مثال: أولاً، ثانياً — فارغ = تلقائي.',
-            border: const OutlineInputBorder(),
-          ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(field.text),
-            child: const Text('حفظ'),
-          ),
-        ],
-      ),
+    final saved = await _showTextInputDialog(
+      title: 'تسمية الفرع',
+      initialText: branch.labelOverride ?? '',
+      hintText: 'تلقائي: ${document.autoBranchLabel(ref.branchIndex)}',
+      helperText: 'مثال: أولاً، ثانياً — فارغ = تلقائي.',
     );
-    field.dispose();
     if (saved == null) {
       return;
     }
@@ -1043,30 +1078,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       _showMessage('حدد سؤالاً أو فرعاً أولاً لتطبيق الحجم.');
       return;
     }
-    final field = TextEditingController(
-      text: _activeStyle().fontSize?.toStringAsFixed(0) ?? '',
+    final saved = await _showTextInputDialog(
+      title: 'حجم خط مخصص',
+      initialText: _activeStyle().fontSize?.toStringAsFixed(0) ?? '',
+      hintText: 'مثال: 13 (بين 6 و 32)',
+      saveLabel: 'تطبيق',
+      numeric: true,
     );
-    final saved = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('حجم خط مخصص'),
-        content: LtrNumericField(
-          controller: field,
-          hintText: 'مثال: 13 (بين 6 و 32)',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(field.text),
-            child: const Text('تطبيق'),
-          ),
-        ],
-      ),
-    );
-    field.dispose();
     if (saved == null) {
       return;
     }
@@ -1091,30 +1109,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       _showMessage('حدد سؤالاً أو فرعاً أولاً لتطبيق التباعد.');
       return;
     }
-    final field = TextEditingController(
-      text: _activeStyle().lineHeight?.toString() ?? '',
+    final saved = await _showTextInputDialog(
+      title: 'تباعد أسطر مخصص',
+      initialText: _activeStyle().lineHeight?.toString() ?? '',
+      hintText: 'مثال: 1.3 (بين 0.5 و 4.0)',
+      saveLabel: 'تطبيق',
+      numeric: true,
     );
-    final saved = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('تباعد أسطر مخصص'),
-        content: LtrNumericField(
-          controller: field,
-          hintText: 'مثال: 1.3 (بين 0.5 و 4.0)',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(field.text),
-            child: const Text('تطبيق'),
-          ),
-        ],
-      ),
-    );
-    field.dispose();
     if (saved == null) {
       return;
     }
@@ -1139,28 +1140,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       _showMessage('حدد سؤالاً أو فرعاً أولاً لتطبيق اللون.');
       return;
     }
-    final field = TextEditingController(text: _activeStyle().colorHex ?? '');
-    final saved = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('لون نص مخصص'),
-        content: LtrNumericField(
-          controller: field,
-          hintText: 'مثال: 1E3A8A أو #B91C1C',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(field.text),
-            child: const Text('تطبيق'),
-          ),
-        ],
-      ),
+    final saved = await _showTextInputDialog(
+      title: 'لون نص مخصص',
+      initialText: _activeStyle().colorHex ?? '',
+      hintText: 'مثال: 1E3A8A أو #B91C1C',
+      saveLabel: 'تطبيق',
+      numeric: true,
     );
-    field.dispose();
     if (saved == null) {
       return;
     }
@@ -1189,33 +1175,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       return;
     }
     final item = content.items[index];
-    final field = TextEditingController(text: item.labelOverride ?? '');
-    final saved = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('ترقيم النقطة'),
-        content: TextField(
-          controller: field,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: 'تلقائي: ${document.autoItemLabel(index)}',
-            helperText: 'مثال: أ-، 1) — فارغ = تلقائي، - = إخفاء.',
-            border: const OutlineInputBorder(),
-          ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(field.text),
-            child: const Text('حفظ'),
-          ),
-        ],
-      ),
+    final saved = await _showTextInputDialog(
+      title: 'ترقيم النقطة',
+      initialText: item.labelOverride ?? '',
+      hintText: 'تلقائي: ${document.autoItemLabel(index)}',
+      helperText: 'مثال: أ-، 1) — فارغ = تلقائي، - = إخفاء.',
     );
-    field.dispose();
     if (saved == null) {
       return;
     }
@@ -1234,33 +1199,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       return;
     }
     final option = content.options[index];
-    final field = TextEditingController(text: option.labelOverride ?? '');
-    final saved = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('تسمية الخيار'),
-        content: TextField(
-          controller: field,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: 'تلقائي: ${document.autoOptionLabel(index)}',
-            helperText: 'مثال: ( أ )، A. — فارغ = تلقائي، - = إخفاء.',
-            border: const OutlineInputBorder(),
-          ),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('إلغاء'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(field.text),
-            child: const Text('حفظ'),
-          ),
-        ],
-      ),
+    final saved = await _showTextInputDialog(
+      title: 'تسمية الخيار',
+      initialText: option.labelOverride ?? '',
+      hintText: 'تلقائي: ${document.autoOptionLabel(index)}',
+      helperText: 'مثال: ( أ )، A. — فارغ = تلقائي، - = إخفاء.',
     );
-    field.dispose();
     if (saved == null) {
       return;
     }
@@ -2902,6 +2846,26 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
+  /// صندوق محتوى المرفق (حد التحديد + العرض) — يُبنى طازجًا كل استدعاء
+  /// لاستخدامه في مواضع السحب المختلفة (child/feedback/childWhenDragging).
+  Widget _buildAttachmentContent(
+    ExamWizardController controller,
+    FloatingElement element,
+    bool selected,
+  ) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: selected ? Border.all(color: PaperStyles.accent, width: 1.4) : null,
+      ),
+      child: FloatingElementView(
+        element: element,
+        defaultFont: controller.document.settings.defaultFont,
+        fontScale: _fontScale,
+        heightScale: _heightScale,
+      ),
+    );
+  }
+
   Widget _buildAttachment(
     ExamWizardController controller,
     _AttachmentRef ref,
@@ -2932,36 +2896,70 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           });
         },
         onDoubleTap: element.isTextBox && !_locked ? () => _editTextBox(ref) : null,
-        onPanUpdate: _locked
-            ? null
-            : (details) {
-                final maxDx = PaperMetrics.contentWidthFor(
-                      controller.document.settings.marginMm,
-                    ) -
-                    element.width;
-                _updateAttachmentElement(
-                  ref,
-                  element.copyWith(
-                    dx: (element.dx + details.delta.dx)
-                        .clamp(0.0, maxDx < 0 ? 0.0 : maxDx),
-                    dy: (element.dy + details.delta.dy)
-                        .clamp(0.0, ExamCanvasGeometry.height),
-                  ),
-                );
-              },
+        // ملاحظة: تحريك الشكل عبر LongPressDraggable داخل الـ Stack (أدناه) —
+        // onPanUpdate المباشر كان يخسر ساحة الإيماءات أمام تمرير الصفحة.
         child: Stack(
           clipBehavior: Clip.none,
           children: <Widget>[
             Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  border: selected ? Border.all(color: PaperStyles.accent, width: 1.4) : null,
+              // السحب بالضغط المطوّل يفوز بساحة الإيماءات قبل أي حركة تمرير —
+              // المقابض (حذف/تحرير/تدوير/تغيير حجم) تبقى خارج السحب كأشقاء.
+              child: LongPressDraggable<_AttachmentRef>(
+                maxSimultaneousDrags: _locked ? 0 : 1,
+                feedback: Material(
+                  elevation: 4,
+                  color: Colors.transparent,
+                  child: SizedBox(
+                    width: element.width * _zoom,
+                    height: element.height * _zoom,
+                    child: FittedBox(
+                      fit: BoxFit.fill,
+                      child: SizedBox(
+                        width: element.width,
+                        height: element.height,
+                        child: _buildAttachmentContent(
+                          controller,
+                          element,
+                          selected,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                child: FloatingElementView(
-                  element: element,
-                  defaultFont: controller.document.settings.defaultFont,
-                  fontScale: _fontScale,
-                  heightScale: _heightScale,
+                childWhenDragging: Opacity(
+                  opacity: 0.35,
+                  child: _buildAttachmentContent(
+                    controller,
+                    element,
+                    selected,
+                  ),
+                ),
+                // الـ delta هنا فيزيائي/عام (الصورة في الـ Overlay) —
+                // يُقسم على التكبير للعودة للمقاس المنطقي على الورقة.
+                onDragUpdate: (details) {
+                  final maxDx = PaperMetrics.contentWidthFor(
+                        controller.document.settings.marginMm,
+                      ) -
+                      element.width;
+                  _updateAttachmentElement(
+                    ref,
+                    element.copyWith(
+                      dx: (element.dx + details.delta.dx / _zoom)
+                          .clamp(0.0, maxDx < 0 ? 0.0 : maxDx),
+                      dy: (element.dy + details.delta.dy / _zoom)
+                          .clamp(0.0, ExamCanvasGeometry.height),
+                    ),
+                  );
+                },
+                child: Container(
+                  // صندوق إمساك شفاف: يضمن بدء السحب من أي نقطة داخل
+                  // المستطيل (بعض الأشكال لا تختبر الإصابة بذاتها).
+                  color: Colors.transparent,
+                  child: _buildAttachmentContent(
+                    controller,
+                    element,
+                    selected,
+                  ),
                 ),
               ),
             ),

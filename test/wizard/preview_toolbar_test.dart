@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -171,8 +172,14 @@ void main() {
       await _pumpPreview(tester, controller);
       expect(find.byType(FloatingElementView), findsOneWidget);
 
-      await tester.drag(find.byType(FloatingElementView), const Offset(30, 12));
-      await tester.pump();
+      // السحب بالضغط المطوّل: يفوز بساحة الإيماءات أمام تمرير الصفحة.
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byType(FloatingElementView)),
+      );
+      await tester.pump(kLongPressTimeout);
+      await gesture.moveBy(const Offset(30, 12));
+      await gesture.up();
+      await tester.pumpAndSettle();
 
       final moved = controller.document
           .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
