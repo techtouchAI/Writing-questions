@@ -163,7 +163,7 @@ void main() {
 
       // ─── 10) تغيير خط س3 إلى Tajawal ───
       // (س3 الآن في الفهرس 3 بعد نقل س4 أمامه).
-      final q3Now = const BranchRef(questionIndex: 3, branchIndex: 0);
+      const q3Now = BranchRef(questionIndex: 3, branchIndex: 0);
       expect(
         controller.document.branchAt(q3Now).content.type,
         QuestionType.fillInTheBlank,
