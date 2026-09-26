@@ -130,19 +130,27 @@ void expectNoRawLatex(PdfContentProbe probe, {required String surface}) {
 }
 
 /// سطر مِرساتَي نص السؤال؛ يعيد المسافة الأفقية المطلقة بينهما بالنقاط.
+///
+/// مرن عمداً: يبحث عن سطر واحد يحمل بالضبط مِرساة F5A واحدة وF5B واحدة
+/// (متساهلاً مع أي كلمات أخرى على نفس السطر)، ويقارن بين حافتي المِرساتين.
 double _anchorsSpan(PdfContentProbe probe) {
-  final candidates = probe.lines
-      .where((candidate) =>
-          candidate.words.length == 2 &&
-          candidate.words.every((word) => word.text == 'F5A' || word.text == 'F5B') &&
-          candidate.words.any((word) => word.text == 'F5A') &&
-          candidate.words.any((word) => word.text == 'F5B'))
+  List<ProbedWord> anchors(ProbedLine line, String name) => line.words
+      .where((word) => word.text.trim() == name)
       .toList(growable: false);
-  expect(candidates, hasLength(1),
-      reason: 'لم يُعثر على سطر المِرساتين F5A/F5B — طبقة النص تغيّرت.');
+  final candidates = probe.lines
+      .where((line) => anchors(line, 'F5A').length == 1 && anchors(line, 'F5B').length == 1)
+      .toList(growable: false);
+  expect(
+    candidates,
+    hasLength(1),
+    reason: 'لم يُعثر على سطر المِرساتين F5A/F5B. الأسطر المرسومة:\n'
+        '${probe.lines.map((line) => line.describe()).join('\n')}',
+  );
   final line = candidates.single;
-  final left = line.words[0].x < line.words[1].x ? line.words[0] : line.words[1];
-  final right = identical(left, line.words[0]) ? line.words[1] : line.words[0];
+  final a = anchors(line, 'F5A').single;
+  final b = anchors(line, 'F5B').single;
+  final left = a.x < b.x ? a : b;
+  final right = identical(left, a) ? b : a;
   return right.x - (left.x + left.advanceWidth);
 }
 
