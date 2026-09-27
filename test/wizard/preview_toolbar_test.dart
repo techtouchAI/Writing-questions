@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_math_fork/flutter_math.dart' show Math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
@@ -254,6 +255,28 @@ void main() {
       // النقرة تصل عبر مسار السحب المباشر (الفوز الفوري بساحة الإيماءات)
       // فتحدّد العنصر بنفسها بلا الحاجة إلى GestureDetector الأب.
       expect(editHandle, findsOneWidget);
+    });
+
+    testWidgets('صيغة مربع النص تُعرض معادلةً لا كوداً خاماً', (tester) async {
+      final controller = ExamWizardController(document: _document());
+      controller.selectBranch(const BranchRef(questionIndex: 0, branchIndex: 0));
+      controller.addAttachment(
+        FloatingElement(
+          type: FloatingElementType.shape,
+          shape: FloatingShapeType.textBox,
+          label: r'الناتج: $x^2$',
+          dx: 0,
+          dy: 0,
+          width: 160,
+          height: 60,
+        ),
+      );
+      await _pumpPreview(tester, controller);
+
+      // المعادلة مرسومة عبر [TexText] (Math من flutter_math_fork) — ودون
+      // أن يظهر نص الصيغة الخام في أي مكان على الورقة.
+      expect(find.byType(Math), findsOneWidget);
+      expect(find.textContaining(r'$x^2$'), findsNothing);
     });
 
     testWidgets('النقر المزدوج على مربع النص يفتح محرّره', (tester) async {

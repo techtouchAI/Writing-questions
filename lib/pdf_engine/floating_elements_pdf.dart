@@ -4,6 +4,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../models/floating_element.dart';
 import '../models/paper_font.dart';
+import '../models/tex_content.dart';
 import 'exam_fonts.dart';
 import 'latex/latex_svg_renderer.dart';
 import 'paper_style_resolver.dart';
@@ -127,14 +128,101 @@ abstract final class FloatingElementsPdf {
             ? pw.BoxDecoration(border: pw.Border.all(width: 1))
             : null,
         padding: const pw.EdgeInsets.all(4),
-        child: pw.Text(
+        child: _textWithMath(
           text,
-          style: style,
-          textAlign: PaperStyleResolver.toPdfAlign(element.textStyle.align) ??
+          style,
+          PaperStyleResolver.toPdfAlign(element.textStyle.align) ??
               pw.TextAlign.start,
         ),
       ),
     );
+  }
+
+  /// نص مربع النص مع رسم صيغ LaTeX (`$...$`) صوراً — بنفس منطق `_renderText`
+  /// في محرك الصفحات، فلا تظهر الأكواد الخامة في مربعات النص المطبوعة.
+  static pw.Widget _textWithMath(
+    String text,
+    pw.TextStyle style,
+    pw.TextAlign align,
+  ) {
+    final segments = TexContent.split(text);
+    if (!segments.any((segment) => segment.isMath)) {
+      return pw.Text(text, style: style, textAlign: align);
+    }
+    final fontSize = style.fontSize ?? 10.5;
+    final rows = <pw.Widget>[];
+    var inline = <pw.Widget>[];
+
+    void flushInline() {
+      if (inline.isEmpty) {
+        return;
+      }
+      rows.add(
+        pw.Wrap(
+          spacing: 1,
+          runSpacing: 2,
+          alignment: _wrapAlign(align),
+          crossAxisAlignment: pw.WrapCrossAlignment.center,
+          children: List<pw.Widget>.of(inline),
+        ),
+      );
+      inline = <pw.Widget>[];
+    }
+
+    for (final segment in segments) {
+      if (!segment.isMath) {
+        if (segment.text.isNotEmpty) {
+          inline.add(pw.Text(segment.text, style: style, textAlign: align));
+        }
+        continue;
+      }
+      final latex = LatexSvgRenderer.tryToSvg(segment.text, fontSize: fontSize);
+      if (latex == null) {
+        inline.add(pw.Text('\$${segment.text}\$', style: style));
+        continue;
+      }
+      final image = pw.SvgImage(
+        svg: latex.svg,
+        width: latex.width,
+        height: latex.height,
+      );
+      if (segment.isBlock) {
+        flushInline();
+        rows.add(pw.Center(child: image));
+      } else {
+        inline.add(image);
+      }
+    }
+    flushInline();
+    return pw.Column(
+      crossAxisAlignment: _columnAlign(align),
+      mainAxisSize: pw.MainAxisSize.min,
+      children: rows,
+    );
+  }
+
+  static pw.WrapAlignment _wrapAlign(pw.TextAlign align) {
+    switch (align) {
+      case pw.TextAlign.center:
+        return pw.WrapAlignment.center;
+      case pw.TextAlign.right:
+      case pw.TextAlign.end:
+        return pw.WrapAlignment.end;
+      default:
+        return pw.WrapAlignment.start;
+    }
+  }
+
+  static pw.CrossAxisAlignment _columnAlign(pw.TextAlign align) {
+    switch (align) {
+      case pw.TextAlign.center:
+        return pw.CrossAxisAlignment.center;
+      case pw.TextAlign.right:
+      case pw.TextAlign.end:
+        return pw.CrossAxisAlignment.end;
+      default:
+        return pw.CrossAxisAlignment.start;
+    }
   }
 
   /// يولد SVG لشكل بنفس بنية راسم اللوحة: خطوط سوداء وتعبئة بيضاء.
