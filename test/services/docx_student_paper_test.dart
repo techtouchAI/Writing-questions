@@ -82,7 +82,7 @@ ExamDocument _document() => ExamDocument(
     );
 
 Future<String> _documentXml(ExamDocument document, {required bool teacher}) async {
-  final bytes = await DocumentExportService.buildDocumentDocxBytes(
+  final bytes = await DocxDocumentExportService.buildDocumentDocxBytes(
     document: document,
     isTeacherVersion: teacher,
   );

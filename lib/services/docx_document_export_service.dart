@@ -311,7 +311,6 @@ class _DocxBuilder {
 
   String _buildHeaderTable() {
     final header = document.header;
-    final layout = document.layout;
     final title = header.title.trim().isEmpty
         ? header.center.lines[1]
         : header.title.trim();

@@ -324,8 +324,8 @@ void main() {
       expect(copy.items.single.marks, 2);
       expect(copy.items.single.id, isNot('qi'), reason: 'الهوية جديدة للنسخة');
       expect(identical(copy.items.single, question.items.single), isFalse);
-      expect(copy.branches.single.items.single.text, 'عنصر');
-      expect(copy.branches.single.items.single.isCorrect, isFalse);
+      expect(copy.branches.single.content.items.single.text, 'عنصر');
+      expect(copy.branches.single.content.items.single.isCorrect, isFalse);
       expect(copy.branches.single.content.modelAnswer, 'أ');
       expect(copy.branches.single.content.options.single.isCorrect, isTrue);
     });

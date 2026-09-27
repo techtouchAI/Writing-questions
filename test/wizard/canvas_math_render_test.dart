@@ -156,7 +156,7 @@ void main() {
           r'احسب $\frac{5}{8}$');
 
       // التركيز: المصدر الخام يظهر قابلاً للتحرير في مكانه (ويُصيَّر بعد الإفلات).
-      await tester.showKeyboard(key);
+      await tester.showKeyboard(find.byKey(key));
       await tester.pump();
       final editable = tester.widget<EditableText>(
         find.descendant(of: find.byKey(key), matching: find.byType(EditableText)),
