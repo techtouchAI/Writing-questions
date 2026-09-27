@@ -1,6 +1,8 @@
-// اختبار «اللوحة تعرض المعادلة لا نصها»: كل حقل يقبل إدراج الصيغ يجب أن
-// يعرض معاينة مرئية (Math من flutter_math_fork — نفس محرك عرض المعادلات)
-// تحت حقل التحرير الخام، بنفس منطق التقطيع الذي يطبعه محرك الـ PDF.
+// اختبار «اللوحة تعرض المعادلة لا نصها»: كل حقل يقبل إدراج الصيغ يعرض
+// المعادلة المُصيَّرة النهائية **في مكانه** (Math من flutter_math_fork — نفس
+// محرك عرض المعادلات)، بنفس منطق التقطيع الذي يطبعه محرك الـ PDF. الحقل
+// الذكي (PaperField) يُظهر المصدر الخام للتحرير وحده عند التركيز/النقر،
+// وإلا العرض النهائي — بلا معاينة منفصلة فوق الحقل ولا تكرار للمصدر.
 //
 // يُتحقق عددياً: لكل مقطع `$...$`/`$$...$$` واحدٍ من Math بالضبط في الشجرة،
 // وبغياب الصيغ لا شيء — أي أن العرض مشروط بالمحتوى لا أنه نسخة ثابتة.
@@ -16,6 +18,7 @@ import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
+import 'package:writing_questions_app/views/widgets/paper_field.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 
 ExamDocument _mathDoc() {
@@ -97,7 +100,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('رسم المعادلات المرئي على لوحة العرض (A4)', () {
-    testWidgets('كل حقل يقبل الصيغ يعرض معاينة Math تحت الحقل', (tester) async {
+    testWidgets('كل حقل يقبل الصيغ يعرض المعادلة المُصيَّرة في مكانه (Math واحد لكل مقطع)', (tester) async {
       final controller = ExamWizardController(document: _mathDoc());
       await _pumpPreview(tester, controller);
 
@@ -139,17 +142,28 @@ void main() {
       expect(find.byType(Math), findsNothing);
     });
 
-    testWidgets('المعاينة لا تستبدل الحقل: المصدر الخام يبقى قابلاً للتحرير', (tester) async {
+    testWidgets('المصدر الخام مخفي في العرض النهائي؛ والتركيز يكشفه للتحرير في مكانه', (tester) async {
       final controller = ExamWizardController(document: _mathDoc());
       await _pumpPreview(tester, controller);
 
-      // نص السؤال: مصدره LaTeX يبقى داخل قيمة حقل التحرير نفسه (whole
-      // editable TextField) — والمعاينة المرئية كائن مستقل تحته، لا نص
-      // مُجمَّد مكانه ولا read-only.
-      final promptField = tester.widget<TextField>(
-        find.byKey(const ValueKey<String>('prompt-q1')),
+      const key = ValueKey<String>('prompt-q1');
+      // غير مركّز: العرض النهائي المُصيَّر وحده — لا سطر مصدر مكرر فوقه.
+      expect(
+        find.descendant(of: find.byKey(key), matching: find.byType(EditableText)),
+        findsNothing,
       );
-      expect(promptField.controller!.text, r'احسب $\frac{5}{8}$');
+      expect(tester.widget<PaperField>(find.byKey(key)).controller.text,
+          r'احسب $\frac{5}{8}$');
+
+      // النقر على العرض النهائي: يكشف المصدر الخام للتحرير في مكانه
+      // (ويُصيَّر مجدداً بعد فقدان التركيز).
+      await tester.tap(find.byKey(key));
+      await tester.pump();
+      await tester.pump();
+      final editable = tester.widget<EditableText>(
+        find.descendant(of: find.byKey(key), matching: find.byType(EditableText)),
+      );
+      expect(editable.controller.text, r'احسب $\frac{5}{8}$');
     });
 
     testWidgets('الحقول الاختيارية الفارغة لا تُبنى أصلاً (صفر بكسل لا إخفاء)', (tester) async {

@@ -1,7 +1,5 @@
 import 'package:uuid/uuid.dart';
 
-import 'question_type.dart';
-
 /// نقطة واحدة داخل فرع (1، 2، 3...): عبارة صح/خطأ، فراغ، تعداد...
 ///
 /// عدد النقاط غير محدود، والمدرس يضيف/يحذف/يعيد ترتيبها بحرية.
@@ -43,14 +41,17 @@ class BranchItem {
 
   /// تظهر النقطة في التصدير؟ الفارغة تماماً تُحذف دائماً، وإجابة
   /// صح/خطأ وحدها لا تكفي في نسخة الطالب (إجابات المعلم مخفية).
-  bool showsInExport({required bool teacher, required QuestionType type}) {
+  ///
+  /// [trueFalse] يحدد فقط هل يُسمح بإظهار إجابة النقطة في نسخة المعلم؛
+  /// نقاط السؤال المباشرة تمرر `false` (لا إجابات مولَّدة على الورقة).
+  bool showsInExport({required bool teacher, required bool trueFalse}) {
     if (text.trim().isNotEmpty || marks > 0) {
       return true;
     }
     if (labelOverride != null) {
       return true;
     }
-    return teacher && type == QuestionType.trueFalse && isCorrect != null;
+    return teacher && trueFalse && isCorrect != null;
   }
 
   BranchItem copyWith({

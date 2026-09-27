@@ -278,5 +278,26 @@ void main() {
       expect(() => ExamDocument.fromMap(badBranch), throwsFormatException);
     });
 
+
+    test('showsInExport: النص يظهر للجميع، وإجابة صح/خطأ وحدها للمعلم، والفارغة تُحجب', () {
+      final withText = BranchItem(id: 'a', text: '١', isCorrect: true);
+      final answerOnly = BranchItem(id: 'b', isCorrect: true);
+      final emptyItem = BranchItem(id: 'c');
+      final freeItem = BranchItem(id: 'd', text: '٣');
+
+      // نص النقطة يكفي لعرضها في النسختين (هو جزء من الأسئلة).
+      expect(withText.showsInExport(teacher: false, trueFalse: true), isTrue);
+      expect(withText.showsInExport(teacher: true, trueFalse: true), isTrue);
+      // إجابة صح/خطأ بلا نص: تُحجب عن ورقة الطالب وتظهر في نموذج المعلم.
+      expect(answerOnly.showsInExport(teacher: false, trueFalse: true), isFalse);
+      expect(answerOnly.showsInExport(teacher: true, trueFalse: true), isTrue);
+      // الفارغة تماماً تُحجب من الجميع.
+      expect(emptyItem.showsInExport(teacher: false, trueFalse: true), isFalse);
+      expect(emptyItem.showsInExport(teacher: true, trueFalse: true), isFalse);
+      // MCQ وغيرها: تظهر للجميع.
+      expect(freeItem.showsInExport(teacher: false, trueFalse: false), isTrue);
+      expect(freeItem.showsInExport(teacher: true, trueFalse: false), isTrue);
+    });
+
   });
 }

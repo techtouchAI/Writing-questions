@@ -64,7 +64,6 @@ ExamDocument _document({required bool withMath}) {
       notes: 'بالتوفيق ${formula(r'\times', 'وثم')} النجاح',
     ),
     settings: const PaperSettings(
-      showTotalMarks: false,
       showPageNumbers: false,
       showQuestionMarks: false,
     ),
@@ -253,7 +252,6 @@ void main() {
           instructions: '',
         ),
         settings: const PaperSettings(
-          showTotalMarks: false,
           showPageNumbers: false,
           showQuestionMarks: false,
         ),

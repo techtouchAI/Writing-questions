@@ -391,20 +391,6 @@ class PaginatedPdfExamEngine {
           ],
         ),
       ),
-      if (settings.showTotalMarks || settings.showQuestionMarks)
-        pw.Padding(
-          padding: const pw.EdgeInsets.only(top: 3),
-          child: pw.Text(
-            layout.isLtr
-                ? 'Total: ${document.formatNumber(document.totalMarks)} ${layout.marksUnit}  |  '
-                    'Questions: ${document.formatNumber(document.questions.length)}'
-                : 'الدرجة الكلية: ${document.formatNumber(document.totalMarks)} '
-                    '${layout.marksUnit}  |  عدد الأسئلة: '
-                    '${document.formatNumber(document.questions.length)}',
-            textAlign: pw.TextAlign.center,
-            style: styles.small,
-          ),
-        ),
       if (instructions.isNotEmpty)
         pw.Padding(
           padding: const pw.EdgeInsets.only(top: 2),
@@ -479,6 +465,22 @@ class PaginatedPdfExamEngine {
             promptStyle,
             fonts.quranic,
             align: PaperStyleResolver.toPdfAlign(question.style.align),
+          ),
+        ),
+      // نقاط السؤال المباشرة (1، 2، 3...) — ترقيم تلقائي كما في نقاط الفرع.
+      if (question.items.any((item) =>
+          item.showsInExport(teacher: isTeacherVersion, trueFalse: false)))
+        pw.Padding(
+          padding: const pw.EdgeInsetsDirectional.only(start: 14, top: 1),
+          child: _buildItems(
+            document,
+            question.items,
+            layout,
+            styles,
+            fonts,
+            isTeacherVersion,
+            question.style,
+            trueFalse: false,
           ),
         ),
       for (var index = 0; index < question.branches.length; index++)
@@ -587,18 +589,20 @@ class PaginatedPdfExamEngine {
         centerVerse: standaloneVerse,
         align: branchAlign,
       ),
-      if (content.items.any(
-          (item) => item.showsInExport(teacher: isTeacherVersion, type: content.type)))
+      if (content.items.any((item) => item.showsInExport(
+          teacher: isTeacherVersion,
+          trueFalse: content.type == QuestionType.trueFalse)))
         pw.Padding(
           padding: const pw.EdgeInsetsDirectional.only(start: 14, top: 1),
           child: _buildItems(
             document,
-            content,
+            content.items,
             layout,
             styles,
             fonts,
             isTeacherVersion,
             branch.style,
+            trueFalse: content.type == QuestionType.trueFalse,
           ),
         ),
       if (showTypeBody)
@@ -641,42 +645,43 @@ class PaginatedPdfExamEngine {
     );
   }
 
-  /// النقاط داخل الفرع بترقيمها (تلقائي أو مخصص) — والفارغة تُحذف.
+  /// نقاط مرقَّمة (داخل سؤال أو فرع) بترقيمها (تلقائي أو مخصص) — والفارغة
+  /// تُحذف. نفس مسار العرض للنقطتين معاً (ما تراه اللوحة هو ما يُطبع).
   pw.Widget _buildItems(
     ExamDocument document,
-    BranchContent content,
+    List<BranchItem> items,
     SubjectLayoutTemplate layout,
     ExamTextStyles styles,
     ExamFonts fonts,
     bool isTeacherVersion,
-    PaperTextStyle? branchStyle,
-  ) {
+    PaperTextStyle? ownerStyle, {
+    required bool trueFalse,
+  }) {
     final settings = document.settings;
     final itemStyle = PaperStyleResolver.apply(
       styles.body.copyWith(
           lineSpacing: layout.lineHeightFactor * 2 * settings.heightScale),
-      branchStyle,
+      ownerStyle,
       fonts: fonts,
       defaultFont: settings.defaultFont,
     );
-    final align = PaperStyleResolver.toPdfAlign(branchStyle?.align);
+    final align = PaperStyleResolver.toPdfAlign(ownerStyle?.align);
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       mainAxisSize: pw.MainAxisSize.min,
       children: <pw.Widget>[
-        for (var index = 0; index < content.items.length; index++)
-          if (content.items[index]
-              .showsInExport(teacher: isTeacherVersion, type: content.type))
+        for (var index = 0; index < items.length; index++)
+          if (items[index].showsInExport(teacher: isTeacherVersion, trueFalse: trueFalse))
             _buildItem(
               document,
-              content,
-              content.items[index],
+              items[index],
               index,
               layout,
               itemStyle,
               fonts,
               isTeacherVersion,
               align,
+              trueFalse: trueFalse,
             ),
       ],
     );
@@ -684,23 +689,21 @@ class PaginatedPdfExamEngine {
 
   pw.Widget _buildItem(
     ExamDocument document,
-    BranchContent content,
     BranchItem item,
     int index,
     SubjectLayoutTemplate layout,
     pw.TextStyle style,
     ExamFonts fonts,
     bool isTeacherVersion,
-    pw.TextAlign? align,
-  ) {
+    pw.TextAlign? align, {
+    required bool trueFalse,
+  }) {
     final marksSuffix = item.marks > 0
         ? ' (${document.formatNumber(item.marks)} ${layout.marksUnit})'
         : '';
     // إجابة النقطة لصح/خطأ — في نموذج المعلم فقط.
     var answerSuffix = '';
-    if (isTeacherVersion &&
-        content.type == QuestionType.trueFalse &&
-        item.isCorrect != null) {
+    if (isTeacherVersion && trueFalse && item.isCorrect != null) {
       answerSuffix = layout.isLtr
           ? (item.isCorrect! ? ' (True)' : ' (False)')
           : (item.isCorrect! ? ' (صح)' : ' (خطأ)');
@@ -833,14 +836,10 @@ class PaginatedPdfExamEngine {
           ],
         );
       case QuestionType.trueFalse:
+        // ورقة الطالب: الأسئلة فقط — الإجابة في دفتر الطالب، بلا مساحة
+        // إجابة مولَّدة على الورقة.
         if (!isTeacherVersion) {
-          return pw.Text(
-            layout.isLtr
-                ? 'Answer: (     ) True      (     ) False'
-                : 'الإجابة: (     ) صح      (     ) خطأ',
-            style: withBranchColor(styles.body),
-            textAlign: align,
-          );
+          return pw.SizedBox();
         }
         final answer = content.trueFalseAnswer;
         return pw.Text(
@@ -852,12 +851,7 @@ class PaginatedPdfExamEngine {
         );
       case QuestionType.fillInTheBlank:
         if (!isTeacherVersion) {
-          return pw.Text(
-            '${layout.isLtr ? 'Answer' : 'الإجابة'}: '
-            '............................................................................',
-            style: withBranchColor(styles.body),
-            textAlign: align,
-          );
+          return pw.SizedBox();
         }
         final fillModel = content.modelAnswer.trim();
         if (fillModel.isEmpty) {
@@ -883,18 +877,7 @@ class PaginatedPdfExamEngine {
             align: align,
           );
         }
-        return pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          mainAxisSize: pw.MainAxisSize.min,
-          children: List<pw.Widget>.generate(
-            layout.essayAnswerLines,
-            (_) => pw.Text(
-              '................................................................................................',
-              style: withBranchColor(styles.small),
-              textAlign: align,
-            ),
-          ),
-        );
+        return pw.SizedBox();
     }
   }
 
