@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_math_fork/flutter_math.dart' show Math;
 import 'package:image_picker/image_picker.dart';
 
 import '../../models/floating_element.dart';
@@ -40,6 +41,10 @@ class SmartExamToolbar extends StatelessWidget {
     this.onAddTextBox,
     this.onAddDivider,
     this.onEquationEditor,
+    this.stagedFormula,
+    this.onFormulaDragEnd,
+    this.onAddFormula,
+    this.onClearStagedFormula,
   });
 
   final FormulaInserter inserter;
@@ -58,6 +63,19 @@ class SmartExamToolbar extends StatelessWidget {
   final void Function({String? template, bool preferBlock, bool editExisting})?
       onEquationEditor;
 
+  /// معادلة حُرِّرت للتوّ وتنتظر موضعها: تُعرض بطاقة تُسحب إلى أي نقطة على
+  /// الورقة، أو ينقر المستخدم مكانها داخل الورقة فتستقر فيه.
+  final String? stagedFormula;
+
+  /// نهاية سحب بطاقة المعادلة ([DragTarget] على الورقة يستقبلها).
+  final void Function(DraggableDetails details)? onFormulaDragEnd;
+
+  /// إدراج معادلة **حرة** (تبويب وسائط): محرّر ثم بطاقة تُسحب لأي موضع.
+  final VoidCallback? onAddFormula;
+
+  /// إلغاء المعادلة المرشّحة قبل إقامتها على الورقة.
+  final VoidCallback? onClearStagedFormula;
+
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -67,6 +85,12 @@ class SmartExamToolbar extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
+            if (stagedFormula != null)
+              _StagedFormulaBar(
+                latex: stagedFormula!,
+                onDragEnd: onFormulaDragEnd,
+                onClear: onClearStagedFormula,
+              ),
             const TabBar(
               isScrollable: true,
               tabAlignment: TabAlignment.start,
@@ -108,6 +132,7 @@ class SmartExamToolbar extends StatelessWidget {
                     onAddShape: onAddShape,
                     onAddTextBox: onAddTextBox,
                     onAddDivider: onAddDivider,
+                    onAddFormula: onAddFormula,
                   ),
                 ],
               ),
@@ -229,7 +254,8 @@ class _FormulaTab extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       children: <Widget>[
-        // معادلة حرة من الصفر في المحرر المرئي (الضغط الطويل: منفردة).
+        // معادلة **حرة**: تُكتب في المحرر المرئي ثم تُسحب إلى أي موضع على
+        // الورقة (الضغط الطويل: يبدأ المحرر بالنمط المنفرد).
         if (editor != null)
           _ChipButton(
             icon: Icons.edit,
@@ -237,7 +263,7 @@ class _FormulaTab extends StatelessWidget {
             onTap: () => editor(),
             onLongPress: () => editor(preferBlock: true),
           ),
-        // تحرير صيغة موجودة في الحقل النشط (اختيار تلقائي/يدوي).
+        // تحرير صيغة موجودة داخل حقل نصي (يبقى الإدراج السطري متاحاً بذلك).
         if (editor != null)
           _ChipButton(
             icon: Icons.edit_note,
@@ -248,8 +274,8 @@ class _FormulaTab extends StatelessWidget {
           _ChipButton(
             icon: Icons.functions,
             label: formula.label,
-            // المحرر المرئي أولاً (الضغط: سطرية، الطويل: منفردة)،
-            // وبغيابه إدراج خام $...$ / $$...$$ كما في السابق.
+            // الصيغة الجاهزة تُحمَّل في المحرر المرئي ثم تُسحب كمعادلة حرة
+            // إلى أي موضع، وبغياب المحرر تُدرج خاماً كما في السابق.
             onTap: editor == null
                 ? () => inserter.insert('\$${formula.latex}\$')
                 : () => editor(template: formula.latex),
@@ -262,18 +288,98 @@ class _FormulaTab extends StatelessWidget {
   }
 }
 
+/// بطاقة المعادلة المرشّحة: تُسحب إلى أي موضع على الورقة.
+///
+/// السحب يُنشئ `FloatingElement` من نوع المعادلة، و[DragTarget] على الصفحة
+/// يقيمها في موضع الإفلات تماماً — فموضعها اختيار المستخدم لا قيد السؤال.
+class _StagedFormulaBar extends StatelessWidget {
+  const _StagedFormulaBar({required this.latex, this.onDragEnd, this.onClear});
+
+  final String latex;
+  final void Function(DraggableDetails details)? onDragEnd;
+  final VoidCallback? onClear;
+
+  static const double _cardWidth = 150;
+  static const double _cardHeight = 70;
+
+  FloatingElement _element() => FloatingElement(
+        type: FloatingElementType.formula,
+        label: latex,
+        dx: 0,
+        dy: 0,
+        width: _cardWidth,
+        height: _cardHeight,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final card = Container(
+      width: _cardWidth,
+      height: _cardHeight,
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        border: Border.all(color: colorScheme.primary, width: 1.2),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Center(
+        child: Math.tex(
+          latex,
+          textStyle: const TextStyle(fontSize: 16),
+        ),
+      ),
+    );
+    return Container(
+      width: double.infinity,
+      color: colorScheme.primaryContainer,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Row(
+        children: <Widget>[
+          Draggable<FloatingElement>(
+            data: _element(),
+            feedback: Material(
+              color: Colors.transparent,
+              child: Opacity(opacity: 0.9, child: card),
+            ),
+            childWhenDragging: Opacity(opacity: 0.3, child: card),
+            onDragEnd: onDragEnd,
+            child: card,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'معادلتك جاهزة: اسحبها إلى المكان الذي تريده على الورقة، '
+              'أو اضغط داخل الورقة فتستقر في موضع الضغط.',
+              style: TextStyle(fontSize: 12, color: colorScheme.onPrimaryContainer),
+            ),
+          ),
+          IconButton(
+            tooltip: 'إلغاء الإدراج',
+            iconSize: 18,
+            onPressed: onClear,
+            icon: const Icon(Icons.close),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _MediaTab extends StatelessWidget {
   const _MediaTab({
     required this.onAddImage,
     required this.onAddShape,
     required this.onAddTextBox,
     required this.onAddDivider,
+    this.onAddFormula,
   });
 
   final ValueChanged<List<int>> onAddImage;
   final ValueChanged<FloatingShapeType> onAddShape;
   final VoidCallback? onAddTextBox;
   final VoidCallback? onAddDivider;
+  final VoidCallback? onAddFormula;
 
   Future<void> _pickImage() async {
     final bytes = await pickImageBytes();
@@ -293,6 +399,12 @@ class _MediaTab extends StatelessWidget {
           label: 'صورة',
           onTap: _pickImage,
         ),
+        if (onAddFormula != null)
+          _ChipButton(
+            icon: Icons.functions,
+            label: 'معادلة حرة',
+            onTap: onAddFormula!,
+          ),
         _ChipButton(
           icon: Icons.change_history,
           label: 'مثلث',

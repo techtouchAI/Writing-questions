@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -715,6 +716,10 @@ class _DocxBuilder {
         _buildTextBox(body, element);
         continue;
       }
+      if (element.isFormula) {
+        await _buildFormulaAttachment(body, element);
+        continue;
+      }
       if (element.type == FloatingElementType.image) {
         final bytes = element.bytes;
         if (bytes == null || bytes.isEmpty) {
@@ -794,6 +799,52 @@ class _DocxBuilder {
     body.write(
       '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/><w:spacing w:before="120" w:after="120"/></w:pPr>'
       '<w:r>${_drawingXml(bytes, widthPt, heightPt)}</w:r></w:p>',
+    );
+  }
+
+  /// يضيف فقرة معادلة حرة ([FloatingElementType.formula]) كصورة معادلة
+  /// بمقاسها على الورقة (تصغير فقط حتى لا تتشوّه ولا تفقد الحدّة) — وإن
+  /// تعذّر رسمها كُتبت الصيغة نصاً.
+  Future<void> _buildFormulaAttachment(
+    StringBuffer body,
+    FloatingElement element,
+  ) async {
+    final label = element.label.trim();
+    if (label.isEmpty) {
+      return;
+    }
+    final boxWidthPt = PaperMetrics.pt(element.width);
+    final boxHeightPt = PaperMetrics.pt(element.height);
+    // حجم خط الرسم يتبع ارتفاع الصندوق: الرسم يخرج قريباً من مقاسه النهائي
+    // فلا يحتاج تكبيراً يُفقد الحدّة.
+    final raster = await _rasterizeMath(_MathPlaceholder(label, boxHeightPt));
+    if (raster == null || raster.pngBytes.isEmpty) {
+      _writeParagraph(
+        body,
+        '\$$label\$',
+        italic: true,
+        color: '6B7280',
+        alignment: 'center',
+        before: 60,
+        after: 60,
+      );
+      return;
+    }
+    final naturalWidth = raster.widthPt;
+    final naturalHeight = raster.heightPt;
+    var widthPt = boxWidthPt > 0 ? boxWidthPt : naturalWidth;
+    var heightPt = boxHeightPt > 0 ? boxHeightPt : naturalHeight;
+    if (naturalWidth > 0 && naturalHeight > 0 && widthPt > 0 && heightPt > 0) {
+      final scale = math.min(
+        math.min(widthPt / naturalWidth, heightPt / naturalHeight),
+        2.0,
+      );
+      widthPt = naturalWidth * scale;
+      heightPt = naturalHeight * scale;
+    }
+    body.write(
+      '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/><w:spacing w:before="120" w:after="120"/></w:pPr>'
+      '<w:r>${_drawingXml(raster.pngBytes, widthPt, heightPt)}</w:r></w:p>',
     );
   }
 

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:pdf/widgets.dart' as pw;
 
+import '../models/exam_canvas_geometry.dart';
 import '../models/floating_element.dart';
 import '../models/paper_font.dart';
 import '../models/tex_content.dart';
@@ -42,6 +43,8 @@ abstract final class FloatingElementsPdf {
           fontScale: fontScale,
           heightScale: heightScale,
         );
+      case FloatingElementType.formula:
+        content = _buildFormula(element, widthPt, heightPt);
     }
     if (element.rotationDegrees == 0) {
       return content;
@@ -291,6 +294,42 @@ abstract final class FloatingElementsPdf {
     }
     buffer.write('</svg>');
     return buffer.toString();
+  }
+
+  /// معادلة حرة: تُرسم بنفس محوّل LaTeX المتجه المستخدم في متن الورقة ثم
+  /// تُقاس داخل الصندوق (بلا تشويه) — فإن غابت الصيغة كُتبت نصاً بديلاً.
+  static pw.Widget _buildFormula(
+    FloatingElement element,
+    double widthPt,
+    double heightPt,
+  ) {
+    final rendered = LatexSvgRenderer.tryToSvg(
+      element.label,
+      fontSize: ExamCanvasGeometry.formulaBaseFontSize,
+    );
+    return pw.SizedBox(
+      width: widthPt,
+      height: heightPt,
+      child: pw.Container(
+        decoration: element.framed
+            ? pw.BoxDecoration(border: pw.Border.all(width: 1))
+            : null,
+        padding: const pw.EdgeInsets.all(2),
+        child: rendered == null
+            ? pw.Center(
+                child: pw.Text(
+                  '\$${element.label}\$',
+                  style: const pw.TextStyle(fontSize: 10.5),
+                  textAlign: pw.TextAlign.center,
+                ),
+              )
+            : pw.SizedBox(
+                width: widthPt,
+                height: heightPt,
+                child: pw.SvgImage(svg: rendered.svg, fit: pw.BoxFit.contain),
+              ),
+      ),
+    );
   }
 
   /// SVG جاهز لصيغة LaTeX — يُعاد استخدام نفس المحوّل المتجه.

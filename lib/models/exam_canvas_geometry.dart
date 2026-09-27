@@ -42,6 +42,10 @@ abstract final class ExamCanvasGeometry {
   /// حجم افتراضي للعنصر العائم الجديد.
   static const double defaultElementSize = 100;
 
+  /// حجم خط المعادلة المرسومة (عنصر معادلة/مربع نص) قبل ملاءمتها للصندوق؛
+  /// يستخدمه اللوح والـ PDF معاً لتبقى النسب واحدة.
+  static const double formulaBaseFontSize = 40;
+
   /// إحداثي أفقي مُطبَّع [0..1] من عرض الورقة (لنقله إلى نقاط PDF).
   static double normalizedX(double dx) => dx / width;
 

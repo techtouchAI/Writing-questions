@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/gestures.dart';
@@ -26,8 +27,8 @@ import '../../providers/exam_document_provider.dart';
 import '../../providers/exam_wizard_controller.dart';
 import '../../services/docx_document_export_service.dart';
 import '../../services/export_file_service.dart';
-import '../../services/pdf_export_service.dart';
 import '../../services/math_image_renderer.dart';
+import '../../services/pdf_export_service.dart';
 import '../../services/shape_image_renderer.dart';
 import '../widgets/floating_element_view.dart';
 import '../widgets/formula_inserter.dart';
@@ -185,6 +186,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   /// وقت آخر لمس على أي عنصر عائم (يقيسه الغلاف الخارجي في [Listener]).
   Duration? _lastPointerDownTime;
+
+  /// معادلة حُرِّرت للتوّ وتنتظر أن يختار المستخدم موضعها على الورقة
+  /// (نقرة على المكان المطلوب، أو سحبها من الشريط إلى الموضع).
+  String? _stagedFormula;
+
+  /// هل كتبت المعادلة المرشّحة كصيغة منفردة (`$$...$$`)?
+  bool _stagedFormulaIsBlock = false;
 
   /// عرض «نموذج الإجابة» على الورقة: تُظهر الإجابات الصحيحة والنموذجية
   /// وتحرَّر في مكانها (نفس سلوك ملف الـ PDF في وضع المعلم).
@@ -711,6 +719,113 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     ));
   }
 
+  /// يفتح محرّر المعادلات ثم يُنتج معادلة **حرة** تُحدّد موضعها بنفسك.
+  ///
+  /// بعد الإكمال في المحرّر تصبح المعادلة بطاقةً جاهزة (في شريط الصيغ):
+  /// تُسحب إلى أي نقطة على الورقة فتُقام هناك، أو تنقر مكانها على الورقة
+  /// فتستقر تحته — بلا التزام بحقل نصي ولا بسؤال معيّن. (من أراد معادلة
+  /// سطرية وسط الجملة فبإمكانه تحرير الصيغ داخل الحقول عبر «تحرير معادلة».)
+  Future<void> _openEquationEditor({
+    String? template,
+    bool preferBlock = false,
+    bool editExisting = false,
+  }) async {
+    // «تحرير معادلة»: صيغة موجودة داخل حقل نصي تُحرَّر في مكانها (لمن أراد
+    // معادلة سطرية وسط الجملة). أمّا مكتبة الصيغ و«محرر المعادلات» فتُنتج
+    // معادلة **حرة** تُسحب إلى أي موضع.
+    if (editExisting) {
+      final active = _inserter.controller;
+      if (active == null) {
+        _showMessage('انقر داخل حقل نصي أولاً لتحرير معادلته.');
+        return;
+      }
+      await _editEquationInFieldController(
+        active,
+        template: template,
+        preferBlock: preferBlock,
+        editExisting: true,
+      );
+      return;
+    }
+    final snippet = await showVisualEquationEditor(
+      context: context,
+      initialLatex: template ?? _stagedFormula,
+      initialIsBlock: preferBlock || _stagedFormulaIsBlock,
+    );
+    if (snippet == null || !mounted) {
+      return;
+    }
+    final latex = _formulaBodyOf(snippet);
+    if (latex.trim().isEmpty) {
+      return;
+    }
+    setState(() {
+      _stagedFormula = latex;
+      _stagedFormulaIsBlock = snippet.startsWith(r'$$');
+    });
+    _showMessage('اختر موضع المعادلة: اضغط على الورقة — أو اسحبها من الشريط إلى مكانها.');
+  }
+
+  /// يستخرج جسم الصيغة ([FloatingElement.label]) من مقطع المحرّر.
+  static String _formulaBodyOf(String snippet) {
+    var body = snippet.trim();
+    if (body.startsWith(r'$$') && body.endsWith(r'$$') && body.length >= 4) {
+      body = body.substring(2, body.length - 2);
+    } else if (body.startsWith(r'$') && body.endsWith(r'$') && body.length >= 2) {
+      body = body.substring(1, body.length - 1);
+    }
+    return body.trim();
+  }
+
+  /// يوضع المرشح عند [tapPosition] (إحداثيات محلية داخل **الورقة** كاملة،
+  /// أصلها أعلى-يسارها) كمرفق بالسؤال/الفرع المحدد، وإلا على آخر سؤال كي
+  /// لا يضيع الإدراج.
+  ///
+  /// نقطة النقر تصبح **مركز** المعادلة فيقع العنصر تحت الإصبع مباشرة.
+  void _placeStagedFormula(Offset tapPosition, {required int questionIndex}) {
+    final latex = _stagedFormula;
+    if (latex == null) {
+      return;
+    }
+    final controller = _controller!;
+    const elementWidth = 170.0;
+    const elementHeight = 80.0;
+    final board = _boardPositionFromLocal(
+      tapPosition,
+      width: elementWidth,
+      height: elementHeight,
+    );
+    final element = FloatingElement(
+      type: FloatingElementType.formula,
+      label: latex,
+      dx: board.dx,
+      dy: board.dy,
+      width: elementWidth,
+      height: elementHeight,
+    );
+    final ref = controller.selectedBranch;
+    final bool placed;
+    if (ref != null) {
+      placed = controller.addAttachment(element, ref: ref);
+    } else {
+      placed = controller.addQuestionAttachment(element, questionIndex: questionIndex);
+    }
+    if (!placed) {
+      _showMessage('تعذر إدراج المعادلة هنا. أنشئ سؤالاً أولاً ثم أعد المحاولة.');
+      return;
+    }
+    setState(() {
+      _stagedFormula = null;
+      _stagedFormulaIsBlock = false;
+      _selectedAttachment = _AttachmentRef(
+        questionIndex: ref?.questionIndex ?? questionIndex,
+        branchIndex: ref?.branchIndex,
+        elementId: element.id,
+      );
+    });
+    _showMessage('أُدرجت المعادلة — اسحبها إلى أي موضع تريده.');
+  }
+
   /// يضيف عنصراً للتحديد الحالي (فرع، وإلا سؤال، وإلا رفض مع إرشاد).
   void _addAttachmentToSelection(FloatingElement element) {
     final controller = _controller!;
@@ -856,7 +971,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
       await _editTextBox(ref);
       if (mounted) {
-        _showMessage('اسحب مربع النص مباشرةً لتحريكه داخل الورقة.');
+        _showMessage('اسحب مربع النص مباشرةً لتحريكه في أي موضع داخل الورقة.');
       }
     });
   }
@@ -911,6 +1026,30 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       );
     }
     setState(() => _selectedAttachment = null);
+  }
+
+  /// يفتح محرّر المعادلات المرئي لمعادلة قائمة على الورقة ويحفظ نتيجتها.
+  ///
+  /// التعديل لا يمسّ الموضع: يبقى العنصر حيث وضعه المستخدم تماماً.
+  Future<void> _editFormulaElement(_AttachmentRef ref) async {
+    final document = _controller!.document;
+    final element = _findAttachment(document, ref);
+    if (element == null) {
+      return;
+    }
+    final snippet = await showVisualEquationEditor(
+      context: context,
+      initialLatex: element.label,
+      saveLabel: 'حفظ',
+    );
+    if (snippet == null || !mounted) {
+      return;
+    }
+    final latex = _formulaBodyOf(snippet);
+    if (latex.isEmpty) {
+      return;
+    }
+    _updateAttachmentElement(ref, element.copyWith(label: latex));
   }
 
   Future<void> _editTextBox(_AttachmentRef ref) async {
@@ -1273,24 +1412,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// - [template] صيغة جاهزة تُحمَّل في المحرر (أو null لمعادلة فارغة).
   /// - [preferBlock] يقترح النمط المنفرد `$$...$$`.
   /// - [editExisting] يحرّر صيغة موجودة في الحقل بدل إدراج جديدة.
-  Future<void> _openEquationEditor({
-    String? template,
-    bool preferBlock = false,
-    bool editExisting = false,
-  }) async {
-    final active = _inserter.controller;
-    if (active == null) {
-      _showMessage('انقر داخل حقل نصي أولاً لتحديد موضع المعادلة.');
-      return;
-    }
-    await _editEquationInFieldController(
-      active,
-      template: template,
-      preferBlock: preferBlock,
-      editExisting: editExisting,
-    );
-  }
-
   /// يحرّر صيغ الحقل [fieldKey] (زر الفرع/المعاينة الغنية) أو يدرج جديدة.
   Future<void> _editEquationInField(String fieldKey) async {
     final field = _fields[fieldKey];
@@ -1358,6 +1479,29 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       _inserter.controller = active;
       _inserter.insert(snippet);
     }
+  }
+
+  /// يُلغي المعادلة المرشّحة (إن أراد المستخدم التراجع قبل إقامتها).
+  void _clearStagedFormula() {
+    if (_stagedFormula == null) {
+      return;
+    }
+    setState(() {
+      _stagedFormula = null;
+      _stagedFormulaIsBlock = false;
+    });
+    _showMessage('أُلغي إدراج المعادلة.');
+  }
+
+  /// نهاية سحب بطاقة المعادلة من الشريط: يُسقطها [DragTarget] على الورقة.
+  ///
+  /// إن لم تُسقط على الورقة (سحب ملغى) تبقى مرشّحة كي ينقر المستخدم موضعها
+  /// بنفسه، فنرشده إلى ذلك.
+  void _handleFormulaDragEnd(DraggableDetails details) {
+    if (_stagedFormula == null) {
+      return;
+    }
+    _showMessage('لم يُسقط العنصر على الورقة: انقر داخل الورقة لتحديد موضع المعادلة.');
   }
 
   Future<void> _showReview() async {
@@ -1832,7 +1976,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 }
                 controller.setBranchDivider(ref, const PaperDivider());
               },
+              stagedFormula: _stagedFormula,
               onEquationEditor: _openEquationEditor,
+              onAddFormula: _openEquationEditor,
+              onFormulaDragEnd: _handleFormulaDragEnd,
+              onClearStagedFormula: _clearStagedFormula,
             ),
           if (_isBusy) const LinearProgressIndicator(minHeight: 2),
           Expanded(
@@ -1967,6 +2115,51 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       );
     }
 
+    // معادلات الصفحة: تُرسم في الطبقة العليا فتبقى ظاهرة في أي نقطة على
+    // الورقة (حتى خارج الترويسة/السؤال) وتُسحب بحرية فوق الكتل.
+    final pageFormulas = <_AttachmentRef>[];
+    for (final blockId in page.blockIds) {
+      final index = document.indexOfQuestion(blockId);
+      if (index == -1) {
+        continue;
+      }
+      final question = document.questions[index];
+      for (final element in question.attachments) {
+        if (element.isFormula) {
+          pageFormulas.add(
+            _AttachmentRef(questionIndex: index, elementId: element.id),
+          );
+        }
+      }
+      for (var branchIndex = 0;
+          branchIndex < question.branches.length;
+          branchIndex++) {
+        for (final element in question.branches[branchIndex].attachments) {
+          if (element.isFormula) {
+            pageFormulas.add(
+              _AttachmentRef(
+                questionIndex: index,
+                branchIndex: branchIndex,
+                elementId: element.id,
+              ),
+            );
+          }
+        }
+      }
+    }
+    // معادلات الأسئلة التي لم تُوزَّع بعد (قياس أولي) تُعرض في الصفحة الأولى.
+    if (!controller.isFullyMeasured && page.index == 0 && pageFormulas.isEmpty) {
+      for (var index = 0; index < document.questions.length; index++) {
+        for (final element in document.questions[index].attachments) {
+          if (element.isFormula) {
+            pageFormulas.add(
+              _AttachmentRef(questionIndex: index, elementId: element.id),
+            );
+          }
+        }
+      }
+    }
+
     return Directionality(
       textDirection: layout.textDirection,
       child: Container(
@@ -1981,52 +2174,191 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             BoxShadow(color: Color(0x22000000), blurRadius: 12, offset: Offset(0, 4)),
           ],
         ),
-        child: Padding(
-          padding: EdgeInsets.all(
-            ExamCanvasGeometry.marginFor(document.settings.marginMm),
-          ),
-          child: Stack(
-            clipBehavior: Clip.hardEdge,
-            children: <Widget>[
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: page.overflows ? PaperMetrics.footerHeightPx : null,
-                child: content,
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: PaperMetrics.footerHeightPx,
-                child: document.settings.showPageNumbers
-                    ? Center(
-                        child: Text(
-                          layout.isLtr
-                              ? 'Page ${page.index + 1} of $pageCount'
-                              : 'صفحة ${document.formatNumber(page.index + 1)} من '
-                                  '${document.formatNumber(pageCount)}',
-                          style: PaperStyles.footer,
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-              if (document.settings.pageBorder)
+        // هدف إسقاط المعادلات المسحوبة من الشريط يغطي **الورقة كلها** (بما
+        // فيها الهوامش) فتُقام المعادلة حيث أُفلتت بالضبط، وطبقة المعادلات
+        // فوق كل شيء بالإحداثيات المطلقة نفسها.
+        child: DragTarget<FloatingElement>(
+          onWillAcceptWithDetails: (details) =>
+              !_locked && controller.questions.isNotEmpty,
+          onAcceptWithDetails: (details) =>
+              _acceptFormulaDrop(context, details),
+          builder: (context, candidates, _) {
+            var body = Stack(
+              clipBehavior: Clip.hardEdge,
+              children: <Widget>[
                 Positioned.fill(
-                  child: IgnorePointer(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(color: PaperStyles.primary, width: 1.4),
-                      ),
+                  child: Padding(
+                    padding: EdgeInsets.all(
+                      ExamCanvasGeometry.marginFor(document.settings.marginMm),
+                    ),
+                    child: _buildPageStack(
+                      controller,
+                      page,
+                      pageCount,
+                      content,
+                      document,
+                      layout,
+                      highlighted: candidates.isNotEmpty,
                     ),
                   ),
                 ),
-            ],
-          ),
+                for (final ref in pageFormulas)
+                  ..._buildPageFormula(controller, ref),
+              ],
+            );
+            // معادلة جاهزة تنتظر موضعها: أي نقرة على الورقة تُقيمها في
+            // الموضع المنقور (والإحداثيات محلية للورقة كلها بالهوامش).
+            if (_stagedFormula != null && !_locked) {
+              body = GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTapUp: (details) => _placeStagedFormula(
+                  details.localPosition,
+                  questionIndex: controller.selectedQuestionIndex ??
+                      controller.questions.length - 1,
+                ),
+                child: body,
+              );
+            }
+            return body;
+          },
         ),
       ),
     );
+  }
+
+  /// يهيّئ محتوى الصفحة داخل الهوامش (الكتل + التذييل + الإطار)؛ والمعادلات
+  /// الحرة طبقة مستقلة فوقه (انظر [_buildPageFormula]).
+  Widget _buildPageStack(
+    ExamWizardController controller,
+    PaginatedPage page,
+    int pageCount,
+    Widget content,
+    ExamDocument document,
+    SubjectLayoutTemplate layout, {
+    required bool highlighted,
+  }) {
+    // `Clip.none`: العنصر العائم الذي يسحبه المستخدم خارج مساحة الطباعة يبقى
+    // ظاهراً (ويُقصّ على حدود الورقة وحدها) بدل أن يختفي فجأة عند الحدود.
+    Widget stack = Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: page.overflows ? PaperMetrics.footerHeightPx : null,
+          child: content,
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: PaperMetrics.footerHeightPx,
+          child: document.settings.showPageNumbers
+              ? Center(
+                  child: Text(
+                    layout.isLtr
+                        ? 'Page ${page.index + 1} of $pageCount'
+                        : 'صفحة ${document.formatNumber(page.index + 1)} من '
+                            '${document.formatNumber(pageCount)}',
+                    style: PaperStyles.footer,
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+        if (document.settings.pageBorder)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: PaperStyles.primary, width: 1.4),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+    if (highlighted) {
+      stack = DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border.all(color: PaperStyles.accent, width: 1.6),
+        ),
+        child: stack,
+      );
+    }
+    return stack;
+  }
+
+  /// يستقبل بطاقة معادلة أُفلتت على الصفحة ويقيمها في موضع الإفلات.
+  void _acceptFormulaDrop(BuildContext context, DragTargetDetails<FloatingElement> details) {
+    final box = context.findRenderObject();
+    if (box is! RenderBox) {
+      return;
+    }
+    final local = box.globalToLocal(details.offset);
+    // [DragTargetDetails.offset] موضع المؤشر العام لحظة الإفلات، فينزل
+    // العنصر مركزاً تحته تماماً حيث أراد المستخدم.
+    final board = _boardPositionFromLocal(
+      local,
+      width: details.data.width,
+      height: details.data.height,
+    );
+    _dropFormulaOnPage(details.data, board.dx, board.dy);
+  }
+
+  /// يبني معادلة حرة في موضعها المطلق على الورقة (بكسل اللوحة كما كتبها
+  /// المستخدم) فوق كل الكتل، فتكون الحركة والإقامة حرّة تماماً.
+  Iterable<Widget> _buildPageFormula(
+    ExamWizardController controller,
+    _AttachmentRef ref,
+  ) sync* {
+    final element = _findAttachment(controller.document, ref);
+    if (element == null) {
+      yield const SizedBox.shrink();
+      return;
+    }
+    // الطبقة بإحداثيات الورقة (أصلها أعلى-يسارها): `dy` كما هو، و`dx` من
+    // حافة القراءة فيُختار الحدّ الموافق (يساراً أو يميناً).
+    final isLtr = controller.document.layout.isLtr;
+    yield Positioned(
+      left: isLtr ? element.dx : null,
+      right: isLtr ? null : element.dx,
+      top: element.dy,
+      width: element.width,
+      height: element.height,
+      child: _buildAttachment(controller, ref, element),
+    );
+  }
+
+  /// يُنشئ المعادلة المسحوبة من الشريط في موضع الإفلات (بكسل اللوحة).
+  bool _dropFormulaOnPage(FloatingElement element, double dx, double dy) {
+    final controller = _controller;
+    if (controller == null || controller.questions.isEmpty) {
+      _showMessage('أضف سؤالاً أولاً ثم اسحب المعادلة إلى موضعها.');
+      return false;
+    }
+    final placed = element.copyWith(dx: dx, dy: dy);
+    final selected = controller.selectedBranch;
+    final questionIndex =
+        selected?.questionIndex ?? controller.selectedQuestionIndex ?? 0;
+    final bool added = selected != null
+        ? controller.addAttachment(placed, ref: selected)
+        : controller.addQuestionAttachment(placed, questionIndex: questionIndex);
+    if (!added) {
+      _showMessage('تعذر إدراج المعادلة هنا. أنشئ سؤالاً أولاً ثم أعد المحاولة.');
+      return false;
+    }
+    setState(() {
+      _stagedFormula = null;
+      _stagedFormulaIsBlock = false;
+      _selectedAttachment = _AttachmentRef(
+        questionIndex: questionIndex,
+        branchIndex: selected?.branchIndex,
+        elementId: placed.id,
+      );
+    });
+    _showMessage('أُدرجت المعادلة — اسحبها إلى أي موضع تريده.');
+    return true;
   }
 
   // ------------------------------------------------------------------
@@ -2352,12 +2684,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       );
     }
 
-    if (question.attachments.isEmpty) {
+    // المعادلات الحرة تُرسم في طبقة الصفحة (موضعها حرّ فوق كل الكتل)، فلا
+    // تُدخل في تراكب مساحة السؤال حتى لا تتكرر ولا تُزاحم النص.
+    final stacked = question.attachments
+        .where((element) => !element.isFormula)
+        .toList(growable: false);
+    if (stacked.isEmpty) {
       return block;
     }
     // مرفقات مستوى السؤال تتراكب فوق مساحته؛ الكتلة تتمدد لتضمّها.
     var minHeight = 0.0;
-    for (final element in question.attachments) {
+    for (final element in stacked) {
       final bottom = element.dy + element.height;
       if (bottom > minHeight) {
         minHeight = bottom;
@@ -2370,7 +2707,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           constraints: BoxConstraints(minHeight: minHeight, minWidth: double.infinity),
           child: block,
         ),
-        for (final element in question.attachments)
+        for (final element in stacked)
           _buildAttachment(
             controller,
             _AttachmentRef(questionIndex: questionIndex, elementId: element.id),
@@ -2639,13 +2976,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       ],
     );
 
-    if (branch.attachments.isEmpty) {
+    // المعادلات الحرة تُرسم في طبقة الصفحة (موضعها حرّ)، وبقية المرفقات فوق
+    // مساحة الفرع والكتلة تتمدد لتضمّها حتى لا تُقصّ.
+    final stacked = branch.attachments
+        .where((element) => !element.isFormula)
+        .toList(growable: false);
+    if (stacked.isEmpty) {
       return text;
     }
-
-    // المرفقات تتراكب فوق مساحة الفرع؛ الكتلة تتمدد لتضمّها حتى لا تُقصّ.
     var minHeight = 0.0;
-    for (final element in branch.attachments) {
+    for (final element in stacked) {
       final bottom = element.dy + element.height;
       if (bottom > minHeight) {
         minHeight = bottom;
@@ -2658,7 +2998,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           constraints: BoxConstraints(minHeight: minHeight, minWidth: double.infinity),
           child: text,
         ),
-        for (final element in branch.attachments)
+        for (final element in stacked)
           _buildAttachment(
             controller,
             _AttachmentRef(
@@ -3108,7 +3448,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       return;
     }
     _dragMoved = true;
-    _moveAttachmentTo(ref, origin + delta / _zoom);
+    // الإزاحة فيزيائية (يسار→يمين موجبة)، و`dx` يُقاس من حافة القراءة:
+    // على ورقة عربية (RTL) يقلّ dx كلما تحرّك العنصر يميناً — وإلا انعكست
+    // الحركة أفقياً على المستخدم أياً كان الاتجاه الذي يسحب نحوه.
+    final step = delta / _zoom;
+    _moveAttachmentTo(
+      ref,
+      origin + Offset(_layoutIsLtr ? step.dx : -step.dx, step.dy),
+    );
   }
 
   /// يُنهي السحب الفوري (رفع الإصبع أو إلغاء المؤشر).
@@ -3132,7 +3479,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     FloatingElement element,
     Duration? timeStamp,
   ) {
-    if (!element.isTextBox || _locked || timeStamp == null) {
+    // مربع النص يفتح محرّر نصه، والمعادلة تفتح محرّر المعادلات المرئي.
+    if ((!element.isTextBox && !element.isFormula) || _locked || timeStamp == null) {
       _lastAttachmentTapId = null;
       _lastAttachmentTapTime = null;
       return;
@@ -3144,8 +3492,32 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _lastAttachmentTapId = ref.elementId;
     _lastAttachmentTapTime = isDoubleTap ? null : timeStamp;
     if (isDoubleTap) {
-      _editTextBox(ref);
+      if (element.isFormula) {
+        _editFormulaElement(ref);
+      } else {
+        _editTextBox(ref);
+      }
     }
+  }
+
+  /// هل الورقة لاتينية الاتجاه؟ (`false` = عربية، فـ `dx` من اليمين).
+  bool get _layoutIsLtr => _controller?.document.layout.isLtr ?? false;
+
+  /// يحوّل موقعاً فيزيائياً داخل **الورقة** (من أعلى-يسارها) إلى إحداثيات
+  /// [FloatingElement]: `dy` من أعلى الورقة، و`dx` من حافة القراءة (اليمين
+  /// في الأوراق العربية)، والنقطة تصبح **مركز** العنصر.
+  Offset _boardPositionFromLocal(
+    Offset local, {
+    required double width,
+    required double height,
+  }) {
+    final dy = local.dy - height / 2;
+    if (_layoutIsLtr) {
+      return Offset(local.dx - width / 2, dy);
+    }
+    // عكس النقطة: مسافتها من الحافة اليمنى بدل اليسرى.
+    final fromRight = ExamCanvasGeometry.width - local.dx;
+    return Offset(fromRight + width / 2, dy);
   }
 
   /// يحدّد العنصر [ref] ويُظهر مقابضه (الحذف/التحرير).
@@ -3174,27 +3546,31 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     });
   }
 
-  /// يضع العنصر [ref] في الموضع المطلق [target] (بكسل اللوحة) داخل حدود
-  /// مساحة الطباعة: لا يخرج عن عرض المحتوى ولا عن ارتفاع الصفحة القابل
-  /// للطباعة، ولا يتجاوز العنصر نفسه حدّ الصفحة (فلا يدفع الورقة لصفحة
-  /// زائدة في التقسيم).
+  /// يضع العنصر [ref] في الموضع المطلق [target] (بكسل اللوحة).
+  ///
+  /// الحركة **حرة تماماً**: العنصر يتبع الإصبع إلى أي جزء من الورقة بلا
+  /// قيود جانبية — قد يخرج عن مساحة الطباعة أو يتجاوز حدّ الصفحة، والمستخدم
+  /// وحده يحدّد المكان المناسب. لا يُشترط إلا أن تبقى مساحة إمساك كافية
+  /// داخل الورقة (وشاشة صغيرة) لأن عنصراً خارجها كلّياً يستحيل لمسه ثانيةً.
   void _moveAttachmentTo(_AttachmentRef ref, Offset target) {
     final element = _findAttachment(_controller!.document, ref);
     if (element == null) {
       return;
     }
-    final marginMm = _controller!.document.settings.marginMm;
-    final contentWidth = PaperMetrics.contentWidthFor(marginMm);
-    final maxDx =
-        (contentWidth - element.width).clamp(0.0, contentWidth).toDouble();
-    final pageHeight = PaperMetrics.pageContentHeightFor(marginMm);
-    final maxDy =
-        (pageHeight - element.height).clamp(0.0, pageHeight).toDouble();
+    // جزء من الإصبع يبقى على الورقة (أو الشاشة حين تكون الورقة أكبر منها).
+    const anchor = 24.0;
+    final maxX =
+        (math.max(ExamCanvasGeometry.width, _viewportWidth) - anchor)
+            .clamp(0.0, double.infinity)
+            .toDouble();
+    final maxY = (ExamCanvasGeometry.height - anchor)
+        .clamp(0.0, double.infinity)
+        .toDouble();
     _updateAttachmentElement(
       ref,
       element.copyWith(
-        dx: target.dx.clamp(0.0, maxDx),
-        dy: target.dy.clamp(0.0, maxDy),
+        dx: target.dx.clamp(anchor - element.width, maxX),
+        dy: target.dy.clamp(anchor - element.height, maxY),
       ),
     );
   }
@@ -3249,6 +3625,19 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       radius: 10,
                       backgroundColor: PaperStyles.danger,
                       child: Icon(Icons.close, size: 12, color: Colors.white),
+                    ),
+                  ),
+                ),
+              if (selected && !_locked && element.isFormula)
+                Positioned(
+                  right: -12,
+                  top: -12,
+                  child: GestureDetector(
+                    onTap: () => _editFormulaElement(ref),
+                    child: const CircleAvatar(
+                      radius: 10,
+                      backgroundColor: PaperStyles.accent,
+                      child: Icon(Icons.functions, size: 12, color: Colors.white),
                     ),
                   ),
                 ),

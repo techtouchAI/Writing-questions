@@ -135,6 +135,35 @@ void main() {
     expect(archive.findFile('word/media/image1.png'), isNull);
   });
 
+  test('المعادلة الحرة تُصدَّر صورة معادلة لا نصاً', () async {
+    final document = _document();
+    final question = document.questions.first;
+    final withFormula = document.withQuestionAt(
+      0,
+      question.copyWith(
+        attachments: <FloatingElement>[
+          ...question.attachments,
+          FloatingElement(
+            type: FloatingElementType.formula,
+            label: r'\frac{a}{b}',
+            dx: 300,
+            dy: 700,
+            width: 170,
+            height: 80,
+          ),
+        ],
+      ),
+    );
+    final archive = await _archive(withFormula, rasterizer: _fakeRasterizer);
+    final xml = _xml(archive);
+
+    // الصيغة ذهبت للمرسّم (لا نصاً خاماً) ونتيجتها صورة داخل الملف.
+    expect(_capturedLatex, contains(r'\frac{a}{b}'));
+    expect(xml.contains('<w:drawing>'), isTrue);
+    expect(xml.contains(r'\frac{a}{b}'), isFalse);
+    expect(archive.findFile('word/media/image1.png'), isNotNull);
+  });
+
   test('الصيغة التي يتعذّر رسمها تُكتب نصاً بدل إسقاطها', () async {
     final archive = await _archive(_document(), rasterizer: _fakeRasterizer);
     final xml = _xml(archive);

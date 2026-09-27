@@ -5,6 +5,26 @@ import 'package:writing_questions_app/models/floating_element.dart';
 
 void main() {
   group('FloatingElement', () {
+    test('نوع المعادلة الحرة يبقى مع الصيغة بعد الحفظ والقراءة', () {
+      final element = FloatingElement(
+        type: FloatingElementType.formula,
+        label: r'\frac{a}{b}',
+        dx: 12.5,
+        dy: 640,
+        width: 170,
+        height: 80,
+      );
+
+      final restored = FloatingElement.fromMap(element.toMap());
+
+      expect(restored.type, FloatingElementType.formula);
+      expect(restored.isFormula, isTrue);
+      expect(restored.label, r'\frac{a}{b}');
+      // الموضع الحرّ (قد يكون خارج مساحة الطباعة) يُحفظ كما هو.
+      expect(restored.dy, 640);
+    });
+
+
     test('round-trips an image element with exact canvas coordinates', () {
       final element = FloatingElement(
         id: 'img-1',

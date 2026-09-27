@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
+import 'package:writing_questions_app/models/exam_canvas_geometry.dart';
 import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/question_model.dart';
@@ -188,7 +189,10 @@ void main() {
           .attachments
           .single;
       // التكبير 100% في هذا المحيط ⇒ بكسل الشاشة = بكسل اللوحة.
-      expect(moved.dx, closeTo(30, 0.5));
+      // و`dx` يُقاس من حافة القراءة: في ورقة عربية (RTL) السحب يميناً
+      // يُنقص dx — والحركة تبقى مطابقة للإصبع.
+      final expectedDx = controller.document.layout.isLtr ? 30.0 : -30.0;
+      expect(moved.dx, closeTo(expectedDx, 0.5));
       expect(moved.dy, closeTo(12, 0.5));
     });
 
@@ -223,7 +227,8 @@ void main() {
           .attachments
           .single;
       // التكبير 100% في هذا المحيط ⇒ بكسل الشاشة = بكسل اللوحة.
-      expect(moved.dx, closeTo(40, 0.5));
+      final expectedDx = controller.document.layout.isLtr ? 40.0 : -40.0;
+      expect(moved.dx, closeTo(expectedDx, 0.5));
       expect(moved.dy, closeTo(24, 0.5));
     });
 
@@ -255,6 +260,85 @@ void main() {
       // النقرة تصل عبر مسار السحب المباشر (الفوز الفوري بساحة الإيماءات)
       // فتحدّد العنصر بنفسها بلا الحاجة إلى GestureDetector الأب.
       expect(editHandle, findsOneWidget);
+    });
+
+    testWidgets('المعادلة الحرة تُرسم معادلةً وتُسحب إلى أي موضع بلا قيود', (tester) async {
+      final controller = ExamWizardController(document: _document());
+      controller.selectBranch(const BranchRef(questionIndex: 0, branchIndex: 0));
+      // معادلة في أسفل الورقة (خارج نطاق كتل السؤال) — الموضع حرّ تماماً.
+      controller.addAttachment(
+        FloatingElement(
+          type: FloatingElementType.formula,
+          label: r'\frac{a}{b}',
+          dx: 120,
+          dy: 900,
+          width: 170,
+          height: 80,
+        ),
+      );
+      await _pumpPreview(tester, controller);
+      // شباك أطول ليبقى أسفل الورقة ظاهراً في هذا المحيط.
+      tester.view.physicalSize = const Size(1000, 2600);
+      await tester.pump();
+
+      // تُرسم معادلةً (Math) لا نصًّا خامًا.
+      expect(find.byType(Math), findsOneWidget);
+      expect(find.textContaining(r'$\frac{a}{b}$'), findsNothing);
+
+      // السحب من أي نقطة داخل مستطيلها، وبلا ضغط مطوّل.
+      final formula = find.byType(FloatingElementView);
+      expect(formula, findsOneWidget);
+      final gesture = await tester.startGesture(tester.getCenter(formula));
+      await tester.pump();
+      await gesture.moveBy(const Offset(0, -60));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      final moved = controller.document
+          .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
+          .attachments
+          .single;
+      // تحرّكت للأعلى 60 بكسل مع بقاء الإحداثي الأفقي.
+      expect(moved.dy, closeTo(840, 0.5));
+      expect(moved.dx, closeTo(120, 0.5));
+    });
+
+    testWidgets('التحريك بلا قيود: العنصر يخرج عن مساحة الطباعة ولا يُقصّ', (tester) async {
+      final controller = ExamWizardController(document: _document());
+      controller.selectBranch(const BranchRef(questionIndex: 0, branchIndex: 0));
+      controller.addAttachment(
+        FloatingElement(
+          type: FloatingElementType.shape,
+          shape: FloatingShapeType.square,
+          dx: 0,
+          dy: 0,
+          width: 80,
+          height: 80,
+        ),
+      );
+      await _pumpPreview(tester, controller);
+
+      // سحب كبير نحو الأسفل يتجاوز ارتفاع مساحة الطباعة ويخرج عن الهامش.
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byType(FloatingElementView)),
+      );
+      await tester.pump();
+      for (var step = 0; step < 16; step++) {
+        await gesture.moveBy(const Offset(30, 90));
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      final moved = controller.document
+          .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
+          .attachments
+          .single;
+      // كان الحدّ القديم هو ارتفاع مساحة الطباعة (‎١٠٤٠‎ بكسل تقريبًا)؛ الآن
+      // الموضع حرّ ويتوقف فقط عند بقاء مقبض إمساك داخل الورقة.
+      expect(moved.dy, greaterThan(1040));
+      expect(moved.dy, lessThanOrEqualTo(ExamCanvasGeometry.height - 24));
     });
 
     testWidgets('صيغة مربع النص تُعرض معادلةً لا كوداً خاماً', (tester) async {

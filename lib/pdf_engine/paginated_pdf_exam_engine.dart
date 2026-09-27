@@ -232,6 +232,24 @@ class PaginatedPdfExamEngine {
                   bottom: margin,
                   child: content,
                 ),
+                // المعادلات الحرة في الطبقة العليا بإحداثيات اللوحة نفسها:
+                // موضعها اختيار المستخدم وقد يقع خارج سؤالها (أعلى الورقة أو
+                // أسفلها)، فترسم مستقلةً عن كتل الأسئلة.
+                for (final element in _pageFormulas(document, questionIds))
+                  pw.Positioned(
+                    left: layout.isLtr ? element.dx * _canvasScale : null,
+                    right: layout.isLtr ? null : element.dx * _canvasScale,
+                    top: element.dy * _canvasScale,
+                    child: FloatingElementsPdf.build(
+                      element,
+                      widthPt: element.width * _canvasScale,
+                      heightPt: element.height * _canvasScale,
+                      fonts: loadedFonts,
+                      defaultFont: settings.defaultFont,
+                      fontScale: settings.fontScale,
+                      heightScale: settings.heightScale,
+                    ),
+                  ),
               ],
             );
           },
@@ -280,6 +298,36 @@ class PaginatedPdfExamEngine {
       for (final page in result.pages)
         page.blockIds.where((id) => id != PaperMetrics.headerBlockId).toList(growable: false),
     ];
+  }
+
+  /// نسبة تحويل بكسل اللوحة إلى نقاط الـ PDF (نفس النسبة في كل المحرك).
+  static double get _canvasScale => PaperMetrics.pointsPerPixel;
+
+  /// معادلات الأسئلة الموزّعة على صفحة ([questionIds]) — سؤالاً أو فرعاً.
+  static List<FloatingElement> _pageFormulas(
+    ExamDocument document,
+    List<String> questionIds,
+  ) {
+    final formulas = <FloatingElement>[];
+    for (final id in questionIds) {
+      final question = document.questionById(id);
+      if (question == null) {
+        continue;
+      }
+      for (final element in question.attachments) {
+        if (element.isFormula) {
+          formulas.add(element);
+        }
+      }
+      for (final branch in question.branches) {
+        for (final element in branch.attachments) {
+          if (element.isFormula) {
+            formulas.add(element);
+          }
+        }
+      }
+    }
+    return formulas;
   }
 
   static bool _coversAllQuestions(List<List<String>> pages, ExamDocument document) {
@@ -757,7 +805,11 @@ class PaginatedPdfExamEngine {
     double heightScale = 1.0,
   }) {
     final scale = PaperMetrics.pointsPerPixel;
-    final minHeight = attachments.fold<double>(
+    // المعادلات الحرة تُرسم في طبقة الصفحة (موضعها حرّ) فلا تُكرَّر هنا.
+    final inline = attachments
+        .where((element) => !element.isFormula)
+        .toList(growable: false);
+    final minHeight = inline.fold<double>(
       0,
       (max, element) {
         final bottom = (element.dy + element.height) * scale;
@@ -770,7 +822,7 @@ class PaginatedPdfExamEngine {
           constraints: pw.BoxConstraints(minHeight: minHeight, minWidth: contentWidth - 24),
           child: body,
         ),
-        for (final element in attachments)
+        for (final element in inline)
           pw.Positioned(
             left: layout.isLtr ? element.dx * scale : null,
             right: layout.isLtr ? null : element.dx * scale,
