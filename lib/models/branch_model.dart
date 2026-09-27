@@ -67,7 +67,8 @@ class BranchContent {
     if (text.trim().isNotEmpty) {
       return true;
     }
-    if (items.any((item) => item.showsInExport(teacher: teacher, type: type))) {
+    if (items.any(
+        (item) => item.showsInExport(teacher: teacher, trueFalse: type == QuestionType.trueFalse))) {
       return true;
     }
     if (type == QuestionType.multipleChoice &&
@@ -221,7 +222,8 @@ class BranchContent {
     );
   }
 
-  /// نسخة بهويات جديدة للنقاط (للنسخ/التكرار).
+  /// نسخة بهويات جديدة للنقاط (للنسخ/التكرار) — كاملة الإجابات والتسميات
+  /// اليدوية (نفس محتوى النقطة الأصلية حرفياً).
   BranchContent duplicated() {
     return BranchContent(
       type: type,
@@ -229,7 +231,13 @@ class BranchContent {
       options: options.map((option) => option.copyWith()).toList(growable: false),
       modelAnswer: modelAnswer,
       items: <BranchItem>[
-        for (final item in items) BranchItem(text: item.text, marks: item.marks),
+        for (final item in items)
+          BranchItem(
+            text: item.text,
+            marks: item.marks,
+            isCorrect: item.isCorrect,
+            labelOverride: item.labelOverride,
+          ),
       ],
       plainText: plainText,
     );

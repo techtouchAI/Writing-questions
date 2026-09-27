@@ -360,7 +360,7 @@ class ExamWizardController extends ChangeNotifier {
     );
   }
 
-  /// درجة يدوية ثابتة للسؤال (`null` = حساب تلقائي من الفروع).
+  /// درجة يدوية ثابتة للسؤال (`null` = حساب تلقائي من الفروع والنقاط).
   void updateQuestionMarksOverride(int index, double? marks) {
     RangeError.checkValidIndex(index, questions, 'index');
     if (marks != null && (!marks.isFinite || marks < 0)) {
@@ -414,6 +414,126 @@ class ExamWizardController extends ChangeNotifier {
         questions[index].copyWith(dividerAfter: () => divider),
       ),
     );
+  }
+
+  // ======================== النقاط داخل السؤال (بلا فروع) ========================
+
+  /// يحدّث نقاط السؤال المباشرة دفعة واحدة (محرر النقاط المشترك).
+  void updateQuestionItems(int index, List<BranchItem> items) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    final question = questions[index];
+    if (question.items.length == items.length &&
+        _sameItemList(question.items, items)) {
+      return;
+    }
+    _commit(_document.withQuestionAt(index, question.copyWith(items: items)));
+  }
+
+  void addQuestionItem(int index, [BranchItem? item]) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    updateQuestionItems(index, <BranchItem>[...questions[index].items, item ?? BranchItem()]);
+  }
+
+  /// يضبط عدد نقاط السؤال دفعة واحدة (تُضاف فارغة أو تُقصّ الزائدة من النهاية).
+  void setQuestionItemCount(int index, int count) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    final question = questions[index];
+    final safe = count.clamp(0, 200);
+    if (question.items.length == safe) {
+      return;
+    }
+    if (question.items.length > safe) {
+      updateQuestionItems(index, question.items.sublist(0, safe));
+      return;
+    }
+    updateQuestionItems(index, <BranchItem>[
+      ...question.items,
+      for (var i = question.items.length; i < safe; i++) BranchItem(),
+    ]);
+  }
+
+  void updateQuestionItemText(int index, int itemIndex, String text) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    final question = questions[index];
+    RangeError.checkValidIndex(itemIndex, question.items, 'itemIndex');
+    if (question.items[itemIndex].text == text) {
+      return;
+    }
+    _commit(
+      _document.withQuestionAt(
+        index,
+        question.withItemAt(itemIndex, question.items[itemIndex].copyWith(text: text)),
+      ),
+      coalesceKey: 'question-item-${question.items[itemIndex].id}',
+    );
+  }
+
+  /// تسمية يدوية للنقطة: فارغ = تلقائي (`null`)، `-` = إخفاء (`''`).
+  void updateQuestionItemLabel(int index, int itemIndex, String label) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    final question = questions[index];
+    RangeError.checkValidIndex(itemIndex, question.items, 'itemIndex');
+    updateQuestionItems(
+      index,
+      <BranchItem>[
+        for (var i = 0; i < question.items.length; i++)
+          i == itemIndex
+              ? question.items[i].copyWith(
+                  labelOverride: () => _normalizeLabelOverride(label),
+                )
+              : question.items[i],
+      ],
+    );
+  }
+
+  void updateQuestionItemMarks(int index, int itemIndex, double marks) {
+    if (!marks.isFinite || marks < 0) {
+      return;
+    }
+    RangeError.checkValidIndex(index, questions, 'index');
+    final question = questions[index];
+    RangeError.checkValidIndex(itemIndex, question.items, 'itemIndex');
+    if (question.items[itemIndex].marks == marks) {
+      return;
+    }
+    updateQuestionItems(
+      index,
+      <BranchItem>[
+        for (var i = 0; i < question.items.length; i++)
+          i == itemIndex ? question.items[i].copyWith(marks: marks) : question.items[i],
+      ],
+    );
+  }
+
+  void removeQuestionItem(int index, int itemIndex) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    final question = questions[index];
+    RangeError.checkValidIndex(itemIndex, question.items, 'itemIndex');
+    updateQuestionItems(index, question.withItemRemoved(itemIndex).items);
+  }
+
+  void moveQuestionItem(int index, int from, int to) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    if (from == to) {
+      return;
+    }
+    final question = questions[index];
+    RangeError.checkValidIndex(from, question.items, 'from');
+    updateQuestionItems(index, question.withItemMoved(from, to).items);
+  }
+
+  /// هل القائمتان محتوانهما متطابقان (مقارنة مرجعية سريعة للنقاط)؟
+  static bool _sameItemList(List<BranchItem> first, List<BranchItem> second) {
+    for (var i = 0; i < first.length; i++) {
+      if (first[i].id != second[i].id ||
+          first[i].text != second[i].text ||
+          first[i].marks != second[i].marks ||
+          first[i].isCorrect != second[i].isCorrect ||
+          first[i].labelOverride != second[i].labelOverride) {
+        return false;
+      }
+    }
+    return true;
   }
 
   // ============================ الفروع ============================

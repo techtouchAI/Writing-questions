@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../models/branch_item.dart';
 import '../../models/branch_model.dart';
 import '../../models/question_type.dart';
+import '../widgets/items_editor.dart';
 import '../widgets/ltr_numeric_field.dart';
 import '../widgets/mcq_options_editor.dart';
 
@@ -12,6 +12,9 @@ import '../widgets/mcq_options_editor.dart';
 /// للخيارات، و[LtrNumericField] للدرجة، ونموذج صح/خطأ والفراغات بنفس منطق
 /// محرر بنك الأسئلة — مع نوع السؤال قابل للاختيار لكل فرع على حدة،
 /// ووضع «نص حر» (بلا مساحة إجابة مولّدة)، ونقاط غير محدودة (1، 2، 3...).
+///
+/// **ترتيب الحقول = ترتيب الطباعة**: النص ← النقاط ← مساحة الإجابة/الخيارات
+/// (نفس ترتيب العرض في المعاينة والـ PDF وWord حرفياً).
 class BranchEditorCard extends StatefulWidget {
   const BranchEditorCard({
     super.key,
@@ -43,8 +46,6 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
   late final TextEditingController _marksController;
   late final TextEditingController _modelAnswerController;
   late final TextEditingController _labelController;
-  final TextEditingController _countController = TextEditingController();
-  final Map<String, TextEditingController> _itemFields = <String, TextEditingController>{};
 
   @override
   void initState() {
@@ -75,12 +76,6 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
     if (parsedMarks == null || parsedMarks != widget.branch.marks) {
       _marksController.text = _formatMarks(widget.branch.marks);
     }
-    // التخلص من حقول النقاط المحذوفة.
-    final liveIds = widget.branch.content.items.map((item) => item.id).toSet();
-    final stale = _itemFields.keys.where((id) => !liveIds.contains(id)).toList();
-    for (final id in stale) {
-      _itemFields.remove(id)?.dispose();
-    }
   }
 
   @override
@@ -89,10 +84,6 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
     _marksController.dispose();
     _modelAnswerController.dispose();
     _labelController.dispose();
-    _countController.dispose();
-    for (final field in _itemFields.values) {
-      field.dispose();
-    }
     super.dispose();
   }
 
@@ -118,38 +109,11 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
     return marks != null && marks.isFinite && marks >= 0 ? marks : null;
   }
 
-  /// فارغ = تلقائي (`null`)، `-` = إخفاء (`''`)، وإلا النص المخصص.
-  static String? _normalizeLabel(String value) {
-    final trimmed = value.trim();
-    if (trimmed.isEmpty) {
-      return null;
-    }
-    return trimmed == '-' ? '' : trimmed;
-  }
-
   static String _formatMarks(double marks) {
     if (marks == 0) {
       return '';
     }
     return marks == marks.truncateToDouble() ? marks.toInt().toString() : marks.toString();
-  }
-
-  TextEditingController _itemField(BranchItem item) {
-    return _itemFields.putIfAbsent(
-      item.id,
-      () => TextEditingController(text: item.text),
-    );
-  }
-
-  void _applyItemCount() {
-    final count = int.tryParse(_countController.text.trim());
-    if (count == null || count < 0 || count > 200) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('أدخل عدد عناصر بين 0 و 200.')),
-      );
-      return;
-    }
-    _emitContent(_content.withItemCount(count));
   }
 
   @override
@@ -274,9 +238,15 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
               onChanged: (value) => _emitContent(_content.copyWith(text: value)),
             ),
             const SizedBox(height: 10),
+            // النقاط (1، 2، 3...) قبل مساحة الإجابة — نفس ترتيب الطباعة.
+            ItemsEditor(
+              items: _content.items,
+              enabled: widget.enabled,
+              showTrueFalseAnswers: _content.type == QuestionType.trueFalse,
+              onChanged: (items) => _emitContent(_content.copyWith(items: items)),
+            ),
+            const SizedBox(height: 10),
             _buildTypeSpecificEditor(),
-            const SizedBox(height: 4),
-            _buildItemsEditor(colorScheme),
           ],
         ),
       ),
@@ -339,172 +309,5 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
           onChanged: (value) => _emitContent(_content.copyWith(modelAnswer: value)),
         );
     }
-  }
-
-  /// محرر النقاط داخل الفرع (1، 2، 3...): إضافة/حذف/ترتيب + ضبط العدد.
-  Widget _buildItemsEditor(ColorScheme colorScheme) {
-    final items = _content.items;
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              const Expanded(
-                child: Text(
-                  'النقاط داخل الفرع (1، 2، 3...)',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                ),
-              ),
-              SizedBox(
-                width: 76,
-                child: LtrNumericField(
-                  controller: _countController,
-                  enabled: widget.enabled,
-                  hintText: 'العدد',
-                ),
-              ),
-              const SizedBox(width: 6),
-              FilledButton.tonal(
-                onPressed: widget.enabled ? _applyItemCount : null,
-                child: const Text('تطبيق', style: TextStyle(fontSize: 12)),
-              ),
-            ],
-          ),
-          if (items.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 6),
-              child: Text(
-                'بلا نقاط — حدد عدد العناصر أو أضف نقطة.',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ),
-          for (var index = 0; index < items.length; index++)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Row(
-                children: <Widget>[
-                  // ترقيم النقطة: مخصص حرفي، فارغ = تلقائي، `-` = إخفاء.
-                  SizedBox(
-                    width: 64,
-                    child: TextFormField(
-                      key: ValueKey<String>('item-label-${items[index].id}'),
-                      initialValue: items[index].labelOverride ?? '',
-                      enabled: widget.enabled,
-                      decoration: InputDecoration(
-                        hintText: '${index + 1}-',
-                        isDense: true,
-                        border: const OutlineInputBorder(),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 8,
-                        ),
-                      ),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      ),
-                      onChanged: (value) {
-                        final updated = List<BranchItem>.of(items);
-                        updated[index] = updated[index].copyWith(
-                          labelOverride: () => _normalizeLabel(value),
-                        );
-                        _emitContent(_content.copyWith(items: updated));
-                      },
-                    ),
-                  ),
-                  // إجابة النقطة لنموذج المعلم (صح/خطأ فقط).
-                  if (_content.type == QuestionType.trueFalse)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 6),
-                      child: SegmentedButton<bool?>(
-                        style: SegmentedButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        showSelectedIcon: false,
-                        segments: const <ButtonSegment<bool?>>[
-                          ButtonSegment<bool?>(
-                            value: true,
-                            label: Text('صح', style: TextStyle(fontSize: 11)),
-                          ),
-                          ButtonSegment<bool?>(
-                            value: false,
-                            label: Text('خطأ', style: TextStyle(fontSize: 11)),
-                          ),
-                        ],
-                        selected: items[index].isCorrect == null
-                            ? const <bool?>{}
-                            : <bool?>{items[index].isCorrect},
-                        onSelectionChanged: widget.enabled
-                            ? (selection) => _emitContent(
-                                  _content.withItemAnswer(index, selection.single),
-                                )
-                            : null,
-                      ),
-                    ),
-                  Expanded(
-                    child: TextFormField(
-                      controller: _itemField(items[index]),
-                      enabled: widget.enabled,
-                      maxLines: null,
-                      decoration: InputDecoration(
-                        hintText: 'نص النقطة ${index + 1}...',
-                        isDense: true,
-                        border: const OutlineInputBorder(),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
-                        ),
-                      ),
-                      onChanged: (value) {
-                        final updated = List<BranchItem>.of(items);
-                        updated[index] = updated[index].copyWith(text: value);
-                        _emitContent(_content.copyWith(items: updated));
-                      },
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'نقل لأعلى',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.arrow_drop_up, size: 20),
-                    onPressed: widget.enabled && index > 0
-                        ? () => _emitContent(_content.withItemMoved(index, index - 1))
-                        : null,
-                  ),
-                  IconButton(
-                    tooltip: 'نقل لأسفل',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.arrow_drop_down, size: 20),
-                    onPressed: widget.enabled && index < items.length - 1
-                        ? () => _emitContent(_content.withItemMoved(index, index + 1))
-                        : null,
-                  ),
-                  IconButton(
-                    tooltip: 'حذف النقطة',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.close, size: 16),
-                    onPressed: widget.enabled
-                        ? () => _emitContent(_content.withItemRemoved(index))
-                        : null,
-                  ),
-                ],
-              ),
-            ),
-          const SizedBox(height: 4),
-          OutlinedButton.icon(
-            onPressed:
-                widget.enabled ? () => _emitContent(_content.withItemAdded()) : null,
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('إضافة نقطة', style: TextStyle(fontSize: 12)),
-          ),
-        ],
-      ),
-    );
   }
 }

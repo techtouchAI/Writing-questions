@@ -80,7 +80,6 @@ class PaperSettings {
     this.autoLetterBranches = true,
     this.numerals = PaperNumerals.auto,
     this.questionLabelStyle = QuestionLabelStyle.ministerial,
-    this.showTotalMarks = true,
     this.showPageNumbers = true,
     this.showQuestionMarks = true,
     this.pageBorder = false,
@@ -111,7 +110,6 @@ class PaperSettings {
   /// نمط تسمية الأسئلة (وزاري/مختصر).
   final QuestionLabelStyle questionLabelStyle;
 
-  final bool showTotalMarks;
   final bool showPageNumbers;
   final bool showQuestionMarks;
 
@@ -143,7 +141,6 @@ class PaperSettings {
     bool? autoLetterBranches,
     PaperNumerals? numerals,
     QuestionLabelStyle? questionLabelStyle,
-    bool? showTotalMarks,
     bool? showPageNumbers,
     bool? showQuestionMarks,
     bool? pageBorder,
@@ -158,7 +155,6 @@ class PaperSettings {
       autoLetterBranches: autoLetterBranches ?? this.autoLetterBranches,
       numerals: numerals ?? this.numerals,
       questionLabelStyle: questionLabelStyle ?? this.questionLabelStyle,
-      showTotalMarks: showTotalMarks ?? this.showTotalMarks,
       showPageNumbers: showPageNumbers ?? this.showPageNumbers,
       showQuestionMarks: showQuestionMarks ?? this.showQuestionMarks,
       pageBorder: pageBorder ?? this.pageBorder,
@@ -176,7 +172,6 @@ class PaperSettings {
       'autoLetterBranches': autoLetterBranches,
       'numerals': numerals.name,
       'questionLabelStyle': questionLabelStyle.name,
-      'showTotalMarks': showTotalMarks,
       'showPageNumbers': showPageNumbers,
       'showQuestionMarks': showQuestionMarks,
       'pageBorder': pageBorder,
@@ -194,7 +189,6 @@ class PaperSettings {
       autoLetterBranches: _bool(map['autoLetterBranches'], fallback: true),
       numerals: PaperNumerals.parse(map['numerals']),
       questionLabelStyle: QuestionLabelStyle.parse(map['questionLabelStyle']),
-      showTotalMarks: _bool(map['showTotalMarks'], fallback: true),
       showPageNumbers: _bool(map['showPageNumbers'], fallback: true),
       showQuestionMarks: _bool(map['showQuestionMarks'], fallback: true),
       pageBorder: _bool(map['pageBorder'], fallback: false),
@@ -225,7 +219,6 @@ class PaperSettings {
         other.autoLetterBranches == autoLetterBranches &&
         other.numerals == numerals &&
         other.questionLabelStyle == questionLabelStyle &&
-        other.showTotalMarks == showTotalMarks &&
         other.showPageNumbers == showPageNumbers &&
         other.showQuestionMarks == showQuestionMarks &&
         other.pageBorder == pageBorder &&
@@ -242,7 +235,6 @@ class PaperSettings {
         autoLetterBranches,
         numerals,
         questionLabelStyle,
-        showTotalMarks,
         showPageNumbers,
         showQuestionMarks,
         pageBorder,

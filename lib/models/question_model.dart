@@ -1,19 +1,23 @@
 import 'package:uuid/uuid.dart';
 
+import 'branch_item.dart';
 import 'branch_model.dart';
 import 'floating_element.dart';
 import 'paper_divider.dart';
 import 'paper_text_style.dart';
 
-/// السؤال الكامل (QuestionModel): «السؤال الأول» بنصه وفروعه ومرفقاته.
+/// السؤال الكامل (QuestionModel): «السؤال الأول» بنصه ونقاطه وفروعه ومرفقاته.
 ///
 /// - [questionNumber] هو الرقم الهيكلي (1، 2، 3...) ويُعاد ضبطه من الترتيب
 ///   داخل [ExamDocument] عند تفعيل الترقيم التلقائي.
 /// - [prompt] نص السؤال الحر الذي يكتبه المدرس («أجب عن فرعين فقط:»...)
 ///   ويُحفظ حرفياً دون أي تفسير أو إعادة صياغة.
-/// - الدرجة الكلية = مجموع درجات الفروع آلياً، ما لم يثبّت المدرس
+/// - [items] نقاط السؤال المباشرة (1، 2، 3...) لسؤال **بلا فروع** — نفس
+///   بنية نقاط الفرع تماماً: يكتب المدرس محتوى كل سطر (عبارات صح/خطأ،
+///   فراغات، اختيارات...) والترقيم تلقائي يظهر على الورقة.
+/// - الدرجة الكلية = مجموع درجات الفروع والنقاط آلياً، ما لم يثبّت المدرس
 ///   [marksOverride] يدوياً.
-/// - السؤال **وحدة لا تتجزأ**: ينتقل كاملاً بنصه وفروعه ونقاطه وصوره
+/// - السؤال **وحدة لا تتجزأ**: ينتقل كاملاً بنصه ونقاطه وفروعه وصوره
 ///   وأشكاله ودرجاته وفواصله عند النقل، ولا يُقسَّم بين صفحتين.
 class QuestionModel {
   QuestionModel({
@@ -24,6 +28,7 @@ class QuestionModel {
     this.prompt = '',
     this.marksOverride,
     this.numberOverride,
+    List<BranchItem>? items,
     List<FloatingElement>? attachments,
     PaperTextStyle? style,
     this.showFrame = false,
@@ -32,6 +37,10 @@ class QuestionModel {
         // السؤال الجديد يبدأ بلا فروع؛ تُنشأ فقط بطلب صريح من المدرس.
         branches = List<BranchModel>.unmodifiable(
           branches ?? const <BranchModel>[],
+        ),
+        // نقاط السؤال المباشرة: قائمة غير قابلة للتغيير بنفس حجج الفروع.
+        items = List<BranchItem>.unmodifiable(
+          items ?? const <BranchItem>[],
         ),
         attachments = List<FloatingElement>.unmodifiable(
           attachments ?? const <FloatingElement>[],
@@ -50,6 +59,10 @@ class QuestionModel {
 
   /// فروع السؤال؛ فارغة افتراضياً وتُنشأ فقط بطلب صريح من المدرس.
   final List<BranchModel> branches;
+
+  /// نقاط السؤال المباشرة (1، 2، 3...) عند كتابة سؤال بلا فروع — نفس بنية
+  /// نقاط الفرع ([BranchItem])؛ والترقيم يُشتق من الفهرس وقت العرض.
+  final List<BranchItem> items;
 
   /// القسم الوزاري (القواعد/الأدب/أحكام التلاوة...) — فارغ = بلا قسم.
   final String category;
@@ -75,15 +88,21 @@ class QuestionModel {
   /// فاصل بعد السؤال كاملاً.
   final PaperDivider? dividerAfter;
 
-  /// الدرجة الفعلية: اليدوية إن ثُبّتت، وإلا مجموع درجات الفروع.
-  double get marks => marksOverride ?? branches.fold<double>(0, (sum, branch) => sum + branch.marks);
+  /// الدرجة الفعلية: اليدوية إن ثُبّتت، وإلا مجموع درجات الفروع والنقاط.
+  double get marks =>
+      marksOverride ??
+      branches.fold<double>(0, (sum, branch) => sum + branch.marks) +
+          items.fold<double>(0, (sum, item) => sum + item.marks);
 
-  /// هل درجة السؤال محسوبة تلقائياً من الفروع؟
+  /// هل درجة السؤال محسوبة تلقائياً من الفروع والنقاط؟
   bool get hasAutoMarks => marksOverride == null;
 
-  /// هل يحمل السؤال أي محتوى مكتوب (نص/فروع/نقاط)؟
+  /// هل يحمل السؤال أي محتوى مكتوب (نص/نقاط/فروع)؟
   bool get hasContent {
     if (prompt.trim().isNotEmpty) {
+      return true;
+    }
+    if (items.any((item) => !item.isEmpty)) {
       return true;
     }
     return branches.any((branch) => !branch.content.isEmpty);
@@ -96,6 +115,7 @@ class QuestionModel {
     String? prompt,
     double? Function()? marksOverride,
     String? Function()? numberOverride,
+    List<BranchItem>? items,
     List<FloatingElement>? attachments,
     PaperTextStyle? style,
     bool? showFrame,
@@ -109,11 +129,61 @@ class QuestionModel {
       prompt: prompt ?? this.prompt,
       marksOverride: marksOverride != null ? marksOverride() : this.marksOverride,
       numberOverride: numberOverride != null ? numberOverride() : this.numberOverride,
+      items: items ?? this.items,
       attachments: attachments ?? this.attachments,
       style: style ?? this.style,
       showFrame: showFrame ?? this.showFrame,
       dividerAfter: dividerAfter != null ? dividerAfter() : this.dividerAfter,
     );
+  }
+
+  // ============================ نقاط السؤال المباشرة ============================
+
+  /// نسخة مع إضافة نقطة جديدة (فارغة افتراضياً).
+  QuestionModel withItemAdded([BranchItem? item]) {
+    return copyWith(items: <BranchItem>[...items, item ?? BranchItem()]);
+  }
+
+  /// نسخة مع توليد [count] نقطة فارغة (تُستخدم لضبط «عدد العناصر» دفعة واحدة).
+  QuestionModel withItemCount(int count) {
+    final safe = count.clamp(0, 200);
+    if (items.length == safe) {
+      return this;
+    }
+    if (items.length > safe) {
+      return copyWith(items: items.sublist(0, safe));
+    }
+    return copyWith(
+      items: <BranchItem>[
+        ...items,
+        for (var i = items.length; i < safe; i++) BranchItem(),
+      ],
+    );
+  }
+
+  /// نسخة مع استبدال النقطة في الموضع [index].
+  QuestionModel withItemAt(int index, BranchItem item) {
+    RangeError.checkValidIndex(index, items, 'index');
+    final updated = List<BranchItem>.of(items);
+    updated[index] = item;
+    return copyWith(items: updated);
+  }
+
+  /// نسخة مع حذف النقطة في الموضع [index].
+  QuestionModel withItemRemoved(int index) {
+    RangeError.checkValidIndex(index, items, 'index');
+    final updated = List<BranchItem>.of(items)..removeAt(index);
+    return copyWith(items: updated);
+  }
+
+  /// نسخة مع نقل النقطة من [from] إلى [to].
+  QuestionModel withItemMoved(int from, int to) {
+    RangeError.checkValidIndex(from, items, 'from');
+    final updated = List<BranchItem>.of(items);
+    final item = updated.removeAt(from);
+    final target = to.clamp(0, updated.length);
+    updated.insert(target, item);
+    return copyWith(items: updated);
   }
 
   /// نسخة مع استبدال الفرع في الموضع [index].
@@ -156,7 +226,11 @@ class QuestionModel {
   int indexOfBranch(String branchId) =>
       branches.indexWhere((branch) => branch.id == branchId);
 
-  /// نسخة بهوية جديدة وهويات فروع/مرفقات جديدة (للنسخ/التكرار).
+  /// نسخة بهوية جديدة وهويات فروع/نقاط/مرفقات جديدة (للنسخ/التكرار).
+  ///
+  /// نقاط السؤال تُنسخ **كاملة** (نص/درجة/إجابة/تسمية) كما هي؛ وأما
+  /// [numberOverride] فلا يُنقل عمداً — التسمية اليدوية خاصة بالأصل،
+  /// والنسخة سؤال جديد بترقيمها التلقائي.
   QuestionModel duplicated({required int questionNumber}) {
     return QuestionModel(
       questionNumber: questionNumber,
@@ -164,6 +238,15 @@ class QuestionModel {
       category: category,
       prompt: prompt,
       marksOverride: marksOverride,
+      items: <BranchItem>[
+        for (final item in items)
+          BranchItem(
+            text: item.text,
+            marks: item.marks,
+            isCorrect: item.isCorrect,
+            labelOverride: item.labelOverride,
+          ),
+      ],
       attachments: attachments.map((element) => element.duplicated()).toList(),
       style: style,
       showFrame: showFrame,
@@ -181,6 +264,8 @@ class QuestionModel {
       if (marksOverride != null) 'marksOverride': marksOverride,
       if (numberOverride != null && numberOverride!.trim().isNotEmpty)
         'numberOverride': numberOverride,
+      if (items.isNotEmpty)
+        'items': items.map((item) => item.toMap()).toList(growable: false),
       if (attachments.isNotEmpty)
         'attachments':
             attachments.map((element) => element.toMap()).toList(growable: false),
@@ -241,6 +326,8 @@ class QuestionModel {
       marksOverride: marksOverride,
       numberOverride:
           rawNumberOverride == null || rawNumberOverride.isEmpty ? null : rawNumberOverride,
+      // نقاط السؤال حقل جديد متسامح (كباقي حقول النقاط) لتبقى الأسئلة القديمة صالحة.
+      items: BranchItem.listFromValue(map['items']),
       attachments: attachments,
       style: PaperTextStyle.fromValue(map['style']),
       showFrame: map['showFrame'] == true,

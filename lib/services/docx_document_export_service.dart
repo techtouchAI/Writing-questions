@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 
 import '../layout/paper_metrics.dart';
+import '../models/branch_item.dart';
 import '../models/branch_model.dart';
 import '../models/exam_document.dart';
 import '../models/floating_element.dart';
@@ -314,9 +315,10 @@ class _DocxBuilder {
     final title = header.title.trim().isEmpty
         ? header.center.lines[1]
         : header.title.trim();
-    final versionLabel = isTeacherVersion
-        ? 'نموذج الإجابة وتوزيع الدرجات للمعلم'
-        : 'عدد الأسئلة: ${document.formatNumber(document.questions.length)}';
+    // نموذج المعلم يُوسم باسمه؛ وورقة الطالب بلا أي عدّادات على الورقة
+    // (لا الدرجة الكلية ولا عدد الأسئلة — الإجابة في دفتر الطالب).
+    final versionLabel =
+        isTeacherVersion ? 'نموذج الإجابة وتوزيع الدرجات للمعلم' : '';
     final titleAlign = header.style.align == null
         ? 'center'
         : _wordAlign(header.style.align);
@@ -348,15 +350,11 @@ class _DocxBuilder {
       ${title.trim().isEmpty ? '' : _tableParagraph(title, bold: true, size: 28, alignment: titleAlign, color: '1E3A8A')}
       ${_tableParagraph(header.center.lines[0], alignment: 'center')}
       ${_tableParagraph(header.center.lines[2], alignment: 'center')}
-      ${_tableParagraph(versionLabel, italic: true, alignment: 'center', color: isTeacherVersion ? 'DC2626' : '4B5563')}
+      ${versionLabel.isEmpty ? '' : _tableParagraph(versionLabel, italic: true, alignment: 'center', color: 'DC2626')}
     </w:tc>
     <w:tc>
       <w:tcPr><w:tcW w:w="1700" w:type="pct"/></w:tcPr>
       ${_tableCellLines(header.left.lines)}
-      ${_tableParagraph(
-        'الدرجة الكلية: ${document.formatNumber(document.totalMarks)} ${layout.marksUnit}',
-        bold: true,
-      )}
     </w:tc>
   </w:tr>
 </w:tbl>
@@ -411,6 +409,19 @@ class _DocxBuilder {
     final marksPart = document.settings.showQuestionMarks
         ? ' [${document.formatNumber(question.marks)} ${layout.marksUnit}]'
         : '';
+    // الترتيب مطابق للوحة المعاينة ومحرك الـ PDF حرفياً:
+    // القسم ← العنوان ← النص ← نقاط السؤال ← الفروع.
+    if (question.category.trim().isNotEmpty) {
+      _writeParagraph(
+        body,
+        question.category.trim(),
+        bold: true,
+        size: 24,
+        color: '1E3A8A',
+        before: 40,
+        after: 40,
+      );
+    }
     _writeStyledParagraph(
       body,
       '${document.displayQuestionLabel(question)}$marksPart',
@@ -432,15 +443,18 @@ class _DocxBuilder {
         after: 40,
       );
     }
-    if (question.category.trim().isNotEmpty) {
-      _writeParagraph(
+    // نقاط السؤال المباشرة (1، 2، 3...) — نفس مسار نقاط الفرع في الطباعة.
+    for (var i = 0; i < question.items.length; i++) {
+      final item = question.items[i];
+      if (!item.showsInExport(teacher: isTeacherVersion, trueFalse: false)) {
+        continue;
+      }
+      _writeItemParagraph(
         body,
-        question.category.trim(),
-        bold: true,
-        size: 24,
-        color: '1E3A8A',
-        before: 40,
-        after: 40,
+        item,
+        i,
+        style: question.style,
+        trueFalse: false,
       );
     }
     for (var index = 0; index < question.branches.length; index++) {
@@ -448,6 +462,45 @@ class _DocxBuilder {
     }
     await _buildAttachments(body, question.attachments);
     _buildDivider(body, question.dividerAfter);
+  }
+
+  /// فقرة نقطة مرقَّمة (داخل سؤال أو فرع) — ترقيم تلقائي/مخصص + درجة +
+  /// إجابة صح/خطأ في نموذج المعلم وحده.
+  void _writeItemParagraph(
+    StringBuffer body,
+    BranchItem item,
+    int index, {
+    required PaperTextStyle? style,
+    required bool trueFalse,
+  }) {
+    final layout = document.layout;
+    final itemMarks = item.marks > 0
+        ? ' [${document.formatNumber(item.marks)} ${layout.marksUnit}]'
+        : '';
+    var itemAnswer = '';
+    if (isTeacherVersion && trueFalse && item.isCorrect != null) {
+      itemAnswer = layout.isLtr
+          ? (item.isCorrect! ? ' (True)' : ' (False)')
+          : (item.isCorrect! ? ' (صح)' : ' (خطأ)');
+    }
+    final itemLabel = document.displayItemLabel(item, index);
+    final chunks = <String>[
+      if (itemLabel.isNotEmpty) itemLabel,
+      if (item.text.trim().isNotEmpty) item.text,
+    ];
+    final line = '${chunks.join(' ')}$itemMarks$itemAnswer';
+    if (line.trim().isEmpty) {
+      return;
+    }
+    _writeStyledParagraph(
+      body,
+      line,
+      style: style,
+      size: 22,
+      indent: 800,
+      before: 30,
+      after: 30,
+    );
   }
 
   Future<void> _buildBranch(
@@ -481,34 +534,17 @@ class _DocxBuilder {
     );
     for (var i = 0; i < content.items.length; i++) {
       final item = content.items[i];
-      if (!item.showsInExport(teacher: isTeacherVersion, type: content.type)) {
+      if (!item.showsInExport(
+          teacher: isTeacherVersion,
+          trueFalse: content.type == QuestionType.trueFalse)) {
         continue;
       }
-      final itemMarks = item.marks > 0
-          ? ' [${document.formatNumber(item.marks)} ${layout.marksUnit}]'
-          : '';
-      // إجابة النقطة لصح/خطأ — في نموذج المعلم فقط.
-      var itemAnswer = '';
-      if (isTeacherVersion &&
-          content.type == QuestionType.trueFalse &&
-          item.isCorrect != null) {
-        itemAnswer = layout.isLtr
-            ? (item.isCorrect! ? ' (True)' : ' (False)')
-            : (item.isCorrect! ? ' (صح)' : ' (خطأ)');
-      }
-      final itemLabel = document.displayItemLabel(item, i);
-      final chunks = <String>[
-        if (itemLabel.isNotEmpty) itemLabel,
-        if (item.text.trim().isNotEmpty) item.text,
-      ];
-      _writeStyledParagraph(
+      _writeItemParagraph(
         body,
-        '${chunks.join(' ')}$itemMarks$itemAnswer',
+        item,
+        i,
         style: branch.style,
-        size: 22,
-        indent: 800,
-        before: 30,
-        after: 30,
+        trueFalse: content.type == QuestionType.trueFalse,
       );
     }
     // مطابقة اللوحة ومحرك PDF حرفياً (انظر PaginatedPdfExamEngine).
@@ -554,17 +590,8 @@ class _DocxBuilder {
           );
         }
       case QuestionType.trueFalse:
+        // ورقة الطالب: الأسئلة فقط — بلا مساحة إجابة مولَّدة على الورقة.
         if (!isTeacherVersion) {
-          _writeParagraph(
-            body,
-            'الإجابة: (     ) صح      /      (     ) خطأ',
-            size: 22,
-            indent: 800,
-            before: 40,
-            after: 40,
-            alignment: alignment,
-            lineHeight: lineHeight,
-          );
           return;
         }
         final answer = content.trueFalseAnswer;
@@ -583,16 +610,6 @@ class _DocxBuilder {
         );
       case QuestionType.fillInTheBlank:
         if (!isTeacherVersion) {
-          _writeParagraph(
-            body,
-            'الإجابة: ........................................................................................',
-            size: 22,
-            indent: 800,
-            before: 60,
-            after: 60,
-            alignment: alignment,
-            lineHeight: lineHeight,
-          );
           return;
         }
         if (content.modelAnswer.trim().isEmpty) {
@@ -630,18 +647,7 @@ class _DocxBuilder {
           );
           return;
         }
-        for (var i = 0; i < document.layout.essayAnswerLines; i++) {
-          _writeParagraph(
-            body,
-            '.......................................................................................................................................................',
-            size: 20,
-            color: '9CA3AF',
-            before: 40,
-            after: 40,
-            alignment: alignment,
-            lineHeight: lineHeight,
-          );
-        }
+        // ورقة الطالب للأسئلة المقالية: بلا أسطر إجابة مولَّدة (الإجابة في دفتر الطالب).
     }
   }
 

@@ -4,16 +4,20 @@ import 'package:provider/provider.dart';
 import '../../models/exam_document.dart';
 import '../../models/question_model.dart';
 import '../../providers/exam_wizard_controller.dart';
+import '../widgets/items_editor.dart';
 import '../widgets/ltr_numeric_field.dart';
 import 'branch_editor_card.dart';
 
-/// الخطوة 2 من المعالج: إعداد سؤال واحد بنصه وفروعه (أ، ب، ج...).
+/// الخطوة 2 من المعالج: إعداد سؤال واحد بنصه ونقاطه وفروعه (أ، ب، ج...).
 ///
 /// - العنوان ديناميكي: «إعداد السؤال الأول» ثم «الثاني»...
 /// - حقل حر لنص السؤال/تعليماته («أجب عن فرعين فقط:»...) بلا صيغة مفروضة.
+/// - **نقاط السؤال المباشرة** (1، 2، 3...) لكل سؤال — خصوصاً السؤال بلا
+///   فروع: نفس محرر «النقاط داخل الفرع» تماماً، والترقيم تلقائي يظهر على
+///   الورقة؛ يكتب المدرس محتوى كل سطر (عبارات/فراغات/اختيارات) بنفسه.
 /// - يبدأ بلا فروع؛ [إضافة فرع جديد] يضيف (أ) ثم (ب) بنفس الأدوات،
 ///   وتظهر بطاقات الفروع فقط بعد إنشائها صراحة.
-/// - الدرجة تلقائية (مجموع الفروع) ما لم يثبّت المدرس درجة يدوية.
+/// - الدرجة تلقائية (مجموع الفروع والنقاط) ما لم يثبّت المدرس درجة يدوية.
 /// - [التالي] يحفظ السؤال ويفتح سؤالاً جديداً فارغاً، و[إنهاء وعرض النموذج]
 ///   ينتقل إلى محرك المعاينة A4.
 class QuestionStepScreen extends StatefulWidget {
@@ -51,7 +55,8 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
     // الدرجة اختيارية تماماً — المدرس حر في تثبيتها الآن أو لاحقاً من المعاينة.
     if (!question.hasContent) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('اكتب نص السؤال أو محتوى فرع واحد على الأقل قبل المتابعة.')),
+        const SnackBar(
+            content: Text('اكتب نص السؤال أو نقطة واحدة أو محتوى فرع على الأقل قبل المتابعة.')),
       );
       return false;
     }
@@ -210,6 +215,13 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
               ),
               const SizedBox(height: 12),
             ],
+            // نقاط السؤال المباشرة (1، 2، 3...) — تظهر دائماً وهي محتوى
+            // السؤال كاملاً عند كتابة سؤال بلا فروع؛ والترقيم تلقائي على الورقة.
+            ItemsEditor(
+              items: question.items,
+              onChanged: (items) => controller.updateQuestionItems(questionIndex, items),
+            ),
+            const SizedBox(height: 12),
             for (var index = 0; index < question.branches.length; index++)
               BranchEditorCard(
                 key: ValueKey<String>('branch-editor-${question.branches[index].id}'),
@@ -233,8 +245,8 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
                   layout.isLtr
-                      ? 'No branches yet — create the first one below.'
-                      : 'لا فروع بعد — أنشئ الفرع الأول بالزر أدناه.',
+                      ? 'No branches yet — add points above, or create the first branch below.'
+                      : 'لا فروع بعد — اكتب نقاط السؤال أعلاه، أو أنشئ الفرع الأول بالزر أدناه.',
                   style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ),
