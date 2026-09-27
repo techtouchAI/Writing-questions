@@ -189,5 +189,77 @@ void main() {
       expect(moved.dx, greaterThan(0));
       expect(moved.dy, greaterThan(0));
     });
+
+    testWidgets('العنصر المحدد يُسحَب مباشرةً بلا ضغط مطوّل', (tester) async {
+      final controller = ExamWizardController(document: _document());
+      controller.selectBranch(const BranchRef(questionIndex: 0, branchIndex: 0));
+      controller.addAttachment(
+        FloatingElement(
+          type: FloatingElementType.shape,
+          shape: FloatingShapeType.textBox,
+          dx: 0,
+          dy: 0,
+          width: 120,
+          height: 60,
+        ),
+      );
+      await _pumpPreview(tester, controller);
+
+      // نقرة واحدة تحدّد المربع (فتصبح نية التحريك صريحة) ثم يُسحب فورًا:
+      // لا ضغط مطوّل ولا انتظار مهلة — وهو ما كان يجعل المربع يبدو ثابتًا.
+      await tester.tap(find.byType(FloatingElementView));
+      await tester.pump();
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byType(FloatingElementView)),
+      );
+      await tester.pump();
+      await gesture.moveBy(const Offset(40, 24));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      final moved = controller.document
+          .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
+          .attachments
+          .single;
+      // التكبير 100% في هذا المحيط ⇒ بكسل الشاشة = بكسل اللوحة.
+      expect(moved.dx, closeTo(40, 0.5));
+      expect(moved.dy, closeTo(24, 0.5));
+    });
+
+    testWidgets('النقر المزدوج على مربع النص يفتح محرّره', (tester) async {
+      final controller = ExamWizardController(document: _document());
+      controller.selectBranch(const BranchRef(questionIndex: 0, branchIndex: 0));
+      controller.addAttachment(
+        FloatingElement(
+          type: FloatingElementType.shape,
+          shape: FloatingShapeType.textBox,
+          label: 'ملاحظة للمصحح',
+          dx: 0,
+          dy: 0,
+          width: 120,
+          height: 60,
+        ),
+      );
+      await _pumpPreview(tester, controller);
+
+      // النقرة الأولى تحدّد المربع، والثانية تُكمل «النقر المزدوج» — وهو
+      // سلوك محفوظ يدويًّا لأن السحب الفوري يفوز بساحة الإيماءات.
+      await tester.tap(find.byType(FloatingElementView));
+      await tester.pump();
+      await tester.tap(find.byType(FloatingElementView));
+      await tester.pumpAndSettle();
+
+      // حوار تحرير مربع النص (عنوانه «مربع نص») — لا شريحة التحديد في الشريط.
+      expect(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('مربع نص'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('ملاحظة للمصحح'), findsWidgets);
+    });
   });
 }

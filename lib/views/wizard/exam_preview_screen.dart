@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
@@ -137,8 +138,9 @@ class _TextInputDialogState extends State<_TextInputDialog> {
 ///   ثم تنسيقه من شريط المعاينة (خط/حجم/عريض/محاذاة/إطار).
 /// - **إعادة الترتيب**: سحب سؤال كامل أو فرع داخل سؤاله؛ الإفلات على فرع
 ///   في سؤال آخر يبدّل المحتوى فقط (العناوين ثابتة).
-/// - **المرفقات**: صور/أشكال/مربعات نص على مستوى السؤال أو الفرع: تحريك،
-///   تغيير حجم (الصور بنسبة ثابتة)، تدوير، إطار، حذف.
+/// - **المرفقات**: صور/أشكال/مربعات نص على مستوى السؤال أو الفرع: تحريك
+///   بالسحب المباشر بعد التحديد (وضغط مطوّل قبله)، تغيير حجم (الصور بنسبة
+///   ثابتة)، تدوير، إطار، حذف.
 /// - **العرض**: تكبير/تصغير/ملاءمة/توسيط، وقفل يمنع التحريك العرضي.
 class ExamPreviewScreen extends StatefulWidget {
   const ExamPreviewScreen({super.key, required this.onBackToQuestions});
@@ -158,6 +160,28 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   _AttachmentRef? _selectedAttachment;
   String? _selectedDividerKey;
   bool _isBusy = false;
+
+  /// سحب فوري للعنصر المحدد (بلا ضغط مطوّل): مؤشر اللمس الجاري، وموضعه
+  /// الابتدائي ببكسل الشاشة، وموضع العنصر عند بداية السحب ببكسل اللوحة.
+  ///
+  /// الإزاحة تُحسب من الفرق المطلق بين الموضعين (لا تراكم `delta`) فلا
+  /// تتأخر الحركة عن الإصبع ولا تتأثر بعدد إطارات إعادة البناء.
+  int? _dragPointer;
+  Offset? _dragStartScreen;
+  Offset? _dragOriginPaper;
+  _AttachmentRef? _dragRef;
+
+  /// هل تحرّك الإصبع فعليًّا في السحب الجاري؟ (للتفريق بين السحب والنقر).
+  bool _dragMoved = false;
+
+  /// آخر نقر على أي عنصر عائم (معرّفه ووقته) — لكشف النقر المزدوج على
+  /// مربع النص يدويًّا: الفوز الفوري بساحة الإيماءات في مسار السحب يمنع
+  /// وصول النقرة إلى [GestureDetector].
+  String? _lastAttachmentTapId;
+  Duration? _lastAttachmentTapTime;
+
+  /// وقت آخر لمس على أي عنصر عائم (يقيسه الغلاف الخارجي في [Listener]).
+  Duration? _lastPointerDownTime;
 
   /// عرض «نموذج الإجابة» على الورقة: تُظهر الإجابات الصحيحة والنموذجية
   /// وتحرَّر في مكانها (نفس سلوك ملف الـ PDF في وضع المعلم).
@@ -791,25 +815,47 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   }
 
   void _addTextBox() {
-    _addAttachmentToSelection(
-      FloatingElement(
+    final element = _newTextBoxElement();
+    _addAttachmentToSelection(element);
+    _editNewTextBox(element.id);
+  }
+
+  /// يضيف مربع نص على **الفرع المحدد** (مسار شريط الصيغ والوسائط) ويفتح
+  /// محرّره فورًا — نفس سلوك زر «مربع نص» في شريط المعاينة.
+  void _addTextBoxToSelectedBranch() {
+    final element = _newTextBoxElement();
+    _addAttachmentToBranch(element);
+    _editNewTextBox(element.id);
+  }
+
+  /// مربع نص افتراضي (180×90 بكسل لوحة) عند رأس مساحة المالك.
+  static FloatingElement _newTextBoxElement() => FloatingElement(
         type: FloatingElementType.shape,
         shape: FloatingShapeType.textBox,
         dx: 0,
         dy: 0,
         width: 180,
         height: 90,
-      ),
-    );
-    // فتح محرر النص فوراً لكتابة محتوى المربع الجديد.
-    final ref = _selectedAttachment;
-    if (ref != null) {
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _editTextBox(ref);
-        }
-      });
+      );
+
+  /// يفتح محرّر نص المربع المضاف للتوّ ثم يذكّر بأن السحب المباشر يحرّكه.
+  ///
+  /// يُشترط أن يكون المربع [elementId] هو **المحدد حاليًا** ليُعرف أن
+  /// الإدراج نجح (وإلا فالمالك غير محدد ورسالة الإرشاد ظهرت بالفعل).
+  void _editNewTextBox(String elementId) {
+    if (_selectedAttachment?.elementId != elementId) {
+      return;
     }
+    SchedulerBinding.instance.addPostFrameCallback((_) async {
+      final ref = _selectedAttachment;
+      if (!mounted || ref == null || ref.elementId != elementId) {
+        return;
+      }
+      await _editTextBox(ref);
+      if (mounted) {
+        _showMessage('اسحب مربع النص مباشرةً لتحريكه داخل الورقة.');
+      }
+    });
   }
 
   void _addDividerToSelection() {
@@ -1772,16 +1818,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               onAddShape: _addShape,
               onAddQuestion: controller.addQuestion,
               onAddBranch: _addBranchToSelected,
-              onAddTextBox: () => _addAttachmentToBranch(
-                FloatingElement(
-                  type: FloatingElementType.shape,
-                  shape: FloatingShapeType.textBox,
-                  dx: 0,
-                  dy: 0,
-                  width: 180,
-                  height: 90,
-                ),
-              ),
+              onAddTextBox: _addTextBoxToSelectedBranch,
               onAddDivider: () {
                 final ref = controller.selectedBranch;
                 if (ref == null) {
@@ -2977,6 +3014,195 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
+  /// غلاف السحب لعنصر عائم (صورة/شكل/مربع نص).
+  ///
+  /// العنصر **المحدد** يُسحب سحبًا فوريًّا: نيّة التحريك صريحة بعد التحديد،
+  /// فلا معنى لانتظار ضغط مطوّل — وهو ما كان يجعل المربعات تبدو «ثابتة»
+  /// لا تتحرك. وغير المحدد يبقى بالضغط المطوّل حتى لا يبتلع السحبُ تمريرَ
+  /// الصفحة أو لمسَ الحقول.
+  ///
+  /// ملاحظة تقنية: `GestureDetector.onPanUpdate` لا يصلح هنا لأن حدّ
+  /// الانزلاق المطلوب للفوز بساحة الإيماءات ضعف حدّ التمرير (`kPanSlop`
+  /// = 2×`kTouchSlop`) فيسبق تمريرُ الصفحة العنصرَ إلى الفوز؛ لذلك يُعلن
+  /// [EagerGestureRecognizer] الفوز فورًا وتُحسب الإزاحة من الفرق المطلق
+  /// بين إحداثيات المؤشر العامة (بكسل الشاشة) مقسومةً على التكبير.
+  Widget _buildAttachmentDraggable(
+    ExamWizardController controller,
+    _AttachmentRef ref,
+    FloatingElement element,
+    bool selected,
+  ) {
+    if (selected && !_locked) {
+      return RawGestureDetector(
+        behavior: HitTestBehavior.opaque,
+        gestures: <Type, GestureRecognizerFactory>{
+          EagerGestureRecognizer: GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
+            () => EagerGestureRecognizer(),
+            (EagerGestureRecognizer instance) {},
+          ),
+        },
+        child: Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: (event) =>
+              _beginAttachmentDrag(ref, element, event.pointer, event.position),
+          onPointerMove: (event) =>
+              _updateAttachmentDrag(event.pointer, event.position),
+          onPointerUp: (event) {
+            if (event.pointer == _dragPointer && !_dragMoved) {
+              // لمسة بلا حركة = نقرة: تُسجَّل لكشف النقر المزدوج (فتح
+              // محرّر مربع النص) لأن الفوز الفوري بساحة الإيماءات يمنع
+              // وصول النقرة إلى [GestureDetector] الأب.
+              _noteAttachmentTap(ref, element, _lastPointerDownTime);
+            }
+            _endAttachmentDrag(event.pointer);
+          },
+          onPointerCancel: (event) => _endAttachmentDrag(event.pointer),
+          child: _buildAttachmentContent(controller, element, selected),
+        ),
+      );
+    }
+    return LongPressDraggable<_AttachmentRef>(
+      maxSimultaneousDrags: _locked ? 0 : 1,
+      feedback: Material(
+        elevation: 4,
+        color: Colors.transparent,
+        child: SizedBox(
+          width: element.width * _zoom,
+          height: element.height * _zoom,
+          child: FittedBox(
+            fit: BoxFit.fill,
+            child: SizedBox(
+              width: element.width,
+              height: element.height,
+              child: _buildAttachmentContent(controller, element, selected),
+            ),
+          ),
+        ),
+      ),
+      childWhenDragging: Opacity(
+        opacity: 0.35,
+        child: _buildAttachmentContent(controller, element, selected),
+      ),
+      // الـ delta هنا فيزيائي/عام (الصورة في الـ Overlay) — يُقسم على
+      // التكبير للعودة للمقاس المنطقي على الورقة.
+      onDragUpdate: (details) =>
+          _dragAttachmentByDelta(ref, details.delta / _zoom),
+      child: Container(
+        color: Colors.transparent,
+        child: _buildAttachmentContent(controller, element, selected),
+      ),
+    );
+  }
+
+  /// يبدأ سحبًا فوريًّا للعنصر عند لمس المؤشر [pointer].
+  void _beginAttachmentDrag(
+    _AttachmentRef ref,
+    FloatingElement element,
+    int pointer,
+    Offset position,
+  ) {
+    _dragPointer = pointer;
+    _dragRef = ref;
+    _dragStartScreen = position;
+    _dragOriginPaper = Offset(element.dx, element.dy);
+    _dragMoved = false;
+  }
+
+  /// يتابع المؤشر [pointer] ويضع العنصر المسحوب عند موضعه الجديد.
+  void _updateAttachmentDrag(int pointer, Offset position) {
+    final start = _dragStartScreen;
+    final origin = _dragOriginPaper;
+    final ref = _dragRef;
+    if (ref == null ||
+        start == null ||
+        origin == null ||
+        pointer != _dragPointer) {
+      return;
+    }
+    final delta = position - start;
+    // لا حركة قبل تجاوز حدّ الانزلاق: بقيّة النقرات (واهتزاز الإصبع) تبقى
+    // نقرة فلا يقفز العنصر ولا يفوت النقر المزدوج.
+    if (!_dragMoved && delta.distance <= kTouchSlop) {
+      return;
+    }
+    _dragMoved = true;
+    _moveAttachmentTo(ref, origin + delta / _zoom);
+  }
+
+  /// يُنهي السحب الفوري (رفع الإصبع أو إلغاء المؤشر).
+  void _endAttachmentDrag(int pointer) {
+    if (pointer != _dragPointer) {
+      return;
+    }
+    _dragPointer = null;
+    _dragRef = null;
+    _dragStartScreen = null;
+    _dragOriginPaper = null;
+    _dragMoved = false;
+  }
+
+  /// يسجّل نقرة على مربع نص ويكشف النقر المزدوج (فتح محرّره).
+  ///
+  /// تُستدعى من مساري التحديد والسحب الفوري معًا، والمقارنة على ساعة أحداث
+  /// المؤشر نفسها ([timeStamp] من الغلاف الخارجي) لا على ساعة النظام.
+  void _noteAttachmentTap(
+    _AttachmentRef ref,
+    FloatingElement element,
+    Duration? timeStamp,
+  ) {
+    if (!element.isTextBox || _locked || timeStamp == null) {
+      _lastAttachmentTapId = null;
+      _lastAttachmentTapTime = null;
+      return;
+    }
+    final previous = _lastAttachmentTapTime;
+    final isDoubleTap = _lastAttachmentTapId == ref.elementId &&
+        previous != null &&
+        (timeStamp - previous).abs() <= kDoubleTapTimeout;
+    _lastAttachmentTapId = ref.elementId;
+    _lastAttachmentTapTime = isDoubleTap ? null : timeStamp;
+    if (isDoubleTap) {
+      _editTextBox(ref);
+    }
+  }
+
+  /// يحرّك العنصر [ref] بمقدار [delta] (بكسل اللوحة) — مسار الضغط المطوّل.
+  ///
+  /// يقرأ أحدث نسخة من العنصر من المستند لا النسخة الملتقطة في البناء، فلا
+  /// تتأخر الحركة إذا تكرّرت أحداث السحب قبل إطار إعادة البناء التالي.
+  void _dragAttachmentByDelta(_AttachmentRef ref, Offset delta) {
+    final element = _findAttachment(_controller!.document, ref);
+    if (element == null) {
+      return;
+    }
+    _moveAttachmentTo(ref, Offset(element.dx, element.dy) + delta);
+  }
+
+  /// يضع العنصر [ref] في الموضع المطلق [target] (بكسل اللوحة) داخل حدود
+  /// مساحة الطباعة: لا يخرج عن عرض المحتوى ولا عن ارتفاع الصفحة القابل
+  /// للطباعة، ولا يتجاوز العنصر نفسه حدّ الصفحة (فلا يدفع الورقة لصفحة
+  /// زائدة في التقسيم).
+  void _moveAttachmentTo(_AttachmentRef ref, Offset target) {
+    final element = _findAttachment(_controller!.document, ref);
+    if (element == null) {
+      return;
+    }
+    final marginMm = _controller!.document.settings.marginMm;
+    final contentWidth = PaperMetrics.contentWidthFor(marginMm);
+    final maxDx =
+        (contentWidth - element.width).clamp(0.0, contentWidth).toDouble();
+    final pageHeight = PaperMetrics.pageContentHeightFor(marginMm);
+    final maxDy =
+        (pageHeight - element.height).clamp(0.0, pageHeight).toDouble();
+    _updateAttachmentElement(
+      ref,
+      element.copyWith(
+        dx: target.dx.clamp(0.0, maxDx),
+        dy: target.dy.clamp(0.0, maxDy),
+      ),
+    );
+  }
+
   Widget _buildAttachment(
     ExamWizardController controller,
     _AttachmentRef ref,
@@ -2991,165 +3217,123 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       top: element.dy,
       width: element.width,
       height: element.height,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          controller.selectBranch(
-            ref.branchIndex == null
-                ? null
-                : BranchRef(
-                    questionIndex: ref.questionIndex, branchIndex: ref.branchIndex!),
-          );
-          controller.selectQuestion(ref.questionIndex);
-          setState(() {
-            _clearSelection();
-            _selectedAttachment = ref;
-          });
-        },
-        onDoubleTap: element.isTextBox && !_locked ? () => _editTextBox(ref) : null,
-        // ملاحظة: تحريك الشكل عبر LongPressDraggable داخل الـ Stack (أدناه) —
-        // onPanUpdate المباشر كان يخسر ساحة الإيماءات أمام تمرير الصفحة.
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: <Widget>[
-            Positioned.fill(
-              // السحب بالضغط المطوّل يفوز بساحة الإيماءات قبل أي حركة تمرير —
-              // المقابض (حذف/تحرير/تدوير/تغيير حجم) تبقى خارج السحب كأشقاء.
-              child: LongPressDraggable<_AttachmentRef>(
-                maxSimultaneousDrags: _locked ? 0 : 1,
-                feedback: Material(
-                  elevation: 4,
-                  color: Colors.transparent,
-                  child: SizedBox(
-                    width: element.width * _zoom,
-                    height: element.height * _zoom,
-                    child: FittedBox(
-                      fit: BoxFit.fill,
-                      child: SizedBox(
-                        width: element.width,
-                        height: element.height,
-                        child: _buildAttachmentContent(
-                          controller,
-                          element,
-                          selected,
-                        ),
+      // غلاف قياس وقت اللمس فقط (لا يستهلك الإيماءة): يحتاجه كشف النقر
+      // المزدوج على مربع النص في المسارين (التحديد والسحب الفوري).
+      child: Listener(
+        behavior: HitTestBehavior.deferToChild,
+        onPointerDown: (event) => _lastPointerDownTime = event.timeStamp,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            controller.selectBranch(
+              ref.branchIndex == null
+                  ? null
+                  : BranchRef(
+                      questionIndex: ref.questionIndex,
+                      branchIndex: ref.branchIndex!),
+            );
+            controller.selectQuestion(ref.questionIndex);
+            setState(() {
+              _clearSelection();
+              _selectedAttachment = ref;
+            });
+            _noteAttachmentTap(ref, element, _lastPointerDownTime);
+          },
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: <Widget>[
+              Positioned.fill(
+                // صندوق إمساك شفاف: يضمن بدء السحب من أي نقطة داخل
+                // المستطيل (بعض الأشكال لا تختبر الإصابة بذاتها).
+                child: _buildAttachmentDraggable(
+                  controller,
+                  ref,
+                  element,
+                  selected,
+                ),
+              ),
+              if (selected && !_locked)
+                Positioned(
+                  left: -12,
+                  top: -12,
+                  child: GestureDetector(
+                    onTap: () => _removeAttachmentElement(ref),
+                    child: const CircleAvatar(
+                      radius: 10,
+                      backgroundColor: PaperStyles.danger,
+                      child: Icon(Icons.close, size: 12, color: Colors.white),
+                    ),
+                  ),
+                ),
+              if (selected && !_locked && element.isTextBox)
+                Positioned(
+                  right: -12,
+                  top: -12,
+                  child: GestureDetector(
+                    onTap: () => _editTextBox(ref),
+                    child: const CircleAvatar(
+                      radius: 10,
+                      backgroundColor: PaperStyles.accent,
+                      child: Icon(Icons.edit, size: 12, color: Colors.white),
+                    ),
+                  ),
+                ),
+              if (selected &&
+                  !_locked &&
+                  !element.isTextBox &&
+                  !element.isImage)
+                Positioned(
+                  left: -12,
+                  bottom: -12,
+                  child: GestureDetector(
+                    onTap: () => _updateAttachmentElement(
+                      ref,
+                      element.copyWith(
+                        rotationDegrees: (element.rotationDegrees + 45) % 360,
                       ),
                     ),
-                  ),
-                ),
-                childWhenDragging: Opacity(
-                  opacity: 0.35,
-                  child: _buildAttachmentContent(
-                    controller,
-                    element,
-                    selected,
-                  ),
-                ),
-                // الـ delta هنا فيزيائي/عام (الصورة في الـ Overlay) —
-                // يُقسم على التكبير للعودة للمقاس المنطقي على الورقة.
-                onDragUpdate: (details) {
-                  final maxDx = PaperMetrics.contentWidthFor(
-                        controller.document.settings.marginMm,
-                      ) -
-                      element.width;
-                  _updateAttachmentElement(
-                    ref,
-                    element.copyWith(
-                      dx: (element.dx + details.delta.dx / _zoom)
-                          .clamp(0.0, maxDx < 0 ? 0.0 : maxDx),
-                      dy: (element.dy + details.delta.dy / _zoom)
-                          .clamp(0.0, ExamCanvasGeometry.height),
-                    ),
-                  );
-                },
-                child: Container(
-                  // صندوق إمساك شفاف: يضمن بدء السحب من أي نقطة داخل
-                  // المستطيل (بعض الأشكال لا تختبر الإصابة بذاتها).
-                  color: Colors.transparent,
-                  child: _buildAttachmentContent(
-                    controller,
-                    element,
-                    selected,
-                  ),
-                ),
-              ),
-            ),
-            if (selected && !_locked)
-              Positioned(
-                left: -12,
-                top: -12,
-                child: GestureDetector(
-                  onTap: () => _removeAttachmentElement(ref),
-                  child: const CircleAvatar(
-                    radius: 10,
-                    backgroundColor: PaperStyles.danger,
-                    child: Icon(Icons.close, size: 12, color: Colors.white),
-                  ),
-                ),
-              ),
-            if (selected && !_locked && element.isTextBox)
-              Positioned(
-                right: -12,
-                top: -12,
-                child: GestureDetector(
-                  onTap: () => _editTextBox(ref),
-                  child: const CircleAvatar(
-                    radius: 10,
-                    backgroundColor: PaperStyles.accent,
-                    child: Icon(Icons.edit, size: 12, color: Colors.white),
-                  ),
-                ),
-              ),
-            if (selected && !_locked && !element.isTextBox && !element.isImage)
-              Positioned(
-                left: -12,
-                bottom: -12,
-                child: GestureDetector(
-                  onTap: () => _updateAttachmentElement(
-                    ref,
-                    element.copyWith(
-                      rotationDegrees: (element.rotationDegrees + 45) % 360,
+                    child: const CircleAvatar(
+                      radius: 10,
+                      backgroundColor: PaperStyles.accent,
+                      child: Icon(Icons.rotate_right,
+                          size: 12, color: Colors.white),
                     ),
                   ),
-                  child: const CircleAvatar(
-                    radius: 10,
-                    backgroundColor: PaperStyles.accent,
-                    child: Icon(Icons.rotate_right, size: 12, color: Colors.white),
+                ),
+              if (selected && !_locked)
+                Positioned(
+                  right: -6,
+                  bottom: -6,
+                  child: GestureDetector(
+                    onPanUpdate: (details) {
+                      if (element.isImage) {
+                        // الصور تحافظ على نسبة أبعادها عند تغيير الحجم.
+                        final ratio = element.height / element.width;
+                        final width = (element.width + details.delta.dx)
+                            .clamp(24.0, 600.0);
+                        _updateAttachmentElement(
+                          ref,
+                          element.copyWith(width: width, height: width * ratio),
+                        );
+                      } else {
+                        _updateAttachmentElement(
+                          ref,
+                          element.copyWith(
+                            width: (element.width + details.delta.dx)
+                                .clamp(24.0, 600.0),
+                            height: (element.height + details.delta.dy)
+                                .clamp(24.0, 600.0),
+                          ),
+                        );
+                      }
+                    },
+                    child: const Icon(Icons.south_east, size: 18, color: PaperStyles.accent),
                   ),
                 ),
-              ),
-            if (selected && !_locked)
-              Positioned(
-                right: -6,
-                bottom: -6,
-                child: GestureDetector(
-                  onPanUpdate: (details) {
-                    if (element.isImage) {
-                      // الصور تحافظ على نسبة أبعادها عند تغيير الحجم.
-                      final ratio = element.height / element.width;
-                      final width =
-                          (element.width + details.delta.dx).clamp(24.0, 600.0);
-                      _updateAttachmentElement(
-                        ref,
-                        element.copyWith(width: width, height: width * ratio),
-                      );
-                    } else {
-                      _updateAttachmentElement(
-                        ref,
-                        element.copyWith(
-                          width: (element.width + details.delta.dx).clamp(24.0, 600.0),
-                          height:
-                              (element.height + details.delta.dy).clamp(24.0, 600.0),
-                        ),
-                      );
-                    }
-                  },
-                  child: const Icon(Icons.south_east, size: 18, color: PaperStyles.accent),
-                ),
-              ),
             if (selected && !_locked)
               _buildAttachmentToolbar(ref, element),
-          ],
+            ],
+          ),
         ),
       ),
     );
