@@ -704,8 +704,60 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
+  /// موضع افتراضي لعنصر جديد بإحداثيات الورقة **المطلقة**: رأس كتلة السؤال
+  /// المحدد (فتظهر الصورة/الشكل قريباً من سياقه كما كان)، ويسحبه المستخدم بعد
+  /// ذلك إلى أي نقطة على الورقة.
+  ///
+  /// العناصر تُرسم الآن في طبقة الصفحة بإحداثي مطلق، فلو تُرك (0،0) لظهرت في
+  /// أعلى الورقة بعيداً عن السؤال — ومن هنا جاء هذا الحساب.
+  FloatingElement _withDefaultPosition(FloatingElement element) {
+    final controller = _controller;
+    if (controller == null || controller.questions.isEmpty) {
+      return element;
+    }
+    final questionIndex = controller.selectedBranch?.questionIndex ??
+        controller.selectedQuestionIndex ??
+        0;
+    final top = _blockTopOnPage(questionIndex);
+    return element.copyWith(
+      dx: 8,
+      dy: (top ?? ExamCanvasGeometry.defaultElementDy) + 8,
+    );
+  }
+
+  /// أعلى كتلة السؤال [questionIndex] داخل صفحتها (إحداثي ورقة مطلق)، أو
+  /// `null` إن لم تُقسَّم الورقة بعد.
+  double? _blockTopOnPage(int questionIndex) {
+    final controller = _controller;
+    final questions = controller?.questions;
+    if (controller == null || questions == null || questions.isEmpty) {
+      return null;
+    }
+    final index = questionIndex < 0 || questionIndex >= questions.length
+        ? questions.length - 1
+        : questionIndex;
+    final document = controller.document;
+    final margin = ExamCanvasGeometry.marginFor(document.settings.marginMm);
+    final blockId = questions[index].id;
+    final pageIndex = controller.pagination.pageIndexOf(blockId);
+    if (pageIndex == null) {
+      return null;
+    }
+    final page = controller.pagination.pages[pageIndex];
+    final position = page.blockIds.indexOf(blockId);
+    if (position < 0) {
+      return null;
+    }
+    var top = margin;
+    for (final id in page.blockIds.take(position)) {
+      top += (controller.blockHeight(id) ?? 0) + PaperMetrics.blockSpacingPx;
+    }
+    return top;
+  }
+
   /// يضيف صورة/شكلاً لمساحة الفرع المحدد (مسار شريط الصيغ — يتطلب فرعاً).
   void _addAttachmentToBranch(FloatingElement element) {
+    element = _withDefaultPosition(element);
     final added = _controller!.addAttachment(element);
     if (!added) {
       _showMessage('انقر على فرع داخل الورقة أولاً لتحديد موضع الإدراج.');
@@ -828,6 +880,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   /// يضيف عنصراً للتحديد الحالي (فرع، وإلا سؤال، وإلا رفض مع إرشاد).
   void _addAttachmentToSelection(FloatingElement element) {
+    element = _withDefaultPosition(element);
     final controller = _controller!;
     BranchRef? branchTarget;
     final branches = _selectedBranches.where(controller.document.containsRef).toList();
@@ -2115,48 +2168,45 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       );
     }
 
-    // معادلات الصفحة: تُرسم في الطبقة العليا فتبقى ظاهرة في أي نقطة على
-    // الورقة (حتى خارج الترويسة/السؤال) وتُسحب بحرية فوق الكتل.
-    final pageFormulas = <_AttachmentRef>[];
-    for (final blockId in page.blockIds) {
-      final index = document.indexOfQuestion(blockId);
-      if (index == -1) {
-        continue;
-      }
-      final question = document.questions[index];
+    // كل العناصر العائمة تُرسم في طبقة **الصفحة** بإحداثياتها المطلقة:
+    // فيصير موضعها حرًّا فعلًا في أي نقطة على الورقة (أعلى/أسفل/جوانب)،
+    // وقابلةً للمس والسحب في أي مكان (اختبار الإصابة لا يتجاوز حدود الأب،
+    // والطبقة بحجم الورقة كاملة)، وبنفس الإحداثيات في PDF و Word.
+    final pageAttachments = <_AttachmentRef>[];
+    void collect(QuestionModel question, int index) {
       for (final element in question.attachments) {
-        if (element.isFormula) {
-          pageFormulas.add(
-            _AttachmentRef(questionIndex: index, elementId: element.id),
-          );
-        }
+        pageAttachments.add(
+          _AttachmentRef(questionIndex: index, elementId: element.id),
+        );
       }
       for (var branchIndex = 0;
           branchIndex < question.branches.length;
           branchIndex++) {
         for (final element in question.branches[branchIndex].attachments) {
-          if (element.isFormula) {
-            pageFormulas.add(
-              _AttachmentRef(
-                questionIndex: index,
-                branchIndex: branchIndex,
-                elementId: element.id,
-              ),
-            );
-          }
+          pageAttachments.add(
+            _AttachmentRef(
+              questionIndex: index,
+              branchIndex: branchIndex,
+              elementId: element.id,
+            ),
+          );
         }
       }
     }
-    // معادلات الأسئلة التي لم تُوزَّع بعد (قياس أولي) تُعرض في الصفحة الأولى.
-    if (!controller.isFullyMeasured && page.index == 0 && pageFormulas.isEmpty) {
+
+    for (final blockId in page.blockIds) {
+      final index = document.indexOfQuestion(blockId);
+      if (index == -1) {
+        continue;
+      }
+      collect(document.questions[index], index);
+    }
+    // عناصر الأسئلة التي لم تُوزَّع بعد (قياس أولي) تُعرض في الصفحة الأولى.
+    if (!controller.isFullyMeasured &&
+        page.index == 0 &&
+        pageAttachments.isEmpty) {
       for (var index = 0; index < document.questions.length; index++) {
-        for (final element in document.questions[index].attachments) {
-          if (element.isFormula) {
-            pageFormulas.add(
-              _AttachmentRef(questionIndex: index, elementId: element.id),
-            );
-          }
-        }
+        collect(document.questions[index], index);
       }
     }
 
@@ -2187,23 +2237,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               clipBehavior: Clip.hardEdge,
               children: <Widget>[
                 Positioned.fill(
-                  child: Padding(
-                    padding: EdgeInsets.all(
-                      ExamCanvasGeometry.marginFor(document.settings.marginMm),
-                    ),
-                    child: _buildPageStack(
-                      controller,
-                      page,
-                      pageCount,
-                      content,
-                      document,
-                      layout,
-                      highlighted: candidates.isNotEmpty,
-                    ),
+                  child: _buildPageStack(
+                    controller,
+                    page,
+                    pageCount,
+                    content,
+                    document,
+                    layout,
+                    highlighted: candidates.isNotEmpty,
                   ),
                 ),
-                for (final ref in pageFormulas)
-                  ..._buildPageFormula(controller, ref),
+                for (final ref in pageAttachments)
+                  ..._buildPageElement(controller, ref),
               ],
             );
             // معادلة جاهزة تنتظر موضعها: أي نقرة على الورقة تُقيمها في
@@ -2226,8 +2271,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// يهيّئ محتوى الصفحة داخل الهوامش (الكتل + التذييل + الإطار)؛ والمعادلات
+  /// يهيّئ محتوى الصفحة (الكتل + التذييل + الإطار) داخل الهوامش؛ والمعادلات
   /// الحرة طبقة مستقلة فوقه (انظر [_buildPageFormula]).
+  ///
+  /// الطبقة نفسها **بحجم الورقة كاملة** وتُدخل الهوامش على أبنائها: اختبار
+  /// الإصابة في Flutter لا يتجاوز حدود الأب، فلو كانت الطبقة بحجم مساحة
+  /// الطباعة لصار أي عنصر يسحبه المستخدم إلى هامش الورقة غير قابل للمس. الآن
+  /// كل نقطة في الورقة قابلة للإصابة (والقصّ على حدود الورقة في [Container]).
   Widget _buildPageStack(
     ExamWizardController controller,
     PaginatedPage page,
@@ -2237,22 +2287,24 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     SubjectLayoutTemplate layout, {
     required bool highlighted,
   }) {
-    // `Clip.none`: العنصر العائم الذي يسحبه المستخدم خارج مساحة الطباعة يبقى
-    // ظاهراً (ويُقصّ على حدود الورقة وحدها) بدل أن يختفي فجأة عند الحدود.
+    final margin =
+        ExamCanvasGeometry.marginFor(document.settings.marginMm);
+    // صندوق صفحة كامل ⇒ كل العناصر العائمة قابلة للمس أينما وُضعت.
     Widget stack = Stack(
-      clipBehavior: Clip.none,
+      clipBehavior: Clip.hardEdge,
       children: <Widget>[
         Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: page.overflows ? PaperMetrics.footerHeightPx : null,
+          top: margin,
+          left: margin,
+          right: margin,
+          bottom: margin +
+              (page.overflows ? PaperMetrics.footerHeightPx : 0),
           child: content,
         ),
         Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
+          left: margin,
+          right: margin,
+          bottom: margin,
           height: PaperMetrics.footerHeightPx,
           child: document.settings.showPageNumbers
               ? Center(
@@ -2267,7 +2319,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               : const SizedBox.shrink(),
         ),
         if (document.settings.pageBorder)
-          Positioned.fill(
+          Positioned(
+            top: margin,
+            left: margin,
+            right: margin,
+            bottom: margin,
             child: IgnorePointer(
               child: Container(
                 decoration: BoxDecoration(
@@ -2306,9 +2362,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _dropFormulaOnPage(details.data, board.dx, board.dy);
   }
 
-  /// يبني معادلة حرة في موضعها المطلق على الورقة (بكسل اللوحة كما كتبها
+  /// يبني عنصراً عائماً في موضعه **المطلق** على الورقة (بكسل اللوحة كما كتبه
   /// المستخدم) فوق كل الكتل، فتكون الحركة والإقامة حرّة تماماً.
-  Iterable<Widget> _buildPageFormula(
+  Iterable<Widget> _buildPageElement(
     ExamWizardController controller,
     _AttachmentRef ref,
   ) sync* {
@@ -2321,7 +2377,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     // الورقة نفسها: `dy` من أعلى الورقة، و`dx` من حافة القراءة — فطبقة الصفحة
     // تحمل الإحداثي المطلق بلا لفّ إضافي (ولفّه بـ Positioned يفسد بيانات
     // الأب في Stack).
-    yield _buildAttachment(controller, ref, element);
+    yield KeyedSubtree(
+      key: ValueKey<String>('page-element-${element.id}'),
+      child: _buildAttachment(controller, ref, element),
+    );
   }
 
   /// يُنشئ المعادلة المسحوبة من الشريط في موضع الإفلات (بكسل اللوحة).
@@ -2678,36 +2737,21 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       );
     }
 
-    // المعادلات الحرة تُرسم في طبقة الصفحة (موضعها حرّ فوق كل الكتل)، فلا
-    // تُدخل في تراكب مساحة السؤال حتى لا تتكرر ولا تُزاحم النص.
-    final stacked = question.attachments
-        .where((element) => !element.isFormula)
-        .toList(growable: false);
-    if (stacked.isEmpty) {
+    // المرفقات نفسها تُرسم في طبقة الصفحة (موضعها حرّ فوق كل الكتل)، لكن
+    // مساحتها تُحجز هنا حتى لا يزاحمها نصّ السؤال في التقسيم الورقي.
+    if (question.attachments.isEmpty) {
       return block;
     }
-    // مرفقات مستوى السؤال تتراكب فوق مساحته؛ الكتلة تتمدد لتضمّها.
     var minHeight = 0.0;
-    for (final element in stacked) {
+    for (final element in question.attachments) {
       final bottom = element.dy + element.height;
       if (bottom > minHeight) {
         minHeight = bottom;
       }
     }
-    return Stack(
-      clipBehavior: Clip.none,
-      children: <Widget>[
-        ConstrainedBox(
-          constraints: BoxConstraints(minHeight: minHeight, minWidth: double.infinity),
-          child: block,
-        ),
-        for (final element in stacked)
-          _buildAttachment(
-            controller,
-            _AttachmentRef(questionIndex: questionIndex, elementId: element.id),
-            element,
-          ),
-      ],
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: minHeight, minWidth: double.infinity),
+      child: block,
     );
   }
 
@@ -2970,39 +3014,21 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       ],
     );
 
-    // المعادلات الحرة تُرسم في طبقة الصفحة (موضعها حرّ)، وبقية المرفقات فوق
-    // مساحة الفرع والكتلة تتمدد لتضمّها حتى لا تُقصّ.
-    final stacked = branch.attachments
-        .where((element) => !element.isFormula)
-        .toList(growable: false);
-    if (stacked.isEmpty) {
+    // المرفقات تُرسم في طبقة الصفحة (موضعها حرّ)، ومساحتها تُحجز هنا فقط
+    // حتى لا يزاحمها نصّ الفرع في التقسيم الورقي.
+    if (branch.attachments.isEmpty) {
       return text;
     }
     var minHeight = 0.0;
-    for (final element in stacked) {
+    for (final element in branch.attachments) {
       final bottom = element.dy + element.height;
       if (bottom > minHeight) {
         minHeight = bottom;
       }
     }
-    return Stack(
-      clipBehavior: Clip.none,
-      children: <Widget>[
-        ConstrainedBox(
-          constraints: BoxConstraints(minHeight: minHeight, minWidth: double.infinity),
-          child: text,
-        ),
-        for (final element in stacked)
-          _buildAttachment(
-            controller,
-            _AttachmentRef(
-              questionIndex: ref.questionIndex,
-              branchIndex: ref.branchIndex,
-              elementId: element.id,
-            ),
-            element,
-          ),
-      ],
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: minHeight, minWidth: double.infinity),
+      child: text,
     );
   }
 

@@ -232,10 +232,10 @@ class PaginatedPdfExamEngine {
                   bottom: margin,
                   child: content,
                 ),
-                // المعادلات الحرة في الطبقة العليا بإحداثيات اللوحة نفسها:
-                // موضعها اختيار المستخدم وقد يقع خارج سؤالها (أعلى الورقة أو
-                // أسفلها)، فترسم مستقلةً عن كتل الأسئلة.
-                for (final element in _pageFormulas(document, questionIds))
+                // العناصر العائمة في الطبقة العليا بإحداثيات اللوحة نفسها:
+                // موضعها اختيار المستخدم وقد يقع أعلى الورقة أو أسفلها، فترسم
+                // مستقلةً عن كتل الأسئلة (بلا تكرار داخل الكتل).
+                for (final element in _pageAttachments(document, questionIds))
                   pw.Positioned(
                     left: layout.isLtr ? element.dx * _canvasScale : null,
                     right: layout.isLtr ? null : element.dx * _canvasScale,
@@ -303,31 +303,24 @@ class PaginatedPdfExamEngine {
   /// نسبة تحويل بكسل اللوحة إلى نقاط الـ PDF (نفس النسبة في كل المحرك).
   static double get _canvasScale => PaperMetrics.pointsPerPixel;
 
-  /// معادلات الأسئلة الموزّعة على صفحة ([questionIds]) — سؤالاً أو فرعاً.
-  static List<FloatingElement> _pageFormulas(
+  /// كل العناصر العائمة التابعة لأسئلة الصفحة ([questionIds]) — سؤالاً أو
+  /// فرعاً — لتُرسم في طبقة الصفحة بمواضعها المطلقة.
+  static List<FloatingElement> _pageAttachments(
     ExamDocument document,
     List<String> questionIds,
   ) {
-    final formulas = <FloatingElement>[];
+    final elements = <FloatingElement>[];
     for (final id in questionIds) {
       final question = document.questionById(id);
       if (question == null) {
         continue;
       }
-      for (final element in question.attachments) {
-        if (element.isFormula) {
-          formulas.add(element);
-        }
-      }
+      elements.addAll(question.attachments);
       for (final branch in question.branches) {
-        for (final element in branch.attachments) {
-          if (element.isFormula) {
-            formulas.add(element);
-          }
-        }
+        elements.addAll(branch.attachments);
       }
     }
-    return formulas;
+    return elements;
   }
 
   static bool _coversAllQuestions(List<List<String>> pages, ExamDocument document) {
@@ -570,12 +563,7 @@ class PaginatedPdfExamEngine {
     return _withAttachments(
       body: body,
       attachments: question.attachments,
-      layout: layout,
-      fonts: fonts,
-      defaultFont: settings.defaultFont,
       contentWidth: _contentWidthFor(document),
-      fontScale: settings.fontScale,
-      heightScale: settings.heightScale,
     );
   }
 
@@ -681,16 +669,11 @@ class PaginatedPdfExamEngine {
     if (branch.attachments.isEmpty) {
       return body;
     }
-    // المرفقات (صور/أشكال/مربعات نص) تتراكب فوق مساحة الفرع بنفس إحداثيات اللوحة.
+    // مساحة مرفقات الفرع تُحجز هنا، ورسمها في طبقة الصفحة بإحداثيات اللوحة.
     return _withAttachments(
       body: body,
       attachments: branch.attachments,
-      layout: layout,
-      fonts: fonts,
-      defaultFont: settings.defaultFont,
       contentWidth: _contentWidthFor(document),
-      fontScale: settings.fontScale,
-      heightScale: settings.heightScale,
     );
   }
 
@@ -793,51 +776,27 @@ class PaginatedPdfExamEngine {
     );
   }
 
-  /// يركّب المرفقات فوق مساحة المالك (سؤال/فرع) بنفس إحداثيات اللوحة.
+  /// يحجز مساحة مرفقات المالك (سؤال/فرع) داخل الكتلة بنفس إحداثيات اللوحة.
+  ///
+  /// الرسم نفسه يجري في **طبقة الصفحة** (انظر [_pageAttachments]) ليكون موضع
+  /// كل عنصر عائم حرًّا في أي نقطة على الورقة بنفس إحداثيات المعاينة، مع بقاء
+  /// هذا الحجز حتى لا يزاحم النص العنصر في التقسيم الورقي.
   pw.Widget _withAttachments({
     required pw.Widget body,
     required List<FloatingElement> attachments,
-    required SubjectLayoutTemplate layout,
-    required ExamFonts fonts,
-    required dynamic defaultFont,
     required double contentWidth,
-    double fontScale = 1.0,
-    double heightScale = 1.0,
   }) {
     final scale = PaperMetrics.pointsPerPixel;
-    // المعادلات الحرة تُرسم في طبقة الصفحة (موضعها حرّ) فلا تُكرَّر هنا.
-    final inline = attachments
-        .where((element) => !element.isFormula)
-        .toList(growable: false);
-    final minHeight = inline.fold<double>(
+    final minHeight = attachments.fold<double>(
       0,
       (max, element) {
         final bottom = (element.dy + element.height) * scale;
         return bottom > max ? bottom : max;
       },
     );
-    return pw.Stack(
-      children: <pw.Widget>[
-        pw.ConstrainedBox(
-          constraints: pw.BoxConstraints(minHeight: minHeight, minWidth: contentWidth - 24),
-          child: body,
-        ),
-        for (final element in inline)
-          pw.Positioned(
-            left: layout.isLtr ? element.dx * scale : null,
-            right: layout.isLtr ? null : element.dx * scale,
-            top: element.dy * scale,
-            child: FloatingElementsPdf.build(
-              element,
-              widthPt: element.width * scale,
-              heightPt: element.height * scale,
-              fonts: fonts,
-              defaultFont: defaultFont,
-              fontScale: fontScale,
-              heightScale: heightScale,
-            ),
-          ),
-      ],
+    return pw.ConstrainedBox(
+      constraints: pw.BoxConstraints(minHeight: minHeight, minWidth: contentWidth - 24),
+      child: body,
     );
   }
 
