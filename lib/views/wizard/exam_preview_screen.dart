@@ -2317,17 +2317,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       yield const SizedBox.shrink();
       return;
     }
-    // الطبقة بإحداثيات الورقة (أصلها أعلى-يسارها): `dy` كما هو، و`dx` من
-    // حافة القراءة فيُختار الحدّ الموافق (يساراً أو يميناً).
-    final isLtr = controller.document.layout.isLtr;
-    yield Positioned(
-      left: isLtr ? element.dx : null,
-      right: isLtr ? null : element.dx,
-      top: element.dy,
-      width: element.width,
-      height: element.height,
-      child: _buildAttachment(controller, ref, element),
-    );
+    // [_buildAttachment] يعيد عنصراً موضعه `PositionedDirectional` بإحداثيات
+    // الورقة نفسها: `dy` من أعلى الورقة، و`dx` من حافة القراءة — فطبقة الصفحة
+    // تحمل الإحداثي المطلق بلا لفّ إضافي (ولفّه بـ Positioned يفسد بيانات
+    // الأب في Stack).
+    yield _buildAttachment(controller, ref, element);
   }
 
   /// يُنشئ المعادلة المسحوبة من الشريط في موضع الإفلات (بكسل اللوحة).
