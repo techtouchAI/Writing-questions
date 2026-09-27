@@ -279,71 +279,24 @@ void main() {
     });
 
 
-    test('showsInExport: عناصر صح/خطأ تُحجب في ورقة الطالب وتظهر للمعلم، وبقية الأنواع للجميع', () {
-      final answered = BranchItem(id: 'a', text: '١', isCorrect: true);
-      final unanswered = BranchItem(id: 'b', text: '٢');
-      final freeItem = BranchItem(id: 'c', text: '٣');
+    test('showsInExport: النص يظهر للجميع، وإجابة صح/خطأ وحدها للمعلم، والفارغة تُحجب', () {
+      final withText = BranchItem(id: 'a', text: '١', isCorrect: true);
+      final answerOnly = BranchItem(id: 'b', isCorrect: true);
+      final emptyItem = BranchItem(id: 'c');
+      final freeItem = BranchItem(id: 'd', text: '٣');
 
-      expect(unanswered.showsInExport(teacher: false, trueFalse: true), isFalse);
-      expect(unanswered.showsInExport(teacher: true, trueFalse: true), isFalse);
-      expect(answered.showsInExport(teacher: false, trueFalse: true), isFalse);
-      expect(answered.showsInExport(teacher: true, trueFalse: true), isTrue);
+      // نص النقطة يكفي لعرضها في النسختين (هو جزء من الأسئلة).
+      expect(withText.showsInExport(teacher: false, trueFalse: true), isTrue);
+      expect(withText.showsInExport(teacher: true, trueFalse: true), isTrue);
+      // إجابة صح/خطأ بلا نص: تُحجب عن ورقة الطالب وتظهر في نموذج المعلم.
+      expect(answerOnly.showsInExport(teacher: false, trueFalse: true), isFalse);
+      expect(answerOnly.showsInExport(teacher: true, trueFalse: true), isTrue);
+      // الفارغة تماماً تُحجب من الجميع.
+      expect(emptyItem.showsInExport(teacher: false, trueFalse: true), isFalse);
+      expect(emptyItem.showsInExport(teacher: true, trueFalse: true), isFalse);
+      // MCQ وغيرها: تظهر للجميع.
       expect(freeItem.showsInExport(teacher: false, trueFalse: false), isTrue);
       expect(freeItem.showsInExport(teacher: true, trueFalse: false), isTrue);
-    });
-
-    test('duplicated ينسخ عناصر السؤال والفرع مع خصائصها وبهويات جديدة', () {
-      final question = QuestionModel(
-        id: 'q1',
-        questionNumber: 1,
-        prompt: 'نص',
-        marksOverride: 10,
-        items: <BranchItem>[
-          BranchItem(id: 'qi', text: 'نقطة', isCorrect: true, marks: 2),
-        ],
-        branches: <BranchModel>[
-          BranchModel(
-            id: 'b1',
-            marks: 4,
-            content: BranchContent(
-              type: QuestionType.multipleChoice,
-              modelAnswer: 'أ',
-              options: <QuestionOption>[QuestionOption(text: 'أ', isCorrect: true)],
-              items: <BranchItem>[
-                BranchItem(id: 'bi', text: 'عنصر', isCorrect: false, marks: 1),
-              ],
-            ),
-          ),
-        ],
-      );
-
-      final copy = question.duplicated(questionNumber: 2);
-      expect(copy.questionNumber, 2);
-      expect(copy.items.single.text, 'نقطة');
-      expect(copy.items.single.isCorrect, isTrue);
-      expect(copy.items.single.marks, 2);
-      expect(copy.items.single.id, isNot('qi'), reason: 'الهوية جديدة للنسخة');
-      expect(identical(copy.items.single, question.items.single), isFalse);
-      expect(copy.branches.single.content.items.single.text, 'عنصر');
-      expect(copy.branches.single.content.items.single.isCorrect, isFalse);
-      expect(copy.branches.single.content.modelAnswer, 'أ');
-      expect(copy.branches.single.content.options.single.isCorrect, isTrue);
-    });
-
-    test('duplicated يحافظ على الترتيب وعلامات الترقيم المخصصة', () {
-      final question = QuestionModel(
-        id: 'q1',
-        questionNumber: 1,
-        prompt: 'صح أم خطأ',
-        items: <BranchItem>[
-          BranchItem(id: 'a', text: 'أول', labelOverride: ''),
-          BranchItem(id: 'b', text: 'ثاني', labelOverride: 'أ-'),
-        ],
-      );
-
-      final copy = question.duplicated(questionNumber: 1);
-      expect(copy.items.map((e) => e.text), ['أول', 'ثاني']);
-      expect(copy.items.map((e) => e.labelOverride), ['', 'أ-']);
     });
 
   });

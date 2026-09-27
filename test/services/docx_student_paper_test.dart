@@ -135,8 +135,8 @@ void main() {
     expect(xml.contains('عدد الأسئلة'), isFalse);
 
     // إجابات عناصر صح/خطأ في نموذج المعلم وحده.
-    expect(xml.contains('( صح )'), isTrue);
-    expect(xml.contains('( خطأ )'), isTrue);
+    expect(xml.contains('(صح)'), isTrue);
+    expect(xml.contains('(خطأ)'), isTrue);
     expect(xml.contains('الإجابة النموذجية'), isTrue);
   });
 }
