@@ -5,6 +5,7 @@ import 'branch_model.dart';
 import 'floating_element.dart';
 import 'paper_divider.dart';
 import 'paper_text_style.dart';
+import 'question_type.dart';
 
 /// السؤال الكامل (QuestionModel): «السؤال الأول» بنصه ونقاطه وفروعه ومرفقاته.
 ///
@@ -23,11 +24,13 @@ class QuestionModel {
   QuestionModel({
     String? id,
     required this.questionNumber,
+    this.type = QuestionType.essay,
     List<BranchModel>? branches,
     this.category = '',
     this.prompt = '',
     this.marksOverride,
     this.numberOverride,
+    this.spacingAfter = 10,
     List<BranchItem>? items,
     List<FloatingElement>? attachments,
     PaperTextStyle? style,
@@ -57,6 +60,9 @@ class QuestionModel {
   final String id;
   final int questionNumber;
 
+  /// نوع السؤال المباشر عند عدم وجود فروع؛ لا يغيّر النص الذي كتبه المدرس.
+  final QuestionType type;
+
   /// فروع السؤال؛ فارغة افتراضياً وتُنشأ فقط بطلب صريح من المدرس.
   final List<BranchModel> branches;
 
@@ -75,6 +81,9 @@ class QuestionModel {
 
   /// ترقيم يدوي ثابت للسؤال (null = تلقائي من الترتيب).
   final String? numberOverride;
+
+  /// المسافة بعد السؤال بالبكسل، قابلة للتخصيص لكل سؤال.
+  final double spacingAfter;
 
   /// صور وأشكال ومربعات نص على مستوى السؤال كاملاً.
   final List<FloatingElement> attachments;
@@ -110,11 +119,13 @@ class QuestionModel {
 
   QuestionModel copyWith({
     int? questionNumber,
+    QuestionType? type,
     List<BranchModel>? branches,
     String? category,
     String? prompt,
     double? Function()? marksOverride,
     String? Function()? numberOverride,
+    double? spacingAfter,
     List<BranchItem>? items,
     List<FloatingElement>? attachments,
     PaperTextStyle? style,
@@ -124,11 +135,13 @@ class QuestionModel {
     return QuestionModel(
       id: id,
       questionNumber: questionNumber ?? this.questionNumber,
+      type: type ?? this.type,
       branches: branches ?? this.branches,
       category: category ?? this.category,
       prompt: prompt ?? this.prompt,
       marksOverride: marksOverride != null ? marksOverride() : this.marksOverride,
       numberOverride: numberOverride != null ? numberOverride() : this.numberOverride,
+      spacingAfter: spacingAfter ?? this.spacingAfter,
       items: items ?? this.items,
       attachments: attachments ?? this.attachments,
       style: style ?? this.style,
@@ -234,6 +247,7 @@ class QuestionModel {
   QuestionModel duplicated({required int questionNumber}) {
     return QuestionModel(
       questionNumber: questionNumber,
+      type: type,
       branches: branches.map((branch) => branch.duplicated()).toList(),
       category: category,
       prompt: prompt,
@@ -258,12 +272,14 @@ class QuestionModel {
     return <String, dynamic>{
       'id': id,
       'questionNumber': questionNumber,
+      'type': type.name,
       'category': category,
       'branches': branches.map((branch) => branch.toMap()).toList(growable: false),
       if (prompt.isNotEmpty) 'prompt': prompt,
       if (marksOverride != null) 'marksOverride': marksOverride,
       if (numberOverride != null && numberOverride!.trim().isNotEmpty)
         'numberOverride': numberOverride,
+      if (spacingAfter != 10) 'spacingAfter': spacingAfter,
       if (items.isNotEmpty)
         'items': items.map((item) => item.toMap()).toList(growable: false),
       if (attachments.isNotEmpty)
@@ -320,12 +336,16 @@ class QuestionModel {
           ? map['id'] as String
           : null,
       questionNumber: number,
+      type: QuestionType.parse(map['type']?.toString() ?? QuestionType.essay.name),
       category: map['category']?.toString() ?? '',
       branches: branches,
       prompt: map['prompt']?.toString() ?? '',
       marksOverride: marksOverride,
       numberOverride:
           rawNumberOverride == null || rawNumberOverride.isEmpty ? null : rawNumberOverride,
+      spacingAfter: (map['spacingAfter'] is num && (map['spacingAfter'] as num) >= 0)
+          ? (map['spacingAfter'] as num).toDouble()
+          : 10,
       // نقاط السؤال حقل جديد متسامح (كباقي حقول النقاط) لتبقى الأسئلة القديمة صالحة.
       items: BranchItem.listFromValue(map['items']),
       attachments: attachments,

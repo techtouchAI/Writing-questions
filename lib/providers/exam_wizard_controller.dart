@@ -344,6 +344,12 @@ class ExamWizardController extends ChangeNotifier {
     _commit(_document.withQuestionDuplicated(index));
   }
 
+  void updateQuestionType(int index, QuestionType type) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    if (questions[index].type == type) return;
+    _commit(_document.withQuestionAt(index, questions[index].copyWith(type: type)));
+  }
+
   void updateQuestionCategory(int index, String category) {
     _commit(_document.withQuestionAt(index, questions[index].copyWith(category: category)));
   }
@@ -389,6 +395,12 @@ class ExamWizardController extends ChangeNotifier {
         ),
       ),
     );
+  }
+
+  void updateQuestionSpacing(int index, double spacing) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    if (!spacing.isFinite || spacing < 0 || spacing > 200) return;
+    _commit(_document.withQuestionAt(index, questions[index].copyWith(spacingAfter: spacing)));
   }
 
   void updateQuestionStyle(int index, PaperTextStyle style) {
@@ -1076,7 +1088,11 @@ class ExamWizardController extends ChangeNotifier {
           height: _blockHeights[PaperMetrics.headerBlockId] ?? 0,
         ),
         for (final question in questions)
-          PageBlock(id: question.id, height: _blockHeights[question.id] ?? 0),
+          PageBlock(
+            id: question.id,
+            height: _blockHeights[question.id] ?? 0,
+            spacingAfter: question.spacingAfter,
+          ),
       ],
       pageHeight: PaperMetrics.pageContentHeightFor(_document.settings.marginMm),
       spacing: PaperMetrics.blockSpacingPx,

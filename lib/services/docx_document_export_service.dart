@@ -627,6 +627,7 @@ class _DocxBuilder {
           alignment: alignment,
           lineHeight: lineHeight,
         );
+      case QuestionType.definitions:
       case QuestionType.essay:
         if (isTeacherVersion) {
           if (content.modelAnswer.trim().isEmpty) {

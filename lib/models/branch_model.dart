@@ -258,6 +258,7 @@ class BranchContent {
           QuestionOption(text: 'خطأ'),
         ];
       case QuestionType.fillInTheBlank:
+      case QuestionType.definitions:
       case QuestionType.essay:
         return const <QuestionOption>[];
     }
