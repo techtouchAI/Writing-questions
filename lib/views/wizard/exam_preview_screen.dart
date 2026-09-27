@@ -2293,12 +2293,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     Widget stack = Stack(
       clipBehavior: Clip.hardEdge,
       children: <Widget>[
+        // `bottom` يُترك مفتوحاً في الصفحة غير المتجاوزة كما كان: المحتوى
+        // الأطول من الصفحة (قياس أولي أو كتلة طويلة) يُقصّ على حدود الورقة
+        // بلا خطأ تجاوز، ويُصغَّر بتناسق حين تُعلَّم الصفحة متجاوزة.
         Positioned(
           top: margin,
           left: margin,
           right: margin,
-          bottom: margin +
-              (page.overflows ? PaperMetrics.footerHeightPx : 0),
+          bottom: page.overflows
+              ? margin + PaperMetrics.footerHeightPx
+              : null,
           child: content,
         ),
         Positioned(
