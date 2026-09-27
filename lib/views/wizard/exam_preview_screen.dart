@@ -27,6 +27,7 @@ import '../../providers/exam_wizard_controller.dart';
 import '../../services/docx_document_export_service.dart';
 import '../../services/export_file_service.dart';
 import '../../services/pdf_export_service.dart';
+import '../../services/math_image_renderer.dart';
 import '../../services/shape_image_renderer.dart';
 import '../widgets/floating_element_view.dart';
 import '../widgets/formula_inserter.dart';
@@ -1083,6 +1084,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         document: controller.document,
         isTeacherVersion: isTeacherVersion,
         shapeRasterizer: ShapeImageRenderer.asRasterizer,
+        // معادلات LaTeX تُرسم صوراً في Word (لا أكواد خامة) بنفس مرسّم PDF.
+        mathRasterizer: MathImageRenderer.asRasterizer,
       );
       if (!mounted) {
         return;

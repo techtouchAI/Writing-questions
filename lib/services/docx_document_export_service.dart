@@ -14,6 +14,7 @@ import '../models/paper_font.dart';
 import '../models/paper_text_style.dart';
 import '../models/question_model.dart';
 import '../models/question_type.dart';
+import '../models/tex_content.dart';
 import 'export_file_service.dart';
 
 /// مخصّص تحويل شكل متجه إلى صورة نقطية (لأن Word لا يقبل SVG الداخلي
@@ -26,7 +27,29 @@ typedef ShapeRasterizer = Future<Uint8List?> Function(
   double heightPx,
 );
 
-/// صورة مضمّنة في حزمة docx (أصلية أو مرسومة من شكل).
+/// معادلة LaTeX مرسومة صورةً: بايتات PNG بمقاساتها بالنقاط (pt).
+class MathRaster {
+  const MathRaster({
+    required this.pngBytes,
+    required this.widthPt,
+    required this.heightPt,
+  });
+
+  final Uint8List pngBytes;
+  final double widthPt;
+  final double heightPt;
+}
+
+/// مخصّص تحويل صيغة LaTeX إلى صورة نقطية (يُمرَّر من الواجهة حيث يتوفر
+/// مسجّل الرسم؛ انظر `MathImageRenderer`).
+///
+/// يعيد [MathRaster] أو `null` عند التعذّر (فيكتب المصدر نص الصيغة كما هو).
+typedef MathRasterizer = Future<MathRaster?> Function(
+  String latex,
+  double fontSizePt,
+);
+
+/// صورة مضمّنة في حزمة docx (أصلية أو مرسومة من شكل/معادلة).
 class _EmbeddedImage {
   _EmbeddedImage({
     required this.data,
@@ -49,7 +72,9 @@ class _EmbeddedImage {
 ///
 /// يحافظ قدر الإمكان على: الترويسة، ترتيب الأسئلة والفروع والنقاط،
 /// النصوص، الدرجات، المحاذاة، الخطوط، الفواصل، مربعات النص، والصور
-/// (مضمّنة فعلياً) — والأشكال تُرسم صوراً عبر [ShapeRasterizer] عند توفره.
+/// (مضمّنة فعلياً) — والأشكال تُرسم صوراً عبر [ShapeRasterizer]، وصيغ
+/// LaTeX (`$...$` و`$$...$$`) تُرسم معادلاتٍ عبر [MathRasterizer] بدل أن
+/// تظهر أكواداً خامة.
 class DocxDocumentExportService {
   const DocxDocumentExportService._();
 
@@ -62,11 +87,13 @@ class DocxDocumentExportService {
     String? fileName,
     Directory? outputDirectory,
     ShapeRasterizer? shapeRasterizer,
+    MathRasterizer? mathRasterizer,
   }) async {
     final bytes = await buildDocumentDocxBytes(
       document: document,
       isTeacherVersion: isTeacherVersion,
       shapeRasterizer: shapeRasterizer,
+      mathRasterizer: mathRasterizer,
     );
     final suffix = isTeacherVersion ? 'نموذج_الإجابة' : 'ورقة_الامتحان';
     return ExportFileService.writeExportFile(
@@ -81,11 +108,13 @@ class DocxDocumentExportService {
     required ExamDocument document,
     bool isTeacherVersion = false,
     ShapeRasterizer? shapeRasterizer,
+    MathRasterizer? mathRasterizer,
   }) async {
     final builder = _DocxBuilder(
       document: document,
       isTeacherVersion: isTeacherVersion,
       shapeRasterizer: shapeRasterizer,
+      mathRasterizer: mathRasterizer,
     );
     await builder.build();
     final archive = Archive();
@@ -175,14 +204,20 @@ class _DocxBuilder {
     required this.document,
     required this.isTeacherVersion,
     required this.shapeRasterizer,
+    required this.mathRasterizer,
   });
 
   final ExamDocument document;
   final bool isTeacherVersion;
   final ShapeRasterizer? shapeRasterizer;
+  final MathRasterizer? mathRasterizer;
 
   final List<_EmbeddedImage> images = <_EmbeddedImage>[];
   int _drawingId = 1;
+
+  /// صيغ LaTeX المكتشفة في النصوص عند كتابة الفقرات، بترتيب ظهورها — تُرسم
+  /// وتُستبدل علاماتها بعد اكتمال النص (انظر [_resolveMath]).
+  final List<_MathPlaceholder> _mathQueue = <_MathPlaceholder>[];
 
   late final String documentXml;
   late final String contentTypesXml;
@@ -225,6 +260,10 @@ class _DocxBuilder {
       await _buildQuestion(body, question);
     }
 
+    // بعد اكتمال كل النصوص: تُرسم صيغ LaTeX ($...$ و$$...$$) وتُستبدل
+    // علاماتها برسوم مضمّنة — قبل بناء قوائم الصور في الحزمة.
+    final resolvedBody = await _resolveMath(body.toString());
+
     final marginTwips = (document.settings.marginMm / 25.4 * 1440).round();
     if (document.settings.showPageNumbers) {
       footerXml = _buildFooter();
@@ -237,7 +276,7 @@ class _DocxBuilder {
         'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
         'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
         '<w:body>'
-        '${body.toString()}'
+        '$resolvedBody'
         '<w:sectPr>'
         '<w:pgSz w:w="11906" w:h="16838"/>'
         '<w:pgMar w:top="$marginTwips" w:right="$marginTwips" w:bottom="$marginTwips" w:left="$marginTwips"/>'
@@ -391,13 +430,15 @@ class _DocxBuilder {
       headerStyle.font ?? document.settings.defaultFont,
     );
     final line = (240 * document.settings.lineSpacing).round();
-    return '<w:p><w:pPr><w:bidi/><w:jc w:val="$alignment"/>'
-        '<w:spacing w:line="$line" w:lineRule="auto"/></w:pPr>'
-        '<w:r><w:rPr><w:rtl/>${effectiveBold ? '<w:b/>' : ''}${effectiveItalic ? '<w:i/>' : ''}'
+    final runProperties =
+        '<w:rPr><w:rtl/>${effectiveBold ? '<w:b/>' : ''}${effectiveItalic ? '<w:i/>' : ''}'
         '${headerStyle.underline == true ? '<w:u w:val="single"/>' : ''}'
         '${color == null ? '' : '<w:color w:val="$color"/>'}'
-        '<w:sz w:val="$effectiveSize"/><w:rFonts w:cs="$font"/></w:rPr>'
-        '<w:t xml:space="preserve">${_escapeXml(text)}</w:t></w:r></w:p>';
+        '<w:sz w:val="$effectiveSize"/><w:rFonts w:cs="$font"/></w:rPr>';
+    return '<w:p><w:pPr><w:bidi/><w:jc w:val="$alignment"/>'
+        '<w:spacing w:line="$line" w:lineRule="auto"/></w:pPr>'
+        '${_runsXml(text, runProperties, effectiveSize / 2)}'
+        '</w:p>';
   }
 
   // ------------------------------- الأسئلة -------------------------------
@@ -730,32 +771,46 @@ class _DocxBuilder {
         element.textStyle.fontSize ?? 11 * document.settings.fontScale;
     final size = (baseSize * 2).round().clamp(16, 72);
     final line = (240 * document.settings.lineSpacing).round();
+    final runProperties =
+        '<w:rPr><w:rtl/>'
+        '${element.textStyle.bold == true ? '<w:b/>' : ''}'
+        '${element.textStyle.italic == true ? '<w:i/>' : ''}'
+        '${element.textStyle.underline == true ? '<w:u w:val="single"/>' : ''}'
+        '<w:sz w:val="$size"/><w:rFonts w:cs="$font"/></w:rPr>';
     body.write(
       '<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:bidiVisual/>$border</w:tblPr>'
       '<w:tr><w:tc><w:p><w:pPr><w:bidi/><w:jc w:val="$align"/>'
       '<w:spacing w:line="$line" w:lineRule="auto"/></w:pPr>'
-      '<w:r><w:rPr><w:rtl/>'
-      '${element.textStyle.bold == true ? '<w:b/>' : ''}'
-      '${element.textStyle.italic == true ? '<w:i/>' : ''}'
-      '${element.textStyle.underline == true ? '<w:u w:val="single"/>' : ''}'
-      '<w:sz w:val="$size"/><w:rFonts w:cs="$font"/></w:rPr>'
-      '<w:t xml:space="preserve">${_escapeXml(text)}</w:t></w:r></w:p></w:tc></w:tr></w:tbl>',
+      '${_runsXml(text, runProperties, size / 2)}</w:p></w:tc></w:tr></w:tbl>',
     );
   }
 
   void _embedImage(StringBuffer body, Uint8List bytes, double widthPx, double heightPx) {
-    var widthPt = PaperMetrics.pt(widthPx);
-    var heightPt = PaperMetrics.pt(heightPx);
+    final widthPt = PaperMetrics.pt(widthPx);
+    final heightPt = PaperMetrics.pt(heightPx);
     if (widthPt <= 0 || heightPt <= 0) {
       return;
     }
-    if (widthPt > DocxDocumentExportService._maxImageWidthPt) {
-      final scale = DocxDocumentExportService._maxImageWidthPt / widthPt;
-      widthPt *= scale;
-      heightPt *= scale;
+    body.write(
+      '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/><w:spacing w:before="120" w:after="120"/></w:pPr>'
+      '<w:r>${_drawingXml(bytes, widthPt, heightPt)}</w:r></w:p>',
+    );
+  }
+
+  /// XML رسم مضمّن (بلا فقرة وبلا run) مع تسجيل الصورة في حزمة الملف.
+  ///
+  /// يُستخدم لصور المرفقات **ومعادلات LaTeX** المرسومة: الأولى في فقرة
+  /// مستقلة، والثانية داخل سطر النص نفسه (رسم سطري بجانب الكلام).
+  String _drawingXml(Uint8List bytes, double widthPt, double heightPt) {
+    var width = widthPt;
+    var height = heightPt;
+    if (width > DocxDocumentExportService._maxImageWidthPt) {
+      final scale = DocxDocumentExportService._maxImageWidthPt / width;
+      width *= scale;
+      height *= scale;
     }
-    final emuW = (widthPt / 72 * 914400).round();
-    final emuH = (heightPt / 72 * 914400).round();
+    final emuW = (width / 72 * 914400).round();
+    final emuH = (height / 72 * 914400).round();
     final isJpeg = bytes.length > 2 && bytes[0] == 0xFF && bytes[1] == 0xD8;
     final relationId = 'rIdImg${images.length + 2}';
     images.add(
@@ -769,18 +824,15 @@ class _DocxBuilder {
       ),
     );
     final id = _drawingId++;
-    body.write(
-      '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/><w:spacing w:before="120" w:after="120"/></w:pPr>'
-      '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
-      '<wp:extent cx="$emuW" cy="$emuH"/>'
-      '<wp:docPr id="$id" name="Picture $id"/>'
-      '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
-      '<pic:pic><pic:nvPicPr><pic:cNvPr id="$id" name="Picture $id"/><pic:cNvPicPr/></pic:nvPicPr>'
-      '<pic:blipFill><a:blip r:embed="$relationId"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
-      '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="$emuW" cy="$emuH"/></a:xfrm>'
-      '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
-      '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>',
-    );
+    return '<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
+        '<wp:extent cx="$emuW" cy="$emuH"/>'
+        '<wp:docPr id="$id" name="Picture $id"/>'
+        '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        '<pic:pic><pic:nvPicPr><pic:cNvPr id="$id" name="Picture $id"/><pic:cNvPicPr/></pic:nvPicPr>'
+        '<pic:blipFill><a:blip r:embed="$relationId"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+        '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="$emuW" cy="$emuH"/></a:xfrm>'
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
+        '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>';
   }
 
   // ------------------------------- فقرات -------------------------------
@@ -877,25 +929,93 @@ class _DocxBuilder {
     body.write(
       '<w:spacing${before == null ? '' : ' w:before="$before"'}${after == null ? '' : ' w:after="$after"'} w:line="$line" w:lineRule="auto"/>',
     );
-    body.write('</w:pPr><w:r><w:rPr><w:rtl/>');
+    final runProperties = StringBuffer('<w:rPr><w:rtl/>');
     if (bold) {
-      body.write('<w:b/>');
+      runProperties.write('<w:b/>');
     }
     if (italic) {
-      body.write('<w:i/>');
+      runProperties.write('<w:i/>');
     }
     if (underline) {
-      body.write('<w:u w:val="single"/>');
+      runProperties.write('<w:u w:val="single"/>');
     }
     if (highlight) {
-      body.write('<w:highlight w:val="yellow"/>');
+      runProperties.write('<w:highlight w:val="yellow"/>');
     }
     if (color != null) {
-      body.write('<w:color w:val="$color"/>');
+      runProperties.write('<w:color w:val="$color"/>');
     }
-    body.write('<w:sz w:val="$effectiveSize"/><w:rFonts w:cs="${font ?? DocxDocumentExportService._fontName(document.settings.defaultFont)}"/></w:rPr>');
-    body.write('<w:t xml:space="preserve">${_escapeXml(text)}</w:t>');
-    body.write('</w:r></w:p>');
+    runProperties.write('<w:sz w:val="$effectiveSize"/><w:rFonts w:cs="${font ?? DocxDocumentExportService._fontName(document.settings.defaultFont)}"/></w:rPr>');
+    body.write('</w:pPr>');
+    body.write(_runsXml(text, runProperties.toString(), effectiveSize / 2));
+    body.write('</w:p>');
+  }
+
+  /// يبني مقاطع الفقرة: نص عادي ككتلة `<w:r>` واحدة أو أكثر، وصيغ LaTeX
+  /// كعلامة موضع مؤقتة يُستبدلها [MathRasterizer] برسم المعادلة بعد رسمها
+  /// (انظر [_resolveMath]) — فيظهر الرمز المرسوم مكان `$...$` تماماً،
+  /// وبالترتيب نفسه داخل السطر.
+  String _runsXml(String text, String runProperties, double fontSizePt) {
+    if (mathRasterizer == null || !TexContent.containsMath(text)) {
+      return '<w:r>$runProperties<w:t xml:space="preserve">${_escapeXml(text)}</w:t></w:r>';
+    }
+    final buffer = StringBuffer();
+    for (final segment in TexContent.split(text)) {
+      if (segment.isMath && segment.text.trim().isNotEmpty) {
+        final index = _mathQueue.length;
+        _mathQueue.add(_MathPlaceholder(segment.text, fontSizePt));
+        buffer.write('<w:r>$runProperties${_mathMarker(index)}</w:r>');
+        continue;
+      }
+      if (segment.text.isEmpty) {
+        continue;
+      }
+      buffer.write(
+        '<w:r>$runProperties<w:t xml:space="preserve">${_escapeXml(segment.text)}</w:t></w:r>',
+      );
+    }
+    return buffer.toString();
+  }
+
+  /// علامة موضع صيغة داخل XML النص (نطاق خاص: لا يمسّها [_escapeXml]).
+  static String _mathMarker(int index) => '\uE000$index\uE001';
+
+  /// يرسم كل صيغ LaTeX المكتشفة ويستبدل علاماتها برسوم مضمّنة داخل الـ run
+  /// نفسه؛ وما تعذّر رسمه يُكتب نصاً كما كان (سلوك التصدير قبل إضافة الرسم).
+  Future<String> _resolveMath(String xml) async {
+    if (_mathQueue.isEmpty) {
+      return xml;
+    }
+    final cache = <String, MathRaster?>{};
+    var resolved = xml;
+    for (var index = 0; index < _mathQueue.length; index++) {
+      final placeholder = _mathQueue[index];
+      final key = '${placeholder.latex}|${placeholder.fontSizePt}';
+      final hasCached = cache.containsKey(key);
+      final raster = hasCached
+          ? cache[key]
+          : (cache[key] = await _rasterizeMath(placeholder));
+      final marker = _mathMarker(index);
+      resolved = resolved.replaceAll(
+        marker,
+        raster == null
+            ? '<w:t xml:space="preserve">${_escapeXml(placeholder.latex)}</w:t>'
+            : _drawingXml(raster.pngBytes, raster.widthPt, raster.heightPt),
+      );
+    }
+    return resolved;
+  }
+
+  Future<MathRaster?> _rasterizeMath(_MathPlaceholder placeholder) async {
+    final rasterizer = mathRasterizer;
+    if (rasterizer == null) {
+      return null;
+    }
+    try {
+      return await rasterizer(placeholder.latex, placeholder.fontSizePt);
+    } catch (_) {
+      return null;
+    }
   }
 
   static String _escapeXml(String input) {
@@ -923,4 +1043,14 @@ class _DocxBuilder {
         .replaceAll("'", '&apos;')
         .replaceAll('\n', '</w:t><w:br/><w:t xml:space="preserve">');
   }
+}
+
+/// صيغة LaTeX واحدة التُقطت من نص الفقرة قبل رسمها.
+class _MathPlaceholder {
+  const _MathPlaceholder(this.latex, this.fontSizePt);
+
+  final String latex;
+
+  /// حجم خط المعادلة بالنقاط (نصف حجم Word) — يوافق رسم PDF نفسه.
+  final double fontSizePt;
 }
