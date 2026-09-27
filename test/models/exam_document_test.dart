@@ -280,9 +280,9 @@ void main() {
 
 
     test('showsInExport: عناصر صح/خطأ تُحجب في ورقة الطالب وتظهر للمعلم، وبقية الأنواع للجميع', () {
-      const answered = BranchItem(id: 'a', text: '١', isCorrect: true);
-      const unanswered = BranchItem(id: 'b', text: '٢');
-      const freeItem = BranchItem(id: 'c', text: '٣');
+      final answered = BranchItem(id: 'a', text: '١', isCorrect: true);
+      final unanswered = BranchItem(id: 'b', text: '٢');
+      final freeItem = BranchItem(id: 'c', text: '٣');
 
       expect(unanswered.showsInExport(teacher: false, trueFalse: true), isFalse);
       expect(unanswered.showsInExport(teacher: true, trueFalse: true), isFalse);
@@ -292,63 +292,58 @@ void main() {
       expect(freeItem.showsInExport(teacher: true, trueFalse: false), isTrue);
     });
 
-    test('duplicated ينسخ عناصر السؤال والفرع مع جميع خصائصها', () {
+    test('duplicated ينسخ عناصر السؤال والفرع مع خصائصها وبهويات جديدة', () {
       final question = QuestionModel(
         id: 'q1',
-        type: QuestionType.multipleChoice,
-        title: 'السؤال',
+        questionNumber: 1,
         prompt: 'نص',
-        marks: 10,
-        options: ['أ', 'ب'],
-        modelAnswer: 'أ',
-        items: const [BranchItem(id: 'qi', label: '1)', text: 'نقطة', isCorrect: true, marks: 2)],
-        branches: [
+        marksOverride: 10,
+        items: <BranchItem>[
+          BranchItem(id: 'qi', text: 'نقطة', isCorrect: true, marks: 2),
+        ],
+        branches: <BranchModel>[
           BranchModel(
             id: 'b1',
-            title: 'فرع',
             marks: 4,
-            content: 'نص الفرع',
-            items: const [BranchItem(id: 'bi', text: 'عنصر', isCorrect: false, marks: 1)],
+            content: BranchContent(
+              type: QuestionType.multipleChoice,
+              modelAnswer: 'أ',
+              options: <QuestionOption>[QuestionOption(text: 'أ', isCorrect: true)],
+              items: <BranchItem>[
+                BranchItem(id: 'bi', text: 'عنصر', isCorrect: false, marks: 1),
+              ],
+            ),
           ),
         ],
       );
 
-      final copy = question.duplicated();
-      expect(copy.id, 'q1-copy');
-      expect(copy.items.single.id, 'qi');
-      expect(copy.items.single.label, '1)');
+      final copy = question.duplicated(questionNumber: 2);
+      expect(copy.questionNumber, 2);
       expect(copy.items.single.text, 'نقطة');
       expect(copy.items.single.isCorrect, isTrue);
       expect(copy.items.single.marks, 2);
-      expect(copy.branches.single.items.single.id, 'bi');
+      expect(copy.items.single.id, isNot('qi'), reason: 'الهوية جديدة للنسخة');
+      expect(identical(copy.items.single, question.items.single), isFalse);
+      expect(copy.branches.single.items.single.text, 'عنصر');
       expect(copy.branches.single.items.single.isCorrect, isFalse);
-      expect(copy.branches.single.items.single.marks, 1);
-
-      final itemCopy = copy.items.single.duplicated();
-      expect(itemCopy.id, 'qi-copy');
-      expect(itemCopy.label, '1)');
-      expect(itemCopy.text, 'نقطة');
+      expect(copy.branches.single.content.modelAnswer, 'أ');
+      expect(copy.branches.single.content.options.single.isCorrect, isTrue);
     });
 
-    test('تكرار السؤال يحافظ على الترتيب وإخفاء الترقيم والاستقلالية', () {
+    test('duplicated يحافظ على الترتيب وعلامات الترقيم المخصصة', () {
       final question = QuestionModel(
         id: 'q1',
-        type: QuestionType.trueFalse,
+        questionNumber: 1,
         prompt: 'صح أم خطأ',
-        isAutoNumbered: false,
-        hideItemLabels: true,
-        items: const [
-          BranchItem(id: 'a', text: 'أول'),
-          BranchItem(id: 'b', text: 'ثاني'),
+        items: <BranchItem>[
+          BranchItem(id: 'a', text: 'أول', labelOverride: ''),
+          BranchItem(id: 'b', text: 'ثاني', labelOverride: 'أ-'),
         ],
       );
 
-      final copy = question.duplicated();
-      expect(copy.isAutoNumbered, isFalse);
-      expect(copy.hideItemLabels, isTrue);
+      final copy = question.duplicated(questionNumber: 1);
       expect(copy.items.map((e) => e.text), ['أول', 'ثاني']);
-      copy.items[0].text = 'معدل';
-      expect(question.items[0].text, 'أول');
+      expect(copy.items.map((e) => e.labelOverride), ['', 'أ-']);
     });
 
   });
