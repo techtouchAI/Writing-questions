@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -157,7 +156,7 @@ void main() {
   });
 
   group('Preview floating shapes', () {
-    testWidgets('drags a shape to a new absolute position', (tester) async {
+    testWidgets('يُسحَب الشكل مباشرةً بلا ضغط مطوّل', (tester) async {
       final controller = ExamWizardController(document: _document());
       controller.selectBranch(const BranchRef(questionIndex: 0, branchIndex: 0));
       controller.addAttachment(
@@ -173,12 +172,13 @@ void main() {
       await _pumpPreview(tester, controller);
       expect(find.byType(FloatingElementView), findsOneWidget);
 
-      // السحب بالضغط المطوّل: يفوز بساحة الإيماءات أمام تمرير الصفحة.
+      // لا ضغط مطوّل ولا تحديد مسبق: العنصر يتبع الإصبع فورًا.
       final gesture = await tester.startGesture(
         tester.getCenter(find.byType(FloatingElementView)),
       );
-      await tester.pump(kLongPressTimeout);
+      await tester.pump();
       await gesture.moveBy(const Offset(30, 12));
+      await tester.pump();
       await gesture.up();
       await tester.pumpAndSettle();
 
@@ -186,11 +186,12 @@ void main() {
           .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
           .attachments
           .single;
-      expect(moved.dx, greaterThan(0));
-      expect(moved.dy, greaterThan(0));
+      // التكبير 100% في هذا المحيط ⇒ بكسل الشاشة = بكسل اللوحة.
+      expect(moved.dx, closeTo(30, 0.5));
+      expect(moved.dy, closeTo(12, 0.5));
     });
 
-    testWidgets('العنصر المحدد يُسحَب مباشرةً بلا ضغط مطوّل', (tester) async {
+    testWidgets('مربع النص يُسحَب مباشرةً بلا تحديد مسبق ولا ضغط مطوّل', (tester) async {
       final controller = ExamWizardController(document: _document());
       controller.selectBranch(const BranchRef(questionIndex: 0, branchIndex: 0));
       controller.addAttachment(
@@ -205,11 +206,8 @@ void main() {
       );
       await _pumpPreview(tester, controller);
 
-      // نقرة واحدة تحدّد المربع (فتصبح نية التحريك صريحة) ثم يُسحب فورًا:
-      // لا ضغط مطوّل ولا انتظار مهلة — وهو ما كان يجعل المربع يبدو ثابتًا.
-      await tester.tap(find.byType(FloatingElementView));
-      await tester.pump();
-
+      // لا تحديد مسبق: اللمس والإمساك يكفي — وهو ما كان يجعل المربع يبدو
+      // ثابتًا حين كان التحريك يتطلب ضغطًا مطوّلًا أو تحديدًا سابقًا.
       final gesture = await tester.startGesture(
         tester.getCenter(find.byType(FloatingElementView)),
       );
@@ -226,6 +224,36 @@ void main() {
       // التكبير 100% في هذا المحيط ⇒ بكسل الشاشة = بكسل اللوحة.
       expect(moved.dx, closeTo(40, 0.5));
       expect(moved.dy, closeTo(24, 0.5));
+    });
+
+    testWidgets('نقرة واحدة على العنصر تُحدّده وتُظهر مقابضه', (tester) async {
+      final controller = ExamWizardController(document: _document());
+      controller.selectBranch(const BranchRef(questionIndex: 0, branchIndex: 0));
+      controller.addAttachment(
+        FloatingElement(
+          type: FloatingElementType.shape,
+          shape: FloatingShapeType.textBox,
+          label: 'ملاحظة للمصحح',
+          dx: 0,
+          dy: 0,
+          width: 120,
+          height: 60,
+        ),
+      );
+      await _pumpPreview(tester, controller);
+
+      // مقبض التحرير (12×12) يظهر مع التحديد وحده.
+      final editHandle = find.byWidgetPredicate(
+        (widget) => widget is Icon && widget.icon == Icons.edit && widget.size == 12.0,
+      );
+      expect(editHandle, findsNothing);
+
+      await tester.tap(find.byType(FloatingElementView));
+      await tester.pump();
+
+      // النقرة تصل عبر مسار السحب المباشر (الفوز الفوري بساحة الإيماءات)
+      // فتحدّد العنصر بنفسها بلا الحاجة إلى GestureDetector الأب.
+      expect(editHandle, findsOneWidget);
     });
 
     testWidgets('النقر المزدوج على مربع النص يفتح محرّره', (tester) async {

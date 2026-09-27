@@ -139,8 +139,9 @@ class _TextInputDialogState extends State<_TextInputDialog> {
 /// - **إعادة الترتيب**: سحب سؤال كامل أو فرع داخل سؤاله؛ الإفلات على فرع
 ///   في سؤال آخر يبدّل المحتوى فقط (العناوين ثابتة).
 /// - **المرفقات**: صور/أشكال/مربعات نص على مستوى السؤال أو الفرع: تحريك
-///   بالسحب المباشر بعد التحديد (وضغط مطوّل قبله)، تغيير حجم (الصور بنسبة
-///   ثابتة)، تدوير، إطار، حذف.
+///   بالسحب المباشر فورًا (بلا ضغط مطوّل ولا تحديد مسبق)، تغيير حجم (الصور
+///   بنسبة ثابتة)، تدوير، إطار، حذف — والنقرة الواحدة تحدّد والنقرة المزدوجة
+///   على مربع النص تفتح محرّره.
 /// - **العرض**: تكبير/تصغير/ملاءمة/توسيط، وقفل يمنع التحريك العرضي.
 class ExamPreviewScreen extends StatefulWidget {
   const ExamPreviewScreen({super.key, required this.onBackToQuestions});
@@ -161,8 +162,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   String? _selectedDividerKey;
   bool _isBusy = false;
 
-  /// سحب فوري للعنصر المحدد (بلا ضغط مطوّل): مؤشر اللمس الجاري، وموضعه
-  /// الابتدائي ببكسل الشاشة، وموضع العنصر عند بداية السحب ببكسل اللوحة.
+  /// سحب فوري لأي عنصر عائم (بلا تحديد مسبق ولا ضغط مطوّل): مؤشر اللمس
+  /// الجاري، وموضعه الابتدائي ببكسل الشاشة، وموضع العنصر عند بداية السحب
+  /// ببكسل اللوحة.
   ///
   /// الإزاحة تُحسب من الفرق المطلق بين الموضعين (لا تراكم `delta`) فلا
   /// تتأخر الحركة عن الإصبع ولا تتأثر بعدد إطارات إعادة البناء.
@@ -3016,10 +3018,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   /// غلاف السحب لعنصر عائم (صورة/شكل/مربع نص).
   ///
-  /// العنصر **المحدد** يُسحب سحبًا فوريًّا: نيّة التحريك صريحة بعد التحديد،
-  /// فلا معنى لانتظار ضغط مطوّل — وهو ما كان يجعل المربعات تبدو «ثابتة»
-  /// لا تتحرك. وغير المحدد يبقى بالضغط المطوّل حتى لا يبتلع السحبُ تمريرَ
-  /// الصفحة أو لمسَ الحقول.
+  /// السحب **مباشر دائمًا** بلا تحديد مسبق ولا ضغط مطوّل: العنصر يُمسك من أي
+  /// نقطة داخل مستطيله ويتبع الإصبع فورًا. سابقًا كان التحريك يتطلب ضغطًا
+  /// مطوّلًا (أو تحديدًا مسبقًا) وهو ما جعل مربعات النص تبدو «ثابتة لا
+  /// تتحرك». الورقة المقفلة ([_locked]) وحدها تمنع التحريك، وفيها يُعاد
+  /// المحتوى وحده بلا ساحة إيماءات فتَمُرّ النقرات إلى [GestureDetector]
+  /// الأب.
+  ///
+  /// المقابل المقصود: الإمساك المباشر يحجب تمرير الصفحة فوق مستطيل العنصر
+  /// نفسه (ثمن مقبول لأن التحريك المباشر هو المطلوب)، وما عدا ذلك من الورقة
+  /// يعمل كما كان.
   ///
   /// ملاحظة تقنية: `GestureDetector.onPanUpdate` لا يصلح هنا لأن حدّ
   /// الانزلاق المطلوب للفوز بساحة الإيماءات ضعف حدّ التمرير (`kPanSlop`
@@ -3032,63 +3040,34 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     FloatingElement element,
     bool selected,
   ) {
-    if (selected && !_locked) {
-      return RawGestureDetector(
-        behavior: HitTestBehavior.opaque,
-        gestures: <Type, GestureRecognizerFactory>{
-          EagerGestureRecognizer: GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
-            () => EagerGestureRecognizer(),
-            (EagerGestureRecognizer instance) {},
-          ),
-        },
-        child: Listener(
-          behavior: HitTestBehavior.opaque,
-          onPointerDown: (event) =>
-              _beginAttachmentDrag(ref, element, event.pointer, event.position),
-          onPointerMove: (event) =>
-              _updateAttachmentDrag(event.pointer, event.position),
-          onPointerUp: (event) {
-            if (event.pointer == _dragPointer && !_dragMoved) {
-              // لمسة بلا حركة = نقرة: تُسجَّل لكشف النقر المزدوج (فتح
-              // محرّر مربع النص) لأن الفوز الفوري بساحة الإيماءات يمنع
-              // وصول النقرة إلى [GestureDetector] الأب.
-              _noteAttachmentTap(ref, element, _lastPointerDownTime);
-            }
-            _endAttachmentDrag(event.pointer);
-          },
-          onPointerCancel: (event) => _endAttachmentDrag(event.pointer),
-          child: _buildAttachmentContent(controller, element, selected),
-        ),
-      );
+    if (_locked) {
+      return _buildAttachmentContent(controller, element, selected);
     }
-    return LongPressDraggable<_AttachmentRef>(
-      maxSimultaneousDrags: _locked ? 0 : 1,
-      feedback: Material(
-        elevation: 4,
-        color: Colors.transparent,
-        child: SizedBox(
-          width: element.width * _zoom,
-          height: element.height * _zoom,
-          child: FittedBox(
-            fit: BoxFit.fill,
-            child: SizedBox(
-              width: element.width,
-              height: element.height,
-              child: _buildAttachmentContent(controller, element, selected),
-            ),
-          ),
+    return RawGestureDetector(
+      behavior: HitTestBehavior.opaque,
+      gestures: <Type, GestureRecognizerFactory>{
+        EagerGestureRecognizer: GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
+          () => EagerGestureRecognizer(),
+          (EagerGestureRecognizer instance) {},
         ),
-      ),
-      childWhenDragging: Opacity(
-        opacity: 0.35,
-        child: _buildAttachmentContent(controller, element, selected),
-      ),
-      // الـ delta هنا فيزيائي/عام (الصورة في الـ Overlay) — يُقسم على
-      // التكبير للعودة للمقاس المنطقي على الورقة.
-      onDragUpdate: (details) =>
-          _dragAttachmentByDelta(ref, details.delta / _zoom),
-      child: Container(
-        color: Colors.transparent,
+      },
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (event) =>
+            _beginAttachmentDrag(ref, element, event.pointer, event.position),
+        onPointerMove: (event) =>
+            _updateAttachmentDrag(event.pointer, event.position),
+        onPointerUp: (event) {
+          if (event.pointer == _dragPointer && !_dragMoved) {
+            // لمسة بلا حركة = نقرة: تحدّد العنصر ثم تُسجَّل لكشف النقر
+            // المزدوج (فتح محرّر مربع النص) لأن الفوز الفوري بساحة
+            // الإيماءات يمنع وصول النقرة إلى [GestureDetector] الأب.
+            _selectAttachment(ref);
+            _noteAttachmentTap(ref, element, _lastPointerDownTime);
+          }
+          _endAttachmentDrag(event.pointer);
+        },
+        onPointerCancel: (event) => _endAttachmentDrag(event.pointer),
         child: _buildAttachmentContent(controller, element, selected),
       ),
     );
@@ -3166,16 +3145,30 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
   }
 
-  /// يحرّك العنصر [ref] بمقدار [delta] (بكسل اللوحة) — مسار الضغط المطوّل.
+  /// يحدّد العنصر [ref] ويُظهر مقابضه (الحذف/التحرير).
   ///
-  /// يقرأ أحدث نسخة من العنصر من المستند لا النسخة الملتقطة في البناء، فلا
-  /// تتأخر الحركة إذا تكرّرت أحداث السحب قبل إطار إعادة البناء التالي.
-  void _dragAttachmentByDelta(_AttachmentRef ref, Offset delta) {
-    final element = _findAttachment(_controller!.document, ref);
-    if (element == null) {
+  /// يُستدعى من مسار السحب المباشر عند انتهاء لمسة بلا حركة، لأن
+  /// [EagerGestureRecognizer] يفوز بساحة الإيماءات فلا تصل النقرة إلى
+  /// [GestureDetector] الأب؛ ويُستدعى كذلك من ذلك الأب في حال قفل الورقة
+  /// (لا ساحة إيماءات حينها).
+  void _selectAttachment(_AttachmentRef ref) {
+    final controller = _controller;
+    if (controller == null) {
       return;
     }
-    _moveAttachmentTo(ref, Offset(element.dx, element.dy) + delta);
+    controller.selectBranch(
+      ref.branchIndex == null
+          ? null
+          : BranchRef(
+              questionIndex: ref.questionIndex,
+              branchIndex: ref.branchIndex!,
+            ),
+    );
+    controller.selectQuestion(ref.questionIndex);
+    setState(() {
+      _clearSelection();
+      _selectedAttachment = ref;
+    });
   }
 
   /// يضع العنصر [ref] في الموضع المطلق [target] (بكسل اللوحة) داخل حدود
@@ -3225,18 +3218,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () {
-            controller.selectBranch(
-              ref.branchIndex == null
-                  ? null
-                  : BranchRef(
-                      questionIndex: ref.questionIndex,
-                      branchIndex: ref.branchIndex!),
-            );
-            controller.selectQuestion(ref.questionIndex);
-            setState(() {
-              _clearSelection();
-              _selectedAttachment = ref;
-            });
+            _selectAttachment(ref);
             _noteAttachmentTap(ref, element, _lastPointerDownTime);
           },
           child: Stack(
@@ -3244,7 +3226,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             children: <Widget>[
               Positioned.fill(
                 // صندوق إمساك شفاف: يضمن بدء السحب من أي نقطة داخل
-                // المستطيل (بعض الأشكال لا تختبر الإصابة بذاتها).
+                // المستطيل (بعض الأشكال لا تختبر الإصابة بذاتها)، ويقع في
+                // مسار السحب المباشر الذي يحدّد العنصر عند النقر (لأن اللمس
+                // يفوز بساحة الإيماءات فلا يصل إلى [GestureDetector]).
                 child: _buildAttachmentDraggable(
                   controller,
                   ref,
