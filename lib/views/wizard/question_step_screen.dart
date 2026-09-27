@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/exam_document.dart';
 import '../../models/question_model.dart';
+import '../../models/question_type.dart';
 import '../../providers/exam_wizard_controller.dart';
 import '../widgets/items_editor.dart';
 import '../widgets/ltr_numeric_field.dart';
@@ -136,7 +137,19 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
           padding: const EdgeInsets.all(16),
           children: <Widget>[
             _buildProgressStrip(context, controller),
-            const SizedBox(height: 12),
+            if (<String>{'الرياضيات', 'الفيزياء', 'الكيمياء'}.contains(controller.document.header.subject))
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: colorScheme.tertiaryContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Text(
+                  'ملاحظة: اكتب الرموز والمعادلات باستخدام محرر المعادلات المتوفر أثناء العرض؛ النص هنا ليس بالضرورة الشكل الرياضي النهائي.',
+                  textDirection: TextDirection.rtl,
+                ),
+              ),
             TextFormField(
               controller: _promptController,
               focusNode: _promptFocus,
@@ -157,6 +170,23 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
             const SizedBox(height: 12),
             _buildQuestionLabelField(controller, questionIndex, question),
             const SizedBox(height: 12),
+            if (question.branches.isEmpty) ...<Widget>[
+              DropdownButtonFormField<QuestionType>(
+                value: question.type,
+                decoration: const InputDecoration(
+                  labelText: 'نوع السؤال',
+                  border: OutlineInputBorder(),
+                ),
+                items: QuestionType.values.map((type) => DropdownMenuItem<QuestionType>(
+                  value: type,
+                  child: Text(type.arabicLabel),
+                )).toList(growable: false),
+                onChanged: (type) {
+                  if (type != null) controller.updateQuestionType(questionIndex, type);
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
             Row(
               children: <Widget>[
                 Expanded(
@@ -193,6 +223,19 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
               ],
             ),
             const SizedBox(height: 12),
+            TextFormField(
+              initialValue: question.spacingAfter.toStringAsFixed(0),
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'المسافة بعد السؤال (بكسل)',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (value) {
+                final spacing = double.tryParse(value.replaceAll(',', '.'));
+                if (spacing != null) controller.updateQuestionSpacing(questionIndex, spacing);
+              },
+            ),
+            const SizedBox(height: 12),
             if (sections.isNotEmpty) ...<Widget>[
               DropdownButtonFormField<String>(
                 value: sections.contains(question.category) ? question.category : '',
@@ -217,10 +260,12 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
             ],
             // نقاط السؤال المباشرة (1، 2، 3...) — تظهر دائماً وهي محتوى
             // السؤال كاملاً عند كتابة سؤال بلا فروع؛ والترقيم تلقائي على الورقة.
-            ItemsEditor(
-              items: question.items,
-              onChanged: (items) => controller.updateQuestionItems(questionIndex, items),
-            ),
+            if (question.type != QuestionType.essay && question.type != QuestionType.definitions)
+              ItemsEditor(
+                items: question.items,
+                showTrueFalseAnswers: question.type == QuestionType.trueFalse,
+                onChanged: (items) => controller.updateQuestionItems(questionIndex, items),
+              ),
             const SizedBox(height: 12),
             for (var index = 0; index < question.branches.length; index++)
               BranchEditorCard(

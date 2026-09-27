@@ -270,6 +270,7 @@ class PaginatedPdfExamEngine {
             id: question.id,
             height: measure(_buildQuestion(
                 document, question, layout, styles, fonts, isTeacherVersion)),
+            spacingAfter: question.spacingAfter,
           ),
       ],
       pageHeight: _pageContentHeightFor(document),
@@ -863,6 +864,7 @@ class PaginatedPdfExamEngine {
           fonts.quranic,
           align: align,
         );
+      case QuestionType.definitions:
       case QuestionType.essay:
         if (isTeacherVersion) {
           final essayModel = content.modelAnswer.trim();

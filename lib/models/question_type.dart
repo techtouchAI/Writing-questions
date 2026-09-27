@@ -1,6 +1,7 @@
 enum QuestionType {
   multipleChoice,
   trueFalse,
+  definitions,
   fillInTheBlank,
   essay;
 
@@ -10,6 +11,8 @@ enum QuestionType {
         return 'اختيار من متعدد';
       case QuestionType.trueFalse:
         return 'صح أو خطأ';
+      case QuestionType.definitions:
+        return 'تعاريف';
       case QuestionType.fillInTheBlank:
         return 'إكمال الفراغ';
       case QuestionType.essay:

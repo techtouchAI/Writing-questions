@@ -1,9 +1,11 @@
 /// كتلة قابلة للتقسيم الورقي: سؤال كامل بفروعه (أو الترويسة) بارتفاع مقاس.
 class PageBlock {
-  const PageBlock({required this.id, required this.height}) : assert(height >= 0);
+  const PageBlock({required this.id, required this.height, this.spacingAfter = 10})
+      : assert(height >= 0), assert(spacingAfter >= 0);
 
   final String id;
   final double height;
+  final double spacingAfter;
 }
 
 /// صفحة ناتجة عن التقسيم: معرّفات الكتل التي تحتويها بترتيبها.
@@ -91,7 +93,10 @@ abstract final class PaginationEngine {
     }
 
     for (final block in blocks) {
-      final gap = currentIds.isEmpty ? 0.0 : spacing;
+      final previous = currentIds.isEmpty
+          ? null
+          : blocks.firstWhere((candidate) => candidate.id == currentIds.last);
+      final gap = currentIds.isEmpty ? 0.0 : (previous?.spacingAfter ?? spacing);
       final available = availableFor(pages.length);
       final fits = used + gap + block.height <= available + _epsilon;
 

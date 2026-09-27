@@ -3428,6 +3428,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           return _buildModelAnswerField(controller, ref, layout, branch, answerStyle);
         }
         return const SizedBox.shrink();
+      case QuestionType.definitions:
       case QuestionType.essay:
         if (_showTeacherAnswers) {
           return _buildModelAnswerField(controller, ref, layout, branch, answerStyle);

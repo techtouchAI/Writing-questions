@@ -256,13 +256,13 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
   Widget _buildTypeSpecificEditor() {
     switch (_content.type) {
       case QuestionType.multipleChoice:
-        return McqOptionsEditor(
-          options: _content.options,
-          enabled: widget.enabled,
-          onChanged: (options) => _emitContent(
-            _content.copyWith(
-              options: options.map((option) => option.copyWith()).toList(growable: false),
-            ),
+        // الاختيار يُكتب كسطر واحد في حقل نص الفرع، حفاظاً على ترتيب
+        // الخيارات وصياغة المدرس دون أن يعيد التطبيق بناءها.
+        return const Padding(
+          padding: EdgeInsets.only(top: 4),
+          child: Text(
+            'اكتب السؤال والخيارات معاً في الحقل أعلاه كما ستظهر في الورقة.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
         );
       case QuestionType.trueFalse:
@@ -293,6 +293,7 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
           ],
         );
       case QuestionType.fillInTheBlank:
+      case QuestionType.definitions:
       case QuestionType.essay:
         return TextFormField(
           controller: _modelAnswerController,

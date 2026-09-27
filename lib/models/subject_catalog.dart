@@ -22,7 +22,7 @@ abstract final class SubjectCatalog {
   ];
 
   /// أقسام مادة اللغة العربية في ورقة الامتحان الرسمية.
-  static const List<String> arabicCategories = <String>['القواعد', 'الأدب', 'الإنشاء'];
+  static const List<String> arabicCategories = <String>['الإنشاء', 'القواعد', 'الأدب'];
 
   /// أقسام مادة التربية الإسلامية.
   static const List<String> islamicCategories = <String>[
