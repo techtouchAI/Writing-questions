@@ -2183,7 +2183,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           onAcceptWithDetails: (details) =>
               _acceptFormulaDrop(context, details),
           builder: (context, candidates, _) {
-            var body = Stack(
+            Widget body = Stack(
               clipBehavior: Clip.hardEdge,
               children: <Widget>[
                 Positioned.fill(
