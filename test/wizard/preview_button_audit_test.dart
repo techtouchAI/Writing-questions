@@ -16,7 +16,7 @@ import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
-import 'package:writing_questions_app/views/widgets/paper_field.dart';
+import 'package:writing_questions_app/views/widgets/smart_exam_toolbar.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 import 'package:writing_questions_app/views/wizard/preview_toolbar.dart';
 
@@ -122,8 +122,8 @@ void main() {
       await _tap(tester, _tool(entry.key));
       expect(controller.questions[1].style.align, entry.value);
     }
-    final headerField = find.byType(PaperField).first;
-    await _tap(tester, find.descendant(of: headerField, matching: find.byType(TextField)));
+    await _tap(tester, _field('header-right-0'));
+    expect(tester.widget<PreviewToolbar>(find.byType(PreviewToolbar)).selectionLabel, 'الترويسة');
     await _tap(tester, _tool('تحته خط'));
     expect(controller.document.header.style.underline, isTrue);
     expect(controller.questions[1].style.underline, isNull);
@@ -203,30 +203,44 @@ void main() {
   });
 
   testWidgets('phone toolbar scroll, zoom controls, formulas toggle and review buttons', (tester) async {
+    Future<void> tapTool(String tooltip) async {
+      final scrollable = find.descendant(
+        of: find.byType(PreviewToolbar), matching: find.byType(Scrollable));
+      // ListView lazily disposes distant buttons. Scroll them into the tree
+      // before ensureVisible/tap, just as a phone user swipes the toolbar.
+      tester.state<ScrollableState>(scrollable).position.jumpTo(0);
+      await tester.pumpAndSettle();
+      final target = find.descendant(
+        of: find.byType(PreviewToolbar), matching: find.byTooltip(tooltip));
+      await tester.scrollUntilVisible(target, 180, scrollable: scrollable);
+      await tester.pumpAndSettle();
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+    }
     final controller = ExamWizardController(document: _document());
     var back = false;
     await _pump(tester, controller, width: 390, onBack: () => back = true);
-    await _tap(tester, _tool('نسبة التكبير — انقر للعودة إلى 100%'));
+    await tapTool('نسبة التكبير — انقر للعودة إلى 100%');
     expect(tester.widget<PreviewToolbar>(find.byType(PreviewToolbar)).zoom, 1);
-    await _tap(tester, _tool('تكبير'));
+    await tapTool('تكبير');
     expect(tester.widget<PreviewToolbar>(find.byType(PreviewToolbar)).zoom, closeTo(1.2, 0.001));
-    await _tap(tester, _tool('تصغير'));
+    await tapTool('تصغير');
     expect(tester.widget<PreviewToolbar>(find.byType(PreviewToolbar)).zoom, 1);
-    await _tap(tester, _tool('ملاءمة الورقة للشاشة'));
+    await tapTool('ملاءمة الورقة للشاشة');
     expect(tester.widget<PreviewToolbar>(find.byType(PreviewToolbar)).zoom, lessThan(1));
-    await _tap(tester, _tool('توسيط الورقة'));
-    await _tap(tester, _tool('شريط الصيغ والوسائط'));
+    await tapTool('توسيط الورقة');
+    await tapTool('شريط الصيغ والوسائط');
     expect(find.text('رياضيات'), findsNothing);
-    await _tap(tester, _tool('شريط الصيغ والوسائط'));
+    await tapTool('شريط الصيغ والوسائط');
     expect(find.text('رياضيات'), findsOneWidget);
     for (final format in ['PDF', 'Word']) {
-      await _tap(tester, _tool('مراجعة وتصدير $format'));
+      await tapTool('مراجعة وتصدير $format');
       expect(find.text('مراجعة الورقة'), findsOneWidget);
       expect(find.text('ورقة الطالب'), findsOneWidget);
       await _tap(tester, find.text('رجوع'));
     }
     await _tap(tester, find.byTooltip('عرض نموذج الإجابة'));
-    await _tap(tester, _tool('مراجعة وتصدير PDF'));
+    await tapTool('مراجعة وتصدير PDF');
     expect(find.text('نموذج الإجابة'), findsOneWidget);
     await _tap(tester, find.text('رجوع'));
     await _tap(tester, find.byTooltip('العودة للأسئلة'));
@@ -524,7 +538,7 @@ void main() {
     expect(replaced.width, original.width);
     expect(replaced.height, original.height);
     await _tap(tester, find.text('وسائط'));
-    await _tap(tester, find.text('صورة').first);
+    await _tap(tester, find.descendant(of: find.byType(SmartExamToolbar), matching: find.text('صورة')));
     expect(controller.questions.first.attachments, hasLength(2));
     ImagePickerPlatform.instance = _TestImagePicker();
     await _tap(tester, _tool('إدراج صورة'));

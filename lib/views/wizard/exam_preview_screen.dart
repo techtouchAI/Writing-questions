@@ -2478,6 +2478,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 hint: 'عنوان الامتحان...',
               ),
             Container(
+              // Preserve focused header fields when optional title/notes
+              // appear on selection before/after this group.
+              key: const ValueKey<String>('header-columns'),
               decoration: BoxDecoration(
                 border: document.settings.headerBorder
                     ? Border.all(color: PaperStyles.primary, width: 1.4)
