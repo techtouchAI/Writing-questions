@@ -242,9 +242,6 @@ class PaginatedPdfExamEngine {
             }
             return pw.Stack(
               children: <pw.Widget>[
-                // ارسم خلفية الورقة البيضاء صراحةً، حتى يبقى المستند الفارغ
-                // صفحة A4 صحيحة بلا عناوين/أسئلة تحريرية شاردة.
-                pw.Positioned.fill(child: pw.Container(color: PdfColors.white)),
                 pw.Positioned(
                   left: margin,
                   top: margin,

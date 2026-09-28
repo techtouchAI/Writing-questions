@@ -100,7 +100,10 @@ void main() {
       controller.selectQuestion(0);
       await _pumpPreview(tester, controller);
 
-      await tester.tap(find.byTooltip('لون عنوان السؤال'));
+      final colorButton = find.byTooltip('لون عنوان السؤال');
+      await tester.ensureVisible(colorButton);
+      await tester.pumpAndSettle();
+      await tester.tap(colorButton);
       await tester.pumpAndSettle();
       await tester.tap(find.textContaining('كحلي'));
       await tester.pump();
