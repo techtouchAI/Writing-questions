@@ -93,6 +93,8 @@ Future<String> _documentXml(ExamDocument document, {required bool teacher}) asyn
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('ورقة الطالب: الأسئلة فقط — نقاط السؤال مدرجة والترقيم تلقائي وبلا مساحات إجابة', () async {
     final document = _document();
     final xml = await _documentXml(document, teacher: false);

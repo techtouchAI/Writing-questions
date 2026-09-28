@@ -41,6 +41,37 @@ void main() {
       expect(result.pageIndexOf('q1'), 0);
     });
 
+    test('uses shared spacing when a block has no override', () {
+      final result = PaginationEngine.paginate(
+        blocks: const <PageBlock>[
+          PageBlock(id: 'first', height: 100),
+          PageBlock(id: 'second', height: 100),
+        ],
+        pageHeight: 205,
+        spacing: 5,
+      );
+
+      expect(result.pages.single.usedHeight, 205);
+    });
+
+    test('uses the previous question spacing, including zero, without leaking it across pages', () {
+      final result = PaginationEngine.paginate(
+        blocks: const <PageBlock>[
+          PageBlock(id: 'q1', height: 100, spacingAfter: 40),
+          PageBlock(id: 'q2', height: 100, spacingAfter: 0),
+          PageBlock(id: 'q3', height: 100),
+        ],
+        pageHeight: 250,
+        spacing: 10,
+      );
+
+      expect(result.pageCount, 2);
+      expect(result.pages[0].blockIds, <String>['q1', 'q2']);
+      expect(result.pages[0].usedHeight, 240);
+      expect(result.pages[1].blockIds, <String>['q3']);
+      expect(result.pages[1].usedHeight, 100);
+    });
+
     test('a block exactly filling the remaining space stays on the page', () {
       final result = PaginationEngine.paginate(
         blocks: const <PageBlock>[

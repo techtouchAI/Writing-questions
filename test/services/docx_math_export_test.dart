@@ -87,6 +87,8 @@ String _xml(Archive archive) {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   setUp(() {
     _capturedLatex.clear();
     _capturedSizes.clear();

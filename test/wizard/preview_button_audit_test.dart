@@ -188,6 +188,75 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('free elements can be added to a document with no questions', (tester) async {
+    final controller = ExamWizardController(
+      document: ExamDocument(
+        name: 'ورقة فارغة',
+        header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
+      ),
+    );
+    await _pump(tester, controller);
+
+    await _tap(tester, _tool('إدراج شكل'));
+    await _tap(tester, find.text('مربع').last);
+
+    expect(controller.document.questions, isEmpty);
+    expect(controller.document.floatingElements, hasLength(1));
+    expect(controller.document.floatingElements.single.shape, FloatingShapeType.square);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('selected free elements can move to another preview page', (tester) async {
+    final document = ExamDocument(
+      name: 'تعدد الصفحات',
+      header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+      questions: <QuestionModel>[
+        QuestionModel(
+          id: 'q1',
+          questionNumber: 1,
+          prompt: List<String>.filled(100, 'سطر طويل لاختبار تعدد الصفحات').join('\n'),
+          attachments: <FloatingElement>[
+            FloatingElement(
+              id: 'legacy-page-nav-element',
+              type: FloatingElementType.shape,
+              shape: FloatingShapeType.square,
+              dx: 220,
+              dy: 260,
+              width: 60,
+              height: 60,
+            ),
+          ],
+        ),
+        QuestionModel(id: 'q2', questionNumber: 2, prompt: 'السؤال الثاني'),
+      ],
+    );
+    final controller = ExamWizardController(document: document);
+    controller.addFloatingElement(FloatingElement(
+      id: 'page-nav-element',
+      type: FloatingElementType.shape,
+      shape: FloatingShapeType.square,
+      dx: 140,
+      dy: 180,
+      width: 60,
+      height: 60,
+    ));
+    await _pump(tester, controller);
+    expect(controller.pagination.pageCount, greaterThan(1));
+
+    await _tap(tester, find.byKey(const ValueKey('page-element-page-nav-element')));
+    await _tap(tester, find.byTooltip('نقل إلى الصفحة التالية'));
+
+    expect(controller.document.floatingElements.single.pageIndex, 1);
+
+    await _tap(tester, find.byKey(const ValueKey('page-element-legacy-page-nav-element')));
+    await _tap(tester, find.byTooltip('نقل إلى الصفحة السابقة'));
+    expect(
+      controller.document.floatingElementById('legacy-page-nav-element')!.pageIndex,
+      0,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('text box edit handle opens the editor and saves', (tester) async {
     final controller = ExamWizardController(document: _document());
     controller.addQuestionAttachment(FloatingElement(
@@ -349,6 +418,30 @@ void main() {
     expect(controller.questions.last.style.italic, isTrue);
   });
 
+  testWidgets('question spacing presets and custom values update the selected question', (tester) async {
+    final controller = ExamWizardController(document: _document());
+    await _pump(tester, controller);
+
+    await _tap(tester, _tool('المسافة بين الأسئلة'));
+    await _tap(tester, find.text('24 بكسل').last);
+    expect(controller.questions.first.spacingAfter, 24);
+
+    await _tap(tester, _tool('المسافة بين الأسئلة'));
+    await _tap(tester, find.text('قيمة مخصصة...'));
+    await tester.enterText(
+      find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)),
+      '120',
+    );
+    await _tap(tester, find.text('تطبيق'));
+    expect(controller.questions.first.spacingAfter, 120);
+
+    await _tap(tester, _field('prompt-q2'));
+    await _tap(tester, _tool('المسافة بين الأسئلة'));
+    await _tap(tester, find.text('0 بكسل — بلا فراغ'));
+    expect(controller.questions[1].spacingAfter, 0);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('custom size, spacing and HEX apply; cancellation leaves formatting unchanged', (tester) async {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
@@ -454,7 +547,8 @@ void main() {
     await _tap(tester, find.byKey(const ValueKey('page-element-resize')));
     final handle = find.byKey(const ValueKey('resize-element-resize'));
     await tester.ensureVisible(handle);
-    await tester.drag(handle, const Offset(36, 24));
+    // Arabic page: dx is measured from the right, so drag the resize handle left to widen.
+    await tester.drag(handle, const Offset(-36, 24));
     await tester.pumpAndSettle();
     final element = controller.questions.first.attachments.single;
     expect(element.width, greaterThan(100));

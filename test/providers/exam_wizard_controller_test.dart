@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/layout/paper_metrics.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
+import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/question_type.dart';
@@ -199,6 +200,28 @@ void main() {
 
       controller.removeAttachment(ref, element.id);
       expect(controller.document.branchAt(ref).attachments, isEmpty);
+    });
+
+    test('floating elements exist and move without any question or branch', () {
+      final controller = ExamWizardController(
+        document: ExamDocument(
+          name: 'ورقة بلا أسئلة',
+          header: ExamHeaderModel.ministerialDefault(),
+        ),
+      );
+      final element = square();
+
+      expect(controller.addFloatingElement(element, pageIndex: 2), isTrue);
+      expect(controller.document.questions, isEmpty);
+      expect(controller.document.floatingElements.single.pageIndex, 2);
+
+      controller.updateFloatingElement(element.copyWith(dx: 32, pageIndex: 1));
+      expect(controller.document.floatingElements.single.dx, 32);
+      expect(controller.document.floatingElements.single.pageIndex, 1);
+
+      controller.removeFloatingElement(element.id);
+      expect(controller.document.floatingElements, isEmpty);
+      expect(controller.document.questions, isEmpty);
     });
   });
 

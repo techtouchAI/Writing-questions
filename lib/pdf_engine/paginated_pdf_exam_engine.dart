@@ -88,6 +88,11 @@ class PaginatedPdfExamEngine {
         }
       }
     }
+    for (final element in document.floatingElements) {
+      if (QuranText.containsQuran(element.label)) {
+        return true;
+      }
+    }
     for (final question in document.questions) {
       if (QuranText.containsQuran(question.prompt)) {
         return true;
@@ -176,18 +181,33 @@ class PaginatedPdfExamEngine {
           textDirection: direction,
           theme: theme,
           build: (context) {
-            final blocks = <pw.Widget>[
-              if (pageIndex == 0) _buildHeader(document, layout, styles, loadedFonts),
-              for (final id in questionIds)
+            final blocks = <pw.Widget>[];
+            final spacingAfter = <double>[];
+            if (pageIndex == 0) {
+              blocks.add(_buildHeader(document, layout, styles, loadedFonts));
+              spacingAfter.add(_blockSpacing);
+            }
+            for (final id in questionIds) {
+              final question = document.questionById(id)!;
+              blocks.add(
                 _buildQuestion(
                   document,
-                  document.questionById(id)!,
+                  question,
                   layout,
                   styles,
                   loadedFonts,
                   isTeacherVersion,
                 ),
-            ];
+              );
+              spacingAfter.add(PaperMetrics.pt(question.spacingAfter));
+            }
+            final flowBlocks = <pw.Widget>[];
+            for (var index = 0; index < blocks.length; index++) {
+              if (index > 0) {
+                flowBlocks.add(pw.SizedBox(height: spacingAfter[index - 1]));
+              }
+              flowBlocks.add(blocks[index]);
+            }
             pw.Widget content = pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.stretch,
               children: <pw.Widget>[
@@ -202,10 +222,7 @@ class PaginatedPdfExamEngine {
                         child: pw.Column(
                           crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                           mainAxisSize: pw.MainAxisSize.min,
-                          children: _interleave(
-                            blocks,
-                            pw.SizedBox(height: _blockSpacing),
-                          ),
+                          children: flowBlocks,
                         ),
                       ),
                     ),
@@ -235,7 +252,12 @@ class PaginatedPdfExamEngine {
                 // العناصر العائمة في الطبقة العليا بإحداثيات اللوحة نفسها:
                 // موضعها اختيار المستخدم وقد يقع أعلى الورقة أو أسفلها، فترسم
                 // مستقلةً عن كتل الأسئلة (بلا تكرار داخل الكتل).
-                for (final element in _pageAttachments(document, questionIds))
+                for (final element in _pageAttachments(
+                  document,
+                  questionIds,
+                  pageIndex: pageIndex,
+                  pageCount: pages.length,
+                ))
                   pw.Positioned(
                     left: layout.isLtr ? element.dx * _canvasScale : null,
                     right: layout.isLtr ? null : element.dx * _canvasScale,
@@ -260,6 +282,45 @@ class PaginatedPdfExamEngine {
     return pdf.save();
   }
 
+  /// Computes the same question-to-page assignments used by [generate] when
+  /// no preview measurements are available. Word export uses this fallback so
+  /// page-relative floating elements line up with the PDF export.
+  Future<List<List<String>>> resolveQuestionPages({
+    required ExamDocument document,
+    bool isTeacherVersion = false,
+    ExamFonts? fonts,
+  }) async {
+    final loadedFonts =
+        fonts ?? await ExamFonts.load(loadQuranic: needsQuranicFont(document));
+    final layout = document.layout;
+    final settings = document.settings;
+    final contentWidth = _contentWidthFor(document);
+    final direction = layout.isLtr ? pw.TextDirection.ltr : pw.TextDirection.rtl;
+    final theme = pw.ThemeData.withFont(
+      base: loadedFonts.fontFor(settings.defaultFont),
+      bold: loadedFonts.fontFor(settings.defaultFont, bold: true),
+    );
+    final styles = ExamTextStyles.standard.scaled(
+      fontScale: settings.fontScale,
+      heightScale: settings.heightScale,
+    );
+    final pdf = pw.Document(
+      title: document.name,
+      creator: 'صانع ومحرر الأسئلة',
+      subject: document.header.subject,
+    );
+
+    return _resolvePages(
+      document: document,
+      pageAssignments: null,
+      measure: (widget) => _measure(widget, pdf, theme, direction, contentWidth),
+      layout: layout,
+      styles: styles,
+      fonts: loadedFonts,
+      isTeacherVersion: isTeacherVersion,
+    );
+  }
+
   // ------------------------------------------------------------------
   // التقسيم الورقي
   // ------------------------------------------------------------------
@@ -282,13 +343,17 @@ class PaginatedPdfExamEngine {
     final headerHeight = measure(_buildHeader(document, layout, styles, fonts));
     final result = PaginationEngine.paginate(
       blocks: <PageBlock>[
-        PageBlock(id: PaperMetrics.headerBlockId, height: headerHeight),
+        PageBlock(
+          id: PaperMetrics.headerBlockId,
+          height: headerHeight,
+          spacingAfter: _blockSpacing,
+        ),
         for (final question in document.questions)
           PageBlock(
             id: question.id,
             height: measure(_buildQuestion(
                 document, question, layout, styles, fonts, isTeacherVersion)),
-            spacingAfter: question.spacingAfter,
+            spacingAfter: PaperMetrics.pt(question.spacingAfter),
           ),
       ],
       pageHeight: _pageContentHeightFor(document),
@@ -303,21 +368,40 @@ class PaginatedPdfExamEngine {
   /// نسبة تحويل بكسل اللوحة إلى نقاط الـ PDF (نفس النسبة في كل المحرك).
   static double get _canvasScale => PaperMetrics.pointsPerPixel;
 
-  /// كل العناصر العائمة التابعة لأسئلة الصفحة ([questionIds]) — سؤالاً أو
-  /// فرعاً — لتُرسم في طبقة الصفحة بمواضعها المطلقة.
+  /// العناصر العامة على الصفحة، مع العناصر القديمة التابعة لأسئلة الصفحة.
+  /// تُتجاهل النسخ التوافقية الموجودة داخل السؤال/الفرع حتى لا تُطبع مرتين.
   static List<FloatingElement> _pageAttachments(
     ExamDocument document,
-    List<String> questionIds,
-  ) {
+    List<String> questionIds, {
+    required int pageIndex,
+    required int pageCount,
+  }) {
     final elements = <FloatingElement>[];
+    final seenIds = <String>{};
+    final globalIds = document.floatingElements.map((element) => element.id).toSet();
+    final lastPage = pageCount - 1;
+    for (final element in document.floatingElements) {
+      final assignedPage = element.pageIndex.clamp(0, lastPage).toInt();
+      if (assignedPage == pageIndex && seenIds.add(element.id)) {
+        elements.add(element);
+      }
+    }
     for (final id in questionIds) {
       final question = document.questionById(id);
       if (question == null) {
         continue;
       }
-      elements.addAll(question.attachments);
+      for (final element in question.attachments) {
+        if (!globalIds.contains(element.id) && seenIds.add(element.id)) {
+          elements.add(element);
+        }
+      }
       for (final branch in question.branches) {
-        elements.addAll(branch.attachments);
+        for (final element in branch.attachments) {
+          if (!globalIds.contains(element.id) && seenIds.add(element.id)) {
+            elements.add(element);
+          }
+        }
       }
     }
     return elements;
@@ -557,12 +641,18 @@ class PaginatedPdfExamEngine {
         child: body,
       );
     }
-    if (question.attachments.isEmpty) {
+    // حافظ على المساحة المحجوزة للمرفقات القديمة. المرايا المسجلة في
+    // document.floatingElements لا تؤثر في ارتفاع كتلة السؤال.
+    final globalIds = document.floatingElements.map((element) => element.id).toSet();
+    final legacyAttachments = question.attachments
+        .where((element) => !globalIds.contains(element.id))
+        .toList(growable: false);
+    if (legacyAttachments.isEmpty) {
       return body;
     }
     return _withAttachments(
       body: body,
-      attachments: question.attachments,
+      attachments: legacyAttachments,
       contentWidth: _contentWidthFor(document),
     );
   }
@@ -666,13 +756,16 @@ class PaginatedPdfExamEngine {
         child: body,
       );
     }
-    if (branch.attachments.isEmpty) {
+    final globalIds = document.floatingElements.map((element) => element.id).toSet();
+    final legacyAttachments = branch.attachments
+        .where((element) => !globalIds.contains(element.id))
+        .toList(growable: false);
+    if (legacyAttachments.isEmpty) {
       return body;
     }
-    // مساحة مرفقات الفرع تُحجز هنا، ورسمها في طبقة الصفحة بإحداثيات اللوحة.
     return _withAttachments(
       body: body,
-      attachments: branch.attachments,
+      attachments: legacyAttachments,
       contentWidth: _contentWidthFor(document),
     );
   }
@@ -776,11 +869,8 @@ class PaginatedPdfExamEngine {
     );
   }
 
-  /// يحجز مساحة مرفقات المالك (سؤال/فرع) داخل الكتلة بنفس إحداثيات اللوحة.
-  ///
-  /// الرسم نفسه يجري في **طبقة الصفحة** (انظر [_pageAttachments]) ليكون موضع
-  /// كل عنصر عائم حرًّا في أي نقطة على الورقة بنفس إحداثيات المعاينة، مع بقاء
-  /// هذا الحجز حتى لا يزاحم النص العنصر في التقسيم الورقي.
+  /// يحافظ على سلوك الملفات القديمة التي كانت تحجز مساحة للمرفقات التابعة
+  /// لسؤال/فرع؛ العناصر العامة الجديدة لا تمر عبر هذا المسار.
   pw.Widget _withAttachments({
     required pw.Widget body,
     required List<FloatingElement> attachments,
@@ -1071,14 +1161,4 @@ class PaginatedPdfExamEngine {
     );
   }
 
-  static List<pw.Widget> _interleave(List<pw.Widget> blocks, pw.Widget separator) {
-    final result = <pw.Widget>[];
-    for (var index = 0; index < blocks.length; index++) {
-      if (index > 0) {
-        result.add(separator);
-      }
-      result.add(blocks[index]);
-    }
-    return result;
-  }
 }

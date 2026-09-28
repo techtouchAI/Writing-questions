@@ -8,6 +8,7 @@ import 'package:archive/archive.dart';
 import '../layout/paper_metrics.dart';
 import '../models/branch_item.dart';
 import '../models/branch_model.dart';
+import '../models/exam_canvas_geometry.dart';
 import '../models/exam_document.dart';
 import '../models/floating_element.dart';
 import '../models/paper_divider.dart';
@@ -16,6 +17,7 @@ import '../models/paper_text_style.dart';
 import '../models/question_model.dart';
 import '../models/question_type.dart';
 import '../models/tex_content.dart';
+import '../pdf_engine/paginated_pdf_exam_engine.dart';
 import 'export_file_service.dart';
 
 /// مخصّص تحويل شكل متجه إلى صورة نقطية (لأن Word لا يقبل SVG الداخلي
@@ -89,12 +91,14 @@ class DocxDocumentExportService {
     Directory? outputDirectory,
     ShapeRasterizer? shapeRasterizer,
     MathRasterizer? mathRasterizer,
+    List<List<String>>? pageAssignments,
   }) async {
     final bytes = await buildDocumentDocxBytes(
       document: document,
       isTeacherVersion: isTeacherVersion,
       shapeRasterizer: shapeRasterizer,
       mathRasterizer: mathRasterizer,
+      pageAssignments: pageAssignments,
     );
     final suffix = isTeacherVersion ? 'نموذج_الإجابة' : 'ورقة_الامتحان';
     return ExportFileService.writeExportFile(
@@ -110,12 +114,14 @@ class DocxDocumentExportService {
     bool isTeacherVersion = false,
     ShapeRasterizer? shapeRasterizer,
     MathRasterizer? mathRasterizer,
+    List<List<String>>? pageAssignments,
   }) async {
     final builder = _DocxBuilder(
       document: document,
       isTeacherVersion: isTeacherVersion,
       shapeRasterizer: shapeRasterizer,
       mathRasterizer: mathRasterizer,
+      pageAssignments: pageAssignments,
     );
     await builder.build();
     final archive = Archive();
@@ -206,12 +212,14 @@ class _DocxBuilder {
     required this.isTeacherVersion,
     required this.shapeRasterizer,
     required this.mathRasterizer,
+    required this.pageAssignments,
   });
 
   final ExamDocument document;
   final bool isTeacherVersion;
   final ShapeRasterizer? shapeRasterizer;
   final MathRasterizer? mathRasterizer;
+  final List<List<String>>? pageAssignments;
 
   final List<_EmbeddedImage> images = <_EmbeddedImage>[];
   int _drawingId = 1;
@@ -254,11 +262,29 @@ class _DocxBuilder {
         after: 120,
       );
     }
+    final headerSpacingAfter = (PaperMetrics.pt(PaperMetrics.blockSpacingPx) * 20).round();
     body.write(
-      '<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="12" w:space="4" w:color="1E3A8A"/></w:pBdr><w:spacing w:after="240"/></w:pPr></w:p>',
+      '<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="12" w:space="4" w:color="1E3A8A"/></w:pBdr>'
+      '<w:spacing w:after="$headerSpacingAfter"/></w:pPr></w:p>',
     );
-    for (final question in document.questions) {
-      await _buildQuestion(body, question);
+    final questionPages = await _resolvedQuestionPages();
+    for (var pageIndex = 0; pageIndex < questionPages.length; pageIndex++) {
+      if (pageIndex > 0) {
+        _writePageBreak(body);
+      }
+      await _buildFloatingElementsForPage(
+        body,
+        pageIndex,
+        pageCount: questionPages.length,
+      );
+      final pageQuestions = questionPages[pageIndex];
+      for (var index = 0; index < pageQuestions.length; index++) {
+        final question = pageQuestions[index];
+        await _buildQuestion(body, question);
+        if (index < pageQuestions.length - 1) {
+          _writeQuestionSpacing(body, question.spacingAfter);
+        }
+      }
     }
 
     // بعد اكتمال كل النصوص: تُرسم صيغ LaTeX ($...$ و$$...$$) وتُستبدل
@@ -322,6 +348,233 @@ class _DocxBuilder {
     }
     rels.write('\n</Relationships>');
     documentRelationshipsXml = rels.toString();
+  }
+
+  Future<List<List<QuestionModel>>> _resolvedQuestionPages() async {
+    final questionsById = <String, QuestionModel>{
+      for (final question in document.questions) question.id: question,
+    };
+    final expectedIds = questionsById.keys.toSet();
+    var candidate = pageAssignments;
+    var validAssignments = candidate != null && candidate.isNotEmpty;
+    if (candidate != null) {
+      final assignedIds = <String>{};
+      for (final page in candidate) {
+        for (final id in page) {
+          if (!questionsById.containsKey(id) || !assignedIds.add(id)) {
+            validAssignments = false;
+          }
+        }
+      }
+      validAssignments = validAssignments &&
+          assignedIds.length == expectedIds.length &&
+          assignedIds.containsAll(expectedIds);
+    }
+    if (!validAssignments) {
+      candidate = await PaginatedPdfExamEngine().resolveQuestionPages(
+        document: document,
+        isTeacherVersion: isTeacherVersion,
+      );
+    }
+
+    final pageIds = candidate!.map((page) => List<String>.of(page)).toList(growable: true);
+    if (pageIds.isEmpty) {
+      pageIds.add(<String>[]);
+    }
+    return pageIds
+        .map((page) => page.map((id) => questionsById[id]!).toList(growable: false))
+        .toList(growable: false);
+  }
+
+  void _writePageBreak(StringBuffer body) {
+    body.write('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
+  }
+
+  void _writeQuestionSpacing(StringBuffer body, double spacingPx) {
+    final spacing = spacingPx.clamp(0.0, 200.0).toDouble();
+    final afterTwips = (PaperMetrics.pt(spacing) * 20).round();
+    if (afterTwips <= 0) return;
+    body.write(
+      '<w:p><w:pPr><w:spacing w:before="0" w:after="$afterTwips" '
+      'w:line="1" w:lineRule="exact"/></w:pPr></w:p>',
+    );
+  }
+
+  Future<void> _buildFloatingElementsForPage(
+    StringBuffer body,
+    int pageIndex, {
+    required int pageCount,
+  }) async {
+    if (pageCount <= 0) {
+      return;
+    }
+    final seenIds = <String>{};
+    for (final element in document.floatingElements) {
+      final assignedPage = element.pageIndex.clamp(0, pageCount - 1).toInt();
+      if (assignedPage != pageIndex || !seenIds.add(element.id)) {
+        continue;
+      }
+      if (element.isTextBox) {
+        _buildTextBox(body, element, floatingOnPage: true);
+        continue;
+      }
+      if (element.isFormula) {
+        final label = element.label.trim();
+        if (label.isEmpty) {
+          continue;
+        }
+        final boxWidthPt = PaperMetrics.pt(element.width);
+        final boxHeightPt = PaperMetrics.pt(element.height);
+        final raster = await _rasterizeMath(_MathPlaceholder(label, boxHeightPt));
+        if (raster == null || raster.pngBytes.isEmpty) {
+          _buildTextBox(
+            body,
+            element,
+            floatingOnPage: true,
+            textOverride: '\$$label\$',
+          );
+          continue;
+        }
+        var widthPt = boxWidthPt;
+        var heightPt = boxHeightPt;
+        if (raster.widthPt > 0 && raster.heightPt > 0 && widthPt > 0 && heightPt > 0) {
+          final scale = math.min(
+            math.min(widthPt / raster.widthPt, heightPt / raster.heightPt),
+            2.0,
+          );
+          widthPt = raster.widthPt * scale;
+          heightPt = raster.heightPt * scale;
+        }
+        final widthPx = PaperMetrics.px(widthPt);
+        final heightPx = PaperMetrics.px(heightPt);
+        _writeAnchoredImageParagraph(
+          body,
+          raster.pngBytes,
+          widthPt,
+          heightPt,
+          dx: element.dx + (element.width - widthPx) / 2,
+          dy: element.dy + (element.height - heightPx) / 2,
+          rotationDegrees: element.rotationDegrees,
+        );
+        continue;
+      }
+      if (element.isImage) {
+        final bytes = element.bytes;
+        if (bytes == null || bytes.isEmpty) {
+          continue;
+        }
+        _writeAnchoredImageParagraph(
+          body,
+          Uint8List.fromList(bytes),
+          PaperMetrics.pt(element.width),
+          PaperMetrics.pt(element.height),
+          dx: element.dx,
+          dy: element.dy,
+          rotationDegrees: element.rotationDegrees,
+        );
+        continue;
+      }
+
+      Uint8List? raster;
+      if (shapeRasterizer != null) {
+        try {
+          raster = await shapeRasterizer!(element, element.width, element.height);
+        } catch (_) {
+          raster = null;
+        }
+      }
+      if (raster != null && raster.isNotEmpty) {
+        _writeAnchoredImageParagraph(
+          body,
+          raster,
+          PaperMetrics.pt(element.width),
+          PaperMetrics.pt(element.height),
+          dx: element.dx,
+          dy: element.dy,
+          rotationDegrees: element.rotationDegrees,
+        );
+      } else {
+        _buildTextBox(
+          body,
+          element,
+          floatingOnPage: true,
+          textOverride: '[شكل: ${element.shape?.arabicLabel ?? 'شكل'}]',
+        );
+      }
+    }
+  }
+
+  void _writeAnchoredImageParagraph(
+    StringBuffer body,
+    Uint8List bytes,
+    double widthPt,
+    double heightPt, {
+    required double dx,
+    required double dy,
+    required double rotationDegrees,
+  }) {
+    if (bytes.isEmpty || widthPt <= 0 || heightPt <= 0) {
+      return;
+    }
+    body.write(
+      '<w:p><w:pPr><w:bidi/><w:spacing w:before="0" w:after="0" '
+      'w:line="1" w:lineRule="exact"/></w:pPr>'
+      '<w:r>${_positionedDrawingXml(bytes, widthPt, heightPt, dx: dx, dy: dy, rotationDegrees: rotationDegrees)}</w:r></w:p>',
+    );
+  }
+
+  String _positionedDrawingXml(
+    Uint8List bytes,
+    double widthPt,
+    double heightPt, {
+    required double dx,
+    required double dy,
+    required double rotationDegrees,
+  }) {
+    var width = widthPt;
+    var height = heightPt;
+    if (width > DocxDocumentExportService._maxImageWidthPt) {
+      final scale = DocxDocumentExportService._maxImageWidthPt / width;
+      width *= scale;
+      height *= scale;
+    }
+    final widthEmu = (width / 72 * 914400).round();
+    final heightEmu = (height / 72 * 914400).round();
+    final widthPx = PaperMetrics.px(width);
+    final physicalLeftPx = document.layout.isLtr
+        ? dx
+        : ExamCanvasGeometry.width - dx - widthPx;
+    final xEmu = (PaperMetrics.pt(physicalLeftPx) * 12700).round();
+    final yEmu = (PaperMetrics.pt(dy) * 12700).round();
+    final rotation = (rotationDegrees * 60000).round();
+    final isJpeg = bytes.length > 2 && bytes[0] == 0xFF && bytes[1] == 0xD8;
+    final relationId = 'rIdImg${images.length + 2}';
+    images.add(
+      _EmbeddedImage(
+        data: bytes,
+        extension: isJpeg ? 'jpeg' : 'png',
+        contentType: isJpeg ? 'image/jpeg' : 'image/png',
+        relationId: relationId,
+        widthEmu: widthEmu,
+        heightEmu: heightEmu,
+      ),
+    );
+    final id = _drawingId++;
+    return '<w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" '
+        'simplePos="0" relativeHeight="$id" behindDoc="0" locked="0" '
+        'layoutInCell="1" allowOverlap="1">'
+        '<wp:simplePos x="0" y="0"/>'
+        '<wp:positionH relativeFrom="page"><wp:posOffset>$xEmu</wp:posOffset></wp:positionH>'
+        '<wp:positionV relativeFrom="page"><wp:posOffset>$yEmu</wp:posOffset></wp:positionV>'
+        '<wp:extent cx="$widthEmu" cy="$heightEmu"/><wp:wrapNone/>'
+        '<wp:docPr id="$id" name="Floating element $id"/>'
+        '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>'
+        '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        '<pic:pic><pic:nvPicPr><pic:cNvPr id="$id" name="Floating element $id"/><pic:cNvPicPr/></pic:nvPicPr>'
+        '<pic:blipFill><a:blip r:embed="$relationId"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+        '<pic:spPr><a:xfrm rot="$rotation"><a:off x="0" y="0"/><a:ext cx="$widthEmu" cy="$heightEmu"/></a:xfrm>'
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
+        '</pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing>';
   }
 
   /// تذييل ترقيم الصفحات («صفحة X من Y») بحقول Word الحية.
@@ -596,6 +849,7 @@ class _DocxBuilder {
     if (showTypeBody) {
       _buildTypeBody(body, content, branch.style);
     }
+    await _buildAttachments(body, branch.attachments);
     _buildDivider(body, branch.dividerAfter);
   }
 
@@ -711,7 +965,12 @@ class _DocxBuilder {
     StringBuffer body,
     List<FloatingElement> attachments,
   ) async {
+    final globalElementIds =
+        document.floatingElements.map((element) => element.id).toSet();
     for (final element in attachments) {
+      if (globalElementIds.contains(element.id)) {
+        continue;
+      }
       if (element.isTextBox) {
         _buildTextBox(body, element);
         continue;
@@ -753,8 +1012,14 @@ class _DocxBuilder {
     }
   }
 
-  void _buildTextBox(StringBuffer body, FloatingElement element) {
-    final text = element.label.trim().isEmpty ? ' ' : element.label.trim();
+  void _buildTextBox(
+    StringBuffer body,
+    FloatingElement element, {
+    bool floatingOnPage = false,
+    String? textOverride,
+  }) {
+    final text = textOverride ??
+        (element.label.trim().isEmpty ? ' ' : element.label.trim());
     final border = element.framed
         ? '<w:tblBorders><w:top w:val="single" w:sz="6" w:space="0" w:color="111827"/>'
             '<w:left w:val="single" w:sz="6" w:space="0" w:color="111827"/>'
@@ -782,9 +1047,32 @@ class _DocxBuilder {
         '${element.textStyle.italic == true ? '<w:i/>' : ''}'
         '${element.textStyle.underline == true ? '<w:u w:val="single"/>' : ''}'
         '<w:sz w:val="$size"/><w:rFonts w:cs="$font"/></w:rPr>';
+    final widthTwips = (PaperMetrics.pt(element.width) * 20).round();
+    final heightTwips = (PaperMetrics.pt(element.height) * 20).round();
+    final physicalLeftPx = document.layout.isLtr
+        ? element.dx
+        : ExamCanvasGeometry.width - element.dx - element.width;
+    final xTwips = (PaperMetrics.pt(physicalLeftPx) * 20).round();
+    final yTwips = (PaperMetrics.pt(element.dy) * 20).round();
+    final tableWidth = floatingOnPage
+        ? '<w:tblW w:w="$widthTwips" w:type="dxa"/>'
+        : '<w:tblW w:w="5000" w:type="pct"/>';
+    final tablePosition = floatingOnPage
+        ? '<w:tblpPr w:horzAnchor="page" w:vertAnchor="page" '
+            'w:tblpX="$xTwips" w:tblpY="$yTwips"/>'
+        : '';
+    final tableLayout = floatingOnPage ? '<w:tblLayout w:type="fixed"/>' : '';
+    final grid = floatingOnPage ? '<w:tblGrid><w:gridCol w:w="$widthTwips"/></w:tblGrid>' : '';
+    final rowProperties = floatingOnPage
+        ? '<w:trPr><w:trHeight w:val="$heightTwips" w:hRule="atLeast"/></w:trPr>'
+        : '';
+    final cellWidth = floatingOnPage
+        ? '<w:tcW w:w="$widthTwips" w:type="dxa"/>'
+        : '';
     body.write(
-      '<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:bidiVisual/>$border</w:tblPr>'
-      '<w:tr><w:tc><w:p><w:pPr><w:bidi/><w:jc w:val="$align"/>'
+      '<w:tbl><w:tblPr>$tablePosition<w:bidiVisual/>$tableWidth$border$tableLayout</w:tblPr>'
+      '$grid<w:tr>$rowProperties<w:tc><w:tcPr>$cellWidth</w:tcPr>'
+      '<w:p><w:pPr><w:bidi/><w:jc w:val="$align"/>'
       '<w:spacing w:line="$line" w:lineRule="auto"/></w:pPr>'
       '${_runsXml(text, runProperties, size / 2)}</w:p></w:tc></w:tr></w:tbl>',
     );

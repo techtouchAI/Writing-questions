@@ -181,10 +181,14 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     setState(() => _busyDocumentId = document.id);
     try {
+      final pageAssignments = await PdfExportService.resolvePageAssignments(
+        document: document,
+      );
       final file = await DocxDocumentExportService.exportDocumentToDocx(
         document: document,
         shapeRasterizer: ShapeImageRenderer.asRasterizer,
         mathRasterizer: MathImageRenderer.asRasterizer,
+        pageAssignments: pageAssignments,
       );
       if (!context.mounted) {
         return;
