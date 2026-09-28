@@ -366,6 +366,13 @@ class _ZoomLabel extends StatelessWidget {
   }
 }
 
+// PopupMenuButton reserves null for dismissal. Wrap nullable settings so
+// choosing "automatic" still invokes onSelected.
+class _MenuChoice<T> {
+  const _MenuChoice(this.value);
+  final T? value;
+}
+
 class _FontMenu extends StatelessWidget {
   const _FontMenu({required this.activeFont, required this.onChanged});
 
@@ -376,14 +383,14 @@ class _FontMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tooltip(
       message: 'نوع الخط',
-      child: PopupMenuButton<PaperFont?>(
+      child: PopupMenuButton<_MenuChoice<PaperFont>>(
         enabled: onChanged != null,
         tooltip: 'نوع الخط',
         icon: const Icon(Icons.font_download_outlined, size: 20),
-        onSelected: (value) => onChanged?.call(value),
-        itemBuilder: (_) => <PopupMenuEntry<PaperFont?>>[
-          PopupMenuItem<PaperFont?>(
-            value: null,
+        onSelected: (value) => onChanged?.call(value.value),
+        itemBuilder: (_) => <PopupMenuEntry<_MenuChoice<PaperFont>>>[
+          PopupMenuItem<_MenuChoice<PaperFont>>(
+            value: const _MenuChoice<PaperFont>(null),
             child: Text(
               activeFont == null ? '✓ افتراضي الورقة' : 'افتراضي الورقة',
               style: const TextStyle(fontSize: 13),
@@ -391,8 +398,8 @@ class _FontMenu extends StatelessWidget {
           ),
           const PopupMenuDivider(),
           for (final font in PaperFont.values)
-            PopupMenuItem<PaperFont?>(
-              value: font,
+            PopupMenuItem<_MenuChoice<PaperFont>>(
+              value: _MenuChoice<PaperFont>(font),
               child: Text(
                 '${activeFont == font ? '✓ ' : ''}${font.arabicLabel}',
                 style: TextStyle(fontSize: 14, fontFamily: font.family),
@@ -419,27 +426,27 @@ class _FontSizeMenu extends StatelessWidget {
             : activeFontSize.toString());
     return Tooltip(
       message: 'حجم الخط',
-      child: PopupMenuButton<double?>(
+      child: PopupMenuButton<_MenuChoice<double>>(
         enabled: onChanged != null,
         tooltip: 'حجم الخط',
-        onSelected: (value) => onChanged?.call(value),
-        itemBuilder: (_) => <PopupMenuEntry<double?>>[
-          const PopupMenuItem<double?>(
-            value: null,
+        onSelected: (value) => onChanged?.call(value.value),
+        itemBuilder: (_) => <PopupMenuEntry<_MenuChoice<double>>>[
+          const PopupMenuItem<_MenuChoice<double>>(
+            value: _MenuChoice<double>(null),
             child: Text('تلقائي', style: TextStyle(fontSize: 13)),
           ),
           const PopupMenuDivider(),
           for (final size in PreviewToolbar.fontSizes)
-            PopupMenuItem<double?>(
-              value: size,
+            PopupMenuItem<_MenuChoice<double>>(
+              value: _MenuChoice<double>(size),
               child: Text(
                 '${activeFontSize == size ? '✓ ' : ''}${size.toInt()}',
                 style: const TextStyle(fontSize: 13),
               ),
             ),
           // القيمة المميزة NaN: حقل حر لحجم مخصص (تعالجه شاشة المعاينة).
-          const PopupMenuItem<double?>(
-            value: double.nan,
+          const PopupMenuItem<_MenuChoice<double>>(
+            value: _MenuChoice<double>(double.nan),
             child: Text('مخصص...', style: TextStyle(fontSize: 13)),
           ),
         ],
@@ -473,27 +480,27 @@ class _LineSpacingMenu extends StatelessWidget {
             : value.toString());
     // ملاحظة: PopupMenuButton يبني Tooltip داخليًا من خاصية tooltip —
     // لا نغلّفه بـ Tooltip مكرر (نظافة الوصول ودقة الاختبارات).
-    return PopupMenuButton<double?>(
+    return PopupMenuButton<_MenuChoice<double>>(
       enabled: onChanged != null,
       tooltip: 'تباعد الأسطر',
-      onSelected: (selected) => onChanged?.call(selected),
-      itemBuilder: (_) => <PopupMenuEntry<double?>>[
-        const PopupMenuItem<double?>(
-          value: null,
+      onSelected: (selected) => onChanged?.call(selected.value),
+      itemBuilder: (_) => <PopupMenuEntry<_MenuChoice<double>>>[
+        const PopupMenuItem<_MenuChoice<double>>(
+          value: _MenuChoice<double>(null),
           child: Text('تلقائي', style: TextStyle(fontSize: 13)),
         ),
         const PopupMenuDivider(),
         for (final spacing in PreviewToolbar.lineSpacings)
-          PopupMenuItem<double?>(
-            value: spacing,
+          PopupMenuItem<_MenuChoice<double>>(
+            value: _MenuChoice<double>(spacing),
             child: Text(
               '${activeLineHeight == spacing ? '✓ ' : ''}$spacing',
               style: const TextStyle(fontSize: 13),
             ),
           ),
         // القيمة المميزة NaN: حقل حر لتباعد مخصص (تعالجه شاشة المعاينة).
-        const PopupMenuItem<double?>(
-          value: double.nan,
+        const PopupMenuItem<_MenuChoice<double>>(
+          value: _MenuChoice<double>(double.nan),
           child: Text('مخصص...', style: TextStyle(fontSize: 13)),
         ),
       ],
@@ -522,7 +529,7 @@ class _ColorMenu extends StatelessWidget {
     final current = activeColor;
     // ملاحظة: PopupMenuButton يبني Tooltip داخليًا من خاصية tooltip —
     // لا نغلّفه بـ Tooltip مكرر (نظافة الوصول ودقة الاختبارات).
-    return PopupMenuButton<int?>(
+    return PopupMenuButton<_MenuChoice<int>>(
       enabled: onChanged != null,
       tooltip: 'لون النص',
       icon: Icon(
@@ -530,10 +537,10 @@ class _ColorMenu extends StatelessWidget {
         size: 20,
         color: current == null ? null : Color(current),
       ),
-      onSelected: (selected) => onChanged?.call(selected),
-      itemBuilder: (_) => <PopupMenuEntry<int?>>[
-        PopupMenuItem<int?>(
-          value: null,
+      onSelected: (selected) => onChanged?.call(selected.value),
+      itemBuilder: (_) => <PopupMenuEntry<_MenuChoice<int>>>[
+        PopupMenuItem<_MenuChoice<int>>(
+          value: const _MenuChoice<int>(null),
           child: Text(
             current == null ? '✓ تلقائي' : 'تلقائي',
             style: const TextStyle(fontSize: 13),
@@ -541,8 +548,8 @@ class _ColorMenu extends StatelessWidget {
         ),
         const PopupMenuDivider(),
         for (final swatch in PreviewToolbar.textColors)
-          PopupMenuItem<int?>(
-            value: swatch.$1,
+          PopupMenuItem<_MenuChoice<int>>(
+            value: _MenuChoice<int>(swatch.$1),
             child: Row(
               children: <Widget>[
                 Container(
@@ -564,8 +571,8 @@ class _ColorMenu extends StatelessWidget {
           ),
         const PopupMenuDivider(),
         // القيمة المميزة -1: حوار HEX مخصص (تعالجه شاشة المعاينة).
-        const PopupMenuItem<int?>(
-          value: PreviewToolbar.customColorSentinel,
+        const PopupMenuItem<_MenuChoice<int>>(
+          value: _MenuChoice<int>(PreviewToolbar.customColorSentinel),
           child: Text('مخصص...', style: TextStyle(fontSize: 13)),
         ),
       ],
