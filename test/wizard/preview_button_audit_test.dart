@@ -1,4 +1,8 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,6 +19,21 @@ import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/views/widgets/paper_field.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 import 'package:writing_questions_app/views/wizard/preview_toolbar.dart';
+
+class _TestImagePicker extends ImagePickerPlatform {
+  _TestImagePicker({this.fail = false, this.file});
+  final bool fail;
+  final XFile? file;
+
+  @override
+  Future<XFile?> getImageFromSource({
+    required ImageSource source,
+    ImagePickerOptions options = const ImagePickerOptions(),
+  }) async {
+    if (fail) throw StateError('Gallery permission denied');
+    return file;
+  }
+}
 
 ExamDocument _document() => ExamDocument(
       name: 'تدقيق الأزرار',
@@ -188,13 +207,13 @@ void main() {
     var back = false;
     await _pump(tester, controller, width: 390, onBack: () => back = true);
     await _tap(tester, _tool('نسبة التكبير — انقر للعودة إلى 100%'));
-    expect(find.text('100%'), findsOneWidget);
+    expect(tester.widget<PreviewToolbar>(find.byType(PreviewToolbar)).zoom, 1);
     await _tap(tester, _tool('تكبير'));
-    expect(find.text('120%'), findsOneWidget);
+    expect(tester.widget<PreviewToolbar>(find.byType(PreviewToolbar)).zoom, closeTo(1.2, 0.001));
     await _tap(tester, _tool('تصغير'));
-    expect(find.text('100%'), findsOneWidget);
+    expect(tester.widget<PreviewToolbar>(find.byType(PreviewToolbar)).zoom, 1);
     await _tap(tester, _tool('ملاءمة الورقة للشاشة'));
-    expect(find.text('100%'), findsNothing);
+    expect(tester.widget<PreviewToolbar>(find.byType(PreviewToolbar)).zoom, lessThan(1));
     await _tap(tester, _tool('توسيط الورقة'));
     await _tap(tester, _tool('شريط الصيغ والوسائط'));
     expect(find.text('رياضيات'), findsNothing);
@@ -474,13 +493,43 @@ void main() {
   });
 
   testWidgets('image picker failure is reported, not treated as cancellation', (tester) async {
-    // Widget tests have no native picker: MissingPluginException exercises
-    // the failure path, not a claim of testing Android's gallery.
+    final originalPicker = ImagePickerPlatform.instance;
+    addTearDown(() => ImagePickerPlatform.instance = originalPicker);
+    ImagePickerPlatform.instance = _TestImagePicker(fail: true);
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
     await _tap(tester, _tool('إدراج صورة'));
     expect(find.textContaining('تعذر فتح الصورة'), findsOneWidget);
     expect(controller.questions.first.attachments, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('image insert, media insert, replace and cancellation use the picker result', (tester) async {
+    final originalPicker = ImagePickerPlatform.instance;
+    addTearDown(() => ImagePickerPlatform.instance = originalPicker);
+    final bytes = Uint8List.fromList(base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    ));
+    ImagePickerPlatform.instance = _TestImagePicker(file: XFile.fromData(bytes, mimeType: 'image/png'));
+    final controller = ExamWizardController(document: _document());
+    await _pump(tester, controller);
+    await _tap(tester, _tool('إدراج صورة'));
+    expect(controller.questions.first.attachments.single.bytes, bytes);
+    final original = controller.questions.first.attachments.single;
+    await _tap(tester, find.byTooltip('استبدال الصورة'));
+    final replaced = controller.questions.first.attachments.single;
+    expect(replaced.id, original.id);
+    expect(replaced.dx, original.dx);
+    expect(replaced.dy, original.dy);
+    expect(replaced.width, original.width);
+    expect(replaced.height, original.height);
+    await _tap(tester, find.text('وسائط'));
+    await _tap(tester, find.text('صورة').first);
+    expect(controller.questions.first.attachments, hasLength(2));
+    ImagePickerPlatform.instance = _TestImagePicker();
+    await _tap(tester, _tool('إدراج صورة'));
+    expect(controller.questions.first.attachments, hasLength(2));
+    expect(find.textContaining('تعذر فتح الصورة'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

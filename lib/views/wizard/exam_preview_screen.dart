@@ -2443,7 +2443,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 style: center ? centerStyle : lineStyle,
                 textAlign: center ? TextAlign.center : TextAlign.start,
                 hint: 'سطر ${index + 1}',
-
               ),
           ],
         ),
@@ -2477,7 +2476,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 style: titleStyle,
                 textAlign: PaperStyles.toTextAlign(header.style.align, TextAlign.center),
                 hint: 'عنوان الامتحان...',
-
               ),
             Container(
               decoration: BoxDecoration(
@@ -2504,7 +2502,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               style: _scaled(PaperStyles.note),
               textAlign: TextAlign.center,
               hint: 'ملاحظة / تعليمات للطلاب...',
-
             ),
             if (header.notes.trim().isNotEmpty || _headerSelected)
               _paperField(
@@ -2513,7 +2510,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 style: _scaled(PaperStyles.note),
                 textAlign: TextAlign.center,
                 hint: 'ملاحظات إضافية (وقت/درجة/...)...',
-
               ),
             const Divider(thickness: 1.5, color: PaperStyles.primary, height: 10),
           ],
@@ -2702,32 +2698,33 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       ],
     );
 
-    if (question.showFrame) {
-      block = Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          border: Border.all(color: PaperStyles.primary, width: 1),
-          borderRadius: BorderRadius.circular(4),
+    // Keep the render/widget ancestry stable when focus selects a question.
+    // Inserting wrappers here used to dispose PaperField's FocusNode while
+    // a tap was opening rich text or the keyboard was entering an answer.
+    block = Container(
+      padding: EdgeInsets.all(question.showFrame ? 4 : 0),
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: question.showFrame ? PaperStyles.primary : Colors.transparent,
+          width: question.showFrame ? 1 : 0,
         ),
-        child: block,
-      );
-    }
-    if (selected) {
-      block = Container(
-        padding: const EdgeInsets.all(1),
-        decoration: BoxDecoration(
-          border: Border.all(color: PaperStyles.primary.withOpacity(0.45)),
-          borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: block,
+    );
+    block = Container(
+      padding: EdgeInsets.all(selected ? 1 : 0),
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: selected ? PaperStyles.primary.withOpacity(0.45) : Colors.transparent,
+          width: selected ? 1 : 0,
         ),
-        child: block,
-      );
-    }
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: block,
+    );
 
-    // المرفقات نفسها تُرسم في طبقة الصفحة (موضعها حرّ فوق كل الكتل)، لكن
-    // مساحتها تُحجز هنا حتى لا يزاحمها نصّ السؤال في التقسيم الورقي.
-    if (question.attachments.isEmpty) {
-      return block;
-    }
+    // Always keep the sizing wrapper, including before the first attachment.
     var minHeight = 0.0;
     for (final element in question.attachments) {
       final bottom = element.dy + element.height;
@@ -2847,17 +2844,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             child: _buildBranchBody(controller, layout, ref, branch, label, dragHandle),
           ),
         );
-        if (branch.showFrame) {
-          body = Container(
-            margin: const EdgeInsets.only(top: 2),
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              border: Border.all(color: PaperStyles.primary, width: 0.8),
-              borderRadius: BorderRadius.circular(4),
+        body = Container(
+          margin: EdgeInsets.only(top: branch.showFrame ? 2 : 0),
+          padding: EdgeInsets.all(branch.showFrame ? 3 : 0),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: branch.showFrame ? PaperStyles.primary : Colors.transparent,
+              width: branch.showFrame ? 0.8 : 0,
             ),
-            child: body,
-          );
-        }
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: body,
+        );
         return body;
       },
     );
@@ -3184,7 +3182,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               ),
               style: bodyStyle,
               hint: layout.isLtr ? 'Item...' : 'نص النقطة...',
-
             ),
           ),
           IconButton(
@@ -4044,7 +4041,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 ),
                 style: answerStyle,
                 hint: layout.isLtr ? 'Model answer...' : 'اكتب الإجابة النموذجية...',
-
               ),
             ],
           ),

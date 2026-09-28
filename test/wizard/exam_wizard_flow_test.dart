@@ -514,12 +514,12 @@ void main() {
       expect(find.text('وسائط'), findsOneWidget);
       expect(find.text('رياضيات'), findsOneWidget);
 
-      // إضافة شكل بلا فرع محدد تُرشد المستخدم؛ وبعد التحديد يُثبَّت فوق الفرع.
+      // بلا فرع محدد يُضاف الشكل للسؤال النشط؛ وبعد التحديد يُضاف للفرع.
       await tester.tap(find.text('وسائط'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('مربع'));
       await tester.pump();
-      expect(find.textContaining('انقر على فرع داخل الورقة'), findsOneWidget);
+      expect(controller.questions.first.attachments, hasLength(1));
 
       controller.selectBranch(const BranchRef(questionIndex: 0, branchIndex: 0));
       await tester.pump();

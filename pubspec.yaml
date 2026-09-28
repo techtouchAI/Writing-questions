@@ -41,6 +41,7 @@ dependency_overrides:
     path: third_party/pdf
 
 dev_dependencies:
+  image_picker_platform_interface: ^2.9.0
   flutter_lints: ^4.0.0
   flutter_test:
     sdk: flutter
