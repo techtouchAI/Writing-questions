@@ -390,7 +390,7 @@ class _FontMenu extends StatelessWidget {
         onSelected: (value) => onChanged?.call(value.value),
         itemBuilder: (_) => <PopupMenuEntry<_MenuChoice<PaperFont>>>[
           PopupMenuItem<_MenuChoice<PaperFont>>(
-            value: _MenuChoice<PaperFont>(null),
+            value: const _MenuChoice<PaperFont>(null),
             child: Text(
               activeFont == null ? '✓ افتراضي الورقة' : 'افتراضي الورقة',
               style: const TextStyle(fontSize: 13),
@@ -540,7 +540,7 @@ class _ColorMenu extends StatelessWidget {
       onSelected: (selected) => onChanged?.call(selected.value),
       itemBuilder: (_) => <PopupMenuEntry<_MenuChoice<int>>>[
         PopupMenuItem<_MenuChoice<int>>(
-          value: _MenuChoice<int>(null),
+          value: const _MenuChoice<int>(null),
           child: Text(
             current == null ? '✓ تلقائي' : 'تلقائي',
             style: const TextStyle(fontSize: 13),

@@ -283,69 +283,69 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (_syncingFields) return;
     _syncingFields = true;
     try {
-    final document = controller.document;
-    for (final question in document.questions) {
-      for (final item in question.items) {
-        final field = _fields[_itemKey(item.id)];
-        if (field != null && field.text != item.text) field.text = item.text;
-      }
-      final categoryField = _fields[_categoryKey(question.id)];
-      if (categoryField != null && categoryField.text != question.category) {
-        categoryField.text = question.category;
-      }
-      final promptField = _fields[_promptKey(question.id)];
-      if (promptField != null && promptField.text != question.prompt) {
-        promptField.text = question.prompt;
-      }
-      for (final branch in question.branches) {
-        final textField = _fields[_branchTextKey(branch.id)];
-        if (textField != null && textField.text != branch.content.text) {
-          textField.text = branch.content.text;
+      final document = controller.document;
+      for (final question in document.questions) {
+        for (final item in question.items) {
+          final field = _fields[_itemKey(item.id)];
+          if (field != null && field.text != item.text) field.text = item.text;
         }
-        final marksField = _fields[_branchMarksKey(branch.id)];
-        if (marksField != null && _parseMarks(marksField.text) != branch.marks) {
-          marksField.text = _formatMarksInput(branch.marks);
+        final categoryField = _fields[_categoryKey(question.id)];
+        if (categoryField != null && categoryField.text != question.category) {
+          categoryField.text = question.category;
         }
-        final answerField = _fields[_modelAnswerKey(branch.id)];
-        if (answerField != null && answerField.text != branch.content.modelAnswer) {
-          answerField.text = branch.content.modelAnswer;
+        final promptField = _fields[_promptKey(question.id)];
+        if (promptField != null && promptField.text != question.prompt) {
+          promptField.text = question.prompt;
         }
-        for (var index = 0; index < branch.content.options.length; index++) {
-          final optionField = _fields[_optionKey(branch.id, index)];
-          if (optionField != null && optionField.text != branch.content.options[index].text) {
-            optionField.text = branch.content.options[index].text;
+        for (final branch in question.branches) {
+          final textField = _fields[_branchTextKey(branch.id)];
+          if (textField != null && textField.text != branch.content.text) {
+            textField.text = branch.content.text;
+          }
+          final marksField = _fields[_branchMarksKey(branch.id)];
+          if (marksField != null && _parseMarks(marksField.text) != branch.marks) {
+            marksField.text = _formatMarksInput(branch.marks);
+          }
+          final answerField = _fields[_modelAnswerKey(branch.id)];
+          if (answerField != null && answerField.text != branch.content.modelAnswer) {
+            answerField.text = branch.content.modelAnswer;
+          }
+          for (var index = 0; index < branch.content.options.length; index++) {
+            final optionField = _fields[_optionKey(branch.id, index)];
+            if (optionField != null && optionField.text != branch.content.options[index].text) {
+              optionField.text = branch.content.options[index].text;
+            }
+          }
+          for (final item in branch.content.items) {
+            final itemField = _fields[_itemKey(item.id)];
+            if (itemField != null && itemField.text != item.text) {
+              itemField.text = item.text;
+            }
           }
         }
-        for (final item in branch.content.items) {
-          final itemField = _fields[_itemKey(item.id)];
-          if (itemField != null && itemField.text != item.text) {
-            itemField.text = item.text;
+      }
+      for (final slot in HeaderSlot.values) {
+        final lines = document.header.column(slot).lines;
+        for (var index = 0; index < lines.length; index++) {
+          final field = _fields[_headerKey(slot, index)];
+          if (field != null && field.text != lines[index]) {
+            field.text = lines[index];
           }
         }
       }
-    }
-    for (final slot in HeaderSlot.values) {
-      final lines = document.header.column(slot).lines;
-      for (var index = 0; index < lines.length; index++) {
-        final field = _fields[_headerKey(slot, index)];
-        if (field != null && field.text != lines[index]) {
-          field.text = lines[index];
-        }
+      final titleField = _fields[_headerTitleKey];
+      if (titleField != null && titleField.text != document.header.title) {
+        titleField.text = document.header.title;
       }
-    }
-    final titleField = _fields[_headerTitleKey];
-    if (titleField != null && titleField.text != document.header.title) {
-      titleField.text = document.header.title;
-    }
-    final notesField = _fields[_headerNotesKey];
-    if (notesField != null && notesField.text != document.header.notes) {
-      notesField.text = document.header.notes;
-    }
-    final instructions = _fields[_instructionsKey];
-    if (instructions != null && instructions.text != document.header.instructions) {
-      instructions.text = document.header.instructions;
-    }
-    _disposeStaleFields(document);
+      final notesField = _fields[_headerNotesKey];
+      if (notesField != null && notesField.text != document.header.notes) {
+        notesField.text = document.header.notes;
+      }
+      final instructions = _fields[_instructionsKey];
+      if (instructions != null && instructions.text != document.header.instructions) {
+        instructions.text = document.header.instructions;
+      }
+      _disposeStaleFields(document);
     } finally {
       _syncingFields = false;
     }
@@ -536,6 +536,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final single = _controller?.selectedBranch;
     if (single != null && document.containsRef(single)) {
       return 'الفرع ${document.displayBranchLabel(single.questionIndex, single.branchIndex)}';
+    }
+    if (document.questions.isNotEmpty) {
+      final index = _controller!.selectedQuestionIndex ?? _controller!.currentQuestionIndex;
+      return document.displayQuestionLabel(document.questions[index]);
     }
     return '';
   }
@@ -747,8 +751,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       return element;
     }
     final questionIndex = controller.selectedBranch?.questionIndex ??
-        controller.selectedQuestionIndex ??
-        0;
+        controller.selectedQuestionIndex ?? controller.currentQuestionIndex;
     final top = _blockTopOnPage(questionIndex);
     return element.copyWith(
       dx: 8,
@@ -1032,7 +1035,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         questionTarget = null;
       }
     }
-    questionTarget ??= document.questions.length - 1;
+    questionTarget ??= controller.currentQuestionIndex;
     controller.setQuestionDivider(questionTarget, const PaperDivider());
     _showMessage('تمت إضافة فاصل بعد السؤال.');
   }
@@ -1168,7 +1171,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   void _addBranchToSelected() {
     final controller = _controller!;
-    final target = controller.selectedBranch?.questionIndex ?? controller.questions.length - 1;
+    final target = controller.selectedBranch?.questionIndex ??
+        controller.selectedQuestionIndex ?? controller.currentQuestionIndex;
     controller.addBranch(target);
   }
 
@@ -1321,7 +1325,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final size = double.tryParse(
       saved.trim().replaceAll('،', '.').replaceAll(',', '.'),
     );
-    if (size == null || size < 6 || size > 32) {
+    if (size == null || !size.isFinite || size < 6 || size > 32) {
       _showMessage('أدخل حجماً بين 6 و 32.', isError: true);
       return;
     }
@@ -1352,7 +1356,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final value = double.tryParse(
       saved.trim().replaceAll('،', '.').replaceAll(',', '.'),
     );
-    if (value == null || value < 0.5 || value > 4.0) {
+    if (value == null || !value.isFinite || value < 0.5 || value > 4.0) {
       _showMessage('أدخل تباعداً بين 0.5 و 4.0.', isError: true);
       return;
     }
@@ -1375,7 +1379,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       initialText: _activeStyle().colorHex ?? '',
       hintText: 'مثال: 1E3A8A أو #B91C1C',
       saveLabel: 'تطبيق',
-      numeric: true,
     );
     if (saved == null) {
       return;
@@ -2224,6 +2227,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 ),
                 for (final ref in pageAttachments)
                   ..._buildPageElement(controller, ref),
+                // Controls are siblings in the page-sized hit-test area and
+                // painted last so other attachments cannot cover them.
+                for (final ref in pageAttachments)
+                  if (!_locked && _selectedAttachment?.elementId == ref.elementId)
+                    _buildAttachmentToolbar(ref, _findAttachment(document, ref)!),
               ],
             );
             // معادلة جاهزة تنتظر موضعها: أي نقرة على الورقة تُقيمها في
@@ -2360,9 +2368,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       key: ValueKey<String>('page-element-${element.id}'),
       child: _buildAttachment(controller, ref, element),
     );
-    if (!_locked && _selectedAttachment?.elementId == element.id) {
-      yield _buildAttachmentToolbar(ref, element);
-    }
   }
 
   /// يُنشئ المعادلة المسحوبة من الشريط في موضع الإفلات (بكسل اللوحة).
@@ -2653,7 +2658,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           hint: layout.isLtr
               ? 'Question text / instructions...'
               : 'نص السؤال / التعليمات (أجب عن فرعين فقط: ...)...',
-
         ),
         // نقاط السؤال المباشرة (1، 2، 3...) — الترقيم تلقائي على الورقة،
         // والمدرس يكتب محتوى كل سطر (عبارات/فراغات/اختيارات) بنفسه.
@@ -3293,6 +3297,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   }) {
     final selected = _selectedDividerKey == key;
     return GestureDetector(
+      key: ValueKey<String>('divider-$key'),
+      behavior: HitTestBehavior.opaque,
       onTap: () => setState(() {
         _clearSelection();
         _selectedDividerKey = key;
@@ -3937,7 +3943,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                                 ? answerStyle
                                 : _scaled(PaperStyles.option),
                             hint: layout.isLtr ? 'Option...' : 'نص الخيار...',
-
                           ),
                         ],
                       ),

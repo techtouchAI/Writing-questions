@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:writing_questions_app/providers/exam_document_provider.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
@@ -26,14 +28,17 @@ ExamDocument _document() => ExamDocument(
     );
 
 Future<void> _pump(WidgetTester tester, ExamWizardController controller,
-    {double width = 1600, VoidCallback? onBack}) async {
+    {double width = 1600, VoidCallback? onBack, ExamDocumentProvider? library}) async {
   tester.view.physicalSize = Size(width, 1600);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(MaterialApp(
-    home: ChangeNotifierProvider.value(
-      value: controller,
+    home: MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: controller),
+        if (library != null) ChangeNotifierProvider.value(value: library),
+      ],
       child: ExamPreviewScreen(onBackToQuestions: onBack ?? () {}),
     ),
   ));
@@ -220,6 +225,163 @@ void main() {
     expect(controller.questions.first.branches.single.content.text, contains('ملاحظة: '));
     await _tap(tester, find.byTooltip('حذف الفرع'));
     await _tap(tester, find.text('سطر جديد'));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('all shape menu entries and media chips insert into the active question', (tester) async {
+    final controller = ExamWizardController(document: _document());
+    await _pump(tester, controller);
+    await _tap(tester, _field('prompt-q1'));
+    final shapes = {
+      'مستطيل': FloatingShapeType.rectangle, 'مربع': FloatingShapeType.square,
+      'دائرة': FloatingShapeType.circle, 'مثلث': FloatingShapeType.triangle,
+      'خط': FloatingShapeType.line, 'سهم': FloatingShapeType.arrow,
+    };
+    for (final entry in shapes.entries) {
+      await _tap(tester, _tool('إدراج شكل'));
+      await _tap(tester, find.text(entry.key).last);
+      expect(controller.questions.first.attachments.last.shape, entry.value);
+    }
+    await _tap(tester, find.text('وسائط'));
+    for (final entry in shapes.entries) {
+      final before = controller.questions.first.attachments.length;
+      await _tap(tester, find.text(entry.key).last);
+      expect(controller.questions.first.attachments.length, before + 1);
+      expect(controller.questions.first.attachments.last.shape, entry.value);
+    }
+    expect(controller.questions[1].attachments, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('add divider, thickness, width and delete have visible model effects', (tester) async {
+    final controller = ExamWizardController(document: _document());
+    await _pump(tester, controller);
+    await _tap(tester, _field('prompt-q1'));
+    await _tap(tester, _tool('إضافة فاصل'));
+    expect(controller.questions.first.dividerAfter, isNotNull);
+    await _tap(tester, find.byKey(const ValueKey('divider-q:q1')));
+    await _tap(tester, find.text('السماكة'));
+    expect(controller.questions.first.dividerAfter!.thickness, 3);
+    await _tap(tester, find.text('كامل'));
+    expect(controller.questions.first.dividerAfter!.widthFraction, 0.66);
+    await _tap(tester, find.text('ثلثان'));
+    expect(controller.questions.first.dividerAfter!.widthFraction, 0.33);
+    await _tap(tester, find.text('ثلث'));
+    expect(controller.questions.first.dividerAfter!.widthFraction, 1);
+    await _tap(tester, find.text('حذف'));
+    expect(controller.questions.first.dividerAfter, isNull);
+  });
+
+  testWidgets('question and branch add, copy, label and delete buttons', (tester) async {
+    final controller = ExamWizardController(document: _document());
+    await _pump(tester, controller);
+    await _tap(tester, _field('prompt-q1'));
+    await _tap(tester, find.text('فرع جديد'));
+    expect(controller.questions.first.branches, hasLength(2));
+    expect(controller.questions[1].branches, isEmpty);
+    await _tap(tester, find.byTooltip('نسخ الفرع').first);
+    expect(controller.questions.first.branches, hasLength(3));
+    await _tap(tester, find.byTooltip('تثبيت تسمية الفرع').first);
+    await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), 'أولاً');
+    await _tap(tester, find.text('حفظ'));
+    expect(controller.questions.first.branches.first.labelOverride, 'أولاً');
+    await _tap(tester, find.byTooltip('حذف الفرع').first);
+    expect(controller.questions.first.branches, hasLength(2));
+    await _tap(tester, find.byTooltip('نسخ السؤال').first);
+    expect(controller.questions, hasLength(3));
+    await _tap(tester, find.byTooltip('تثبيت تسمية السؤال').first);
+    await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), 'تمرين');
+    await _tap(tester, find.text('حفظ'));
+    expect(controller.questions.first.labelOverride, 'تمرين');
+    await _tap(tester, find.byTooltip('حذف السؤال').first);
+    await _tap(tester, find.text('حذف'));
+    expect(controller.questions, hasLength(2));
+    await _tap(tester, find.text('سؤال جديد'));
+    expect(controller.questions, hasLength(3));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('multi selection formats both questions and can be switched off', (tester) async {
+    final controller = ExamWizardController(document: _document());
+    await _pump(tester, controller);
+    await _tap(tester, _tool('تحديد متعدد'));
+    await _tap(tester, _field('prompt-q1'));
+    await _tap(tester, _field('prompt-q2'));
+    await _tap(tester, _tool('مائل'));
+    expect(controller.questions.every((q) => q.style.italic == true), isTrue);
+    await _tap(tester, _tool('تحديد متعدد'));
+    await _tap(tester, _field('prompt-q1'));
+    await _tap(tester, _tool('مائل'));
+    expect(controller.questions.first.style.italic, isFalse);
+    expect(controller.questions.last.style.italic, isTrue);
+  });
+
+  testWidgets('custom size, spacing and HEX apply; cancellation leaves formatting unchanged', (tester) async {
+    final controller = ExamWizardController(document: _document());
+    await _pump(tester, controller);
+    for (final entry in {'حجم الخط': '17', 'تباعد الأسطر': '1.7', 'لون النص': '#ABCDEF'}.entries) {
+      await _tap(tester, _tool(entry.key));
+      await _tap(tester, find.text('مخصص...'));
+      await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), entry.value);
+      await _tap(tester, find.text('تطبيق'));
+    }
+    expect(controller.questions.first.style.fontSize, 17);
+    expect(controller.questions.first.style.lineHeight, 1.7);
+    expect(controller.questions.first.style.color, 0xFFABCDEF);
+    await _tap(tester, _tool('حجم الخط'));
+    await _tap(tester, find.text('مخصص...'));
+    await _tap(tester, find.text('إلغاء'));
+    expect(controller.questions.first.style.fontSize, 17);
+  });
+
+  testWidgets('settings cancel and apply are separate actions', (tester) async {
+    final controller = ExamWizardController(document: _document());
+    await _pump(tester, controller);
+    final original = controller.document.settings.pageBorder;
+    await _tap(tester, find.byTooltip('إعدادات الورقة'));
+    await _tap(tester, find.text('إطار حول الصفحة'));
+    await _tap(tester, find.text('إلغاء'));
+    expect(controller.document.settings.pageBorder, original);
+    await _tap(tester, find.byTooltip('إعدادات الورقة'));
+    await _tap(tester, find.text('إطار حول الصفحة'));
+    await _tap(tester, find.text('تطبيق'));
+    expect(controller.document.settings.pageBorder, !original);
+    await _tap(tester, _tool('تراجع'));
+    expect(controller.document.settings.pageBorder, original);
+  });
+
+  testWidgets('both save buttons persist the document in the library', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final library = ExamDocumentProvider();
+    final controller = ExamWizardController(document: _document());
+    await _pump(tester, controller, library: library);
+    await _tap(tester, find.byTooltip('حفظ الورقة'));
+    expect(library.documents.single.id, controller.document.id);
+    await tester.enterText(_field('prompt-q1'), 'نص محفوظ');
+    await tester.pumpAndSettle();
+    await _tap(tester, _tool('حفظ'));
+    expect(library.documents.single.questions.first.prompt, 'نص محفوظ');
+    final reloaded = ExamDocumentProvider();
+    await reloaded.loadDocuments();
+    expect(reloaded.documents.single.questions.first.prompt, 'نص محفوظ');
+  });
+
+  testWidgets('every formula template opens an editor, cancel does not insert', (tester) async {
+    final controller = ExamWizardController(document: _document());
+    await _pump(tester, controller);
+    for (final tab in {
+      'رياضيات': ['محرر المعادلات', 'كسر', 'جذر', 'أس', 'فرعي', 'متكامل', 'مجموع', 'نهاية', 'معادلة'],
+      'كيمياء': ['ماء', 'ثاني أكسيد الكربون', 'حمض الكبريتيك', 'الأمونيا', 'سهم تفاعل', 'تفاعل عكوس', 'معادلة أيونية'],
+      'فيزياء': ['قوانين نيوتن', 'نسبية', 'قانون أوم', 'الشغل', 'سرعة', 'متغير'],
+    }.entries) {
+      await _tap(tester, find.text(tab.key));
+      for (final label in tab.value) {
+        await _tap(tester, find.text(label).last);
+        expect(find.byType(Dialog), findsOneWidget);
+        await _tap(tester, find.text('إلغاء'));
+      }
+    }
+    expect(controller.questions.first.attachments, isEmpty);
     expect(tester.takeException(), isNull);
   });
 }
