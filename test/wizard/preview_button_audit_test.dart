@@ -292,7 +292,7 @@ void main() {
     await _tap(tester, find.byTooltip('تثبيت تسمية السؤال').first);
     await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), 'تمرين');
     await _tap(tester, find.text('حفظ'));
-    expect(controller.questions.first.labelOverride, 'تمرين');
+    expect(controller.questions.first.numberOverride, 'تمرين');
     await _tap(tester, find.byTooltip('حذف السؤال').first);
     await _tap(tester, find.text('حذف'));
     expect(controller.questions, hasLength(2));
@@ -381,6 +381,105 @@ void main() {
         await _tap(tester, find.text('إلغاء'));
       }
     }
+    expect(controller.questions.first.attachments, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('every preset font, size, spacing and color changes the target', (tester) async {
+    final controller = ExamWizardController(document: _document());
+    await _pump(tester, controller);
+    for (final font in PaperFont.values) {
+      await _tap(tester, _tool('نوع الخط'));
+      await _tap(tester, find.textContaining(font.arabicLabel).last);
+      expect(controller.questions.first.style.font, font);
+    }
+    for (final size in PreviewToolbar.fontSizes) {
+      await _tap(tester, _tool('حجم الخط'));
+      await _tap(tester, find.text(size.toInt().toString()).last);
+      expect(controller.questions.first.style.fontSize, size);
+    }
+    for (final spacing in PreviewToolbar.lineSpacings) {
+      await _tap(tester, _tool('تباعد الأسطر'));
+      await _tap(tester, find.text(spacing.toString()).last);
+      expect(controller.questions.first.style.lineHeight, spacing);
+    }
+    for (final color in PreviewToolbar.textColors) {
+      await _tap(tester, _tool('لون النص'));
+      await _tap(tester, find.textContaining(color.$2).last);
+      expect(controller.questions.first.style.color, color.$1);
+    }
+  });
+
+  testWidgets('resize handle is inside hit bounds, including at non-default zoom', (tester) async {
+    final controller = ExamWizardController(document: _document());
+    controller.addQuestionAttachment(FloatingElement(
+      id: 'resize', type: FloatingElementType.shape, shape: FloatingShapeType.rectangle,
+      dx: 100, dy: 600, width: 100, height: 80,
+    ), questionIndex: 0);
+    await _pump(tester, controller);
+    await _tap(tester, _tool('تكبير'));
+    await _tap(tester, find.byKey(const ValueKey('page-element-resize')));
+    final handle = find.byKey(const ValueKey('resize-element-resize'));
+    await tester.ensureVisible(handle);
+    await tester.drag(handle, const Offset(36, 24));
+    await tester.pumpAndSettle();
+    final element = controller.questions.first.attachments.single;
+    expect(element.width, greaterThan(100));
+    expect(element.height, greaterThan(80));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('branch point add, reorder, label, answer and delete buttons', (tester) async {
+    final controller = ExamWizardController(document: _document());
+    const ref = BranchRef(questionIndex: 0, branchIndex: 0);
+    controller.updateBranchType(ref, QuestionType.trueFalse);
+    controller.setBranchItemCount(ref, 2);
+    controller.updateBranchItemText(ref, 0, 'الأولى');
+    controller.updateBranchItemText(ref, 1, 'الثانية');
+    await _pump(tester, controller);
+    await _tap(tester, find.byTooltip('نقل النقطة لأسفل').first);
+    expect(controller.document.branchAt(ref).content.items.first.text, 'الثانية');
+    await _tap(tester, find.byTooltip('نقل النقطة لأعلى').last);
+    expect(controller.document.branchAt(ref).content.items.first.text, 'الأولى');
+    await _tap(tester, find.byTooltip('انقر لتعديل ترقيم النقطة').first);
+    await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), 'أولاً');
+    await _tap(tester, find.text('حفظ'));
+    expect(controller.document.branchAt(ref).content.items.first.labelOverride, 'أولاً');
+    await _tap(tester, find.byTooltip('عرض نموذج الإجابة'));
+    await _tap(tester, find.text('صح').first);
+    expect(controller.document.branchAt(ref).content.items.first.isCorrect, isTrue);
+    await _tap(tester, find.text('خطأ').first);
+    expect(controller.document.branchAt(ref).content.items.first.isCorrect, isFalse);
+    await _tap(tester, find.byTooltip('إضافة نقطة'));
+    expect(controller.document.branchAt(ref).content.items, hasLength(3));
+    await _tap(tester, find.byTooltip('حذف النقطة').last);
+    expect(controller.document.branchAt(ref).content.items, hasLength(2));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Quran insertion and staged formula cancellation give real effects', (tester) async {
+    final controller = ExamWizardController(document: _document());
+    await _pump(tester, controller);
+    await _tap(tester, _field('branch-b1'));
+    await _tap(tester, find.text('آية قرآنية'));
+    expect(controller.questions.first.branches.single.content.text, contains('﴿'));
+    await _tap(tester, find.text('رياضيات'));
+    await _tap(tester, find.text('كسر'));
+    await _tap(tester, find.text('إدراج'));
+    expect(find.byTooltip('إلغاء الإدراج'), findsOneWidget);
+    await _tap(tester, find.byTooltip('إلغاء الإدراج'));
+    expect(find.byTooltip('إلغاء الإدراج'), findsNothing);
+    expect(controller.questions.first.attachments, isEmpty);
+    expect(controller.questions.first.branches.single.attachments, isEmpty);
+  });
+
+  testWidgets('image picker failure is reported, not treated as cancellation', (tester) async {
+    // Widget tests have no native picker: MissingPluginException exercises
+    // the failure path, not a claim of testing Android's gallery.
+    final controller = ExamWizardController(document: _document());
+    await _pump(tester, controller);
+    await _tap(tester, _tool('إدراج صورة'));
+    expect(find.textContaining('تعذر فتح الصورة'), findsOneWidget);
     expect(controller.questions.first.attachments, isEmpty);
     expect(tester.takeException(), isNull);
   });
