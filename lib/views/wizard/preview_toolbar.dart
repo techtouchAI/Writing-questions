@@ -41,6 +41,8 @@ class PreviewToolbar extends StatelessWidget {
     required this.onAlignChanged,
     required this.activeLineHeight,
     required this.onLineHeightChanged,
+    required this.activeQuestionSpacing,
+    required this.onQuestionSpacingChanged,
     required this.activeColor,
     required this.onColorChanged,
     required this.hasFrame,
@@ -97,6 +99,10 @@ class PreviewToolbar extends StatelessWidget {
   final double? activeLineHeight;
   final ValueChanged<double?> onLineHeightChanged;
 
+  /// المسافة بعد السؤال النشط بالبكسل (null = تحديد متعدد بقيم مختلفة).
+  final double? activeQuestionSpacing;
+  final ValueChanged<double> onQuestionSpacingChanged;
+
   /// لون نص التحديد ARGB (`null` = تلقائي، -1 = مخصص...).
   final int? activeColor;
   final ValueChanged<int?> onColorChanged;
@@ -124,6 +130,9 @@ class PreviewToolbar extends StatelessWidget {
   static const List<double> lineSpacings = <double>[
     1.0, 1.15, 1.5, 2.0, 2.5, 3.0,
   ];
+
+  /// مسافات جاهزة بين الأسئلة؛ الصفر يلغي الفراغ الإضافي تماماً.
+  static const List<double> questionSpacings = <double>[0, 2, 4, 6, 10, 16, 24, 40];
 
   /// قيمة «مخصص...» في قائمة اللون — تفتح شاشة المعاينة حوار HEX.
   static const int customColorSentinel = -1;
@@ -236,6 +245,10 @@ class PreviewToolbar extends StatelessWidget {
             _LineSpacingMenu(
               activeLineHeight: activeLineHeight,
               onChanged: isBusy ? null : onLineHeightChanged,
+            ),
+            _QuestionSpacingMenu(
+              activeSpacing: activeQuestionSpacing,
+              onChanged: isBusy ? null : onQuestionSpacingChanged,
             ),
             _ColorMenu(
               activeColor: activeColor,
@@ -511,6 +524,59 @@ class _LineSpacingMenu extends StatelessWidget {
         child: Text(
           label,
           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+}
+
+class _QuestionSpacingMenu extends StatelessWidget {
+  const _QuestionSpacingMenu({required this.activeSpacing, required this.onChanged});
+
+  final double? activeSpacing;
+  final ValueChanged<double>? onChanged;
+
+  static String _label(double value) => value == value.truncateToDouble()
+      ? value.toInt().toString()
+      : value.toString();
+
+  @override
+  Widget build(BuildContext context) {
+    final value = activeSpacing;
+    return PopupMenuButton<double>(
+      enabled: onChanged != null,
+      tooltip: 'المسافة بين الأسئلة',
+      onSelected: (spacing) => onChanged?.call(spacing),
+      itemBuilder: (_) => <PopupMenuEntry<double>>[
+        for (final spacing in PreviewToolbar.questionSpacings)
+          PopupMenuItem<double>(
+            value: spacing,
+            child: Text(
+              '${value == spacing ? '✓ ' : ''}${_label(spacing)} بكسل'
+              '${spacing == 0 ? ' — بلا فراغ' : ''}',
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+        const PopupMenuDivider(),
+        const PopupMenuItem<double>(
+          value: double.nan,
+          child: Text('قيمة مخصصة...', style: TextStyle(fontSize: 13)),
+        ),
+      ],
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 50),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Icon(Icons.height, size: 20),
+            const SizedBox(width: 2),
+            Text(
+              value == null ? 'فراغ' : '${_label(value)}px',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          ],
         ),
       ),
     );

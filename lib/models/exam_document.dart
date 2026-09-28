@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import 'branch_item.dart';
 import 'branch_model.dart';
 import 'exam_header_model.dart';
+import 'floating_element.dart';
 import 'paper_settings.dart';
 import 'question_model.dart';
 import 'question_option.dart';
@@ -49,6 +50,7 @@ class ExamDocument {
     required this.name,
     required this.header,
     List<QuestionModel>? questions,
+    List<FloatingElement>? floatingElements,
     DateTime? createdAt,
     DateTime? updatedAt,
     PaperSettings? settings,
@@ -60,6 +62,9 @@ class ExamDocument {
             auto: settings?.autoNumberQuestions ?? true,
           ),
         ),
+        floatingElements = List<FloatingElement>.unmodifiable(
+          floatingElements ?? const <FloatingElement>[],
+        ),
         createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now();
 
@@ -67,6 +72,14 @@ class ExamDocument {
   final String name;
   final ExamHeaderModel header;
   final List<QuestionModel> questions;
+
+  /// عناصر حرة على مستوى المستند (لا يملكها سؤال أو فرع).
+  ///
+  /// تبقى بعض المرفقات القديمة في قوائم السؤال/الفرع للتوافق مع الملفات
+  /// المحفوظة سابقاً؛ العناصر الجديدة تُسجّل هنا ويُستخدم [pageIndex] لتحديد
+  /// صفحتها، لذلك لا يؤثر تحريكها على ارتفاع السؤال أو تقسيم الصفحات.
+  final List<FloatingElement> floatingElements;
+
   final DateTime createdAt;
 
   /// آخر تعديل (يُحدَّث عند كل حفظ).
@@ -167,6 +180,15 @@ class ExamDocument {
     return null;
   }
 
+  FloatingElement? floatingElementById(String id) {
+    for (final element in floatingElements) {
+      if (element.id == id) {
+        return element;
+      }
+    }
+    return null;
+  }
+
   int indexOfQuestion(String id) => questions.indexWhere((question) => question.id == id);
 
   BranchModel branchAt(BranchRef ref) =>
@@ -184,6 +206,7 @@ class ExamDocument {
     String? name,
     ExamHeaderModel? header,
     List<QuestionModel>? questions,
+    List<FloatingElement>? floatingElements,
     DateTime? updatedAt,
     PaperSettings? settings,
   }) {
@@ -192,6 +215,7 @@ class ExamDocument {
       name: name ?? this.name,
       header: header ?? this.header,
       questions: questions ?? this.questions,
+      floatingElements: floatingElements ?? this.floatingElements,
       createdAt: createdAt,
       updatedAt: updatedAt,
       settings: settings ?? this.settings,
@@ -234,12 +258,40 @@ class ExamDocument {
   /// ينسخ سؤالاً كاملاً (كل المحتوى والتنسيق) بعد الأصل مباشرة.
   ExamDocument withQuestionDuplicated(int index) {
     RangeError.checkValidIndex(index, questions, 'index');
-    final updated = List<QuestionModel>.of(questions);
-    updated.insert(
-      index + 1,
-      questions[index].duplicated(questionNumber: questions[index].questionNumber),
+    final source = questions[index];
+    final duplicate = source.duplicated(questionNumber: source.questionNumber);
+    final duplicateBranches = <BranchModel>[];
+    for (var branchIndex = 0; branchIndex < source.branches.length; branchIndex++) {
+      final originalBranch = source.branches[branchIndex];
+      final copiedBranch = duplicate.branches[branchIndex];
+      duplicateBranches.add(
+        copiedBranch.copyWith(
+          attachments: _duplicatedLegacyAttachments(
+            originalBranch.attachments,
+            copiedBranch.attachments,
+          ),
+        ),
+      );
+    }
+    final questionCopy = duplicate.copyWith(
+      attachments: _duplicatedLegacyAttachments(source.attachments, duplicate.attachments),
+      branches: duplicateBranches,
     );
+    final updated = List<QuestionModel>.of(questions)..insert(index + 1, questionCopy);
     return copyWith(questions: updated);
+  }
+
+  /// Document-level elements are shared by the document; compatibility mirrors
+  /// must not become new legacy attachments when a question/branch is duplicated.
+  List<FloatingElement> _duplicatedLegacyAttachments(
+    List<FloatingElement> original,
+    List<FloatingElement> copies,
+  ) {
+    final globalIds = floatingElements.map((element) => element.id).toSet();
+    return <FloatingElement>[
+      for (var index = 0; index < original.length; index++)
+        if (!globalIds.contains(original[index].id)) copies[index],
+    ];
   }
 
   /// ينقل فرعاً داخل سؤاله من [from] إلى [to] (المحتوى كما هو، الموضع فقط).
@@ -256,9 +308,22 @@ class ExamDocument {
     if (!containsRef(ref)) {
       return this;
     }
+    final question = questions[ref.questionIndex];
+    final sourceBranch = question.branches[ref.branchIndex];
+    final duplicatedQuestion = question.withBranchDuplicated(ref.branchIndex);
+    final copyIndex = ref.branchIndex + 1;
+    final copiedBranch = duplicatedQuestion.branches[copyIndex];
     return withQuestionAt(
       ref.questionIndex,
-      questions[ref.questionIndex].withBranchDuplicated(ref.branchIndex),
+      duplicatedQuestion.withBranchAt(
+        copyIndex,
+        copiedBranch.copyWith(
+          attachments: _duplicatedLegacyAttachments(
+            sourceBranch.attachments,
+            copiedBranch.attachments,
+          ),
+        ),
+      ),
     );
   }
 
@@ -303,6 +368,37 @@ class ExamDocument {
 
   /// نسخة كاملة بهوية جديدة (لـ«نسخ الورقة» في المكتبة).
   ExamDocument duplicated({String? name}) {
+    final floatingCopies = <String, FloatingElement>{
+      for (final element in floatingElements) element.id: element.duplicated(),
+    };
+    final duplicateQuestions = <QuestionModel>[];
+    for (final question in questions) {
+      final duplicate = question.duplicated(questionNumber: question.questionNumber);
+      final questionAttachments = List<FloatingElement>.of(duplicate.attachments);
+      for (var index = 0; index < question.attachments.length; index++) {
+        final floatingCopy = floatingCopies[question.attachments[index].id];
+        if (floatingCopy != null) {
+          questionAttachments[index] = floatingCopy;
+        }
+      }
+      final branches = List<BranchModel>.of(duplicate.branches);
+      for (var branchIndex = 0; branchIndex < question.branches.length; branchIndex++) {
+        final originalBranch = question.branches[branchIndex];
+        final duplicateBranch = branches[branchIndex];
+        final branchAttachments = List<FloatingElement>.of(duplicateBranch.attachments);
+        for (var index = 0; index < originalBranch.attachments.length; index++) {
+          final floatingCopy = floatingCopies[originalBranch.attachments[index].id];
+          if (floatingCopy != null) {
+            branchAttachments[index] = floatingCopy;
+          }
+        }
+        branches[branchIndex] =
+            duplicateBranch.copyWith(attachments: branchAttachments);
+      }
+      duplicateQuestions.add(
+        duplicate.copyWith(attachments: questionAttachments, branches: branches),
+      );
+    }
     return ExamDocument(
       name: (name == null || name.trim().isEmpty) ? '${this.name} (نسخة)' : name.trim(),
       header: ExamHeaderModel(
@@ -315,10 +411,8 @@ class ExamDocument {
         notes: header.notes,
         style: header.style,
       ),
-      questions: <QuestionModel>[
-        for (final question in questions)
-          question.duplicated(questionNumber: question.questionNumber),
-      ],
+      questions: duplicateQuestions,
+      floatingElements: floatingCopies.values.toList(growable: false),
       settings: settings,
     );
   }
@@ -332,6 +426,9 @@ class ExamDocument {
       'name': name,
       'header': header.toMap(),
       'questions': questions.map((question) => question.toMap()).toList(growable: false),
+      if (floatingElements.isNotEmpty)
+        'floatingElements':
+            floatingElements.map((element) => element.toMap()).toList(growable: false),
       'settings': settings.toMap(),
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
@@ -357,6 +454,21 @@ class ExamDocument {
       }
       questions.add(QuestionModel.fromMap(Map<String, dynamic>.from(entry)));
     }
+    final rawFloatingElements = map['floatingElements'];
+    if (rawFloatingElements != null && rawFloatingElements is! List) {
+      throw const FormatException('ExamDocument: العناصر الحرة يجب أن تكون قائمة.');
+    }
+    final floatingElements = <FloatingElement>[];
+    final floatingElementIds = <String>{};
+    for (final entry in (rawFloatingElements as List?) ?? const <Object?>[]) {
+      if (entry is! Map) {
+        throw const FormatException('ExamDocument: عنصر حر يجب أن يكون خريطة.');
+      }
+      final element = FloatingElement.fromMap(Map<String, dynamic>.from(entry));
+      if (floatingElementIds.add(element.id)) {
+        floatingElements.add(element);
+      }
+    }
     final rawName = map['name']?.toString().trim();
     final rawCreated = map['createdAt'];
     final rawUpdated = map['updatedAt'];
@@ -367,6 +479,7 @@ class ExamDocument {
       name: rawName == null || rawName.isEmpty ? 'نموذج غير معنون' : rawName,
       header: ExamHeaderModel.fromMap(Map<String, dynamic>.from(rawHeader)),
       questions: questions,
+      floatingElements: floatingElements,
       createdAt: rawCreated is String ? DateTime.tryParse(rawCreated) : null,
       updatedAt: rawUpdated is String ? DateTime.tryParse(rawUpdated) : null,
       settings: PaperSettings.fromValue(map['settings']),

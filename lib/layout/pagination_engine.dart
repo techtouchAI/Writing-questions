@@ -1,11 +1,18 @@
 /// كتلة قابلة للتقسيم الورقي: سؤال كامل بفروعه (أو الترويسة) بارتفاع مقاس.
 class PageBlock {
-  const PageBlock({required this.id, required this.height, this.spacingAfter = 10})
-      : assert(height >= 0), assert(spacingAfter >= 0);
+  const PageBlock({required this.id, required this.height, double? spacingAfter})
+      : spacingAfter = spacingAfter ?? 10,
+        _usesSharedSpacing = spacingAfter == null,
+        assert(height >= 0),
+        assert(spacingAfter == null || spacingAfter >= 0);
 
   final String id;
   final double height;
+
+  /// Gap after this block when set; otherwise inherits [PaginationEngine.paginate]'s
+  /// [spacing]. The field keeps its historical numeric default for compatibility.
   final double spacingAfter;
+  final bool _usesSharedSpacing;
 }
 
 /// صفحة ناتجة عن التقسيم: معرّفات الكتل التي تحتويها بترتيبها.
@@ -75,8 +82,11 @@ abstract final class PaginationEngine {
     var currentIds = <String>[];
     var used = 0.0;
     var currentOverflows = false;
+    PageBlock? previousBlock;
 
     double availableFor(int pageIndex) => pageIndex == 0 ? firstHeight : pageHeight;
+    double gapAfter(PageBlock? block) =>
+        block == null || block._usesSharedSpacing ? spacing : block.spacingAfter;
 
     void flush() {
       pages.add(
@@ -90,13 +100,11 @@ abstract final class PaginationEngine {
       currentIds = <String>[];
       used = 0;
       currentOverflows = false;
+      previousBlock = null;
     }
 
     for (final block in blocks) {
-      final previous = currentIds.isEmpty
-          ? null
-          : blocks.firstWhere((candidate) => candidate.id == currentIds.last);
-      final gap = currentIds.isEmpty ? 0.0 : (previous?.spacingAfter ?? spacing);
+      final gap = currentIds.isEmpty ? 0.0 : gapAfter(previousBlock);
       final available = availableFor(pages.length);
       final fits = used + gap + block.height <= available + _epsilon;
 
@@ -106,13 +114,14 @@ abstract final class PaginationEngine {
       }
 
       final availableNow = availableFor(pages.length);
-      final gapNow = currentIds.isEmpty ? 0.0 : spacing;
+      final gapNow = currentIds.isEmpty ? 0.0 : gapAfter(previousBlock);
       if (currentIds.isEmpty && block.height > availableNow + _epsilon) {
         // كتلة أطول من الصفحة كلها: تُوضع منفردة وتُعلَّم كمتجاوزة.
         currentOverflows = true;
       }
       currentIds.add(block.id);
       used += gapNow + block.height;
+      previousBlock = block;
     }
 
     if (currentIds.isNotEmpty || pages.isEmpty) {

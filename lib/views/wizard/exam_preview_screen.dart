@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -42,7 +43,7 @@ import 'measure_size.dart';
 import 'paper_styles.dart';
 import 'preview_toolbar.dart';
 
-/// مرجع مرفق محدد (سؤال/فرع + هوية العنصر).
+/// مرجع عنصر عائم (مستندياً، أو مرفق قديم داخل سؤال/فرع).
 class _AttachmentRef {
   const _AttachmentRef({
     required this.questionIndex,
@@ -54,7 +55,13 @@ class _AttachmentRef {
   final int? branchIndex;
   final String elementId;
 
-  bool get isQuestionLevel => branchIndex == null;
+  factory _AttachmentRef.global(String elementId) => _AttachmentRef(
+        questionIndex: -1,
+        elementId: elementId,
+      );
+
+  bool get isGlobal => questionIndex < 0;
+  bool get isQuestionLevel => !isGlobal && branchIndex == null;
 }
 
 /// حوار إدخال نصي/رقمي مشترك يملك دورة حياة الـ controller داخليًا.
@@ -105,6 +112,11 @@ class _TextInputDialogState extends State<_TextInputDialog> {
           ? LtrNumericField(
               controller: _field,
               hintText: widget.hintText,
+              decoration: InputDecoration(
+                hintText: widget.hintText,
+                helperText: widget.helperText,
+                border: const OutlineInputBorder(),
+              ),
             )
             : TextField(
               controller: _field,
@@ -140,10 +152,10 @@ class _TextInputDialogState extends State<_TextInputDialog> {
 ///   ثم تنسيقه من شريط المعاينة (خط/حجم/عريض/محاذاة/إطار).
 /// - **إعادة الترتيب**: سحب سؤال كامل أو فرع داخل سؤاله؛ الإفلات على فرع
 ///   في سؤال آخر يبدّل المحتوى فقط (العناوين ثابتة).
-/// - **المرفقات**: صور/أشكال/مربعات نص على مستوى السؤال أو الفرع: تحريك
-///   بالسحب المباشر فورًا (بلا ضغط مطوّل ولا تحديد مسبق)، تغيير حجم (الصور
-///   بنسبة ثابتة)، تدوير، إطار، حذف — والنقرة الواحدة تحدّد والنقرة المزدوجة
-///   على مربع النص تفتح محرّره.
+/// - **العناصر العائمة**: صور/أشكال/مربعات نص ومعادلات على مستوى المستند
+///   وصفحة A4، مستقلة عن السؤال والفرع؛ وتبقى المرفقات القديمة مدعومة.
+///   تحريك بالسحب المباشر بين الصفحات، تغيير حجم (الصور بنسبة ثابتة)، تدوير،
+///   إطار، حذف — والنقرة المزدوجة على مربع النص تفتح محرّره.
 /// - **العرض**: تكبير/تصغير/ملاءمة/توسيط، وقفل يمنع التحريك العرضي.
 class ExamPreviewScreen extends StatefulWidget {
   const ExamPreviewScreen({super.key, required this.onBackToQuestions});
@@ -159,20 +171,21 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   final FormulaInserter _inserter = FormulaInserter();
   final ScrollController _vScroll = ScrollController();
   final ScrollController _hScroll = ScrollController();
+  final Map<int, GlobalKey> _pageCanvasKeys = <int, GlobalKey>{};
   ExamWizardController? _controller;
   _AttachmentRef? _selectedAttachment;
   String? _selectedDividerKey;
   bool _isBusy = false;
 
-  /// سحب فوري لأي عنصر عائم (بلا تحديد مسبق ولا ضغط مطوّل): مؤشر اللمس
-  /// الجاري، وموضعه الابتدائي ببكسل الشاشة، وموضع العنصر عند بداية السحب
-  /// ببكسل اللوحة.
-  ///
-  /// الإزاحة تُحسب من الفرق المطلق بين الموضعين (لا تراكم `delta`) فلا
-  /// تتأخر الحركة عن الإصبع ولا تتأثر بعدد إطارات إعادة البناء.
+  /// سحب فوري لأي عنصر حر. نقطة الإمساك تبقى ثابتة داخل العنصر، ويُعاد
+  /// تحويل المؤشر إلى إحداثيات الصفحة التي يمر فوقها؛ لذلك يمكن نقله بين
+  /// صفحات A4 دون المرور على سؤال أو إعادة إرفاقه يدوياً.
   int? _dragPointer;
   Offset? _dragStartScreen;
-  Offset? _dragOriginPaper;
+  Offset? _dragLastScreen;
+  Offset? _dragLastPaper;
+  Offset? _dragAnchorWithinElement;
+  int? _dragPageIndex;
   _AttachmentRef? _dragRef;
 
   /// هل تحرّك الإصبع فعليًّا في السحب الجاري؟ (للتفريق بين السحب والنقر).
@@ -545,6 +558,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   }
 
   FloatingElement? _findAttachment(ExamDocument document, _AttachmentRef ref) {
+    final freeElement = document.floatingElementById(ref.elementId);
+    if (freeElement != null || ref.isGlobal) {
+      return freeElement;
+    }
     if (ref.questionIndex < 0 || ref.questionIndex >= document.questions.length) {
       return null;
     }
@@ -560,6 +577,83 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
     }
     return null;
+  }
+
+  // ------------------------------------------------------------------
+  // التحكم بالمسافة بين الأسئلة
+  // ------------------------------------------------------------------
+
+  List<int> _questionSpacingTargets() {
+    final controller = _controller;
+    if (controller == null ||
+        controller.questions.isEmpty ||
+        _selectedAttachment != null ||
+        _headerSelected ||
+        _selectedDividerKey != null) {
+      return const <int>[];
+    }
+    final indexes = <int>{};
+    for (final id in _selectedQuestions) {
+      final index = controller.document.indexOfQuestion(id);
+      if (index >= 0) indexes.add(index);
+    }
+    for (final ref in _selectedBranches) {
+      if (controller.document.containsRef(ref)) indexes.add(ref.questionIndex);
+    }
+    if (indexes.isNotEmpty) return indexes.toList()..sort();
+    final branch = controller.selectedBranch;
+    if (branch != null && controller.document.containsRef(branch)) {
+      return <int>[branch.questionIndex];
+    }
+    final question = controller.selectedQuestionIndex;
+    if (question != null) return <int>[question];
+    return <int>[controller.currentQuestionIndex];
+  }
+
+  double? _activeQuestionSpacing() {
+    final targets = _questionSpacingTargets();
+    if (targets.isEmpty) return null;
+    final first = _controller!.questions[targets.first].spacingAfter;
+    return targets.every(
+      (index) => (_controller!.questions[index].spacingAfter - first).abs() < 0.01,
+    )
+        ? first
+        : null;
+  }
+
+  void _applyQuestionSpacing(double spacing) {
+    final targets = _questionSpacingTargets();
+    if (targets.isEmpty) {
+      _showMessage('حدد سؤالاً أو فرعاً لتغيير المسافة بعد السؤال.');
+      return;
+    }
+    for (final index in targets) {
+      _controller!.updateQuestionSpacing(index, spacing);
+    }
+  }
+
+  Future<void> _showCustomQuestionSpacing() async {
+    final targets = _questionSpacingTargets();
+    if (targets.isEmpty) {
+      _showMessage('حدد سؤالاً أولاً لتغيير المسافة بينه وبين السؤال التالي.');
+      return;
+    }
+    final current = _controller!.questions[targets.first].spacingAfter;
+    final saved = await _showTextInputDialog(
+      title: 'المسافة بين الأسئلة',
+      initialText: current.toString(),
+      hintText: '0 = بلا فراغ إضافي',
+      helperText: 'أدخل قيمة من 0 إلى 200 بكسل.',
+      saveLabel: 'تطبيق',
+      numeric: true,
+    );
+    if (saved == null) return;
+    final spacing = double.tryParse(saved.trim().replaceAll('،', '.').replaceAll(',', '.'));
+    if (spacing == null || !spacing.isFinite || spacing < 0 || spacing > 200) {
+      _showMessage('المسافة يجب أن تكون بين 0 و200 بكسل.', isError: true);
+      return;
+    }
+    _applyQuestionSpacing(spacing);
   }
 
   // ------------------------------------------------------------------
@@ -601,11 +695,19 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (selectedQuestion != null) {
       return (branches: const [], questions: [selectedQuestion], header: false, boxes: const []);
     }
+    if (document.questions.isEmpty) {
+      return (
+        branches: const [],
+        questions: const [],
+        header: false,
+        boxes: const [],
+      );
+    }
     return (
       branches: const [],
       questions: [controller.currentQuestionIndex],
       header: false,
-      boxes: const []
+      boxes: const [],
     );
   }
 
@@ -747,13 +849,25 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// أعلى الورقة بعيداً عن السؤال — ومن هنا جاء هذا الحساب.
   FloatingElement _withDefaultPosition(FloatingElement element) {
     final controller = _controller;
-    if (controller == null || controller.questions.isEmpty) {
+    if (controller == null) {
       return element;
+    }
+    if (controller.questions.isEmpty) {
+      return element.copyWith(
+        pageIndex: 0,
+        dx: ExamCanvasGeometry.defaultElementDx,
+        dy: ExamCanvasGeometry.defaultElementDy,
+      );
     }
     final questionIndex = controller.selectedBranch?.questionIndex ??
         controller.selectedQuestionIndex ?? controller.currentQuestionIndex;
+    final pageIndex = controller.pagination.pageIndexOf(
+          controller.questions[questionIndex].id,
+        ) ??
+        0;
     final top = _blockTopOnPage(questionIndex);
     return element.copyWith(
+      pageIndex: pageIndex,
       dx: 8,
       dy: (top ?? ExamCanvasGeometry.defaultElementDy) + 8,
     );
@@ -784,7 +898,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
     var top = margin;
     for (final id in page.blockIds.take(position)) {
-      top += (controller.blockHeight(id) ?? 0) + PaperMetrics.blockSpacingPx;
+      final previousQuestion = document.questionById(id);
+      final spacingAfter = previousQuestion?.spacingAfter ?? PaperMetrics.blockSpacingPx;
+      top += (controller.blockHeight(id) ?? 0) + spacingAfter;
     }
     return top;
   }
@@ -847,17 +963,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return body.trim();
   }
 
-  /// يوضع المرشح عند [tapPosition] (إحداثيات محلية داخل **الورقة** كاملة،
-  /// أصلها أعلى-يسارها) كمرفق بالسؤال/الفرع المحدد، وإلا على آخر سؤال كي
-  /// لا يضيع الإدراج.
-  ///
-  /// نقطة النقر تصبح **مركز** المعادلة فيقع العنصر تحت الإصبع مباشرة.
-  void _placeStagedFormula(Offset tapPosition, {required int questionIndex}) {
+  /// يوضع المرشح عند [tapPosition] داخل صفحة A4 محددة، كنقطة حرة مستقلة
+  /// عن السؤال أو الفرع. نقطة النقر تصبح مركز المعادلة.
+  void _placeStagedFormula(
+    Offset tapPosition, {
+    required int pageIndex,
+  }) {
     final latex = _stagedFormula;
     if (latex == null) {
       return;
     }
-    final controller = _controller!;
     const elementWidth = 170.0;
     const elementHeight = 80.0;
     final board = _boardPositionFromLocal(
@@ -870,71 +985,33 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       label: latex,
       dx: board.dx,
       dy: board.dy,
+      pageIndex: pageIndex,
       width: elementWidth,
       height: elementHeight,
     );
-    final ref = controller.selectedBranch;
-    final bool placed;
-    if (ref != null) {
-      placed = controller.addAttachment(element, ref: ref);
-    } else {
-      placed = controller.addQuestionAttachment(element, questionIndex: questionIndex);
-    }
-    if (!placed) {
-      _showMessage('تعذر إدراج المعادلة هنا. أنشئ سؤالاً أولاً ثم أعد المحاولة.');
+    final added = _controller!.addFloatingElement(element, pageIndex: pageIndex);
+    if (!added) {
+      _showMessage('تعذر إدراج المعادلة. حاول اختيار موضع آخر على الورقة.');
       return;
     }
     setState(() {
       _stagedFormula = null;
       _stagedFormulaIsBlock = false;
-      _selectedAttachment = _AttachmentRef(
-        questionIndex: ref?.questionIndex ?? questionIndex,
-        branchIndex: ref?.branchIndex,
-        elementId: element.id,
-      );
+      _selectedAttachment = _AttachmentRef.global(element.id);
     });
-    _showMessage('أُدرجت المعادلة — اسحبها إلى أي موضع تريده.');
+    _showMessage('أُدرجت المعادلة — اسحبها بحرية بين صفحات الورقة.');
   }
 
-  /// يضيف عنصراً للفرع/السؤال المحدد، أو للسؤال النشط عند غياب تحديد صريح.
+  /// يضيف عنصراً حراً إلى صفحة السؤال النشط افتراضياً، من دون منحه مالكاً.
   void _addAttachmentToSelection(FloatingElement element) {
     element = _withDefaultPosition(element);
     final controller = _controller!;
-    BranchRef? branchTarget;
-    final branches = _selectedBranches.where(controller.document.containsRef).toList();
-    if (branches.length == 1) {
-      branchTarget = branches.single;
-    } else {
-      branchTarget = controller.selectedBranch;
+    final added = controller.addFloatingElement(element, pageIndex: element.pageIndex);
+    if (added) {
+      setState(() => _selectedAttachment = _AttachmentRef.global(element.id));
+      return;
     }
-    if (branchTarget != null) {
-      if (controller.addAttachment(element, ref: branchTarget)) {
-        setState(() => _selectedAttachment = _AttachmentRef(
-          questionIndex: branchTarget!.questionIndex,
-          branchIndex: branchTarget.branchIndex,
-          elementId: element.id,
-        ));
-        return;
-      }
-    }
-    var questionTarget = controller.selectedQuestionIndex;
-    if (questionTarget == null && _selectedQuestions.length == 1) {
-      questionTarget = controller.document.indexOfQuestion(_selectedQuestions.single);
-      if (questionTarget == -1) {
-        questionTarget = null;
-      }
-    }
-    questionTarget ??= controller.questions.isEmpty ? null : controller.currentQuestionIndex;
-    if (questionTarget != null) {
-      if (controller.addQuestionAttachment(element, questionIndex: questionTarget)) {
-        setState(() => _selectedAttachment = _AttachmentRef(
-          questionIndex: questionTarget!,
-          elementId: element.id,
-        ));
-        return;
-      }
-    }
-    _showMessage('انقر على سؤال أو فرع داخل الورقة أولاً لتحديد موضع الإدراج.');
+    _showMessage('تعذر إضافة العنصر إلى الورقة.');
   }
 
   void _addImageToSelection(List<int> bytes) {
@@ -983,7 +1060,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _editNewTextBox(element.id);
   }
 
-  /// مربع نص افتراضي (180×90 بكسل لوحة) عند رأس مساحة المالك.
+  /// مربع نص افتراضي (180×90 بكسل لوحة) عند موضع العنصر الافتراضي في الصفحة.
   static FloatingElement _newTextBoxElement() => FloatingElement(
         type: FloatingElementType.shape,
         shape: FloatingShapeType.textBox,
@@ -995,8 +1072,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   /// يفتح محرّر نص المربع المضاف للتوّ ثم يذكّر بأن السحب المباشر يحرّكه.
   ///
-  /// يُشترط أن يكون المربع [elementId] هو **المحدد حاليًا** ليُعرف أن
-  /// الإدراج نجح (وإلا فالمالك غير محدد ورسالة الإرشاد ظهرت بالفعل).
+  /// يُشترط أن يكون المربع [elementId] هو **المحدد حالياً** للتأكد من
+  /// نجاح إضافته قبل فتح المحرر.
   void _editNewTextBox(String elementId) {
     if (_selectedAttachment?.elementId != elementId) {
       return;
@@ -1040,21 +1117,45 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _showMessage('تمت إضافة فاصل بعد السؤال.');
   }
 
-  void _updateAttachmentElement(_AttachmentRef ref, FloatingElement element) {
+  void _updateAttachmentElement(
+    _AttachmentRef ref,
+    FloatingElement element, {
+    bool preservePageIndex = false,
+  }) {
     final controller = _controller!;
+    if (ref.isGlobal || controller.document.floatingElementById(element.id) != null) {
+      controller.updateFloatingElement(element);
+      return;
+    }
+    // رفع المرفق المحفوظ بصيغة قديمة عند أول تعديل، مع إبقائه على صفحة
+    // سؤاله الحالية ما لم يغيّر المستخدم الصفحة أثناء السحب.
+    final ownerPage = controller.pagination.pageIndexOf(
+          controller.questions[ref.questionIndex].id,
+        ) ??
+        element.pageIndex;
+    final placed = element.copyWith(
+      pageIndex: preservePageIndex || element.pageIndex != 0 ? element.pageIndex : ownerPage,
+    );
     if (ref.branchIndex == null) {
-      controller.updateQuestionAttachment(ref.questionIndex, element);
+      controller.updateQuestionAttachment(
+        ref.questionIndex,
+        placed,
+        pageIndex: placed.pageIndex,
+      );
     } else {
       controller.updateAttachment(
         BranchRef(questionIndex: ref.questionIndex, branchIndex: ref.branchIndex!),
-        element,
+        placed,
+        pageIndex: placed.pageIndex,
       );
     }
   }
 
   void _removeAttachmentElement(_AttachmentRef ref) {
     final controller = _controller!;
-    if (ref.branchIndex == null) {
+    if (ref.isGlobal || controller.document.floatingElementById(ref.elementId) != null) {
+      controller.removeFloatingElement(ref.elementId);
+    } else if (ref.branchIndex == null) {
       controller.removeQuestionAttachment(ref.questionIndex, ref.elementId);
     } else {
       controller.removeAttachment(
@@ -1257,10 +1358,20 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final controller = _controller!;
     setState(() => _isBusy = true);
     try {
+      final document = controller.document;
+      final pageAssignments = controller.isFullyMeasured
+          ? controller.pageAssignments
+          : await PdfExportService.resolvePageAssignments(
+              document: document,
+              isTeacherVersion: isTeacherVersion,
+            );
+      if (!mounted) return;
       final file = await DocxDocumentExportService.exportDocumentToDocx(
-        document: controller.document,
+        document: document,
         isTeacherVersion: isTeacherVersion,
         shapeRasterizer: ShapeImageRenderer.asRasterizer,
+        // تستعمل الصفحات المقاسة على اللوحة، أو محرك PDF عند غيابها.
+        pageAssignments: pageAssignments,
         // معادلات LaTeX تُرسم صوراً في Word (لا أكواد خامة) بنفس مرسّم PDF.
         mathRasterizer: MathImageRenderer.asRasterizer,
       );
@@ -1982,6 +2093,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               }
               _applyStyle((current) => current.copyWith(lineHeight: () => value));
             },
+            activeQuestionSpacing: _activeQuestionSpacing(),
+            onQuestionSpacingChanged: (spacing) {
+              if (spacing.isNaN) {
+                _showCustomQuestionSpacing();
+                return;
+              }
+              _applyQuestionSpacing(spacing);
+            },
             activeColor: activeStyle.color,
             onColorChanged: (value) {
               // القيمة المميزة -1 تعني «لون مخصص» (HEX) من قائمة الشريط.
@@ -2090,9 +2209,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   ) {
     final document = controller.document;
     final blocks = <Widget>[];
+    String? previousBlockId;
     for (final blockId in page.blockIds) {
       if (blocks.isNotEmpty) {
-        blocks.add(const SizedBox(height: PaperMetrics.blockSpacingPx));
+        final previousQuestion = previousBlockId == null
+            ? null
+            : document.questionById(previousBlockId);
+        blocks.add(
+          SizedBox(
+            height: previousQuestion?.spacingAfter ?? PaperMetrics.blockSpacingPx,
+          ),
+        );
       }
       if (blockId == PaperMetrics.headerBlockId) {
         blocks.add(
@@ -2102,6 +2229,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             child: _buildHeaderBlock(controller, layout),
           ),
         );
+        previousBlockId = blockId;
         continue;
       }
       final question = controller.document.questionById(blockId);
@@ -2134,6 +2262,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           },
         ),
       );
+      previousBlockId = blockId;
     }
 
     Widget content = Column(
@@ -2158,8 +2287,23 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     // وقابلةً للمس والسحب في أي مكان (اختبار الإصابة لا يتجاوز حدود الأب،
     // والطبقة بحجم الورقة كاملة)، وبنفس الإحداثيات في PDF و Word.
     final pageAttachments = <_AttachmentRef>[];
+    final globalElementIds = document.floatingElements.map((element) => element.id).toSet();
+    final seenElementIds = <String>{};
+    int resolvedPageIndex(FloatingElement element) => element.pageIndex
+        .clamp(0, math.max(0, pageCount - 1))
+        .toInt();
+
+    for (final element in document.floatingElements) {
+      if (resolvedPageIndex(element) == page.index && seenElementIds.add(element.id)) {
+        pageAttachments.add(_AttachmentRef.global(element.id));
+      }
+    }
+
     void collect(QuestionModel question, int index) {
       for (final element in question.attachments) {
+        if (globalElementIds.contains(element.id) || !seenElementIds.add(element.id)) {
+          continue;
+        }
         pageAttachments.add(
           _AttachmentRef(questionIndex: index, elementId: element.id),
         );
@@ -2168,6 +2312,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           branchIndex < question.branches.length;
           branchIndex++) {
         for (final element in question.branches[branchIndex].attachments) {
+          if (globalElementIds.contains(element.id) || !seenElementIds.add(element.id)) {
+            continue;
+          }
           pageAttachments.add(
             _AttachmentRef(
               questionIndex: index,
@@ -2186,7 +2333,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
       collect(document.questions[index], index);
     }
-    // عناصر الأسئلة التي لم تُوزَّع بعد (قياس أولي) تُعرض في الصفحة الأولى.
+    // عناصر الملفات القديمة التي لم تُقَس أسئلتها بعد تُعرض مؤقتاً على الصفحة الأولى.
     if (!controller.isFullyMeasured &&
         page.index == 0 &&
         pageAttachments.isEmpty) {
@@ -2198,7 +2345,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return Directionality(
       textDirection: layout.textDirection,
       child: Container(
-        key: ValueKey<String>('a4-page-${page.index}'),
+        key: _pageCanvasKeys.putIfAbsent(
+          page.index,
+          () => GlobalKey(debugLabel: 'a4-page-canvas-${page.index}'),
+        ),
         width: ExamCanvasGeometry.width,
         height: ExamCanvasGeometry.height,
         clipBehavior: Clip.antiAlias,
@@ -2212,57 +2362,58 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         // هدف إسقاط المعادلات المسحوبة من الشريط يغطي **الورقة كلها** (بما
         // فيها الهوامش) فتُقام المعادلة حيث أُفلتت بالضبط، وطبقة المعادلات
         // فوق كل شيء بالإحداثيات المطلقة نفسها.
-        child: DragTarget<FloatingElement>(
-          onWillAcceptWithDetails: (details) =>
-              !_locked && controller.questions.isNotEmpty,
-          onAcceptWithDetails: (details) =>
-              _acceptFormulaDrop(context, details),
-          builder: (context, candidates, _) {
-            Widget body = Stack(
-              clipBehavior: Clip.hardEdge,
-              children: <Widget>[
-                Positioned.fill(
-                  child: _buildPageStack(
-                    controller,
-                    page,
-                    pageCount,
-                    content,
-                    document,
-                    layout,
-                    highlighted: candidates.isNotEmpty,
+        child: KeyedSubtree(
+          key: ValueKey<String>('a4-page-${page.index}'),
+          child: DragTarget<FloatingElement>(
+            onWillAcceptWithDetails: (details) => !_locked,
+            onAcceptWithDetails: (details) =>
+                _acceptFormulaDrop(page.index, details),
+            builder: (context, candidates, _) {
+              Widget body = Stack(
+                clipBehavior: Clip.hardEdge,
+                children: <Widget>[
+                  Positioned.fill(
+                    child: _buildPageStack(
+                      controller,
+                      page,
+                      pageCount,
+                      content,
+                      document,
+                      layout,
+                      highlighted: candidates.isNotEmpty,
+                    ),
                   ),
-                ),
-                for (final ref in pageAttachments)
-                  ..._buildPageElement(controller, ref),
-                // Controls are siblings in the page-sized hit-test area and
-                // painted last so other attachments cannot cover them.
-                for (final ref in pageAttachments)
-                  if (!_locked && _selectedAttachment?.elementId == ref.elementId)
-                    _buildAttachmentToolbar(ref, _findAttachment(document, ref)!),
-              ],
-            );
-            // معادلة جاهزة تنتظر موضعها: أي نقرة على الورقة تُقيمها في
-            // الموضع المنقور (والإحداثيات محلية للورقة كلها بالهوامش).
-            if (_stagedFormula != null && !_locked) {
-              body = GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTapUp: (details) => _placeStagedFormula(
-                  details.localPosition,
-                  questionIndex: controller.selectedQuestionIndex ??
-                      controller.questions.length - 1,
-                ),
-                child: body,
+                  for (final ref in pageAttachments)
+                    ..._buildPageElement(controller, ref),
+                  // Controls are siblings in the page-sized hit-test area and
+                  // painted last so other attachments cannot cover them.
+                  for (final ref in pageAttachments)
+                    if (!_locked && _selectedAttachment?.elementId == ref.elementId)
+                      _buildAttachmentToolbar(ref, _findAttachment(document, ref)!),
+                ],
               );
-            }
-            return body;
-          },
+              // معادلة جاهزة تنتظر موضعها: أي نقرة على الورقة تُقيمها في
+              // الموضع المنقور (والإحداثيات محلية للورقة كلها بالهوامش).
+              if (_stagedFormula != null && !_locked) {
+                body = GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTapUp: (details) => _placeStagedFormula(
+                    details.localPosition,
+                    pageIndex: page.index,
+                  ),
+                  child: body,
+                );
+              }
+              return body;
+            },
+          ),
         ),
       ),
     );
   }
 
-  /// يهيّئ محتوى الصفحة (الكتل + التذييل + الإطار) داخل الهوامش؛ والمعادلات
-  /// الحرة طبقة مستقلة فوقه (انظر [_buildPageFormula]).
+  /// يهيّئ محتوى الصفحة (الكتل + التذييل + الإطار) داخل الهوامش؛ والعناصر
+  /// العائمة طبقة مستقلة فوقه بإحداثيات الصفحة.
   ///
   /// الطبقة نفسها **بحجم الورقة كاملة** وتُدخل الهوامش على أبنائها: اختبار
   /// الإصابة في Flutter لا يتجاوز حدود الأب، فلو كانت الطبقة بحجم مساحة
@@ -2339,13 +2490,36 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return stack;
   }
 
-  /// يستقبل بطاقة معادلة أُفلتت على الصفحة ويقيمها في موضع الإفلات.
-  void _acceptFormulaDrop(BuildContext context, DragTargetDetails<FloatingElement> details) {
-    final box = context.findRenderObject();
-    if (box is! RenderBox) {
-      return;
+  RenderBox? _pageRenderBox(int pageIndex) {
+    final renderObject = _pageCanvasKeys[pageIndex]?.currentContext?.findRenderObject();
+    return renderObject is RenderBox && renderObject.hasSize ? renderObject : null;
+  }
+
+  Offset? _localPositionOnPage(int pageIndex, Offset globalPosition) {
+    final box = _pageRenderBox(pageIndex);
+    return box?.globalToLocal(globalPosition);
+  }
+
+  ({int pageIndex, Offset local})? _pageAtGlobalPosition(Offset globalPosition) {
+    final pageIndexes = _pageCanvasKeys.keys.toList()..sort();
+    for (final pageIndex in pageIndexes) {
+      final box = _pageRenderBox(pageIndex);
+      if (box == null) continue;
+      final local = box.globalToLocal(globalPosition);
+      if (Rect.fromLTWH(0, 0, box.size.width, box.size.height).contains(local)) {
+        return (pageIndex: pageIndex, local: local);
+      }
     }
-    final local = box.globalToLocal(details.offset);
+    return null;
+  }
+
+  /// يستقبل بطاقة معادلة أُفلتت على صفحة A4 ويقيمها في الموضع الدقيق.
+  void _acceptFormulaDrop(
+    int pageIndex,
+    DragTargetDetails<FloatingElement> details,
+  ) {
+    final local = _localPositionOnPage(pageIndex, details.offset);
+    if (local == null) return;
     // [DragTargetDetails.offset] موضع المؤشر العام لحظة الإفلات، فينزل
     // العنصر مركزاً تحته تماماً حيث أراد المستخدم.
     final board = _boardPositionFromLocal(
@@ -2353,7 +2527,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       width: details.data.width,
       height: details.data.height,
     );
-    _dropFormulaOnPage(details.data, board.dx, board.dy);
+    _dropFormulaOnPage(details.data, board.dx, board.dy, pageIndex: pageIndex);
   }
 
   /// يبني عنصراً عائماً في موضعه **المطلق** على الورقة (بكسل اللوحة كما كتبه
@@ -2377,34 +2551,29 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// يُنشئ المعادلة المسحوبة من الشريط في موضع الإفلات (بكسل اللوحة).
-  bool _dropFormulaOnPage(FloatingElement element, double dx, double dy) {
+  /// يُنشئ المعادلة المسحوبة من الشريط في موضع الإفلات على صفحة [pageIndex].
+  bool _dropFormulaOnPage(
+    FloatingElement element,
+    double dx,
+    double dy, {
+    required int pageIndex,
+  }) {
     final controller = _controller;
-    if (controller == null || controller.questions.isEmpty) {
-      _showMessage('أضف سؤالاً أولاً ثم اسحب المعادلة إلى موضعها.');
+    if (controller == null) {
       return false;
     }
-    final placed = element.copyWith(dx: dx, dy: dy);
-    final selected = controller.selectedBranch;
-    final questionIndex =
-        selected?.questionIndex ?? controller.selectedQuestionIndex ?? 0;
-    final bool added = selected != null
-        ? controller.addAttachment(placed, ref: selected)
-        : controller.addQuestionAttachment(placed, questionIndex: questionIndex);
+    final placed = element.copyWith(dx: dx, dy: dy, pageIndex: pageIndex);
+    final added = controller.addFloatingElement(placed, pageIndex: pageIndex);
     if (!added) {
-      _showMessage('تعذر إدراج المعادلة هنا. أنشئ سؤالاً أولاً ثم أعد المحاولة.');
+      _showMessage('تعذر إدراج المعادلة في هذه الصفحة.');
       return false;
     }
     setState(() {
       _stagedFormula = null;
       _stagedFormulaIsBlock = false;
-      _selectedAttachment = _AttachmentRef(
-        questionIndex: questionIndex,
-        branchIndex: selected?.branchIndex,
-        elementId: placed.id,
-      );
+      _selectedAttachment = _AttachmentRef.global(placed.id);
     });
-    _showMessage('أُدرجت المعادلة — اسحبها إلى أي موضع تريده.');
+    _showMessage('أُدرجت المعادلة — اسحبها بحرية بين صفحات الورقة.');
     return true;
   }
 
@@ -2734,18 +2903,31 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       child: block,
     );
 
-    // Always keep the sizing wrapper, including before the first attachment.
+    // حافظ على حجز المساحة للمرفقات القديمة فقط. العناصر المسجّلة على
+    // مستوى المستند لا تغيّر ارتفاع السؤال عند سحبها.
+    final globalIds = document.floatingElements.map((element) => element.id).toSet();
+    final minHeight = _legacyAttachmentMinHeight(question.attachments, globalIds);
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: minHeight, minWidth: double.infinity),
+      child: block,
+    );
+  }
+
+  double _legacyAttachmentMinHeight(
+    Iterable<FloatingElement> attachments,
+    Set<String> globalIds,
+  ) {
     var minHeight = 0.0;
-    for (final element in question.attachments) {
+    for (final element in attachments) {
+      if (globalIds.contains(element.id)) {
+        continue;
+      }
       final bottom = element.dy + element.height;
       if (bottom > minHeight) {
         minHeight = bottom;
       }
     }
-    return ConstrainedBox(
-      constraints: BoxConstraints(minHeight: minHeight, minWidth: double.infinity),
-      child: block,
-    );
+    return minHeight;
   }
 
   Future<void> _confirmDeleteQuestion(int index) async {
@@ -3008,20 +3190,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       ],
     );
 
-    // المرفقات تُرسم في طبقة الصفحة (موضعها حرّ)، ومساحتها تُحجز هنا فقط
-    // حتى لا يزاحمها نصّ الفرع في التقسيم الورقي.
-    if (branch.attachments.isEmpty) {
+    final globalIds = document.floatingElements.map((element) => element.id).toSet();
+    final legacyAttachments = branch.attachments
+        .where((element) => !globalIds.contains(element.id))
+        .toList(growable: false);
+    if (legacyAttachments.isEmpty) {
       return text;
     }
-    var minHeight = 0.0;
-    for (final element in branch.attachments) {
-      final bottom = element.dy + element.height;
-      if (bottom > minHeight) {
-        minHeight = bottom;
-      }
-    }
     return ConstrainedBox(
-      constraints: BoxConstraints(minHeight: minHeight, minWidth: double.infinity),
+      constraints: BoxConstraints(
+        minHeight: _legacyAttachmentMinHeight(legacyAttachments, globalIds),
+        minWidth: double.infinity,
+      ),
       child: text,
     );
   }
@@ -3431,46 +3611,98 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// يبدأ سحبًا فوريًّا للعنصر عند لمس المؤشر [pointer].
+  /// يبدأ سحباً فورياً للعنصر عند لمس المؤشر [pointer] ويحفظ نقطة الإمساك.
   void _beginAttachmentDrag(
     _AttachmentRef ref,
     FloatingElement element,
     int pointer,
     Offset position,
   ) {
+    final controller = _controller;
+    final fallbackPage = element.pageIndex;
+    final ownerPage = controller != null &&
+            !ref.isGlobal &&
+            ref.questionIndex >= 0 &&
+            ref.questionIndex < controller.questions.length
+        ? controller.pagination.pageIndexOf(
+              controller.questions[ref.questionIndex].id,
+            ) ??
+            fallbackPage
+        : fallbackPage;
+    final pageCount = controller?.pagination.pageCount ?? 1;
+    final pageIndex = ownerPage.clamp(0, math.max(0, pageCount - 1)).toInt();
+    final local = _localPositionOnPage(pageIndex, position);
+    final physicalLeft = _layoutIsLtr
+        ? element.dx
+        : ExamCanvasGeometry.width - element.dx - element.width;
+
     _dragPointer = pointer;
     _dragRef = ref;
     _dragStartScreen = position;
-    _dragOriginPaper = Offset(element.dx, element.dy);
+    _dragLastScreen = position;
+    _dragLastPaper = Offset(element.dx, element.dy);
+    _dragPageIndex = pageIndex;
+    _dragAnchorWithinElement = local == null
+        ? Offset(element.width / 2, element.height / 2)
+        : Offset(local.dx - physicalLeft, local.dy - element.dy);
     _dragMoved = false;
   }
 
-  /// يتابع المؤشر [pointer] ويضع العنصر المسحوب عند موضعه الجديد.
+  /// يتابع المؤشر [pointer] ويحوّل موضعه إلى صفحة A4 الحالية؛ وبذلك يمكن
+  /// نقل العنصر إلى صفحة أخرى من دون إسناده إلى سؤال جديد.
   void _updateAttachmentDrag(int pointer, Offset position) {
     final start = _dragStartScreen;
-    final origin = _dragOriginPaper;
+    final lastScreen = _dragLastScreen;
+    final lastPaper = _dragLastPaper;
+    final anchor = _dragAnchorWithinElement;
     final ref = _dragRef;
+    final controller = _controller;
     if (ref == null ||
         start == null ||
-        origin == null ||
+        lastScreen == null ||
+        lastPaper == null ||
+        anchor == null ||
+        controller == null ||
         pointer != _dragPointer) {
       return;
     }
-    final delta = position - start;
-    // لا حركة قبل تجاوز حدّ الانزلاق: بقيّة النقرات (واهتزاز الإصبع) تبقى
-    // نقرة فلا يقفز العنصر ولا يفوت النقر المزدوج.
-    if (!_dragMoved && delta.distance <= kTouchSlop) {
+    // لا حركة قبل تجاوز حدّ الانزلاق: تبقى اللمسة العادية نقرة ولا يقفز العنصر.
+    if (!_dragMoved && (position - start).distance <= kTouchSlop) {
       return;
     }
     _dragMoved = true;
-    // الإزاحة فيزيائية (يسار→يمين موجبة)، و`dx` يُقاس من حافة القراءة:
-    // على ورقة عربية (RTL) يقلّ dx كلما تحرّك العنصر يميناً — وإلا انعكست
-    // الحركة أفقياً على المستخدم أياً كان الاتجاه الذي يسحب نحوه.
-    final step = delta / _zoom;
-    _moveAttachmentTo(
-      ref,
-      origin + Offset(_layoutIsLtr ? step.dx : -step.dx, step.dy),
-    );
+    final element = _findAttachment(controller.document, ref);
+    if (element == null) return;
+
+    final hitPage = _pageAtGlobalPosition(position);
+    final int pageIndex;
+    final Offset target;
+    if (hitPage != null) {
+      pageIndex = hitPage.pageIndex;
+      final physicalLeft = hitPage.local.dx - anchor.dx;
+      target = Offset(
+        _layoutIsLtr
+            ? physicalLeft
+            : ExamCanvasGeometry.width - physicalLeft - element.width,
+        hitPage.local.dy - anchor.dy,
+      );
+    } else {
+      // في الفراغ بين صفحتين أو خارج حافة الشاشة: استمر من آخر إحداثي
+      // على الصفحة الحالية، ثم أعد الالتقاط عند دخول صفحة أخرى.
+      pageIndex = _dragPageIndex ?? element.pageIndex;
+      final step = (position - lastScreen) / _zoom;
+      target = lastPaper + Offset(
+        _layoutIsLtr ? step.dx : -step.dx,
+        step.dy,
+      );
+    }
+    _moveAttachmentTo(ref, target, pageIndex: pageIndex);
+    final moved = _findAttachment(controller.document, ref);
+    if (moved != null) {
+      _dragPageIndex = moved.pageIndex;
+      _dragLastPaper = Offset(moved.dx, moved.dy);
+    }
+    _dragLastScreen = position;
   }
 
   /// يُنهي السحب الفوري (رفع الإصبع أو إلغاء المؤشر).
@@ -3481,7 +3713,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _dragPointer = null;
     _dragRef = null;
     _dragStartScreen = null;
-    _dragOriginPaper = null;
+    _dragLastScreen = null;
+    _dragLastPaper = null;
+    _dragAnchorWithinElement = null;
+    _dragPageIndex = null;
     _dragMoved = false;
   }
 
@@ -3546,48 +3781,109 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (controller == null) {
       return;
     }
-    controller.selectBranch(
-      ref.branchIndex == null
-          ? null
-          : BranchRef(
-              questionIndex: ref.questionIndex,
-              branchIndex: ref.branchIndex!,
-            ),
-    );
-    controller.selectQuestion(ref.questionIndex);
+    if (ref.isGlobal) {
+      controller.selectBranch(null);
+    } else {
+      controller.selectBranch(
+        ref.branchIndex == null
+            ? null
+            : BranchRef(
+                questionIndex: ref.questionIndex,
+                branchIndex: ref.branchIndex!,
+              ),
+      );
+      controller.selectQuestion(ref.questionIndex);
+    }
     setState(() {
       _clearSelection();
       _selectedAttachment = ref;
     });
   }
 
-  /// يضع العنصر [ref] في الموضع المطلق [target] (بكسل اللوحة).
-  ///
-  /// الحركة **حرة تماماً**: العنصر يتبع الإصبع إلى أي جزء من الورقة بلا
-  /// قيود جانبية — قد يخرج عن مساحة الطباعة أو يتجاوز حدّ الصفحة، والمستخدم
-  /// وحده يحدّد المكان المناسب. لا يُشترط إلا أن تبقى مساحة إمساك كافية
-  /// داخل الورقة (وشاشة صغيرة) لأن عنصراً خارجها كلّياً يستحيل لمسه ثانيةً.
-  void _moveAttachmentTo(_AttachmentRef ref, Offset target) {
-    final element = _findAttachment(_controller!.document, ref);
-    if (element == null) {
-      return;
-    }
-    // جزء من الإصبع يبقى على الورقة (أو الشاشة حين تكون الورقة أكبر منها).
+  /// يضع العنصر [ref] في الموضع المطلوب على صفحة A4، مستقلاً عن الأسئلة.
+  /// يسمح بدخول الهوامش وخروج جزء من العنصر خارج الحافة، مع إبقاء 24 بكسلاً
+  /// منه داخل الصفحة كي يستطيع المستخدم إمساكه مجدداً.
+  void _moveAttachmentTo(
+    _AttachmentRef ref,
+    Offset target, {
+    required int pageIndex,
+  }) {
+    final controller = _controller;
+    if (controller == null) return;
+    final element = _findAttachment(controller.document, ref);
+    if (element == null) return;
     const anchor = 24.0;
-    final maxX =
-        (math.max(ExamCanvasGeometry.width, _viewportWidth) - anchor)
-            .clamp(0.0, double.infinity)
-            .toDouble();
-    final maxY = (ExamCanvasGeometry.height - anchor)
-        .clamp(0.0, double.infinity)
-        .toDouble();
+    final maxDx = ExamCanvasGeometry.width - anchor;
+    final maxDy = ExamCanvasGeometry.height - anchor;
     _updateAttachmentElement(
       ref,
       element.copyWith(
-        dx: target.dx.clamp(anchor - element.width, maxX),
-        dy: target.dy.clamp(anchor - element.height, maxY),
+        pageIndex: pageIndex,
+        dx: target.dx.clamp(anchor - element.width, maxDx).toDouble(),
+        dy: target.dy.clamp(anchor - element.height, maxDy).toDouble(),
+      ),
+      preservePageIndex: true,
+    );
+  }
+
+  Widget _elementHandle({
+    required Key key,
+    required IconData icon,
+    required String tooltip,
+    required Color color,
+    required VoidCallback onTap,
+    ValueChanged<DragUpdateDetails>? onPanUpdate,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        key: key,
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        onPanUpdate: onPanUpdate,
+        child: SizedBox(
+          width: 40,
+          height: 40,
+          child: Center(
+            child: CircleAvatar(
+              radius: 10,
+              backgroundColor: color,
+              child: Icon(icon, size: 12, color: Colors.white),
+            ),
+          ),
+        ),
       ),
     );
+  }
+
+  void _scaleAttachment(
+    _AttachmentRef ref,
+    FloatingElement element,
+    double factor,
+  ) {
+    final width = (element.width * factor).clamp(24.0, 600.0).toDouble();
+    final height = element.isImage
+        ? width * (element.height / element.width)
+        : (element.height * factor).clamp(24.0, 600.0).toDouble();
+    _updateAttachmentElement(ref, element.copyWith(width: width, height: height));
+  }
+
+  void _resizeAttachmentByDrag(
+    _AttachmentRef ref,
+    FloatingElement element,
+    DragUpdateDetails details,
+  ) {
+    final current = _findAttachment(_controller!.document, ref) ?? element;
+    final horizontalDelta = _layoutIsLtr ? details.delta.dx : -details.delta.dx;
+    final width = (current.width + horizontalDelta / _zoom)
+        .clamp(24.0, 600.0)
+        .toDouble();
+    final height = current.isImage
+        ? width * (current.height / current.width)
+        : (current.height + details.delta.dy / _zoom)
+            .clamp(24.0, 600.0)
+            .toDouble();
+    _updateAttachmentElement(ref, current.copyWith(width: width, height: height));
   }
 
   Widget _buildAttachment(
@@ -3595,10 +3891,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _AttachmentRef ref,
     FloatingElement element,
   ) {
-    final selected = _selectedAttachment != null &&
-        _selectedAttachment!.questionIndex == ref.questionIndex &&
-        _selectedAttachment!.branchIndex == ref.branchIndex &&
-        _selectedAttachment!.elementId == ref.elementId;
+    final selected = _selectedAttachment?.elementId == ref.elementId;
     return PositionedDirectional(
       start: element.dx,
       top: element.dy,
@@ -3634,42 +3927,36 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 Positioned(
                   left: 0,
                   top: 0,
-                  child: GestureDetector(
+                  child: _elementHandle(
                     key: ValueKey<String>('delete-element-${element.id}'),
+                    icon: Icons.close,
+                    tooltip: 'حذف العنصر',
+                    color: PaperStyles.danger,
                     onTap: () => _removeAttachmentElement(ref),
-                    child: const CircleAvatar(
-                      radius: 10,
-                      backgroundColor: PaperStyles.danger,
-                      child: Icon(Icons.close, size: 12, color: Colors.white),
-                    ),
                   ),
                 ),
               if (selected && !_locked && element.isFormula)
                 Positioned(
                   right: 0,
                   top: 0,
-                  child: GestureDetector(
+                  child: _elementHandle(
                     key: ValueKey<String>('edit-element-${element.id}'),
+                    icon: Icons.functions,
+                    tooltip: 'تحرير المعادلة',
+                    color: PaperStyles.accent,
                     onTap: () => _editFormulaElement(ref),
-                    child: const CircleAvatar(
-                      radius: 10,
-                      backgroundColor: PaperStyles.accent,
-                      child: Icon(Icons.functions, size: 12, color: Colors.white),
-                    ),
                   ),
                 ),
               if (selected && !_locked && element.isTextBox)
                 Positioned(
                   right: 0,
                   top: 0,
-                  child: GestureDetector(
+                  child: _elementHandle(
                     key: ValueKey<String>('edit-element-${element.id}'),
+                    icon: Icons.edit,
+                    tooltip: 'تحرير مربع النص',
+                    color: PaperStyles.accent,
                     onTap: () => _editTextBox(ref),
-                    child: const CircleAvatar(
-                      radius: 10,
-                      backgroundColor: PaperStyles.accent,
-                      child: Icon(Icons.edit, size: 12, color: Colors.white),
-                    ),
                   ),
                 ),
               if (selected &&
@@ -3679,19 +3966,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 Positioned(
                   left: 0,
                   bottom: 0,
-                  child: GestureDetector(
+                  child: _elementHandle(
                     key: ValueKey<String>('rotate-element-${element.id}'),
+                    icon: Icons.rotate_right,
+                    tooltip: 'تدوير العنصر 45°',
+                    color: PaperStyles.accent,
                     onTap: () => _updateAttachmentElement(
                       ref,
                       element.copyWith(
                         rotationDegrees: (element.rotationDegrees + 45) % 360,
                       ),
-                    ),
-                    child: const CircleAvatar(
-                      radius: 10,
-                      backgroundColor: PaperStyles.accent,
-                      child: Icon(Icons.rotate_right,
-                          size: 12, color: Colors.white),
                     ),
                   ),
                 ),
@@ -3699,31 +3983,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 Positioned(
                   right: 0,
                   bottom: 0,
-                  child: GestureDetector(
+                  child: _elementHandle(
                     key: ValueKey<String>('resize-element-${element.id}'),
-                    onPanUpdate: (details) {
-                      if (element.isImage) {
-                        // الصور تحافظ على نسبة أبعادها عند تغيير الحجم.
-                        final ratio = element.height / element.width;
-                        final width = (element.width + details.delta.dx)
-                            .clamp(24.0, 600.0);
-                        _updateAttachmentElement(
-                          ref,
-                          element.copyWith(width: width, height: width * ratio),
-                        );
-                      } else {
-                        _updateAttachmentElement(
-                          ref,
-                          element.copyWith(
-                            width: (element.width + details.delta.dx)
-                                .clamp(24.0, 600.0),
-                            height: (element.height + details.delta.dy)
-                                .clamp(24.0, 600.0),
-                          ),
-                        );
-                      }
-                    },
-                    child: const Icon(Icons.south_east, size: 18, color: PaperStyles.accent),
+                    icon: Icons.south_east,
+                    tooltip: 'اسحب لتغيير الحجم',
+                    color: PaperStyles.accent,
+                    onTap: () => _scaleAttachment(ref, element, 1.1),
+                    onPanUpdate: (details) =>
+                        _resizeAttachmentByDrag(ref, element, details),
                   ),
                 ),
 
@@ -3734,18 +4001,31 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// شريط أدوات مصغّر فوق العنصر المحدد (استبدال/محاذاة/سماكة).
-  ///
-  /// يظهر أعلى العنصر عادة، وأسفله إن كان ملاصقاً لأعلى الصفحة حتى لا يُقصّ.
+  /// شريط أدوات مصغّر فوق العنصر المحدد: تكبير/تصغير ومحاذاة دقيقة وأدواته.
+  /// جميع الأزرار لها مساحة لمس كافية للأجهزة اللوحية والهواتف.
   Widget _buildAttachmentToolbar(_AttachmentRef ref, FloatingElement element) {
-    final below = element.dy < 44;
+    const toolbarWidth = 460.0;
+    const toolbarHeight = 40.0;
+    final controller = _controller!;
+    final pageCount = controller.pagination.pageCount;
+    final elementPage = ref.isGlobal
+        ? element.pageIndex
+        : controller.pagination.pageIndexOf(
+              controller.questions[ref.questionIndex].id,
+            ) ??
+            element.pageIndex;
+    final pageIndex = elementPage.clamp(0, math.max(0, pageCount - 1)).toInt();
+    final below = element.dy < 52;
     return PositionedDirectional(
-      start: element.dx.clamp(0.0, ExamCanvasGeometry.width - 160),
-      top: (below ? element.dy + element.height + 8 : element.dy - 38)
-          .clamp(0.0, ExamCanvasGeometry.height - 36),
+      start: element.dx
+          .clamp(0.0, ExamCanvasGeometry.width - toolbarWidth)
+          .toDouble(),
+      top: (below ? element.dy + element.height + 8 : element.dy - toolbarHeight)
+          .clamp(0.0, ExamCanvasGeometry.height - toolbarHeight)
+          .toDouble(),
       child: Material(
         elevation: 3,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         color: Theme.of(context).colorScheme.surface,
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -3756,6 +4036,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 'استبدال الصورة',
                 () => _replaceImage(ref, element),
               ),
+            _attachTool(
+              Icons.zoom_out,
+              'تصغير العنصر',
+              () => _scaleAttachment(ref, element, 0.9),
+            ),
+            _attachTool(
+              Icons.zoom_in,
+              'تكبير العنصر',
+              () => _scaleAttachment(ref, element, 1.1),
+            ),
             if (!element.isImage && !element.isTextBox) ...<Widget>[
               _attachTool(
                 Icons.remove,
@@ -3795,6 +4085,33 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               'محاذاة لليسار',
               () => _alignAttachment(ref, element, 'left'),
             ),
+            _attachTool(
+              Icons.vertical_align_top,
+              'محاذاة للأعلى',
+              () => _alignAttachmentVertically(ref, element, 'top'),
+            ),
+            _attachTool(
+              Icons.vertical_align_center,
+              'توسيط عمودياً',
+              () => _alignAttachmentVertically(ref, element, 'center'),
+            ),
+            _attachTool(
+              Icons.vertical_align_bottom,
+              'محاذاة للأسفل',
+              () => _alignAttachmentVertically(ref, element, 'bottom'),
+            ),
+            if (pageIndex > 0)
+              _attachTool(
+                Icons.keyboard_arrow_up,
+                'نقل إلى الصفحة السابقة',
+                () => _moveAttachmentToPage(ref, element, pageIndex - 1),
+              ),
+            if (pageIndex < pageCount - 1)
+              _attachTool(
+                Icons.keyboard_arrow_down,
+                'نقل إلى الصفحة التالية',
+                () => _moveAttachmentToPage(ref, element, pageIndex + 1),
+              ),
           ],
         ),
       ),
@@ -3806,13 +4123,35 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       message: tooltip,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(6),
-          child: Icon(icon, size: 16, color: PaperStyles.accent),
+        borderRadius: BorderRadius.circular(18),
+        child: SizedBox(
+          width: 36,
+          height: 40,
+          child: Icon(icon, size: 18, color: PaperStyles.accent),
         ),
       ),
     );
+  }
+
+  void _moveAttachmentToPage(
+    _AttachmentRef ref,
+    FloatingElement element,
+    int pageIndex,
+  ) {
+    _moveAttachmentTo(ref, Offset(element.dx, element.dy), pageIndex: pageIndex);
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      final targetContext = _pageCanvasKeys[pageIndex]?.currentContext;
+      if (mounted && targetContext != null) {
+        unawaited(
+          Scrollable.ensureVisible(
+            targetContext,
+            alignment: 0.08,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+          ),
+        );
+      }
+    });
   }
 
   /// يستبدل صورة العنصر [ref] بصورة جديدة (الموضع والمقاس كما هما).
@@ -3831,26 +4170,40 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _showMessage('تم استبدال الصورة.');
   }
 
-  /// يحاذي العنصر أفقياً ([edge]: يمين/وسط/يسار) داخل عرض المحتوى.
-  ///
-  /// تحترم المحاذاة اتجاه الورقة (RTL/LTR) وهوامشها الحالية.
+  /// يحاذي العنصر أفقياً ([edge]: يمين/وسط/يسار) داخل هوامش الطباعة.
+  /// الإحداثي يأخذ اتجاه الورقة بالحسبان لأن RTL يقيس `dx` من اليمين.
   void _alignAttachment(_AttachmentRef ref, FloatingElement element, String edge) {
-    final controller = _controller!;
-    final contentWidth = PaperMetrics.contentWidthFor(
-      controller.document.settings.marginMm,
+    final margin = ExamCanvasGeometry.marginFor(
+      _controller!.document.settings.marginMm,
     );
-    final maxDx =
-        (contentWidth - element.width).clamp(0.0, contentWidth).toDouble();
-    final isLtr = controller.document.layout.isLtr;
+    final maxPhysicalLeft = ExamCanvasGeometry.width - margin - element.width;
+    final isLtr = _controller!.document.layout.isLtr;
     final double dx;
     if (edge == 'center') {
-      dx = maxDx / 2;
+      dx = (ExamCanvasGeometry.width - element.width) / 2;
     } else if (edge == 'right') {
-      dx = isLtr ? maxDx : 0.0;
+      dx = isLtr ? maxPhysicalLeft : margin;
     } else {
-      dx = isLtr ? 0.0 : maxDx;
+      dx = isLtr ? margin : maxPhysicalLeft;
     }
     _updateAttachmentElement(ref, element.copyWith(dx: dx));
+  }
+
+  /// يحاذي العنصر رأسياً داخل صفحة A4 مع احترام الهامش.
+  void _alignAttachmentVertically(
+    _AttachmentRef ref,
+    FloatingElement element,
+    String edge,
+  ) {
+    final margin = ExamCanvasGeometry.marginFor(
+      _controller!.document.settings.marginMm,
+    );
+    final dy = switch (edge) {
+      'top' => margin,
+      'center' => (ExamCanvasGeometry.height - element.height) / 2,
+      _ => ExamCanvasGeometry.height - margin - element.height,
+    };
+    _updateAttachmentElement(ref, element.copyWith(dy: dy));
   }
 
   /// عرض منسّق لنص الفرع: الآيات القرآنية بالخط القرآني (Amiri) دائماً.

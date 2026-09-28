@@ -121,6 +121,29 @@ void main() {
       expect(_countPages(teacher), greaterThanOrEqualTo(1));
     });
 
+    test('renders document-level floating elements without any question owner', () async {
+      final document = ExamDocument(
+        name: 'ورقة بلا أسئلة',
+        header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
+        floatingElements: <FloatingElement>[
+          FloatingElement(
+            id: 'free-shape',
+            type: FloatingElementType.shape,
+            shape: FloatingShapeType.circle,
+            dx: 280,
+            dy: 360,
+            width: 90,
+            height: 90,
+          ),
+        ],
+      );
+
+      final bytes = await PaginatedPdfExamEngine().generate(document: document);
+
+      expect(_countPages(bytes), 1);
+      expect(String.fromCharCodes(bytes), startsWith('%PDF-'));
+    });
+
     test('embeds branch attachments (shapes) anchored to their branch', () async {
       final document = ExamDocument(
         name: 'مرفقات',

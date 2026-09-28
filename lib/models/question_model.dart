@@ -252,6 +252,7 @@ class QuestionModel {
       category: category,
       prompt: prompt,
       marksOverride: marksOverride,
+      spacingAfter: spacingAfter,
       items: <BranchItem>[
         for (final item in items)
           BranchItem(
@@ -343,8 +344,10 @@ class QuestionModel {
       marksOverride: marksOverride,
       numberOverride:
           rawNumberOverride == null || rawNumberOverride.isEmpty ? null : rawNumberOverride,
-      spacingAfter: (map['spacingAfter'] is num && (map['spacingAfter'] as num) >= 0)
-          ? (map['spacingAfter'] as num).toDouble()
+      spacingAfter: (map['spacingAfter'] is num &&
+              (map['spacingAfter'] as num).isFinite &&
+              (map['spacingAfter'] as num) >= 0)
+          ? (map['spacingAfter'] as num).toDouble().clamp(0, 200).toDouble()
           : 10,
       // نقاط السؤال حقل جديد متسامح (كباقي حقول النقاط) لتبقى الأسئلة القديمة صالحة.
       items: BranchItem.listFromValue(map['items']),
