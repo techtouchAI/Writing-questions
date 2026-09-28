@@ -514,22 +514,24 @@ void main() {
       expect(find.text('وسائط'), findsOneWidget);
       expect(find.text('رياضيات'), findsOneWidget);
 
-      // بلا فرع محدد يُضاف الشكل للسؤال النشط؛ وبعد التحديد يُضاف للفرع.
+      // عناصر الوسائط مستقلة عن السؤال والفرع حتى عند وجود تحديد نشط.
       await tester.tap(find.text('وسائط'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('مربع'));
       await tester.pump();
-      expect(controller.questions.first.attachments, hasLength(1));
+      expect(controller.document.floatingElements, hasLength(1));
+      expect(controller.questions.first.attachments, isEmpty);
 
       controller.selectBranch(const BranchRef(questionIndex: 0, branchIndex: 0));
       await tester.pump();
       await tester.tap(find.text('مربع'));
       await tester.pump();
+      expect(controller.document.floatingElements, hasLength(2));
       expect(
         controller.document
             .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
             .attachments,
-        hasLength(1),
+        isEmpty,
       );
       expect(find.byType(CustomPaint), findsWidgets);
     });
