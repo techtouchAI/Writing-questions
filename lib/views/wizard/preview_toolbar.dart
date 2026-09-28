@@ -546,7 +546,6 @@ class _QuestionSpacingMenu extends StatelessWidget {
     return PopupMenuButton<double>(
       enabled: onChanged != null,
       tooltip: 'المسافة بين الأسئلة',
-      icon: const Icon(Icons.height, size: 20),
       onSelected: (spacing) => onChanged?.call(spacing),
       itemBuilder: (_) => <PopupMenuEntry<double>>[
         for (final spacing in PreviewToolbar.questionSpacings)
@@ -568,9 +567,16 @@ class _QuestionSpacingMenu extends StatelessWidget {
         constraints: const BoxConstraints(minWidth: 50),
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: Text(
-          value == null ? 'فراغ' : '${_label(value)}px',
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Icon(Icons.height, size: 20),
+            const SizedBox(width: 2),
+            Text(
+              value == null ? 'فراغ' : '${_label(value)}px',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          ],
         ),
       ),
     );
