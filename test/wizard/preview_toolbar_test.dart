@@ -14,6 +14,7 @@ import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/views/widgets/floating_element_view.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
+import 'package:writing_questions_app/views/wizard/preview_toolbar.dart';
 
 ExamDocument _document() {
   return ExamDocument(
@@ -100,9 +101,14 @@ void main() {
       controller.selectQuestion(0);
       await _pumpPreview(tester, controller);
 
-      final colorButton = find.byTooltip('لون عنوان السؤال');
-      await tester.ensureVisible(colorButton);
+      final toolbar = find.byType(PreviewToolbar);
+      final toolbarScroll = find.descendant(
+        of: toolbar,
+        matching: find.byType(ListView),
+      );
+      await tester.drag(toolbarScroll, const Offset(-1200, 0));
       await tester.pumpAndSettle();
+      final colorButton = find.byTooltip('لون عنوان السؤال');
       await tester.tap(colorButton);
       await tester.pumpAndSettle();
       await tester.tap(find.textContaining('كحلي'));
