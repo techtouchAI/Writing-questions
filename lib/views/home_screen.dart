@@ -5,7 +5,9 @@ import '../models/exam_document.dart';
 import '../providers/exam_document_provider.dart';
 import '../services/docx_document_export_service.dart';
 import '../services/export_file_service.dart';
+import '../services/math_image_renderer.dart';
 import '../services/pdf_export_service.dart';
+import '../services/shape_image_renderer.dart';
 import 'widgets/pdf_preview_screen.dart';
 import 'wizard/exam_wizard_screen.dart';
 
@@ -181,6 +183,8 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final file = await DocxDocumentExportService.exportDocumentToDocx(
         document: document,
+        shapeRasterizer: ShapeImageRenderer.asRasterizer,
+        mathRasterizer: MathImageRenderer.asRasterizer,
       );
       if (!context.mounted) {
         return;

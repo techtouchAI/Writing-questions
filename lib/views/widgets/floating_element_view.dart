@@ -1,12 +1,16 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_math_fork/flutter_math.dart' show Math;
 
+import '../../models/exam_canvas_geometry.dart';
 import '../../models/floating_element.dart';
 import '../../models/paper_font.dart';
 import '../../models/subject_layout.dart';
+import '../../models/tex_content.dart';
 import '../wizard/paper_styles.dart';
 import 'paper_shape_painter.dart';
+import 'tex_text.dart';
 
 /// عرض عنصر عائم (صورة/شكل/مربع نص) فوق لوحة الورقة التفاعلية.
 ///
@@ -39,6 +43,8 @@ class FloatingElementView extends StatelessWidget {
         content = _buildImage();
       case FloatingElementType.shape:
         content = _buildShape();
+      case FloatingElementType.formula:
+        content = _buildFormula();
     }
     if (element.rotationDegrees == 0) {
       return content;
@@ -67,6 +73,28 @@ class FloatingElementView extends StatelessWidget {
     );
   }
 
+  /// معادلة حرة: تُرسم معادلةً (Math) بحجم أساس ثابت ثم تُقاس داخل الصندوق
+  /// بنسبة ثابتة — فتكبير الصندوق يكبّر المعادلة كما في PDF و Word.
+  Widget _buildFormula() {
+    return Container(
+      decoration: element.framed
+          ? BoxDecoration(
+              border: Border.all(color: const Color(0xFF111827), width: 1),
+            )
+          : null,
+      padding: const EdgeInsets.all(2),
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: Math.tex(
+          element.label,
+          textStyle: const TextStyle(
+            fontSize: ExamCanvasGeometry.formulaBaseFontSize,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildTextBox() {
     final style = PaperStyles.resolve(
       PaperStyles.body(SubjectLayoutTemplate.generic),
@@ -76,6 +104,7 @@ class FloatingElementView extends StatelessWidget {
       heightScale: heightScale,
     );
     final text = element.label.trim().isEmpty ? 'مربع نص...' : element.label;
+    final isEmpty = element.label.trim().isEmpty;
     return Container(
       decoration: element.framed
           ? BoxDecoration(
@@ -84,11 +113,19 @@ class FloatingElementView extends StatelessWidget {
           : null,
       padding: const EdgeInsets.all(4),
       alignment: Alignment.topRight,
-      child: Text(
-        text,
-        style: element.label.trim().isEmpty ? PaperStyles.hint(style) : style,
-        textAlign: PaperStyles.toTextAlign(element.textStyle.align),
-      ),
+      // الصيغ (`$...$`) في مربع النص تُعرض معادلاتٍ كاملة لا أكواداً خامة،
+      // بنفس ودجت النص العلمي المستخدم على الورقة ([TexText]).
+      child: isEmpty || !TexContent.containsMath(text)
+          ? Text(
+              text,
+              style: isEmpty ? PaperStyles.hint(style) : style,
+              textAlign: PaperStyles.toTextAlign(element.textStyle.align),
+            )
+          : TexText(
+              text,
+              style: style,
+              textAlign: PaperStyles.toTextAlign(element.textStyle.align),
+            ),
     );
   }
 }

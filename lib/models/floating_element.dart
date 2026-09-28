@@ -11,7 +11,11 @@ enum FloatingElementType {
   image,
 
   /// شكل هندسي أو نصي يُرسم متجهاً.
-  shape;
+  shape,
+
+  /// معادلة LaTeX حرة ([FloatingElement.label] = الصيغة بلا علامات دولار)
+  /// تُرسم معادلةً وتُسحب إلى أي موضع على الورقة كالعناصر الأخرى.
+  formula;
 
   static FloatingElementType parse(String? value) {
     final normalized = value?.trim() ?? '';
@@ -151,6 +155,9 @@ class FloatingElement {
 
   /// هل هذا العنصر صورة (تُحفظ نسبة أبعادها عند تغيير الحجم)؟
   bool get isImage => type == FloatingElementType.image;
+
+  /// هل هذا العنصر معادلة حرة (يُحرَّر بمحرّر المعادلات المرئي)؟
+  bool get isFormula => type == FloatingElementType.formula;
 
   Map<String, dynamic> toMap() {
     return <String, dynamic>{
