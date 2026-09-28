@@ -253,7 +253,7 @@ void main() {
       expect(emptyTrueFalse.hasExportableContent(teacher: false), isFalse);
       expect(emptyTrueFalse.hasExportableContent(teacher: true), isFalse);
       final explicitTrueFalse = emptyTrueFalse.withTrueFalseAnswer(false);
-      expect(explicitTrueFalse.hasExportableContent(teacher: true), isTrue);
+      expect(explicitTrueFalse.hasExportableContent(teacher: true), isFalse);
       // خيارات الاختيار المخفية في النص الحر لا تُبقي فرعاً فارغاً بالطباعة.
       final hiddenChoices = BranchContent(
         type: QuestionType.multipleChoice,

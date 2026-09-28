@@ -96,6 +96,8 @@ void main() {
 
     testWidgets('color swatches change only the question title color', (tester) async {
       final controller = ExamWizardController(document: _document());
+      controller.selectBranch(null);
+      controller.selectQuestion(0);
       await _pumpPreview(tester, controller);
 
       await tester.tap(find.byTooltip('لون عنوان السؤال'));

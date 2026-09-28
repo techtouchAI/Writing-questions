@@ -71,10 +71,11 @@ class BranchContent {
       case QuestionType.multipleChoice:
         return options.any((option) => option.text.trim().isNotEmpty);
       case QuestionType.trueFalse:
+        // «صح/خطأ» هما نموذجا إجابة ثابتان، لا محتوى سؤال بذاتهما؛ تُطبع
+        // الإجابة للمعلم فقط عندما يوجد نص/نقطة فعلية تحملها.
         return teacher &&
             (text.trim().isNotEmpty ||
-                items.any((item) => item.showsInExport(teacher: true, trueFalse: true)) ||
-                options.any((option) => option.isCorrect == false));
+                items.any((item) => item.showsInExport(teacher: true, trueFalse: true)));
       case QuestionType.fillInTheBlank:
       case QuestionType.definitions:
       case QuestionType.essay:

@@ -572,6 +572,8 @@ void main() {
     controller.updateBranchItemText(ref, 0, 'الأولى');
     controller.updateBranchItemText(ref, 1, 'الثانية');
     await _pump(tester, controller);
+    final firstItemId = controller.document.branchAt(ref).content.items.first.id;
+    await _tap(tester, find.byKey(ValueKey<String>('item-$firstItemId')));
     await _tap(tester, find.byTooltip('نقل النقطة لأسفل').first);
     expect(controller.document.branchAt(ref).content.items.first.text, 'الثانية');
     await _tap(tester, find.byTooltip('نقل النقطة لأعلى').last);
