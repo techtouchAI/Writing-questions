@@ -351,8 +351,16 @@ class _DocxBuilder {
   }
 
   Future<List<List<QuestionModel>>> _resolvedQuestionPages() async {
+    final globalElementIds =
+        document.floatingElements.map((element) => element.id).toSet();
+    final printableQuestions = document.questions
+        .where((question) => question.hasExportableContent(
+              teacher: isTeacherVersion,
+              ignoredAttachmentIds: globalElementIds,
+            ))
+        .toList(growable: false);
     final questionsById = <String, QuestionModel>{
-      for (final question in document.questions) question.id: question,
+      for (final question in printableQuestions) question.id: question,
     };
     final expectedIds = questionsById.keys.toSet();
     var candidate = pageAssignments;
@@ -700,6 +708,11 @@ class _DocxBuilder {
   Future<void> _buildQuestion(StringBuffer body, QuestionModel question) async {
     final layout = document.layout;
     final questionIndex = document.indexOfQuestion(question.id);
+    final bodyStyle = question.style.copyWith(color: () => null);
+    final titleStyle = question.style.copyWith(
+      color: () => question.effectiveTitleColor,
+    );
+    final titleColor = titleStyle.colorHex ?? '111827';
     final marksPart = document.settings.showQuestionMarks
         ? ' [${document.formatNumber(question.marks)} ${layout.marksUnit}]'
         : '';
@@ -719,10 +732,10 @@ class _DocxBuilder {
     _writeStyledParagraph(
       body,
       '${document.displayQuestionLabel(question)}$marksPart',
-      style: question.style,
+      style: titleStyle,
       bold: true,
       size: 26,
-      color: '111827',
+      color: titleColor,
       before: 180,
       after: 60,
       border: question.showFrame,
@@ -731,9 +744,9 @@ class _DocxBuilder {
       _writeStyledParagraph(
         body,
         question.prompt,
-        style: question.style,
+        style: bodyStyle,
         size: 24,
-        before: 40,
+        before: question.style.paragraphSpacing == null ? 40 : 0,
         after: 40,
       );
     }
@@ -747,12 +760,18 @@ class _DocxBuilder {
         body,
         item,
         i,
-        style: question.style,
+        style: bodyStyle,
         trueFalse: false,
       );
     }
     for (var index = 0; index < question.branches.length; index++) {
-      await _buildBranch(body, question.branches[index], questionIndex, index);
+      await _buildBranch(
+        body,
+        question.branches[index],
+        questionIndex,
+        index,
+        questionParagraphSpacing: question.style.paragraphSpacing,
+      );
     }
     await _buildAttachments(body, question.attachments);
     _buildDivider(body, question.dividerAfter);
@@ -792,7 +811,7 @@ class _DocxBuilder {
       style: style,
       size: 22,
       indent: 800,
-      before: 30,
+      before: style?.paragraphSpacing == null ? 30 : 0,
       after: 30,
     );
   }
@@ -801,12 +820,18 @@ class _DocxBuilder {
     StringBuffer body,
     BranchModel branch,
     int questionIndex,
-    int branchIndex,
-  ) async {
+    int branchIndex, {
+    double? questionParagraphSpacing,
+  }) async {
     final layout = document.layout;
     final content = branch.content;
+    final globalElementIds =
+        document.floatingElements.map((element) => element.id).toSet();
     // الفرع الفارغ تماماً يُحذف من الملف كاملاً ولا يترك فقرات فارغة.
-    if (!content.hasExportableContent(teacher: isTeacherVersion)) {
+    if (!branch.hasExportableContent(
+      teacher: isTeacherVersion,
+      ignoredAttachmentIds: globalElementIds,
+    )) {
       return;
     }
     final label = questionIndex >= 0
@@ -822,7 +847,9 @@ class _DocxBuilder {
       style: branch.style,
       size: 22,
       indent: 400,
-      before: 40,
+      before: questionParagraphSpacing == null
+          ? 40
+          : _paragraphSpacingTwips(questionParagraphSpacing),
       after: 40,
       border: branch.showFrame,
     );
@@ -841,12 +868,8 @@ class _DocxBuilder {
         trueFalse: content.type == QuestionType.trueFalse,
       );
     }
-    // مطابقة اللوحة ومحرك PDF حرفياً (انظر PaginatedPdfExamEngine).
-    final showTypeBody = !(content.plainText && !isTeacherVersion) &&
-        !(isTeacherVersion &&
-            content.plainText &&
-            content.type == QuestionType.multipleChoice);
-    if (showTypeBody) {
+    // مطابقة اللوحة ومحرك PDF حرفياً (انظر BranchContent.hasPrintableTypeBody).
+    if (content.hasPrintableTypeBody(teacher: isTeacherVersion)) {
       _buildTypeBody(body, content, branch.style);
     }
     await _buildAttachments(body, branch.attachments);
@@ -878,8 +901,10 @@ class _DocxBuilder {
             color: styleColor ?? (correct ? '065F46' : null),
             highlight: correct,
             indent: 800,
-            before: 30,
-            after: 30,
+            before: style?.paragraphSpacing == null ? 30 : 0,
+            after: style?.paragraphSpacing == null
+                ? 30
+                : _paragraphSpacingTwips(style!.paragraphSpacing!),
             alignment: alignment,
             lineHeight: lineHeight,
           );
@@ -898,8 +923,10 @@ class _DocxBuilder {
           color: styleColor ?? '065F46',
           highlight: true,
           indent: 800,
-          before: 40,
-          after: 40,
+          before: style?.paragraphSpacing == null ? 40 : 0,
+          after: style?.paragraphSpacing == null
+              ? 40
+              : _paragraphSpacingTwips(style!.paragraphSpacing!),
           alignment: alignment,
           lineHeight: lineHeight,
         );
@@ -918,8 +945,10 @@ class _DocxBuilder {
           color: styleColor ?? '065F46',
           highlight: true,
           indent: 800,
-          before: 40,
-          after: 40,
+          before: style?.paragraphSpacing == null ? 40 : 0,
+          after: style?.paragraphSpacing == null
+              ? 40
+              : _paragraphSpacingTwips(style!.paragraphSpacing!),
           alignment: alignment,
           lineHeight: lineHeight,
         );
@@ -936,8 +965,10 @@ class _DocxBuilder {
             size: 22,
             color: styleColor ?? '065F46',
             indent: 800,
-            before: 40,
-            after: 40,
+            before: style?.paragraphSpacing == null ? 40 : 0,
+            after: style?.paragraphSpacing == null
+                ? 40
+                : _paragraphSpacingTwips(style!.paragraphSpacing!),
             alignment: alignment,
             lineHeight: lineHeight,
           );
@@ -1176,6 +1207,9 @@ class _DocxBuilder {
 
   // ------------------------------- فقرات -------------------------------
 
+  int _paragraphSpacingTwips(double logicalPixels) =>
+      (PaperMetrics.pt(logicalPixels) * 20).round();
+
   void _writeStyledParagraph(
     StringBuffer body,
     String text, {
@@ -1200,10 +1234,13 @@ class _DocxBuilder {
       // الحجم المخصص لعنصر بعينه مطلق، وحجم الأساس يُقاس بمعامل الورقة.
       scaleSize: style?.fontSize == null,
       border: border,
-      color: color,
+      color: color ?? style?.colorHex,
       indent: indent,
       before: before,
-      after: after,
+      after: style?.paragraphSpacing == null
+          ? after
+          : _paragraphSpacingTwips(style!.paragraphSpacing!),
+      lineHeight: style?.lineHeight,
       alignment: _wordAlign(style?.align),
       font: DocxDocumentExportService._fontName(
         style?.font ?? document.settings.defaultFont,

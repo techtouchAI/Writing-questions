@@ -58,29 +58,39 @@ class BranchContent {
     return correct.isEmpty || correct.first.text.trim() != 'خطأ';
   }
 
+  /// هل يعرض نوع الفرع جسماً مستقلاً في نسخة [teacher]؟
+  /// يتجنب إنشاء فقرات/مساحات إجابة فارغة مع إبقاء إجابات المعلم الظاهرة.
+  bool hasPrintableTypeBody({required bool teacher}) {
+    final showTypeBody =
+        !(plainText && !teacher) &&
+        !(teacher && plainText && type == QuestionType.multipleChoice);
+    if (!showTypeBody) {
+      return false;
+    }
+    switch (type) {
+      case QuestionType.multipleChoice:
+        return options.any((option) => option.text.trim().isNotEmpty);
+      case QuestionType.trueFalse:
+        return teacher &&
+            (text.trim().isNotEmpty ||
+                items.any((item) => item.showsInExport(teacher: true, trueFalse: true)) ||
+                options.any((option) => option.isCorrect == false));
+      case QuestionType.fillInTheBlank:
+      case QuestionType.definitions:
+      case QuestionType.essay:
+        return teacher && modelAnswer.trim().isNotEmpty;
+    }
+  }
+
   /// هل يحمل الفرع محتوى يستحق الظهور في المخرجات (PDF/Word/طباعة)؟
-  ///
-  /// الفرع الفارغ تماماً (بلا نص ولا نقاط ظاهرة ولا خيارات مكتوبة ولا
-  /// إجابة نموذجية معروضة) يُحذف من المطبوع كاملاً ولا يترك أي مسافة.
-  /// خيارا صح/خطأ الثابتان («صح»/«خطأ») ليسا محتوى بذاتهما.
+  /// الفرع الفارغ تماماً يُحذف من المطبوع كاملاً ولا يترك أي مسافة.
   bool hasExportableContent({required bool teacher}) {
-    if (text.trim().isNotEmpty) {
+    if (text.trim().isNotEmpty ||
+        items.any((item) =>
+            item.showsInExport(teacher: teacher, trueFalse: type == QuestionType.trueFalse))) {
       return true;
     }
-    if (items.any(
-        (item) => item.showsInExport(teacher: teacher, trueFalse: type == QuestionType.trueFalse))) {
-      return true;
-    }
-    if (type == QuestionType.multipleChoice &&
-        options.any((option) => option.text.trim().isNotEmpty)) {
-      return true;
-    }
-    if (teacher &&
-        (type == QuestionType.fillInTheBlank || type == QuestionType.essay) &&
-        modelAnswer.trim().isNotEmpty) {
-      return true;
-    }
-    return false;
+    return hasPrintableTypeBody(teacher: teacher);
   }
 
   bool get isEmpty =>
@@ -303,6 +313,15 @@ class BranchModel {
   final PaperTextStyle style;
   final bool showFrame;
   final PaperDivider? dividerAfter;
+
+  /// هل ينتج الفرع أو مرفقاته/فاصله محتوى مرئياً عند التصدير؟
+  bool hasExportableContent({
+    required bool teacher,
+    Set<String> ignoredAttachmentIds = const <String>{},
+  }) =>
+      content.hasExportableContent(teacher: teacher) ||
+      attachments.any((element) => !ignoredAttachmentIds.contains(element.id)) ||
+      dividerAfter != null;
 
   /// تسمية يدوية ثابتة للفرع (null = تلقائي من الفهرس).
   final String? labelOverride;

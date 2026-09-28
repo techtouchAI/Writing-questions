@@ -89,7 +89,7 @@ void main() {
       font: PaperFont.tajawal, fontSize: 20, lineHeight: 2, color: 0xFF1E3A8A,
     ));
     await _pump(tester, controller);
-    for (final menu in ['نوع الخط', 'حجم الخط', 'تباعد الأسطر', 'لون النص']) {
+    for (final menu in ['نوع الخط', 'حجم الخط', 'تباعد الأسطر', 'لون عنوان السؤال']) {
       await _tap(tester, _tool(menu));
       await _tap(tester, find.text(menu == 'نوع الخط' ? 'افتراضي الورقة' : 'تلقائي').last);
     }
@@ -447,7 +447,11 @@ void main() {
   testWidgets('custom size, spacing and HEX apply; cancellation leaves formatting unchanged', (tester) async {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
-    for (final entry in {'حجم الخط': '17', 'تباعد الأسطر': '1.7', 'لون النص': '#ABCDEF'}.entries) {
+    for (final entry in {
+      'حجم الخط': '17',
+      'تباعد الأسطر': '1.7',
+      'لون عنوان السؤال': '#ABCDEF',
+    }.entries) {
       await _tap(tester, _tool(entry.key));
       await _tap(tester, find.text('مخصص...'));
       await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), entry.value);
@@ -455,7 +459,8 @@ void main() {
     }
     expect(controller.questions.first.style.fontSize, 17);
     expect(controller.questions.first.style.lineHeight, 1.7);
-    expect(controller.questions.first.style.color, 0xFFABCDEF);
+    expect(controller.questions.first.titleColor, 0xFFABCDEF);
+    expect(controller.questions.first.style.color, isNull);
     await _tap(tester, _tool('حجم الخط'));
     await _tap(tester, find.text('مخصص...'));
     await _tap(tester, find.text('إلغاء'));
@@ -532,9 +537,10 @@ void main() {
       expect(controller.questions.first.style.lineHeight, spacing);
     }
     for (final color in PreviewToolbar.textColors) {
-      await _tap(tester, _tool('لون النص'));
+      await _tap(tester, _tool('لون عنوان السؤال'));
       await _tap(tester, find.textContaining(color.$2).last);
-      expect(controller.questions.first.style.color, color.$1);
+      expect(controller.questions.first.titleColor, color.$1);
+      expect(controller.questions.first.style.color, isNull);
     }
   });
 

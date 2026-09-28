@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/floating_element.dart';
@@ -118,5 +119,40 @@ void main() {
       RegExp('<w:br w:type="page"/>').allMatches(xml).length,
       assignments.length - 1,
     );
+  });
+
+  test('global attachment mirrors do not print empty question or branch labels', () async {
+    final globalMirror = FloatingElement(
+      id: 'global-only-mirror',
+      type: FloatingElementType.shape,
+      shape: FloatingShapeType.square,
+      width: 24,
+      height: 24,
+    );
+    final document = ExamDocument(
+      name: 'مرآة عنصر حر',
+      header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
+      questions: <QuestionModel>[
+        QuestionModel(
+          id: 'mirror-owner',
+          questionNumber: 1,
+          branches: <BranchModel>[
+            BranchModel(
+              labelOverride: 'NO_GHOST_BRANCH',
+              content: BranchContent.empty(),
+              attachments: <FloatingElement>[globalMirror],
+            ),
+          ],
+        ),
+      ],
+      floatingElements: <FloatingElement>[globalMirror],
+    );
+
+    final assignments = await PdfExportService.resolvePageAssignments(document: document);
+    expect(assignments.expand((page) => page), isEmpty);
+    final bytes = await DocxDocumentExportService.buildDocumentDocxBytes(document: document);
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final xml = utf8.decode(archive.findFile('word/document.xml')!.content as List<int>);
+    expect(xml, isNot(contains('NO_GHOST_BRANCH')));
   });
 }

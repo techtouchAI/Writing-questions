@@ -411,6 +411,30 @@ class ExamWizardController extends ChangeNotifier {
     _commit(_document.withQuestionAt(index, questions[index].copyWith(style: style)));
   }
 
+  /// يغيّر لون عنوان السؤال وحده، وينظّف لون النمط القديم الذي كان يلوّن
+  /// المتن كله في الإصدارات السابقة.
+  void updateQuestionTitleColor(int index, int? color) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    if (color != null && (color < 0 || color > 0xFFFFFFFF)) {
+      throw ArgumentError.value(color, 'color', 'لون العنوان يجب أن يكون ARGB صالحاً.');
+    }
+    final question = questions[index];
+    final bodyStyle = question.style.copyWith(color: () => null);
+    if (question.titleColor == color && question.style == bodyStyle) {
+      return;
+    }
+    _commit(
+      _document.withQuestionAt(
+        index,
+        question.copyWith(
+          style: bodyStyle,
+          titleColor: () => color,
+        ),
+      ),
+      coalesceKey: 'question-title-color-$index',
+    );
+  }
+
   void toggleQuestionFrame(int index) {
     RangeError.checkValidIndex(index, questions, 'index');
     final question = questions[index];

@@ -63,5 +63,23 @@ void main() {
         0xFF000000,
       );
     });
+
+    test('round-trips independent line and paragraph spacing', () {
+      const style = PaperTextStyle(lineHeight: 1.5, paragraphSpacing: 0);
+      final restored = PaperTextStyle.fromMap(style.toMap());
+
+      expect(restored, style);
+      expect(restored.paragraphSpacing, 0);
+      expect(restored.copyWith(paragraphSpacing: () => null).paragraphSpacing, isNull);
+      expect(
+        PaperTextStyle.fromMap(const <String, dynamic>{'lineHeight': 3.5}).lineHeight,
+        3.5,
+      );
+      expect(
+        PaperTextStyle.fromMap(const <String, dynamic>{'paragraphSpacing': 41})
+            .paragraphSpacing,
+        40,
+      );
+    });
   });
 }

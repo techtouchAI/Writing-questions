@@ -8,6 +8,8 @@ import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
+import 'package:writing_questions_app/layout/paper_metrics.dart';
+import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/services/docx_document_export_service.dart';
 
@@ -81,10 +83,15 @@ ExamDocument _document() => ExamDocument(
       ],
     );
 
-Future<String> _documentXml(ExamDocument document, {required bool teacher}) async {
+Future<String> _documentXml(
+  ExamDocument document, {
+  required bool teacher,
+  List<List<String>>? pageAssignments,
+}) async {
   final bytes = await DocxDocumentExportService.buildDocumentDocxBytes(
     document: document,
     isTeacherVersion: teacher,
+    pageAssignments: pageAssignments,
   );
   final archive = ZipDecoder().decodeBytes(bytes);
   final xml = archive.findFile('word/document.xml');
@@ -140,5 +147,77 @@ void main() {
     expect(xml.contains('(صح)'), isTrue);
     expect(xml.contains('(خطأ)'), isTrue);
     expect(xml.contains('الإجابة النموذجية'), isTrue);
+  });
+
+  test('uses paragraph spacing and line height while coloring only the title', () async {
+    final document = ExamDocument(
+      name: 'تنسيق مستقل',
+      header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
+      questions: <QuestionModel>[
+        QuestionModel(
+          id: 'styled',
+          questionNumber: 1,
+          prompt: 'متن السؤال غير الملوّن',
+          style: const PaperTextStyle(
+            color: 0xFF12AB34,
+            lineHeight: 1.5,
+            paragraphSpacing: 6,
+          ),
+          items: <BranchItem>[BranchItem(id: 'item', text: 'نقطة السؤال')],
+          branches: <BranchModel>[
+            BranchModel(
+              id: 'choices',
+              style: const PaperTextStyle(lineHeight: 1.25, paragraphSpacing: 12),
+              content: BranchContent(
+                type: QuestionType.multipleChoice,
+                text: 'اختر الإجابة',
+                options: <QuestionOption>[QuestionOption(text: 'الخيار الأول')],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+    final xml = await _documentXml(document, teacher: false);
+    final questionSpacingTwips = (PaperMetrics.pt(6) * 20).round();
+    final optionSpacingTwips = (PaperMetrics.pt(12) * 20).round();
+
+    expect(RegExp('w:color w:val="12AB34"').allMatches(xml), hasLength(1));
+    expect(xml.contains('متن السؤال غير الملوّن'), isTrue);
+    expect(xml.contains('نقطة السؤال'), isTrue);
+    expect(xml.contains('w:line="360"'), isTrue);
+    expect(xml.contains('w:line="300"'), isTrue);
+    expect(xml.contains('w:after="$questionSpacingTwips"'), isTrue);
+    expect(xml.contains('w:after="$optionSpacingTwips"'), isTrue);
+  });
+
+  test('omits empty editable questions and rejects stale page assignments', () async {
+    final document = ExamDocument(
+      name: 'أسئلة قابلة للطباعة',
+      header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
+      questions: <QuestionModel>[
+        QuestionModel(
+          id: 'empty',
+          questionNumber: 1,
+          category: 'لا ينبغي تصدير هذا القسم',
+        ),
+        QuestionModel(
+          id: 'visible',
+          questionNumber: 2,
+          prompt: 'السؤال الذي يظهر في الملف',
+        ),
+      ],
+    );
+    final xml = await _documentXml(
+      document,
+      teacher: false,
+      pageAssignments: const <List<String>>[
+        <String>['empty', 'visible'],
+      ],
+    );
+
+    expect(xml.contains('لا ينبغي تصدير هذا القسم'), isFalse);
+    expect(xml.contains('السؤال الذي يظهر في الملف'), isTrue);
+    expect(xml.contains('<w:br w:type="page"/>'), isFalse);
   });
 }

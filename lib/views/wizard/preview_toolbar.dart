@@ -41,9 +41,12 @@ class PreviewToolbar extends StatelessWidget {
     required this.onAlignChanged,
     required this.activeLineHeight,
     required this.onLineHeightChanged,
+    required this.activeParagraphSpacing,
+    required this.onParagraphSpacingChanged,
     required this.activeQuestionSpacing,
     required this.onQuestionSpacingChanged,
     required this.activeColor,
+    required this.colorTooltip,
     required this.onColorChanged,
     required this.hasFrame,
     required this.onToggleFrame,
@@ -99,12 +102,17 @@ class PreviewToolbar extends StatelessWidget {
   final double? activeLineHeight;
   final ValueChanged<double?> onLineHeightChanged;
 
+  /// المسافة بين الفقرات/الأسطر المنفصلة بالبكسل المنطقي.
+  final double? activeParagraphSpacing;
+  final ValueChanged<double?> onParagraphSpacingChanged;
+
   /// المسافة بعد السؤال النشط بالبكسل (null = تحديد متعدد بقيم مختلفة).
   final double? activeQuestionSpacing;
   final ValueChanged<double> onQuestionSpacingChanged;
 
-  /// لون نص التحديد ARGB (`null` = تلقائي، -1 = مخصص...).
+  /// لون النص الحالي ARGB (`null` = تلقائي، -1 = مخصص...).
   final int? activeColor;
+  final String colorTooltip;
   final ValueChanged<int?> onColorChanged;
   final bool? hasFrame;
   final VoidCallback onToggleFrame;
@@ -130,6 +138,9 @@ class PreviewToolbar extends StatelessWidget {
   static const List<double> lineSpacings = <double>[
     1.0, 1.15, 1.5, 2.0, 2.5, 3.0,
   ];
+
+  /// مسافة بعد كل فقرة، مستقلة عن ارتفاع السطر داخلها.
+  static const List<double> paragraphSpacings = <double>[0, 1, 2, 4, 8, 12, 16, 24];
 
   /// مسافات جاهزة بين الأسئلة؛ الصفر يلغي الفراغ الإضافي تماماً.
   static const List<double> questionSpacings = <double>[0, 2, 4, 6, 10, 16, 24, 40];
@@ -246,12 +257,17 @@ class PreviewToolbar extends StatelessWidget {
               activeLineHeight: activeLineHeight,
               onChanged: isBusy ? null : onLineHeightChanged,
             ),
+            _ParagraphSpacingMenu(
+              activeSpacing: activeParagraphSpacing,
+              onChanged: isBusy ? null : onParagraphSpacingChanged,
+            ),
             _QuestionSpacingMenu(
               activeSpacing: activeQuestionSpacing,
               onChanged: isBusy ? null : onQuestionSpacingChanged,
             ),
             _ColorMenu(
               activeColor: activeColor,
+              tooltip: colorTooltip,
               onChanged: isBusy ? null : onColorChanged,
             ),
             _ToolButton(
@@ -530,6 +546,70 @@ class _LineSpacingMenu extends StatelessWidget {
   }
 }
 
+class _ParagraphSpacingMenu extends StatelessWidget {
+  const _ParagraphSpacingMenu({
+    required this.activeSpacing,
+    required this.onChanged,
+  });
+
+  final double? activeSpacing;
+  final ValueChanged<double?>? onChanged;
+
+  static String _label(double value) => value == value.truncateToDouble()
+      ? value.toInt().toString()
+      : value.toString();
+
+  @override
+  Widget build(BuildContext context) {
+    final value = activeSpacing;
+    return PopupMenuButton<_MenuChoice<double>>(
+      enabled: onChanged != null,
+      tooltip: 'المسافة بين الفقرات',
+      onSelected: (selected) => onChanged?.call(selected.value),
+      itemBuilder: (_) => <PopupMenuEntry<_MenuChoice<double>>>[
+        PopupMenuItem<_MenuChoice<double>>(
+          value: const _MenuChoice<double>(null),
+          child: Text(
+            value == null ? '✓ تلقائي' : 'تلقائي',
+            style: const TextStyle(fontSize: 13),
+          ),
+        ),
+        const PopupMenuDivider(),
+        for (final spacing in PreviewToolbar.paragraphSpacings)
+          PopupMenuItem<_MenuChoice<double>>(
+            value: _MenuChoice<double>(spacing),
+            child: Text(
+              '${value == spacing ? '✓ ' : ''}${_label(spacing)} بكسل'
+              '${spacing == 0 ? ' — بلا فراغ' : ''}',
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+        const PopupMenuDivider(),
+        const PopupMenuItem<_MenuChoice<double>>(
+          value: _MenuChoice<double>(double.nan),
+          child: Text('مخصص...', style: TextStyle(fontSize: 13)),
+        ),
+      ],
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 52),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Icon(Icons.format_line_spacing, size: 20),
+            const SizedBox(width: 2),
+            Text(
+              value == null ? 'فقرات' : '${_label(value)}px',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _QuestionSpacingMenu extends StatelessWidget {
   const _QuestionSpacingMenu({required this.activeSpacing, required this.onChanged});
 
@@ -584,9 +664,14 @@ class _QuestionSpacingMenu extends StatelessWidget {
 }
 
 class _ColorMenu extends StatelessWidget {
-  const _ColorMenu({required this.activeColor, required this.onChanged});
+  const _ColorMenu({
+    required this.activeColor,
+    required this.tooltip,
+    required this.onChanged,
+  });
 
   final int? activeColor;
+  final String tooltip;
   final ValueChanged<int?>? onChanged;
 
   @override
@@ -597,7 +682,7 @@ class _ColorMenu extends StatelessWidget {
     // لا نغلّفه بـ Tooltip مكرر (نظافة الوصول ودقة الاختبارات).
     return PopupMenuButton<_MenuChoice<int>>(
       enabled: onChanged != null,
-      tooltip: 'لون النص',
+      tooltip: tooltip,
       icon: Icon(
         Icons.format_color_text,
         size: 20,
