@@ -7,16 +7,17 @@ import '../../models/quran_text.dart';
 import 'formula_inserter.dart';
 
 /// يفتح بلاطة صور النظام ويعيد بايتات الصورة المختارة (أو null عند الإلغاء).
-Future<List<int>?> pickImageBytes() async {
+Future<List<int>?> pickImageBytes({VoidCallback? onError}) async {
   try {
     final picker = ImagePicker();
     final file = await picker.pickImage(source: ImageSource.gallery);
     if (file == null) {
       return null;
     }
-    return file.readAsBytes();
+    return await file.readAsBytes();
   } catch (_) {
-    // المنصات غير المدعومة أو رفض الصلاحية: لا نُسقط اللوحة.
+    // Cancellation is silent; errors must not look like a dead button.
+    onError?.call();
     return null;
   }
 }
@@ -228,7 +229,15 @@ class _TextTab extends StatelessWidget {
         _ChipButton(
           icon: Icons.menu_book,
           label: 'آية قرآنية',
-          onTap: () => inserter.wrapSelection(QuranText.openMarker, QuranText.closeMarker),
+          onTap: () {
+            if (!inserter.hasTarget) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('انقر داخل حقل نصي على الورقة أولاً.')),
+              );
+              return;
+            }
+            inserter.wrapSelection(QuranText.openMarker, QuranText.closeMarker);
+          },
         ),
       ],
     );
@@ -381,9 +390,14 @@ class _MediaTab extends StatelessWidget {
   final VoidCallback? onAddDivider;
   final VoidCallback? onAddFormula;
 
-  Future<void> _pickImage() async {
-    final bytes = await pickImageBytes();
-    if (bytes != null) {
+  Future<void> _pickImage(BuildContext context) async {
+    final bytes = await pickImageBytes(onError: () {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('تعذر فتح الصورة. تحقق من صلاحية الوصول للصور وحاول مجدداً.'),
+      ));
+    });
+    if (context.mounted && bytes != null) {
       onAddImage(bytes);
     }
   }
@@ -397,7 +411,7 @@ class _MediaTab extends StatelessWidget {
         _ChipButton(
           icon: Icons.image,
           label: 'صورة',
-          onTap: _pickImage,
+          onTap: () => _pickImage(context),
         ),
         if (onAddFormula != null)
           _ChipButton(

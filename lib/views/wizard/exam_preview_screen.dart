@@ -240,10 +240,22 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   // حقول التحرير المباشر
   // ------------------------------------------------------------------
 
+  bool _syncingFields = false;
+  final Map<String, ValueChanged<String>> _fieldEdits = {};
+
   TextEditingController _field(String key, String initial, ValueChanged<String> onEdit) {
+    // Refresh index-based callbacks after moves/deletions; controllers keep
+    // their stable IDs, but their owners may now occupy different indices.
+    _fieldEdits[key] = onEdit;
     return _fields.putIfAbsent(key, () {
       final field = TextEditingController(text: initial);
-      field.addListener(() => onEdit(field.text));
+      var previousText = initial;
+      field.addListener(() {
+        final text = field.text;
+        if (text == previousText) return; // Cursor/focus changes are not edits.
+        previousText = text;
+        if (!_syncingFields) _fieldEdits[key]?.call(text);
+      });
       return field;
     });
   }
@@ -268,8 +280,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (controller == null) {
       return;
     }
+    if (_syncingFields) return;
+    _syncingFields = true;
+    try {
     final document = controller.document;
     for (final question in document.questions) {
+      for (final item in question.items) {
+        final field = _fields[_itemKey(item.id)];
+        if (field != null && field.text != item.text) field.text = item.text;
+      }
       final categoryField = _fields[_categoryKey(question.id)];
       if (categoryField != null && categoryField.text != question.category) {
         categoryField.text = question.category;
@@ -322,7 +341,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (notesField != null && notesField.text != document.header.notes) {
       notesField.text = document.header.notes;
     }
+    final instructions = _fields[_instructionsKey];
+    if (instructions != null && instructions.text != document.header.instructions) {
+      instructions.text = document.header.instructions;
+    }
     _disposeStaleFields(document);
+    } finally {
+      _syncingFields = false;
+    }
   }
 
   /// يتخلّص من تحكمات الحقول التي حُذف أصحابها (سؤال أو فرع) فلا تتراكم
@@ -338,6 +364,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       for (final question in document.questions) ...<String>{
         _categoryKey(question.id),
         _promptKey(question.id),
+        for (final item in question.items) _itemKey(item.id),
         for (final branch in question.branches) ...<String>{
           _branchTextKey(branch.id),
           _branchMarksKey(branch.id),
@@ -355,6 +382,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     // يُزال القيد فوراً (فلا يُعاد استخدام تحكم فرع محذوف)، ويُحرَّر التحكم
     // بعد اكتمال إطارين — فالإطار الأول يُسقط الحقول من الشجرة، والثاني
     // يضمن أن التحكم لم يبق مربوطاً بأي حقل قبل تحريره.
+    for (final key in stale) {
+      if (identical(_inserter.controller, _fields[key])) _inserter.controller = null;
+      _fieldEdits.remove(key);
+    }
     final orphaned = <TextEditingController>[
       for (final key in stale) _fields.remove(key)!,
     ];
@@ -755,22 +786,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return top;
   }
 
-  /// يضيف صورة/شكلاً لمساحة الفرع المحدد (مسار شريط الصيغ — يتطلب فرعاً).
-  void _addAttachmentToBranch(FloatingElement element) {
-    element = _withDefaultPosition(element);
-    final added = _controller!.addAttachment(element);
-    if (!added) {
-      _showMessage('انقر على فرع داخل الورقة أولاً لتحديد موضع الإدراج.');
-      return;
-    }
-    final ref = _controller!.selectedBranch!;
-    setState(() => _selectedAttachment = _AttachmentRef(
-      questionIndex: ref.questionIndex,
-      branchIndex: ref.branchIndex,
-      elementId: element.id,
-    ));
-  }
-
   /// يفتح محرّر المعادلات ثم يُنتج معادلة **حرة** تُحدّد موضعها بنفسك.
   ///
   /// بعد الإكمال في المحرّر تصبح المعادلة بطاقةً جاهزة (في شريط الصيغ):
@@ -906,6 +921,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         questionTarget = null;
       }
     }
+    questionTarget ??= controller.questions.isEmpty ? null : controller.currentQuestionIndex;
     if (questionTarget != null) {
       if (controller.addQuestionAttachment(element, questionIndex: questionTarget)) {
         setState(() => _selectedAttachment = _AttachmentRef(
@@ -916,19 +932,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
     }
     _showMessage('انقر على سؤال أو فرع داخل الورقة أولاً لتحديد موضع الإدراج.');
-  }
-
-  void _addImage(List<int> bytes) {
-    _addAttachmentToBranch(
-      FloatingElement(
-        type: FloatingElementType.image,
-        bytes: Uint8List.fromList(bytes),
-        dx: 0,
-        dy: 0,
-        width: ExamCanvasGeometry.defaultElementSize,
-        height: ExamCanvasGeometry.defaultElementSize,
-      ),
-    );
   }
 
   void _addImageToSelection(List<int> bytes) {
@@ -945,27 +948,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   }
 
   Future<void> _pickImageToSelection() async {
-    final bytes = await pickImageBytes();
+    final bytes = await pickImageBytes(
+      onError: () => _showMessage('تعذر فتح الصورة. تحقق من صلاحية الوصول للصور وحاول مجدداً.', isError: true),
+    );
+    if (!mounted) return;
     if (bytes != null) {
       _addImageToSelection(bytes);
     }
-  }
-
-  void _addShape(FloatingShapeType shape) {
-    _addAttachmentToBranch(
-      FloatingElement(
-        type: FloatingElementType.shape,
-        shape: shape,
-        dx: 0,
-        dy: 0,
-        width: shape == FloatingShapeType.line || shape == FloatingShapeType.divider
-            ? ExamCanvasGeometry.defaultElementSize * 2
-            : ExamCanvasGeometry.defaultElementSize,
-        height: shape == FloatingShapeType.line || shape == FloatingShapeType.divider
-            ? 24
-            : ExamCanvasGeometry.defaultElementSize,
-      ),
-    );
   }
 
   void _addShapeToSelection(FloatingShapeType shape) {
@@ -988,14 +977,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   void _addTextBox() {
     final element = _newTextBoxElement();
     _addAttachmentToSelection(element);
-    _editNewTextBox(element.id);
-  }
-
-  /// يضيف مربع نص على **الفرع المحدد** (مسار شريط الصيغ والوسائط) ويفتح
-  /// محرّره فورًا — نفس سلوك زر «مربع نص» في شريط المعاينة.
-  void _addTextBoxToSelectedBranch() {
-    final element = _newTextBoxElement();
-    _addAttachmentToBranch(element);
     _editNewTextBox(element.id);
   }
 
@@ -1582,6 +1563,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 'الدرجة الكلية',
                 '${document.formatNumber(document.totalMarks)} ${document.layout.marksUnit}',
               ),
+              _reviewRow('النسخة', _showTeacherAnswers ? 'نموذج الإجابة' : 'ورقة الطالب'),
               _reviewRow('حجم الورق', 'A4'),
               _reviewRow('الخط الافتراضي', document.settings.defaultFont.arabicLabel),
               _reviewRow('نمط التسمية', document.settings.questionLabelStyle.arabicLabel),
@@ -1604,7 +1586,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           FilledButton.icon(
             onPressed: () {
               Navigator.of(dialogContext).pop();
-              _exportPdf(isTeacherVersion: false);
+              _exportPdf(isTeacherVersion: _showTeacherAnswers);
             },
             icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
             label: const Text('تصدير PDF'),
@@ -1612,7 +1594,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           FilledButton.tonalIcon(
             onPressed: () {
               Navigator.of(dialogContext).pop();
-              _exportWord(isTeacherVersion: false);
+              _exportWord(isTeacherVersion: _showTeacherAnswers);
             },
             icon: const Icon(Icons.description_outlined, size: 18),
             label: const Text('تصدير Word'),
@@ -2015,20 +1997,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           if (_showFormulas)
             SmartExamToolbar(
               inserter: _inserter,
-              onInsertText: _inserter.insert,
-              onAddImage: _addImage,
-              onAddShape: _addShape,
+              onInsertText: _insertText,
+              onAddImage: _addImageToSelection,
+              onAddShape: _addShapeToSelection,
               onAddQuestion: controller.addQuestion,
               onAddBranch: _addBranchToSelected,
-              onAddTextBox: _addTextBoxToSelectedBranch,
-              onAddDivider: () {
-                final ref = controller.selectedBranch;
-                if (ref == null) {
-                  _showMessage('انقر على فرع داخل الورقة أولاً لتحديد موضع الفاصل.');
-                  return;
-                }
-                controller.setBranchDivider(ref, const PaperDivider());
-              },
+              onAddTextBox: _addTextBox,
+              onAddDivider: _addDividerToSelection,
               stagedFormula: _stagedFormula,
               onEquationEditor: _openEquationEditor,
               onAddFormula: _openEquationEditor,
@@ -2385,6 +2360,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       key: ValueKey<String>('page-element-${element.id}'),
       child: _buildAttachment(controller, ref, element),
     );
+    if (!_locked && _selectedAttachment?.elementId == element.id) {
+      yield _buildAttachmentToolbar(ref, element);
+    }
   }
 
   /// يُنشئ المعادلة المسحوبة من الشريط في موضع الإفلات (بكسل اللوحة).
@@ -2460,7 +2438,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 style: center ? centerStyle : lineStyle,
                 textAlign: center ? TextAlign.center : TextAlign.start,
                 hint: 'سطر ${index + 1}',
-                registerInserter: true,
+
               ),
           ],
         ),
@@ -2494,7 +2472,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 style: titleStyle,
                 textAlign: PaperStyles.toTextAlign(header.style.align, TextAlign.center),
                 hint: 'عنوان الامتحان...',
-                registerInserter: true,
+
               ),
             Container(
               decoration: BoxDecoration(
@@ -2521,7 +2499,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               style: _scaled(PaperStyles.note),
               textAlign: TextAlign.center,
               hint: 'ملاحظة / تعليمات للطلاب...',
-              registerInserter: true,
+
             ),
             if (header.notes.trim().isNotEmpty || _headerSelected)
               _paperField(
@@ -2530,7 +2508,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 style: _scaled(PaperStyles.note),
                 textAlign: TextAlign.center,
                 hint: 'ملاحظات إضافية (وقت/درجة/...)...',
-                registerInserter: true,
+
               ),
             const Divider(thickness: 1.5, color: PaperStyles.primary, height: 10),
           ],
@@ -2675,7 +2653,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           hint: layout.isLtr
               ? 'Question text / instructions...'
               : 'نص السؤال / التعليمات (أجب عن فرعين فقط: ...)...',
-          registerInserter: true,
+
         ),
         // نقاط السؤال المباشرة (1، 2، 3...) — الترقيم تلقائي على الورقة،
         // والمدرس يكتب محتوى كل سطر (عبارات/فراغات/اختيارات) بنفسه.
@@ -2929,7 +2907,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 style: bodyStyle,
                 textAlign: PaperStyles.toTextAlign(branch.style.align),
                 hint: layout.isLtr ? 'Branch text...' : 'نص الفرع...',
-                registerInserter: true,
+
                 mushafStyle: true,
               ),
             ),
@@ -3202,7 +3180,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               ),
               style: bodyStyle,
               hint: layout.isLtr ? 'Item...' : 'نص النقطة...',
-              registerInserter: true,
+
             ),
           ),
           IconButton(
@@ -3641,9 +3619,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               ),
               if (selected && !_locked)
                 Positioned(
-                  left: -12,
-                  top: -12,
+                  left: 0,
+                  top: 0,
                   child: GestureDetector(
+                    key: ValueKey<String>('delete-element-${element.id}'),
                     onTap: () => _removeAttachmentElement(ref),
                     child: const CircleAvatar(
                       radius: 10,
@@ -3654,9 +3633,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 ),
               if (selected && !_locked && element.isFormula)
                 Positioned(
-                  right: -12,
-                  top: -12,
+                  right: 0,
+                  top: 0,
                   child: GestureDetector(
+                    key: ValueKey<String>('edit-element-${element.id}'),
                     onTap: () => _editFormulaElement(ref),
                     child: const CircleAvatar(
                       radius: 10,
@@ -3667,9 +3647,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 ),
               if (selected && !_locked && element.isTextBox)
                 Positioned(
-                  right: -12,
-                  top: -12,
+                  right: 0,
+                  top: 0,
                   child: GestureDetector(
+                    key: ValueKey<String>('edit-element-${element.id}'),
                     onTap: () => _editTextBox(ref),
                     child: const CircleAvatar(
                       radius: 10,
@@ -3683,9 +3664,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   !element.isTextBox &&
                   !element.isImage)
                 Positioned(
-                  left: -12,
-                  bottom: -12,
+                  left: 0,
+                  bottom: 0,
                   child: GestureDetector(
+                    key: ValueKey<String>('rotate-element-${element.id}'),
                     onTap: () => _updateAttachmentElement(
                       ref,
                       element.copyWith(
@@ -3702,9 +3684,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 ),
               if (selected && !_locked)
                 Positioned(
-                  right: -6,
-                  bottom: -6,
+                  right: 0,
+                  bottom: 0,
                   child: GestureDetector(
+                    key: ValueKey<String>('resize-element-${element.id}'),
                     onPanUpdate: (details) {
                       if (element.isImage) {
                         // الصور تحافظ على نسبة أبعادها عند تغيير الحجم.
@@ -3730,8 +3713,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                     child: const Icon(Icons.south_east, size: 18, color: PaperStyles.accent),
                   ),
                 ),
-            if (selected && !_locked)
-              _buildAttachmentToolbar(ref, element),
+
             ],
           ),
         ),
@@ -3744,10 +3726,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// يظهر أعلى العنصر عادة، وأسفله إن كان ملاصقاً لأعلى الصفحة حتى لا يُقصّ.
   Widget _buildAttachmentToolbar(_AttachmentRef ref, FloatingElement element) {
     final below = element.dy < 44;
-    return Positioned(
-      top: below ? null : -38,
-      bottom: below ? -38 : null,
-      right: 0,
+    return PositionedDirectional(
+      start: element.dx.clamp(0.0, ExamCanvasGeometry.width - 160),
+      top: (below ? element.dy + element.height + 8 : element.dy - 38)
+          .clamp(0.0, ExamCanvasGeometry.height - 36),
       child: Material(
         elevation: 3,
         borderRadius: BorderRadius.circular(16),
@@ -3822,7 +3804,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   /// يستبدل صورة العنصر [ref] بصورة جديدة (الموضع والمقاس كما هما).
   Future<void> _replaceImage(_AttachmentRef ref, FloatingElement element) async {
-    final bytes = await pickImageBytes();
+    final bytes = await pickImageBytes(
+      onError: () => _showMessage('تعذر فتح الصورة. تحقق من صلاحية الوصول للصور وحاول مجدداً.', isError: true),
+    );
+    if (!mounted) return;
     if (bytes == null) {
       return;
     }
@@ -3952,7 +3937,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                                 ? answerStyle
                                 : _scaled(PaperStyles.option),
                             hint: layout.isLtr ? 'Option...' : 'نص الخيار...',
-                            registerInserter: true,
+
                           ),
                         ],
                       ),
@@ -4054,7 +4039,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 ),
                 style: answerStyle,
                 hint: layout.isLtr ? 'Model answer...' : 'اكتب الإجابة النموذجية...',
-                registerInserter: true,
+
               ),
             ],
           ),
@@ -4070,13 +4055,56 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// النص العادي يُحرَّر مباشرة في مكانه؛ وما إن يحتوي على صيغة/آية حتى
   /// يُعرض منسّقاً (نفس محرك الطباعة حرفياً) والنقر يفتح التحرير: محرر
   /// المعادلات المرئي للصيغ الخالصة، وإلا تحرير المصدر في مكانه.
+  void _insertText(String text) {
+    if (!_inserter.hasTarget) {
+      _showMessage('انقر داخل حقل نصي على الورقة أولاً.');
+      return;
+    }
+    _inserter.insert(text);
+  }
+
+  void _activateField(String key, TextEditingController field) {
+    _inserter.controller = field;
+    final controller = _controller!;
+    final document = controller.document;
+    setState(() {
+      if (!_multiSelect) _clearSelection();
+      if (key.startsWith('header-') || key == _instructionsKey) {
+        _headerSelected = true;
+        controller.selectBranch(null);
+        controller.selectQuestion(null);
+        return;
+      }
+      for (var q = 0; q < document.questions.length; q++) {
+        final question = document.questions[q];
+        if (key == _promptKey(question.id) || key == _categoryKey(question.id) ||
+            question.items.any((item) => key == _itemKey(item.id))) {
+          _selectedQuestions.add(question.id);
+          controller.selectBranch(null);
+          controller.selectQuestion(q);
+          return;
+        }
+        for (var b = 0; b < question.branches.length; b++) {
+          final branch = question.branches[b];
+          if (key == _branchTextKey(branch.id) || key == _modelAnswerKey(branch.id) ||
+              branch.content.items.any((item) => key == _itemKey(item.id)) ||
+              List.generate(branch.content.options.length, (i) => _optionKey(branch.id, i)).contains(key)) {
+            final ref = BranchRef(questionIndex: q, branchIndex: b);
+            _selectedBranches.add(ref);
+            controller.selectBranch(ref);
+            return;
+          }
+        }
+      }
+    });
+  }
+
   Widget _paperField({
     required String fieldKey,
     required TextEditingController controller,
     required TextStyle style,
     TextAlign textAlign = TextAlign.start,
     String? hint,
-    bool registerInserter = false,
     bool mushafStyle = false,
   }) {
     final layout = _controller!.document.layout;
@@ -4086,7 +4114,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       style: style,
       textAlign: textAlign,
       hint: hint,
-      onActivate: registerInserter ? () => _inserter.controller = controller : null,
+      onActivate: () => _activateField(fieldKey, controller),
       onEditFormula: () => _editEquationInField(fieldKey),
       // نص الفرع وحده يتبع «أسلوب المصحف» (توسيط الآية القائمة بذاتها)
       // كما في محرك الـ PDF — وبقية الحقول تُعرض بمحاذاة الحقل نفسها.
