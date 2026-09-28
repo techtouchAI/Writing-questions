@@ -896,7 +896,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _showMessage('أُدرجت المعادلة — اسحبها إلى أي موضع تريده.');
   }
 
-  /// يضيف عنصراً للتحديد الحالي (فرع، وإلا سؤال، وإلا رفض مع إرشاد).
+  /// يضيف عنصراً للفرع/السؤال المحدد، أو للسؤال النشط عند غياب تحديد صريح.
   void _addAttachmentToSelection(FloatingElement element) {
     element = _withDefaultPosition(element);
     final controller = _controller!;
@@ -1613,7 +1613,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       child: Row(
         children: <Widget>[
           Expanded(child: Text(label, style: const TextStyle(color: Colors.grey))),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.end,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
         ],
       ),
     );
