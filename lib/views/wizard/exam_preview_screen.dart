@@ -2497,7 +2497,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   Offset? _localPositionOnPage(int pageIndex, Offset globalPosition) {
     final box = _pageRenderBox(pageIndex);
-    return box == null ? null : box.globalToLocal(globalPosition);
+    return box?.globalToLocal(globalPosition);
   }
 
   ({int pageIndex, Offset local})? _pageAtGlobalPosition(Offset globalPosition) {
