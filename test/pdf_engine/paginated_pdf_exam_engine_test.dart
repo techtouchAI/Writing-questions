@@ -122,6 +122,8 @@ void main() {
         id: 'global-only-mirror',
         type: FloatingElementType.shape,
         shape: FloatingShapeType.square,
+        dx: 0,
+        dy: 0,
         width: 24,
         height: 24,
       );

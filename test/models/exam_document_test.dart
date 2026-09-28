@@ -173,6 +173,8 @@ void main() {
               FloatingElement(
                 type: FloatingElementType.shape,
                 shape: FloatingShapeType.circle,
+                dx: 0,
+                dy: 0,
                 width: 20,
                 height: 20,
               ),
@@ -192,6 +194,8 @@ void main() {
                 id: 'global-mirror',
                 type: FloatingElementType.shape,
                 shape: FloatingShapeType.circle,
+                dx: 0,
+                dy: 0,
                 width: 20,
                 height: 20,
               ),
