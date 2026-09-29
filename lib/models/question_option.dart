@@ -1,5 +1,7 @@
 import 'package:uuid/uuid.dart';
 
+import 'paper_text_style.dart';
+
 /// خيار إجابة في سؤال الاختيار من متعدد / صح وخطأ.
 class QuestionOption {
   QuestionOption({
@@ -7,11 +9,18 @@ class QuestionOption {
     required this.text,
     this.isCorrect = false,
     this.labelOverride,
+    this.align,
   }) : id = id ?? const Uuid().v4();
 
   final String id;
   String text;
   bool isCorrect;
+
+  /// محاذاة هذا الخيار وحده (null = وراثة من محاذاة الفرع).
+  ///
+  /// Word/MSO يحاذي كل فقرة على حدة؛ النقر على زر المحاذاة وأنت في خيار
+  /// لا يجوز أن يُعيد توجيه نص الفرع أو خيارات أخرى.
+  final PaperAlign? align;
 
   /// تسمية مخصصة للخيار يثبّتها المدرس.
   ///
@@ -26,6 +35,7 @@ class QuestionOption {
       'text': text,
       'isCorrect': isCorrect,
       if (labelOverride != null) 'labelOverride': labelOverride,
+      if (align != null) 'align': align!.name,
     };
   }
 
@@ -41,6 +51,7 @@ class QuestionOption {
     if (rawCorrect != null && rawCorrect is! bool) {
       throw const FormatException('QuestionOption: isCorrect يجب أن يكون منطقياً.');
     }
+    final rawAlign = map['align'];
 
     return QuestionOption(
       id: map['id'] is String && (map['id'] as String).trim().isNotEmpty
@@ -49,15 +60,22 @@ class QuestionOption {
       text: rawText?.toString() ?? '',
       isCorrect: rawCorrect == true,
       labelOverride: map['labelOverride'] is String ? map['labelOverride'] as String : null,
+      align: rawAlign != null ? PaperAlign.parse(rawAlign) : null,
     );
   }
 
-  QuestionOption copyWith({String? text, bool? isCorrect, String? Function()? labelOverride}) {
+  QuestionOption copyWith({
+    String? text,
+    bool? isCorrect,
+    String? Function()? labelOverride,
+    PaperAlign? Function()? align,
+  }) {
     return QuestionOption(
       id: id,
       text: text ?? this.text,
       isCorrect: isCorrect ?? this.isCorrect,
       labelOverride: labelOverride == null ? this.labelOverride : labelOverride(),
+      align: align == null ? this.align : align(),
     );
   }
 }

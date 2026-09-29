@@ -245,7 +245,7 @@ class FloatingElement {
       height: height,
       label: map['label']?.toString() ?? '',
       strokeWidth: _lenientNum(map['strokeWidth'], fallback: 2, min: 0.5, max: 12),
-      rotationDegrees: _lenientNum(map['rotationDegrees'], fallback: 0, min: -180, max: 180),
+      rotationDegrees: _lenientNum(map['rotationDegrees'], fallback: 0, min: -360, max: 360),
       textStyle: PaperTextStyle.fromValue(map['textStyle']),
       framed: map['framed'] == true,
     );

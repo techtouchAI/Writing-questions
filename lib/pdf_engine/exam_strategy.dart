@@ -35,26 +35,28 @@ class ExamTextStyles {
   static const PdfColor mutedColor = PdfColor.fromInt(0xFF4B5563);
 
   static final ExamTextStyles standard = ExamTextStyles(
+    // lineSpacing هنا = نسبة ارتفاع السطر (Flutter height) — نفس قيم
+    // PaperStyles على الشاشة حتى يتطابق ارتفاع السطر مطبوعاً ومنشوراً.
     headerTitle: _textStyle(
       fontSize: 15,
       bold: true,
       color: primaryColor,
-      lineSpacing: 1.5,
+      lineSpacing: 1.6,
     ),
-    headerBody: _textStyle(fontSize: 10, lineSpacing: 1.5),
+    headerBody: _textStyle(fontSize: 10, lineSpacing: 1.6),
     badge: _textStyle(fontSize: 9.5, bold: true, lineSpacing: 1.5),
     category: _textStyle(
       fontSize: 12.5,
       bold: true,
       color: primaryColor,
-      lineSpacing: 1.5,
+      lineSpacing: 1.45,
     ),
-    question: _textStyle(fontSize: 11, bold: true, lineSpacing: 2),
+    question: _textStyle(fontSize: 11, bold: true, lineSpacing: 1.7),
     option: _textStyle(fontSize: 10.5, lineSpacing: 1.4),
-    body: _textStyle(fontSize: 10.5, lineSpacing: 1.5),
-    small: _textStyle(fontSize: 9, color: mutedColor, lineSpacing: 1.4),
-    note: _textStyle(fontSize: 9.5, color: mutedColor, lineSpacing: 1.5),
-    footer: _textStyle(fontSize: 8.5, color: mutedColor),
+    body: _textStyle(fontSize: 10.5, lineSpacing: 1.45),
+    small: _textStyle(fontSize: 9, color: mutedColor, lineSpacing: 1.45),
+    note: _textStyle(fontSize: 9.5, color: mutedColor, lineSpacing: 1.45),
+    footer: _textStyle(fontSize: 8.5, color: mutedColor, lineSpacing: 1.45),
   );
 
   /// نسخة مقاسة بمعاملَي الورقة العامّين (حجم الخط الأساسي وتباعد

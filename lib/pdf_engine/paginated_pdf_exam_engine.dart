@@ -460,14 +460,14 @@ class PaginatedPdfExamEngine {
     final header = document.header;
     final settings = document.settings;
     final lineStyle = PaperStyleResolver.apply(
-      styles.headerBody.copyWith(lineSpacing: 2 * settings.heightScale),
+      styles.headerBody.copyWith(lineSpacing: 1.6 * settings.heightScale),
       header.style,
       fonts: fonts,
       defaultFont: settings.defaultFont,
     );
     final centerStyle = PaperStyleResolver.apply(
       styles.headerBody.copyWith(
-          fontWeight: pw.FontWeight.bold, lineSpacing: 2 * settings.heightScale),
+          fontWeight: pw.FontWeight.bold, lineSpacing: 1.6 * settings.heightScale),
       header.style,
       fonts: fonts,
       defaultFont: settings.defaultFont,
@@ -504,6 +504,9 @@ class PaginatedPdfExamEngine {
     final title = header.title.trim();
     final titleAlign =
         PaperStyleResolver.toPdfAlign(header.style.align) ?? pw.TextAlign.center;
+    // محاذاة حددها المدرس لأي سطر ترويسة تُطبَّق على الأعمدة كلها (كما
+    // تعرضها الشاشة)؛ والافتراضي العمودي يبقى كما كان عند غيابها.
+    final headerAlign = PaperStyleResolver.toPdfAlign(header.style.align);
     final children = <pw.Widget>[
       if (title.isNotEmpty)
         pw.Padding(
@@ -521,11 +524,11 @@ class PaginatedPdfExamEngine {
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: <pw.Widget>[
             // العمود الأول في اتجاه القراءة: اليمين في RTL.
-            column(header.right, lineStyle, pw.TextAlign.start),
+            column(header.right, lineStyle, headerAlign ?? pw.TextAlign.start),
             pw.SizedBox(width: 6),
-            column(header.center, centerStyle, pw.TextAlign.center),
+            column(header.center, centerStyle, headerAlign ?? pw.TextAlign.center),
             pw.SizedBox(width: 6),
-            column(header.left, lineStyle, pw.TextAlign.start),
+            column(header.left, lineStyle, headerAlign ?? pw.TextAlign.start),
           ],
         ),
       ),
@@ -586,7 +589,8 @@ class PaginatedPdfExamEngine {
     final prompt = question.prompt.trim();
     final promptStyle = PaperStyleResolver.apply(
       styles.body.copyWith(
-          lineSpacing: layout.lineHeightFactor * 2 * settings.heightScale),
+          fontSize: 11,
+          lineSpacing: 1.7 * settings.heightScale),
       bodyOverride,
       fonts: fonts,
       defaultFont: settings.defaultFont,
@@ -721,9 +725,9 @@ class PaginatedPdfExamEngine {
         ? styles.body.copyWith(
             fontSize: 12 * settings.fontScale,
             lineSpacing:
-                (layout.lineHeightFactor * 2 + 2) * settings.heightScale)
+                (layout.lineHeightFactor + 1) * settings.heightScale)
         : styles.body.copyWith(
-            lineSpacing: layout.lineHeightFactor * 2 * settings.heightScale);
+            lineSpacing: layout.lineHeightFactor * settings.heightScale);
     final bodyStyle = PaperStyleResolver.apply(
       baseBody,
       branch.style,
@@ -821,8 +825,7 @@ class PaginatedPdfExamEngine {
   }) {
     final settings = document.settings;
     final itemStyle = PaperStyleResolver.apply(
-      styles.body.copyWith(
-          lineSpacing: layout.lineHeightFactor * 2 * settings.heightScale),
+      styles.body.copyWith(lineSpacing: 1.5 * settings.heightScale),
       ownerStyle,
       fonts: fonts,
       defaultFont: settings.defaultFont,
@@ -977,6 +980,8 @@ class PaginatedPdfExamEngine {
       fontWeight: pw.FontWeight.bold,
     );
     final align = PaperStyleResolver.toPdfAlign(branchStyle?.align);
+    // محاذاة الإجابة النموذجية/صح-خطأ: نظيرها في الموديل يعلو محاذاة الفرع.
+    final answerAlign = PaperStyleResolver.toPdfAlign(content.modelAnswerAlign) ?? align;
     switch (content.type) {
       case QuestionType.multipleChoice:
         // الخيارات الفارغة تُحذف، لكن التسميات تبقى بفهارسها الأصلية
@@ -1000,7 +1005,8 @@ class PaginatedPdfExamEngine {
                       ? styledOptionAnswer
                       : optionStyle,
                   fonts.quranic,
-                  align: align,
+                  align: PaperStyleResolver.toPdfAlign(content.options[index].align) ??
+                      align,
                 ),
           ],
         );
@@ -1021,7 +1027,7 @@ class PaginatedPdfExamEngine {
               ? 'Answer: $answerStr •'
               : 'الإجابة الصحيحة: $answerStr •',
           style: styledAnswer,
-          textAlign: align,
+          textAlign: answerAlign,
         );
       case QuestionType.fillInTheBlank:
         if (!isTeacherVersion) {
@@ -1035,7 +1041,7 @@ class PaginatedPdfExamEngine {
           '${layout.isLtr ? 'Model answer' : 'الإجابة النموذجية'}: $fillModel •',
           styledAnswer,
           fonts.quranic,
-          align: align,
+          align: answerAlign,
         );
       case QuestionType.definitions:
       case QuestionType.essay:
@@ -1049,7 +1055,7 @@ class PaginatedPdfExamEngine {
             '$essayModel •',
             styledAnswer,
             fonts.quranic,
-            align: align,
+            align: answerAlign,
           );
         }
         return pw.SizedBox();

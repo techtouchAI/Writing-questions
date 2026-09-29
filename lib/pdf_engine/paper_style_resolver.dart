@@ -27,21 +27,42 @@ abstract final class PaperStyleResolver {
     final family = override?.font ?? defaultFont;
     final baseBold = base.fontWeight == pw.FontWeight.bold;
     final bold = override?.bold ?? baseBold;
+    final font = fonts.fontFor(family, bold: bold);
+    final fontSize = override?.fontSize ?? (base.fontSize ?? 10.5) * fontScale;
+    // ارتفاع السطر المنشود بنفس دلالة Flutter: baseline-to-baseline = height ×
+    // fontSize. مكتبة pdf تزيح السطر التالي بمقدار (natural + lineSpacing) حيث
+    // natural = (ascent−descent)×fontSize من ملف TTF نفسه، فنحسب lineSpacing
+    // = المنشود − الطبيعي حتى يطابق المطبوع شاشة المعاينة (WYSIWYG) لكل
+    // حجم/خط/تباعد.
+    final heightRatio = override?.lineHeight ??
+        (base.lineSpacing == null ? null : base.lineSpacing! * heightScale);
     return base.copyWith(
-      font: fonts.fontFor(family, bold: bold),
-      fontSize: override?.fontSize ?? (base.fontSize ?? 10.5) * fontScale,
+      font: font,
+      fontSize: fontSize,
       fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
       fontStyle: (override?.italic ?? false) ? pw.FontStyle.italic : pw.FontStyle.normal,
       decoration: (override?.underline ?? false)
           ? (base.decoration ?? pw.TextDecoration.none).merge(pw.TextDecoration.underline)
           : base.decoration,
-      lineSpacing: override?.lineHeight != null
-          ? (override!.lineHeight! * 2)
-          : base.lineSpacing == null
-              ? null
-              : base.lineSpacing! * heightScale,
+      lineSpacing: heightRatio == null
+          ? null
+          : fontSize * (heightRatio - naturalLineRatio(font)),
       color: override?.color != null ? PdfColor.fromInt(override!.color!) : base.color,
     );
+  }
+
+  /// (ascent − descent)/unitsPerEm للخط — نفس الارتفاع الطبيعي الذي يقيسه
+  /// مخطط النص في مكتبة pdf قبل أي lineSpacing.
+  static double naturalLineRatio(pw.Font font) {
+    if (font is pw.TtfFont) {
+      final parser = TtfParser(font.data);
+      final upem = parser.unitsPerEm;
+      if (upem > 0) {
+        return (parser.ascent - parser.descent) / upem;
+      }
+    }
+    // احتياطي: Noto Naskh Arabic (1069 + 634)/1000.
+    return 1.703;
   }
 
   /// يحوّل محاذاة الورقة إلى محاذاة PDF (null = الافتراضي).

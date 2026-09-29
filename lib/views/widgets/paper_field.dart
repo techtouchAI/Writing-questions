@@ -145,11 +145,16 @@ class _PaperFieldState extends State<PaperField> {
     if (words.length <= 1) {
       return baseStyle;
     }
+    final availableWidth = constraints.maxWidth;
     final painter = TextPainter(
       text: TextSpan(text: text, style: baseStyle),
       textDirection: TextDirection.rtl,
-    )..layout();
-    final availableWidth = constraints.maxWidth;
+    )..layout(maxWidth: availableWidth);
+    // Word لا يمدّد الفقرة ذات السطر الواحد (الضبط للأسطر الملتفّة وحدها)،
+    // ولا يُشدّ سطرها الأخير — فلا wordSpacing أصلاً لسطر منفرد.
+    if (painter.computeLineMetrics().length <= 1) {
+      return baseStyle;
+    }
     if (painter.width < availableWidth) {
       final diff = availableWidth - painter.width;
       if (diff > 0) {

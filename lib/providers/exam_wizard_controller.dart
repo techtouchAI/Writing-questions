@@ -411,6 +411,40 @@ class ExamWizardController extends ChangeNotifier {
     _commit(_document.withQuestionAt(index, questions[index].copyWith(style: style)));
   }
 
+  /// تنسيق واحد على تحديد متعدد = **خطوة تراجع واحدة** (سلوك Word/MSO):
+  /// يجمع تعديلات الفروع والأسئلة في commit بدل خطوة تراجع لكل هدف.
+  void applyStyleBatch({
+    Map<BranchRef, PaperTextStyle> branchStyles =
+        const <BranchRef, PaperTextStyle>{},
+    Map<int, PaperTextStyle> questionStyles = const <int, PaperTextStyle>{},
+  }) {
+    if (branchStyles.isEmpty && questionStyles.isEmpty) {
+      return;
+    }
+    var next = _document;
+    branchStyles.forEach((ref, style) {
+      if (!next.containsRef(ref)) {
+        return;
+      }
+      final branch = next.branchAt(ref);
+      if (branch.style == style) {
+        return;
+      }
+      next = next.withBranchAt(ref, branch.copyWith(style: style));
+    });
+    questionStyles.forEach((index, style) {
+      if (index < 0 || index >= next.questions.length) {
+        return;
+      }
+      final question = next.questions[index];
+      if (question.style == style) {
+        return;
+      }
+      next = next.withQuestionAt(index, question.copyWith(style: style));
+    });
+    _commit(next);
+  }
+
   /// يغيّر لون عنوان السؤال وحده، وينظّف لون النمط القديم الذي كان يلوّن
   /// المتن كله في الإصدارات السابقة.
   void updateQuestionTitleColor(int index, int? color) {
@@ -437,12 +471,19 @@ class ExamWizardController extends ChangeNotifier {
 
   void updateQuestionPromptAlign(int index, PaperAlign? align) {
     RangeError.checkValidIndex(index, questions, 'index');
-    if (questions[index].promptAlign == align) {
+    final question = questions[index];
+    if (question.promptAlign == align && question.style.align == align) {
       return;
     }
+    // نقرة محاذاة واحدة = خطوة تراجع واحدة (سلوك Word): تُكتب محاذاة المتن
+    // ومحاذاة نمط السؤال (الذي يشترك في عرض العنوان/المتن) في commit واحد،
+    // وإلا بقي أحد الاثنين بعد التراجع وظهر الشكل متحيزاً.
     _commit(_document.withQuestionAt(
       index,
-      questions[index].copyWith(promptAlign: () => align),
+      question.copyWith(
+        promptAlign: () => align,
+        style: question.style.copyWith(align: () => align),
+      ),
     ));
   }
 

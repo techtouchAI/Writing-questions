@@ -86,19 +86,35 @@ jobs:
             excerpt="${excerpt//$'\n'/%0A}"
             echo "::error title=$label::$excerpt"
           }
+          # ينشر أسماء كل الاختبارات الفاشلة في تعليق واحد مبكّر — التغطية
+          # (cap ~50 تعليقاً) لا تقطعه، وبدونه تختفي أسماء الفشل خلف
+          # مقاطع الأدلة الطويلة.
+          publish_failure_names() {
+            local file="$1" names count
+            [ -f "$file" ] || return 0
+            names="$(grep -E 'dart: .+ \(failed\)$' "$file" \
+              | sed -E 's/.*dart: //; s/ \(failed\)$//' \
+              | sort -u)"
+            [ -n "$names" ] || return 0
+            count="$(printf '%s\n' "$names" | wc -l | tr -d ' ')"
+            names="${names//%/%25}"
+            names="${names//$'\r'/%0D}"
+            names="${names//$'\n'/%0A}"
+            echo "::error title=Failing tests ($count)::$names"
+          }
           # ينشر سياق أول اختبار فاشل (بما فيه رسالة التوقّع والفرق)، لأن ذيل
           # السجل قد يكون كله اختبارات ناجحة فلا يُظهر سبب الفشل.
           publish_first_failure() {
             local file="$1" label="$2" line start excerpt count=0
             [ -f "$file" ] || return 0
-            # ينشر سياق كل اختبار فاشل (حتى 6 اختبارات) لا الأول فقط، لأن
+            # ينشر سياق كل اختبار فاشل (حتى 12 اختباراً) لا الأول فقط، لأن
             # سجلات التنزيل قد لا تكون متاحة خارج GitHub.
             while read -r line; do
               [ -n "$line" ] || continue
               count=$((count + 1))
-              [ "$count" -le 6 ] || break
+              [ "$count" -le 12 ] || break
               start=$((line > 2 ? line - 2 : 1))
-              excerpt="$(sed -n "${start},$((start + 45))p" "$file")"
+              excerpt="$(sed -n "${start},$((start + 70))p" "$file")"
               [ -n "$excerpt" ] || continue
               excerpt="${excerpt//%/%25}"
               excerpt="${excerpt//$'\r'/%0D}"
@@ -115,6 +131,7 @@ jobs:
               echo "::error title=$label::$excerpt"
             fi
           }
+          publish_failure_names "$RUNNER_TEMP/flutter-test.log"
           publish_tail "$RUNNER_TEMP/flutter-analyze.log" 'Flutter analyzer log excerpt'
           publish_tail "$RUNNER_TEMP/flutter-test.log" 'Flutter test log excerpt'
           publish_first_failure "$RUNNER_TEMP/flutter-test.log" 'First failing test excerpt'

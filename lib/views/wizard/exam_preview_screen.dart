@@ -20,6 +20,7 @@ import '../../models/paper_font.dart';
 import '../../models/paper_settings.dart';
 import '../../models/paper_text_style.dart';
 import '../../models/question_model.dart';
+import '../../models/question_option.dart';
 import '../../models/question_type.dart';
 import '../../models/quran_text.dart';
 import '../../models/subject_layout.dart';
@@ -813,42 +814,92 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return null;
   }
 
-  TextAlign _textAlignFor(String fieldKey, {TextAlign fallback = TextAlign.start}) {
-    if (_fieldAlignments.containsKey(fieldKey)) {
-      return PaperStyles.toTextAlign(_fieldAlignments[fieldKey]);
+  /// مفاتيح الحقول التي لها نظير مباشر في الموديل — تُقرأ من الموديل دائماً
+  /// (ولا تتأثر ببقايا _fieldAlignments بعد التراجع).
+  bool _isModelBackedAlignKey(String fieldKey) =>
+      fieldKey.startsWith('branch-') ||
+      fieldKey.startsWith('prompt-') ||
+      fieldKey.startsWith('option-') ||
+      fieldKey.startsWith('answer-') ||
+      fieldKey.startsWith('item-') ||
+      fieldKey.startsWith('header-');
+
+  /// المحاذاة المحفوظة في الموديل لمفتاح حقل (null = غير محددة).
+  PaperAlign? _modelAlignFor(String fieldKey) {
+    final doc = _controller?.document;
+    if (doc == null) {
+      return null;
+    }
+    if (fieldKey.startsWith('prompt-')) {
+      final qIndex = doc.indexOfQuestion(fieldKey.substring('prompt-'.length));
+      if (qIndex < 0) {
+        return null;
+      }
+      final question = doc.questions[qIndex];
+      return question.promptAlign ?? question.style.align;
+    }
+    if (fieldKey.startsWith('branch-')) {
+      final ref = _findBranchRef(doc, fieldKey.substring('branch-'.length));
+      return ref == null ? null : doc.branchAt(ref).style.align;
+    }
+    if (fieldKey.startsWith('option-')) {
+      final match = RegExp(r'^option-(.+)-(\d+)$').firstMatch(fieldKey);
+      if (match == null) {
+        return null;
+      }
+      final ref = _findBranchRef(doc, match.group(1)!);
+      if (ref == null) {
+        return null;
+      }
+      final optionIndex = int.parse(match.group(2)!);
+      final options = doc.branchAt(ref).content.options;
+      return optionIndex >= 0 && optionIndex < options.length
+          ? options[optionIndex].align
+          : null;
+    }
+    if (fieldKey.startsWith('answer-')) {
+      final ref = _findBranchRef(doc, fieldKey.substring('answer-'.length));
+      return ref == null ? null : doc.branchAt(ref).content.modelAnswerAlign;
     }
     if (fieldKey.startsWith('item-')) {
-      final itemId = fieldKey.substring('item-'.length);
-      final item = _findItem(itemId);
-      if (item?.align != null) {
-        return PaperStyles.toTextAlign(item!.align);
+      return _findItem(fieldKey.substring('item-'.length))?.align;
+    }
+    if (fieldKey.startsWith('header-')) {
+      return doc.header.style.align;
+    }
+    return null;
+  }
+
+  BranchRef? _findBranchRef(ExamDocument document, String branchId) {
+    for (var q = 0; q < document.questions.length; q++) {
+      final bIdx = document.questions[q].indexOfBranch(branchId);
+      if (bIdx != -1) {
+        return BranchRef(questionIndex: q, branchIndex: bIdx);
       }
+    }
+    return null;
+  }
+
+  TextAlign _textAlignFor(String fieldKey, {TextAlign fallback = TextAlign.start}) {
+    if (_isModelBackedAlignKey(fieldKey)) {
+      final model = _modelAlignFor(fieldKey);
+      return model != null ? PaperStyles.toTextAlign(model) : fallback;
+    }
+    if (_fieldAlignments.containsKey(fieldKey)) {
+      return PaperStyles.toTextAlign(_fieldAlignments[fieldKey]);
     }
     return fallback;
   }
 
   PaperAlign? _activeAlign() {
     if (_activeFieldKey != null) {
-      if (_fieldAlignments.containsKey(_activeFieldKey)) {
+      if (_isModelBackedAlignKey(_activeFieldKey!)) {
+        final model = _modelAlignFor(_activeFieldKey!);
+        if (model != null) {
+          return model;
+        }
+      } else if (_fieldAlignments.containsKey(_activeFieldKey)) {
         return _fieldAlignments[_activeFieldKey];
-      }
-      if (_activeFieldKey!.startsWith('item-')) {
-        final itemId = _activeFieldKey!.substring('item-'.length);
-        final item = _findItem(itemId);
-        if (item?.align != null) {
-          return item!.align;
-        }
-      }
-      if (_activeFieldKey!.startsWith('prompt-')) {
-        final qId = _activeFieldKey!.substring('prompt-'.length);
-        final doc = _controller?.document;
-        final questionIndex = doc?.indexOfQuestion(qId) ?? -1;
-        if (questionIndex >= 0) {
-          final question = doc!.questions[questionIndex];
-          if (question.promptAlign != null) {
-            return question.promptAlign;
-          }
-        }
       }
     }
     return _activeStyle().align;
@@ -900,11 +951,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       final qId = _activeFieldKey!.substring('prompt-'.length);
       final qIndex = document.indexOfQuestion(qId);
       if (qIndex != -1) {
+        // تحديث واحد يكتب promptAlign وstyle.align معاً = خطوة تراجع واحدة.
         controller.updateQuestionPromptAlign(qIndex, align);
-        controller.updateQuestionStyle(
-          qIndex,
-          document.questions[qIndex].style.copyWith(align: () => align),
-        );
         return;
       }
     }
@@ -925,9 +973,50 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
     }
 
-    // 4. إذا كان هناك حقل نشط محدد (كالخيارات أو الترويسة أو الإجابة النموذجية)،
-    // فقد حُفظت محاذاته في _fieldAlignments وحدها فلا نُحرّك السؤال أو الفرع كاملاً.
+    // 4. خيارات MCQ / الترويسة / الإجابة النموذجية: تُحفظ المحاذاة في الموديل
+    //    مباشرةً على مستوى الفقرة (كما في Word) — لا في خريطة الشاشة وحدها
+    //    التي كانت تضيع عند الحفظ ولا تصل إلى PDF/Word.
     if (_activeFieldKey != null) {
+      final key = _activeFieldKey!;
+      final optionMatch = RegExp(r'^option-(.+)-(\d+)$').firstMatch(key);
+      if (optionMatch != null) {
+        final bId = optionMatch.group(1)!;
+        final optionIndex = int.parse(optionMatch.group(2)!);
+        final ref = _findBranchRef(document, bId);
+        if (ref != null) {
+          final content = document.branchAt(ref).content;
+          if (optionIndex >= 0 && optionIndex < content.options.length) {
+            final options = List<QuestionOption>.of(content.options);
+            options[optionIndex] =
+                options[optionIndex].copyWith(align: () => align);
+            controller.updateBranchContent(
+              ref,
+              content.copyWith(options: options),
+            );
+          }
+        }
+        return;
+      }
+      if (key.startsWith('answer-')) {
+        final ref = _findBranchRef(document, key.substring('answer-'.length));
+        if (ref != null) {
+          controller.updateBranchContent(
+            ref,
+            document
+                .branchAt(ref)
+                .content
+                .copyWith(modelAnswerAlign: () => align),
+          );
+        }
+        return;
+      }
+      if (key.startsWith('header-')) {
+        controller.updateHeaderStyle(
+          document.header.style.copyWith(align: () => align),
+        );
+        return;
+      }
+      // حقل بلا موديل مخصص بعد (مثل قسم السؤال) — يبقى في خريطة الشاشة.
       return;
     }
 
@@ -940,12 +1029,19 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final document = controller.document;
     final targets = _styleTargets();
     var applied = false;
-    for (final ref in targets.branches) {
-      controller.updateBranchStyle(ref, update(document.branchAt(ref).style));
-      applied = true;
-    }
-    for (final index in targets.questions) {
-      controller.updateQuestionStyle(index, update(document.questions[index].style));
+    // تنسيق واحد على كل الأهداف = خطوة تراجع واحدة (MSO): دفعة واحدة
+    // تجمع الفروع والأسئلة بدل commit لكل هدف.
+    final branchStyles = <BranchRef, PaperTextStyle>{
+      for (final ref in targets.branches) ref: update(document.branchAt(ref).style),
+    };
+    final questionStyles = <int, PaperTextStyle>{
+      for (final index in targets.questions) index: update(document.questions[index].style),
+    };
+    if (branchStyles.isNotEmpty || questionStyles.isNotEmpty) {
+      controller.applyStyleBatch(
+        branchStyles: branchStyles,
+        questionStyles: questionStyles,
+      );
       applied = true;
     }
     if (targets.header) {
