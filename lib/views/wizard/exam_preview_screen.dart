@@ -841,9 +841,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
       if (_activeFieldKey!.startsWith('prompt-')) {
         final qId = _activeFieldKey!.substring('prompt-'.length);
-        final q = _controller?.document.findQuestion(qId);
-        if (q?.promptAlign != null) {
-          return q!.promptAlign;
+        final doc = _controller?.document;
+        final questionIndex = doc?.indexOfQuestion(qId) ?? -1;
+        if (questionIndex >= 0) {
+          final question = doc!.questions[questionIndex];
+          if (question.promptAlign != null) {
+            return question.promptAlign;
+          }
         }
       }
     }

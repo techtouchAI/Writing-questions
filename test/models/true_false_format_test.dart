@@ -66,7 +66,7 @@ void main() {
       expect(restored.titleAlign, PaperAlign.center);
       expect(restored.promptAlign, PaperAlign.justify);
 
-      final dup = question.duplicated();
+      final dup = question.duplicated(questionNumber: question.questionNumber);
       expect(dup.trueFalseFormat, 'symbols');
       expect(dup.titleAlign, PaperAlign.center);
       expect(dup.promptAlign, PaperAlign.justify);
