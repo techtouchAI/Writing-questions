@@ -10,6 +10,18 @@ import 'export_file_service.dart';
 /// تعتمد بالكامل على وحدة [PaginatedPdfExamEngine]؛ لا تنسيق حيّ هنا إطلاقاً —
 /// الناتج لوحة A4 ثابتة لا تتغير بين الأجهزة أو إصدارات الأوفيس.
 abstract final class PdfExportService {
+  /// يحسب توزيع الأسئلة نفسه الذي سيستخدمه محرك PDF عند غياب قياسات المعاينة.
+  /// يمكن تمريره إلى Word لتتوافق فواصل الصفحات والعناصر الحرة مع PDF.
+  static Future<List<List<String>>> resolvePageAssignments({
+    required ExamDocument document,
+    bool isTeacherVersion = false,
+  }) {
+    return PaginatedPdfExamEngine().resolveQuestionPages(
+      document: document,
+      isTeacherVersion: isTeacherVersion,
+    );
+  }
+
   /// يبني بايتات PDF متعدد الصفحات للنموذج الوزاري [document].
   ///
   /// [pageAssignments] هو توزيع الأسئلة على الصفحات كما حُسب على لوحة

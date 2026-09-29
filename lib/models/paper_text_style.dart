@@ -55,6 +55,7 @@ class PaperTextStyle {
     this.underline,
     this.align,
     this.lineHeight,
+    this.paragraphSpacing,
     this.color,
   });
 
@@ -70,8 +71,12 @@ class PaperTextStyle {
   final bool? underline;
   final PaperAlign? align;
 
-  /// تباعد الأسطر (1.0..2.5 منطقياً).
+  /// تباعد الأسطر داخل الفقرة (معامل؛ 1.0 = مفرد).
   final double? lineHeight;
+
+  /// المسافة بعد كل فقرة داخل السؤال بالبكسل المنطقي (`null` = القالب).
+  /// لا تغيّر تباعد الأسطر داخل السطر نفسه.
+  final double? paragraphSpacing;
 
   /// لون النص ARGB (`null` = لون الورقة الافتراضي).
   final int? color;
@@ -89,6 +94,7 @@ class PaperTextStyle {
       underline == null &&
       align == null &&
       lineHeight == null &&
+      paragraphSpacing == null &&
       color == null;
 
   bool get isNotEmpty => !isEmpty;
@@ -106,6 +112,7 @@ class PaperTextStyle {
       underline: other.underline ?? underline,
       align: other.align ?? align,
       lineHeight: other.lineHeight ?? lineHeight,
+      paragraphSpacing: other.paragraphSpacing ?? paragraphSpacing,
       color: other.color ?? color,
     );
   }
@@ -118,6 +125,7 @@ class PaperTextStyle {
     bool? Function()? underline,
     PaperAlign? Function()? align,
     double? Function()? lineHeight,
+    double? Function()? paragraphSpacing,
     int? Function()? color,
   }) {
     return PaperTextStyle(
@@ -128,6 +136,9 @@ class PaperTextStyle {
       underline: underline != null ? underline() : this.underline,
       align: align != null ? align() : this.align,
       lineHeight: lineHeight != null ? lineHeight() : this.lineHeight,
+      paragraphSpacing: paragraphSpacing != null
+          ? paragraphSpacing()
+          : this.paragraphSpacing,
       color: color != null ? color() : this.color,
     );
   }
@@ -141,6 +152,7 @@ class PaperTextStyle {
       if (underline != null) 'underline': underline,
       if (align != null) 'align': align!.name,
       if (lineHeight != null) 'lineHeight': lineHeight,
+      if (paragraphSpacing != null) 'paragraphSpacing': paragraphSpacing,
       if (color != null) 'color': color,
     };
   }
@@ -154,7 +166,8 @@ class PaperTextStyle {
       italic: _optionalBool(map['italic']),
       underline: _optionalBool(map['underline']),
       align: map.containsKey('align') ? PaperAlign.parse(map['align']) : null,
-      lineHeight: _optionalDouble(map['lineHeight'], min: 1, max: 3),
+      lineHeight: _optionalDouble(map['lineHeight'], min: 0.5, max: 4),
+      paragraphSpacing: _optionalDouble(map['paragraphSpacing'], min: 0, max: 40),
       color: _optionalColor(map['color']),
     );
   }
@@ -181,12 +194,22 @@ class PaperTextStyle {
         other.underline == underline &&
         other.align == align &&
         other.lineHeight == lineHeight &&
+        other.paragraphSpacing == paragraphSpacing &&
         other.color == color;
   }
 
   @override
-  int get hashCode =>
-      Object.hash(font, fontSize, bold, italic, underline, align, lineHeight, color);
+  int get hashCode => Object.hash(
+        font,
+        fontSize,
+        bold,
+        italic,
+        underline,
+        align,
+        lineHeight,
+        paragraphSpacing,
+        color,
+      );
 
   static double? _optionalDouble(Object? value, {required double min, required double max}) {
     final parsed = value is num ? value.toDouble() : double.tryParse(value?.toString() ?? '');
@@ -197,6 +220,8 @@ class PaperTextStyle {
   }
 
   /// يقرأ لوناً مخزناً (عدد ARGB أو نص ست عشري)؛ التالف يُتجاهل.
+  static int? parseColor(Object? value) => _optionalColor(value);
+
   static int? _optionalColor(Object? value) {
     if (value is int) {
       if (value < 0 || value > 0xFFFFFFFF) {

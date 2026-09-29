@@ -14,6 +14,7 @@ import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/views/widgets/floating_element_view.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
+import 'package:writing_questions_app/views/wizard/preview_toolbar.dart';
 
 ExamDocument _document() {
   return ExamDocument(
@@ -94,17 +95,44 @@ void main() {
       expect(controller.document.questions.single.style.lineHeight, 1.5);
     });
 
-    testWidgets('text color swatches apply to the current target', (tester) async {
+    testWidgets('color swatches change only the question title color', (tester) async {
       final controller = ExamWizardController(document: _document());
+      controller.selectBranch(null);
+      controller.selectQuestion(0);
       await _pumpPreview(tester, controller);
 
-      await tester.tap(find.byTooltip('لون النص'));
+      final toolbar = find.byType(PreviewToolbar);
+      final toolbarScroll = find.descendant(
+        of: toolbar,
+        matching: find.byType(ListView),
+      );
+      await tester.drag(toolbarScroll, const Offset(-1200, 0));
+      await tester.pumpAndSettle();
+      final colorButton = find.byTooltip('لون عنوان السؤال');
+      await tester.tap(colorButton);
       await tester.pumpAndSettle();
       await tester.tap(find.textContaining('كحلي'));
       await tester.pump();
 
-      expect(controller.document.questions.single.style.color, 0xFF1E3A8A);
-      expect(controller.document.questions.single.style.colorHex, '1E3A8A');
+      final question = controller.document.questions.single;
+      expect(question.titleColor, 0xFF1E3A8A);
+      expect(question.effectiveTitleColor, 0xFF1E3A8A);
+      expect(question.style.color, isNull);
+      expect(question.style.colorHex, isNull);
+    });
+
+    testWidgets('paragraph spacing preset is independent from line height', (tester) async {
+      final controller = ExamWizardController(document: _document());
+      await _pumpPreview(tester, controller);
+
+      await tester.tap(find.byTooltip('المسافة بين الفقرات'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('8 بكسل').last);
+      await tester.pump();
+
+      final style = controller.document.questions.single.style;
+      expect(style.paragraphSpacing, 8);
+      expect(style.lineHeight, isNull);
     });
 
     testWidgets('alignment buttons apply to the current target', (tester) async {

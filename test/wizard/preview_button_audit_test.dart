@@ -89,7 +89,7 @@ void main() {
       font: PaperFont.tajawal, fontSize: 20, lineHeight: 2, color: 0xFF1E3A8A,
     ));
     await _pump(tester, controller);
-    for (final menu in ['نوع الخط', 'حجم الخط', 'تباعد الأسطر', 'لون النص']) {
+    for (final menu in ['نوع الخط', 'حجم الخط', 'تباعد الأسطر', 'لون عنوان السؤال']) {
       await _tap(tester, _tool(menu));
       await _tap(tester, find.text(menu == 'نوع الخط' ? 'افتراضي الورقة' : 'تلقائي').last);
     }
@@ -188,6 +188,75 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('free elements can be added to a document with no questions', (tester) async {
+    final controller = ExamWizardController(
+      document: ExamDocument(
+        name: 'ورقة فارغة',
+        header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
+      ),
+    );
+    await _pump(tester, controller);
+
+    await _tap(tester, _tool('إدراج شكل'));
+    await _tap(tester, find.text('مربع').last);
+
+    expect(controller.document.questions, isEmpty);
+    expect(controller.document.floatingElements, hasLength(1));
+    expect(controller.document.floatingElements.single.shape, FloatingShapeType.square);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('selected free elements can move to another preview page', (tester) async {
+    final document = ExamDocument(
+      name: 'تعدد الصفحات',
+      header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+      questions: <QuestionModel>[
+        QuestionModel(
+          id: 'q1',
+          questionNumber: 1,
+          prompt: List<String>.filled(100, 'سطر طويل لاختبار تعدد الصفحات').join('\n'),
+          attachments: <FloatingElement>[
+            FloatingElement(
+              id: 'legacy-page-nav-element',
+              type: FloatingElementType.shape,
+              shape: FloatingShapeType.square,
+              dx: 220,
+              dy: 260,
+              width: 60,
+              height: 60,
+            ),
+          ],
+        ),
+        QuestionModel(id: 'q2', questionNumber: 2, prompt: 'السؤال الثاني'),
+      ],
+    );
+    final controller = ExamWizardController(document: document);
+    controller.addFloatingElement(FloatingElement(
+      id: 'page-nav-element',
+      type: FloatingElementType.shape,
+      shape: FloatingShapeType.square,
+      dx: 140,
+      dy: 180,
+      width: 60,
+      height: 60,
+    ));
+    await _pump(tester, controller);
+    expect(controller.pagination.pageCount, greaterThan(1));
+
+    await _tap(tester, find.byKey(const ValueKey('page-element-page-nav-element')));
+    await _tap(tester, find.byTooltip('نقل إلى الصفحة التالية'));
+
+    expect(controller.document.floatingElements.single.pageIndex, 1);
+
+    await _tap(tester, find.byKey(const ValueKey('page-element-legacy-page-nav-element')));
+    await _tap(tester, find.byTooltip('نقل إلى الصفحة السابقة'));
+    expect(
+      controller.document.floatingElementById('legacy-page-nav-element')!.pageIndex,
+      0,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('text box edit handle opens the editor and saves', (tester) async {
     final controller = ExamWizardController(document: _document());
     controller.addQuestionAttachment(FloatingElement(
@@ -261,7 +330,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('all shape menu entries and media chips insert into the active question', (tester) async {
+  testWidgets('all shape menu entries and media chips insert as free document elements', (tester) async {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
     await _tap(tester, _field('prompt-q1'));
@@ -271,18 +340,20 @@ void main() {
       'خط': FloatingShapeType.line, 'سهم': FloatingShapeType.arrow,
     };
     for (final entry in shapes.entries) {
+      final before = controller.document.floatingElements.length;
       await _tap(tester, _tool('إدراج شكل'));
       await _tap(tester, find.text(entry.key).last);
-      expect(controller.questions.first.attachments.last.shape, entry.value);
+      expect(controller.document.floatingElements.length, before + 1);
+      expect(controller.document.floatingElements.last.shape, entry.value);
     }
     await _tap(tester, find.text('وسائط'));
     for (final entry in shapes.entries) {
-      final before = controller.questions.first.attachments.length;
+      final before = controller.document.floatingElements.length;
       await _tap(tester, find.text(entry.key).last);
-      expect(controller.questions.first.attachments.length, before + 1);
-      expect(controller.questions.first.attachments.last.shape, entry.value);
+      expect(controller.document.floatingElements.length, before + 1);
+      expect(controller.document.floatingElements.last.shape, entry.value);
     }
-    expect(controller.questions[1].attachments, isEmpty);
+    expect(controller.questions.every((question) => question.attachments.isEmpty), isTrue);
     expect(tester.takeException(), isNull);
   });
 
@@ -349,10 +420,38 @@ void main() {
     expect(controller.questions.last.style.italic, isTrue);
   });
 
+  testWidgets('question spacing presets and custom values update the selected question', (tester) async {
+    final controller = ExamWizardController(document: _document());
+    await _pump(tester, controller);
+
+    await _tap(tester, _tool('المسافة بين الأسئلة'));
+    await _tap(tester, find.text('24 بكسل').last);
+    expect(controller.questions.first.spacingAfter, 24);
+
+    await _tap(tester, _tool('المسافة بين الأسئلة'));
+    await _tap(tester, find.text('قيمة مخصصة...'));
+    await tester.enterText(
+      find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)),
+      '120',
+    );
+    await _tap(tester, find.text('تطبيق'));
+    expect(controller.questions.first.spacingAfter, 120);
+
+    await _tap(tester, _field('prompt-q2'));
+    await _tap(tester, _tool('المسافة بين الأسئلة'));
+    await _tap(tester, find.text('0 بكسل — بلا فراغ'));
+    expect(controller.questions[1].spacingAfter, 0);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('custom size, spacing and HEX apply; cancellation leaves formatting unchanged', (tester) async {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
-    for (final entry in {'حجم الخط': '17', 'تباعد الأسطر': '1.7', 'لون النص': '#ABCDEF'}.entries) {
+    for (final entry in {
+      'حجم الخط': '17',
+      'تباعد الأسطر': '1.7',
+      'لون عنوان السؤال': '#ABCDEF',
+    }.entries) {
       await _tap(tester, _tool(entry.key));
       await _tap(tester, find.text('مخصص...'));
       await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), entry.value);
@@ -360,7 +459,8 @@ void main() {
     }
     expect(controller.questions.first.style.fontSize, 17);
     expect(controller.questions.first.style.lineHeight, 1.7);
-    expect(controller.questions.first.style.color, 0xFFABCDEF);
+    expect(controller.questions.first.titleColor, 0xFFABCDEF);
+    expect(controller.questions.first.style.color, isNull);
     await _tap(tester, _tool('حجم الخط'));
     await _tap(tester, find.text('مخصص...'));
     await _tap(tester, find.text('إلغاء'));
@@ -437,9 +537,10 @@ void main() {
       expect(controller.questions.first.style.lineHeight, spacing);
     }
     for (final color in PreviewToolbar.textColors) {
-      await _tap(tester, _tool('لون النص'));
+      await _tap(tester, _tool('لون عنوان السؤال'));
       await _tap(tester, find.textContaining(color.$2).last);
-      expect(controller.questions.first.style.color, color.$1);
+      expect(controller.questions.first.titleColor, color.$1);
+      expect(controller.questions.first.style.color, isNull);
     }
   });
 
@@ -454,7 +555,8 @@ void main() {
     await _tap(tester, find.byKey(const ValueKey('page-element-resize')));
     final handle = find.byKey(const ValueKey('resize-element-resize'));
     await tester.ensureVisible(handle);
-    await tester.drag(handle, const Offset(36, 24));
+    // Arabic page: dx is measured from the right, so drag the resize handle left to widen.
+    await tester.drag(handle, const Offset(-36, 24));
     await tester.pumpAndSettle();
     final element = controller.questions.first.attachments.single;
     expect(element.width, greaterThan(100));
@@ -470,6 +572,8 @@ void main() {
     controller.updateBranchItemText(ref, 0, 'الأولى');
     controller.updateBranchItemText(ref, 1, 'الثانية');
     await _pump(tester, controller);
+    final firstItemId = controller.document.branchAt(ref).content.items.first.id;
+    await _tap(tester, find.byKey(ValueKey<String>('item-$firstItemId')));
     await _tap(tester, find.byTooltip('نقل النقطة لأسفل').first);
     expect(controller.document.branchAt(ref).content.items.first.text, 'الثانية');
     await _tap(tester, find.byTooltip('نقل النقطة لأعلى').last);
@@ -514,7 +618,7 @@ void main() {
     await _pump(tester, controller);
     await _tap(tester, _tool('إدراج صورة'));
     expect(find.textContaining('تعذر فتح الصورة'), findsOneWidget);
-    expect(controller.questions.first.attachments, isEmpty);
+    expect(controller.document.floatingElements, isEmpty);
     expect(tester.takeException(), isNull);
   });
 
@@ -528,10 +632,10 @@ void main() {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
     await _tap(tester, _tool('إدراج صورة'));
-    expect(controller.questions.first.attachments.single.bytes, bytes);
-    final original = controller.questions.first.attachments.single;
+    expect(controller.document.floatingElements.single.bytes, bytes);
+    final original = controller.document.floatingElements.single;
     await _tap(tester, find.byTooltip('استبدال الصورة'));
-    final replaced = controller.questions.first.attachments.single;
+    final replaced = controller.document.floatingElements.single;
     expect(replaced.id, original.id);
     expect(replaced.dx, original.dx);
     expect(replaced.dy, original.dy);
@@ -539,10 +643,10 @@ void main() {
     expect(replaced.height, original.height);
     await _tap(tester, find.text('وسائط'));
     await _tap(tester, find.descendant(of: find.byType(SmartExamToolbar), matching: find.text('صورة')));
-    expect(controller.questions.first.attachments, hasLength(2));
+    expect(controller.document.floatingElements, hasLength(2));
     ImagePickerPlatform.instance = _TestImagePicker();
     await _tap(tester, _tool('إدراج صورة'));
-    expect(controller.questions.first.attachments, hasLength(2));
+    expect(controller.document.floatingElements, hasLength(2));
     expect(find.textContaining('تعذر فتح الصورة'), findsNothing);
     expect(tester.takeException(), isNull);
   });

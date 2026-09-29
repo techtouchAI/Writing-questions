@@ -126,8 +126,9 @@ class PdfContentProbe {
 
     final fontsResource =
         RegExp(r'/Font\s*<<(.*?)>>', dotAll: true).firstMatch(page)?.group(1);
+    // صفحة صالحة بلا أي نص لا تحتاج موارد خطوط؛ تمثل صفراً من الكلمات.
     if (fontsResource == null) {
-      throw const FormatException('لا توجد موارد خطوط في الصفحة (/Font).');
+      return PdfContentProbe._(<ProbedLine>[]);
     }
 
     final fonts = <String, _FontData>{};
@@ -382,11 +383,19 @@ class _PdfObjects {
   String? streamOf(int serial) => _streams[serial];
 
   String get pageDict {
+    String? pageWithoutFonts;
     for (final entry in _dicts.entries) {
-      if (RegExp(r'/Type\s*/Page(?![s\w])').hasMatch(entry.value) &&
-          entry.value.contains('/Font')) {
+      if (!RegExp(r'/Type\s*/Page(?![s\w])').hasMatch(entry.value)) {
+        continue;
+      }
+      // إن وُجدت صفحة نصية نفضّلها، مع الاحتفاظ باحتياط للصفحة الفارغة.
+      if (entry.value.contains('/Font')) {
         return entry.value;
       }
+      pageWithoutFonts ??= entry.value;
+    }
+    if (pageWithoutFonts != null) {
+      return pageWithoutFonts;
     }
     throw const FormatException('لم يُعثر على كائن الصفحة (/Type /Page).');
   }

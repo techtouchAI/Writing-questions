@@ -224,8 +224,8 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
             ),
             const SizedBox(height: 12),
             TextFormField(
-              initialValue: question.spacingAfter.toStringAsFixed(0),
-              keyboardType: TextInputType.number,
+              initialValue: question.spacingAfter.toString(),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(
                 labelText: 'المسافة بعد السؤال (بكسل)',
                 border: OutlineInputBorder(),

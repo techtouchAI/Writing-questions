@@ -85,11 +85,12 @@ enum FloatingShapeType {
   }
 }
 
-/// عنصر حر فوق ورقة الاختبار (صورة/شكل/مربع نص) بإحداثيات مطلقة.
+/// عنصر حر فوق ورقة الاختبار (صورة/شكل/مربع نص/معادلة).
 ///
-/// الإحداثيات (`dx`, `dy`) والمقاسات (`width`, `height`) **بكسلات منطقي
-/// نسبةً إلى كتلة المالك** (الفرع أو السؤال)، فتنتقل بنسبة ثابتة إلى
-/// `pw.Positioned` داخل `pw.Stack` في محرك الـ PDF كنقاط مطلقة.
+/// الإحداثيات (`dx`, `dy`) والمقاسات (`width`, `height`) **بكسلات منطقية
+/// نسبةً إلى صفحة A4 نفسها**، وليست نسبةً إلى سؤال أو فرع. يحدد [pageIndex]
+/// صفحة المستند التي يظهر عليها العنصر؛ لذا يبقى حراً حتى عند نقل الأسئلة أو
+/// حذفها، وتنتقل إحداثياته بنسبة ثابتة إلى `pw.Positioned` في محرك PDF.
 class FloatingElement {
   FloatingElement({
     String? id,
@@ -99,6 +100,7 @@ class FloatingElement {
     this.svgSource,
     required this.dx,
     required this.dy,
+    this.pageIndex = 0,
     required this.width,
     required this.height,
     this.label = '',
@@ -131,6 +133,10 @@ class FloatingElement {
 
   double dx;
   double dy;
+
+  /// فهرس صفحة A4 التي ينتمي إليها العنصر (يبدأ من الصفر).
+  final int pageIndex;
+
   double width;
   double height;
 
@@ -168,6 +174,7 @@ class FloatingElement {
       'svgSource': svgSource,
       'dx': dx,
       'dy': dy,
+      if (pageIndex != 0) 'pageIndex': pageIndex,
       'width': width,
       'height': height,
       if (label.isNotEmpty) 'label': label,
@@ -233,6 +240,7 @@ class FloatingElement {
       svgSource: rawSvg as String?,
       dx: dx,
       dy: dy,
+      pageIndex: _lenientInt(map['pageIndex'], fallback: 0, min: 0),
       width: width,
       height: height,
       label: map['label']?.toString() ?? '',
@@ -256,6 +264,7 @@ class FloatingElement {
   FloatingElement copyWith({
     double? dx,
     double? dy,
+    int? pageIndex,
     double? width,
     double? height,
     String? label,
@@ -273,6 +282,7 @@ class FloatingElement {
       svgSource: svgSource,
       dx: dx ?? this.dx,
       dy: dy ?? this.dy,
+      pageIndex: pageIndex ?? this.pageIndex,
       width: width ?? this.width,
       height: height ?? this.height,
       label: label ?? this.label,
@@ -292,6 +302,7 @@ class FloatingElement {
       svgSource: svgSource,
       dx: dx,
       dy: dy,
+      pageIndex: pageIndex,
       width: width,
       height: height,
       label: label,
@@ -313,6 +324,16 @@ class FloatingElement {
       throw FormatException('FloatingElement: مقاس $field يجب أن يكون موجباً ($parsed).');
     }
     return parsed;
+  }
+
+  static int _lenientInt(Object? value, {
+    required int fallback,
+    required int min,
+  }) {
+    final parsed = value is num && value.isFinite
+        ? value.toInt()
+        : int.tryParse(value?.toString() ?? '');
+    return parsed == null || parsed < min ? fallback : parsed;
   }
 
   static double _lenientNum(Object? value, {

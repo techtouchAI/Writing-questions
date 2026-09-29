@@ -411,6 +411,30 @@ class ExamWizardController extends ChangeNotifier {
     _commit(_document.withQuestionAt(index, questions[index].copyWith(style: style)));
   }
 
+  /// يغيّر لون عنوان السؤال وحده، وينظّف لون النمط القديم الذي كان يلوّن
+  /// المتن كله في الإصدارات السابقة.
+  void updateQuestionTitleColor(int index, int? color) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    if (color != null && (color < 0 || color > 0xFFFFFFFF)) {
+      throw ArgumentError.value(color, 'color', 'لون العنوان يجب أن يكون ARGB صالحاً.');
+    }
+    final question = questions[index];
+    final bodyStyle = question.style.copyWith(color: () => null);
+    if (question.titleColor == color && question.style == bodyStyle) {
+      return;
+    }
+    _commit(
+      _document.withQuestionAt(
+        index,
+        question.copyWith(
+          style: bodyStyle,
+          titleColor: () => color,
+        ),
+      ),
+      coalesceKey: 'question-title-color-$index',
+    );
+  }
+
   void toggleQuestionFrame(int index) {
     RangeError.checkValidIndex(index, questions, 'index');
     final question = questions[index];
@@ -957,83 +981,154 @@ class ExamWizardController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ============================ المرفقات (صور/أشكال/مربعات نص) ============================
+  // ============================ العناصر الحرة على الورقة ============================
 
-  /// يضيف صورة/شكلاً فوق مساحة الفرع [ref] (أو الفرع المحدد حالياً).
+  /// يضيف عنصراً مستقلاً على صفحة من صفحات المستند؛ لا يحتاج سؤالاً أو فرعاً.
   ///
-  /// يعيد `false` إن لم يكن هناك فرع مستهدف.
+  /// [mirrorQuestionIndex]/[mirrorBranchIndex] اختياريان للتوافق فقط مع
+  /// واجهات/ملفات الإصدار القديم التي كانت تتوقع العنصر داخل قائمة المرفقات.
+  /// مصدر الحقيقة هو [ExamDocument.floatingElements]، وحذف السؤال لا يحذفه.
+  bool addFloatingElement(
+    FloatingElement element, {
+    int? pageIndex,
+    int? mirrorQuestionIndex,
+    int? mirrorBranchIndex,
+  }) {
+    if (_document.floatingElementById(element.id) != null) {
+      return false;
+    }
+    final placed = element.copyWith(pageIndex: pageIndex ?? element.pageIndex);
+    final nextQuestions = List<QuestionModel>.of(questions);
+    if (mirrorQuestionIndex != null &&
+        mirrorQuestionIndex >= 0 &&
+        mirrorQuestionIndex < nextQuestions.length) {
+      final question = nextQuestions[mirrorQuestionIndex];
+      if (mirrorBranchIndex != null &&
+          mirrorBranchIndex >= 0 &&
+          mirrorBranchIndex < question.branches.length) {
+        final branches = List<BranchModel>.of(question.branches);
+        final branch = branches[mirrorBranchIndex];
+        branches[mirrorBranchIndex] = branch.copyWith(
+          attachments: <FloatingElement>[...branch.attachments, placed],
+        );
+        nextQuestions[mirrorQuestionIndex] = question.copyWith(branches: branches);
+      } else {
+        nextQuestions[mirrorQuestionIndex] = question.copyWith(
+          attachments: <FloatingElement>[...question.attachments, placed],
+        );
+      }
+    }
+    _commit(_document.copyWith(
+      floatingElements: <FloatingElement>[..._document.floatingElements, placed],
+      questions: nextQuestions,
+    ));
+    return true;
+  }
+
+  /// يحدّث موضع/تنسيق/حجم عنصر حر؛ لا يحتاج معرفة بسؤاله السابق.
+  void updateFloatingElement(FloatingElement element) {
+    final index = _document.floatingElements.indexWhere((item) => item.id == element.id);
+    if (index == -1) {
+      return;
+    }
+    final elements = List<FloatingElement>.of(_document.floatingElements)..[index] = element;
+    _commit(
+      _document.copyWith(
+        floatingElements: elements,
+        questions: _replaceLegacyMirrors(questions, element.id, element),
+      ),
+      coalesceKey: 'floating-${element.id}',
+    );
+  }
+
+  /// يحذف العنصر من المستند ومن أي نسخة توافقية قديمة له.
+  void removeFloatingElement(String elementId) {
+    final elements = _document.floatingElements
+        .where((item) => item.id != elementId)
+        .toList(growable: false);
+    final nextQuestions = _replaceLegacyMirrors(questions, elementId, null);
+    final hadMirror = !_sameQuestionAttachmentState(questions, nextQuestions);
+    if (elements.length == _document.floatingElements.length && !hadMirror) {
+      return;
+    }
+    _commit(_document.copyWith(floatingElements: elements, questions: nextQuestions));
+  }
+
+  /// يضيف عنصراً حراً عند استعمال واجهة الإصدار القديم (سؤال/فرع محدد).
+  /// يظل يعيد false إذا لم يوجد فرع مستهدف، كما كانت الواجهة تتوقع سابقاً.
   bool addAttachment(FloatingElement element, {BranchRef? ref}) {
     final target = ref ?? selectedBranch;
     if (target == null || !_document.containsRef(target)) {
       return false;
     }
-    final branch = _document.branchAt(target);
-    _commit(_document.withBranchAt(
-      target,
-      branch.copyWith(attachments: <FloatingElement>[...branch.attachments, element]),
-    ));
-    return true;
+    return addFloatingElement(
+      element,
+      pageIndex: _pageIndexForQuestion(target.questionIndex),
+      mirrorQuestionIndex: target.questionIndex,
+      mirrorBranchIndex: target.branchIndex,
+    );
   }
 
-  void updateAttachment(BranchRef ref, FloatingElement element) {
-    if (!_document.containsRef(ref)) {
+  /// رفع مرفق قديم عند أول تعديل له إلى قائمة العناصر الحرة.
+  void updateAttachment(
+    BranchRef ref,
+    FloatingElement element, {
+    int? pageIndex,
+  }) {
+    if (_document.floatingElementById(element.id) != null) {
+      updateFloatingElement(element);
       return;
     }
-    final branch = _document.branchAt(ref);
-    final index = branch.attachments.indexWhere((item) => item.id == element.id);
-    if (index == -1) {
+    if (!_document.containsRef(ref) ||
+        !_document.branchAt(ref).attachments.any((item) => item.id == element.id)) {
       return;
     }
-    final attachments = List<FloatingElement>.of(branch.attachments)..[index] = element;
-    _commit(
-      _document.withBranchAt(ref, branch.copyWith(attachments: attachments)),
-      coalesceKey: 'attach-${element.id}',
+    _liftLegacyAttachment(
+      element,
+      pageIndex: pageIndex ?? _pageIndexForQuestion(ref.questionIndex),
     );
   }
 
   void removeAttachment(BranchRef ref, String elementId) {
-    if (!_document.containsRef(ref)) {
+    if (_document.floatingElementById(elementId) != null) {
+      removeFloatingElement(elementId);
       return;
     }
-    final branch = _document.branchAt(ref);
-    final attachments =
-        branch.attachments.where((item) => item.id != elementId).toList(growable: false);
-    if (attachments.length == branch.attachments.length) {
-      return;
+    if (_document.containsRef(ref) &&
+        _document.branchAt(ref).attachments.any((item) => item.id == elementId)) {
+      removeFloatingElement(elementId);
     }
-    _commit(_document.withBranchAt(ref, branch.copyWith(attachments: attachments)));
   }
 
-  /// يضيف مرفقاً على مستوى السؤال [index] (أو المحدد حالياً/الأخير).
-  ///
-  /// يعيد `false` إن تعذّر تحديد سؤال مستهدف.
+  /// واجهات التوافق القديمة — العنصر يُخزَّن الآن على مستوى المستند.
   bool addQuestionAttachment(FloatingElement element, {int? questionIndex}) {
     final target = questionIndex ?? selectedQuestionIndex ?? questions.length - 1;
     if (target < 0 || target >= questions.length) {
       return false;
     }
-    _commit(_document.withQuestionAt(
-      target,
-      questions[target].copyWith(
-        attachments: <FloatingElement>[...questions[target].attachments, element],
-      ),
-    ));
-    return true;
+    return addFloatingElement(
+      element,
+      pageIndex: _pageIndexForQuestion(target),
+      mirrorQuestionIndex: target,
+    );
   }
 
-  void updateQuestionAttachment(int questionIndex, FloatingElement element) {
-    if (questionIndex < 0 || questionIndex >= questions.length) {
+  void updateQuestionAttachment(
+    int questionIndex,
+    FloatingElement element, {
+    int? pageIndex,
+  }) {
+    if (_document.floatingElementById(element.id) != null) {
+      updateFloatingElement(element);
       return;
     }
-    final question = questions[questionIndex];
-    final index = question.attachments.indexWhere((item) => item.id == element.id);
-    if (index == -1) {
+    if (questionIndex < 0 || questionIndex >= questions.length ||
+        !questions[questionIndex].attachments.any((item) => item.id == element.id)) {
       return;
     }
-    final attachments = List<FloatingElement>.of(question.attachments)..[index] = element;
-    _commit(
-      _document.withQuestionAt(questionIndex, question.copyWith(attachments: attachments)),
-      coalesceKey: 'qattach-${element.id}',
+    _liftLegacyAttachment(
+      element,
+      pageIndex: pageIndex ?? _pageIndexForQuestion(questionIndex),
     );
   }
 
@@ -1041,16 +1136,100 @@ class ExamWizardController extends ChangeNotifier {
     if (questionIndex < 0 || questionIndex >= questions.length) {
       return;
     }
-    final question = questions[questionIndex];
-    final attachments = question.attachments
-        .where((item) => item.id != elementId)
-        .toList(growable: false);
-    if (attachments.length == question.attachments.length) {
-      return;
+    if (_document.floatingElementById(elementId) != null ||
+        questions[questionIndex].attachments.any((item) => item.id == elementId)) {
+      removeFloatingElement(elementId);
     }
+  }
+
+  int _pageIndexForQuestion(int questionIndex) {
+    if (questionIndex < 0 || questionIndex >= questions.length) {
+      return 0;
+    }
+    return pagination.pageIndexOf(questions[questionIndex].id) ?? 0;
+  }
+
+  void _liftLegacyAttachment(FloatingElement element, {required int pageIndex}) {
+    final placed = element.copyWith(pageIndex: pageIndex);
     _commit(
-      _document.withQuestionAt(questionIndex, question.copyWith(attachments: attachments)),
+      _document.copyWith(
+        floatingElements: <FloatingElement>[..._document.floatingElements, placed],
+        questions: _replaceLegacyMirrors(questions, element.id, placed),
+      ),
+      coalesceKey: 'floating-${element.id}',
     );
+  }
+
+  /// يزامن نسخة التوافق داخل السؤال/الفرع دون تغيير الملكية الحقيقية.
+  static List<QuestionModel> _replaceLegacyMirrors(
+    List<QuestionModel> source,
+    String elementId,
+    FloatingElement? replacement,
+  ) {
+    final result = List<QuestionModel>.of(source);
+    for (var questionIndex = 0; questionIndex < result.length; questionIndex++) {
+      final question = result[questionIndex];
+      var questionChanged = false;
+      final questionAttachments = <FloatingElement>[];
+      for (final element in question.attachments) {
+        if (element.id != elementId) {
+          questionAttachments.add(element);
+          continue;
+        }
+        questionChanged = true;
+        if (replacement != null) questionAttachments.add(replacement);
+      }
+      final branches = List<BranchModel>.of(question.branches);
+      for (var branchIndex = 0; branchIndex < branches.length; branchIndex++) {
+        final branch = branches[branchIndex];
+        var branchChanged = false;
+        final branchAttachments = <FloatingElement>[];
+        for (final element in branch.attachments) {
+          if (element.id != elementId) {
+            branchAttachments.add(element);
+            continue;
+          }
+          branchChanged = true;
+          questionChanged = true;
+          if (replacement != null) branchAttachments.add(replacement);
+        }
+        if (branchChanged) {
+          branches[branchIndex] = branch.copyWith(attachments: branchAttachments);
+        }
+      }
+      if (questionChanged) {
+        result[questionIndex] = question.copyWith(
+          attachments: questionAttachments,
+          branches: branches,
+        );
+      }
+    }
+    return result;
+  }
+
+  static bool _sameQuestionAttachmentState(
+    List<QuestionModel> first,
+    List<QuestionModel> second,
+  ) {
+    if (first.length != second.length) return false;
+    for (var questionIndex = 0; questionIndex < first.length; questionIndex++) {
+      final a = first[questionIndex];
+      final b = second[questionIndex];
+      if (a.attachments.length != b.attachments.length) return false;
+      for (var index = 0; index < a.attachments.length; index++) {
+        if (a.attachments[index].id != b.attachments[index].id) return false;
+      }
+      if (a.branches.length != b.branches.length) return false;
+      for (var branchIndex = 0; branchIndex < a.branches.length; branchIndex++) {
+        final aa = a.branches[branchIndex].attachments;
+        final bb = b.branches[branchIndex].attachments;
+        if (aa.length != bb.length) return false;
+        for (var index = 0; index < aa.length; index++) {
+          if (aa[index].id != bb[index].id) return false;
+        }
+      }
+    }
+    return true;
   }
 
   // ============================ التقسيم الورقي ============================

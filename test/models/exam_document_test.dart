@@ -5,6 +5,7 @@ import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/models/question_model.dart';
+import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/models/subject_layout.dart';
@@ -130,6 +131,88 @@ void main() {
       expect(grown.withBranchRemoved(0).withBranchRemoved(0).branches, isEmpty);
     });
 
+    test('question title color is stored separately and reads legacy style colors', () {
+      const color = 0xFF1E3A8A;
+      final question = QuestionModel(
+        questionNumber: 1,
+        titleColor: color,
+      );
+      final restored = QuestionModel.fromMap(question.toMap());
+
+      expect(restored.titleColor, color);
+      expect(restored.effectiveTitleColor, color);
+      expect(restored.style.color, isNull);
+
+      final legacy = QuestionModel.fromMap(const <String, dynamic>{
+        'questionNumber': 1,
+        'branches': <Object?>[],
+        'style': <String, dynamic>{'color': '#B91C1C'},
+      });
+      expect(legacy.titleColor, isNull);
+      expect(legacy.effectiveTitleColor, 0xFFB91C1C);
+      expect(legacy.copyWith(titleColor: () => null).effectiveTitleColor, 0xFFB91C1C);
+      expect(
+        const PaperTextStyle(color: 0xFFB91C1C)
+            .copyWith(color: () => null)
+            .color,
+        isNull,
+      );
+    });
+
+    test('question exportability includes intended attachments and excludes blanks', () {
+      final empty = QuestionModel(questionNumber: 1);
+      expect(empty.hasExportableContent(teacher: false), isFalse);
+      expect(empty.hasExportableContent(teacher: true), isFalse);
+
+      final attachedOnly = QuestionModel(
+        questionNumber: 2,
+        branches: <BranchModel>[
+          BranchModel(
+            content: BranchContent.empty(),
+            attachments: <FloatingElement>[
+              FloatingElement(
+                type: FloatingElementType.shape,
+                shape: FloatingShapeType.circle,
+                dx: 0,
+                dy: 0,
+                width: 20,
+                height: 20,
+              ),
+            ],
+          ),
+        ],
+      );
+      expect(attachedOnly.hasExportableContent(teacher: false), isTrue);
+
+      final globalMirror = QuestionModel(
+        questionNumber: 3,
+        branches: <BranchModel>[
+          BranchModel(
+            content: BranchContent.empty(),
+            attachments: <FloatingElement>[
+              FloatingElement(
+                id: 'global-mirror',
+                type: FloatingElementType.shape,
+                shape: FloatingShapeType.circle,
+                dx: 0,
+                dy: 0,
+                width: 20,
+                height: 20,
+              ),
+            ],
+          ),
+        ],
+      );
+      expect(globalMirror.hasExportableContent(teacher: false), isTrue);
+      expect(
+        globalMirror.hasExportableContent(
+          teacher: false,
+          ignoredAttachmentIds: const <String>{'global-mirror'},
+        ),
+        isFalse,
+      );
+    });
+
     test('shows custom item and option labels literally (no renumbering)', () {
       final document = _twoQuestionDocument();
       final option = document.questions[1].branches[0].content.options[0];
@@ -166,6 +249,19 @@ void main() {
       );
       expect(trueFalseOnly.hasExportableContent(teacher: false), isFalse);
       expect(trueFalseOnly.hasExportableContent(teacher: true), isTrue);
+      final emptyTrueFalse = BranchContent.empty(QuestionType.trueFalse);
+      expect(emptyTrueFalse.hasExportableContent(teacher: false), isFalse);
+      expect(emptyTrueFalse.hasExportableContent(teacher: true), isFalse);
+      final explicitTrueFalse = emptyTrueFalse.withTrueFalseAnswer(false);
+      expect(explicitTrueFalse.hasExportableContent(teacher: true), isFalse);
+      // خيارات الاختيار المخفية في النص الحر لا تُبقي فرعاً فارغاً بالطباعة.
+      final hiddenChoices = BranchContent(
+        type: QuestionType.multipleChoice,
+        plainText: true,
+        options: <QuestionOption>[QuestionOption(text: 'خيار لا يظهر')],
+      );
+      expect(hiddenChoices.hasExportableContent(teacher: false), isFalse);
+      expect(hiddenChoices.hasExportableContent(teacher: true), isFalse);
       // النموذجية الفارغة تُحذف من نسخة المعلم.
       expect(
         BranchContent(type: QuestionType.essay, modelAnswer: '  ')
@@ -252,6 +348,144 @@ void main() {
         ),
         isTrue,
       );
+    });
+
+    test('question duplication preserves the custom spacing after a question', () {
+      final document = ExamDocument(
+        name: 'مسافات مخصصة',
+        header: ExamHeaderModel.ministerialDefault(),
+        questions: <QuestionModel>[
+          QuestionModel(questionNumber: 1, spacingAfter: 37.5),
+        ],
+      );
+
+      expect(document.withQuestionDuplicated(0).questions[1].spacingAfter, 37.5);
+      expect(document.duplicated().questions.single.spacingAfter, 37.5);
+    });
+
+    test('round-trips document-level floating elements and their page index', () {
+      final element = FloatingElement(
+        id: 'document-free-element',
+        type: FloatingElementType.shape,
+        shape: FloatingShapeType.circle,
+        dx: 24,
+        dy: 48,
+        pageIndex: 3,
+        width: 72,
+        height: 72,
+      );
+      final document = ExamDocument(
+        name: 'ورقة بلا أسئلة',
+        header: ExamHeaderModel.ministerialDefault(),
+        floatingElements: <FloatingElement>[element],
+      );
+
+      final restored = ExamDocument.fromJson(document.toJson());
+
+      expect(restored.questions, isEmpty);
+      expect(restored.floatingElements.single.id, element.id);
+      expect(restored.floatingElements.single.pageIndex, 3);
+      expect(restored.floatingElements.single.dx, 24);
+    });
+
+    test('deleting an owner does not delete a document-level floating element', () {
+      final element = FloatingElement(
+        id: 'survives-question-removal',
+        type: FloatingElementType.shape,
+        shape: FloatingShapeType.circle,
+        dx: 30,
+        dy: 40,
+        width: 20,
+        height: 20,
+      );
+      final document = ExamDocument(
+        name: 'عنصر حر',
+        header: ExamHeaderModel.ministerialDefault(),
+        questions: <QuestionModel>[
+          QuestionModel(
+            questionNumber: 1,
+            attachments: <FloatingElement>[element],
+          ),
+        ],
+        floatingElements: <FloatingElement>[element],
+      );
+
+      final removed = document.withQuestionRemoved(0);
+      expect(removed.questions, isEmpty);
+      expect(removed.floatingElements.single.id, element.id);
+    });
+
+    test('document duplication copies each free element once and keeps legacy mirrors linked', () {
+      final element = FloatingElement(
+        id: 'free-circle',
+        type: FloatingElementType.shape,
+        shape: FloatingShapeType.circle,
+        dx: 42,
+        dy: 180,
+        pageIndex: 2,
+        width: 60,
+        height: 60,
+      );
+      final document = ExamDocument(
+        name: 'أصل',
+        header: ExamHeaderModel.ministerialDefault(),
+        questions: <QuestionModel>[
+          QuestionModel(
+            questionNumber: 1,
+            attachments: <FloatingElement>[element],
+          ),
+        ],
+        floatingElements: <FloatingElement>[element],
+      );
+
+      final duplicate = document.duplicated();
+      final rootCopy = duplicate.floatingElements.single;
+      final mirrorCopy = duplicate.questions.single.attachments.single;
+
+      expect(rootCopy.id, isNot(element.id));
+      expect(mirrorCopy.id, rootCopy.id);
+      expect(identical(rootCopy, mirrorCopy), isTrue);
+      expect(rootCopy.pageIndex, 2);
+    });
+
+    test('duplicating an owner does not clone a document-level floating element', () {
+      final element = FloatingElement(
+        id: 'shared-element',
+        type: FloatingElementType.shape,
+        shape: FloatingShapeType.square,
+        dx: 12,
+        dy: 24,
+        width: 40,
+        height: 40,
+      );
+      final document = ExamDocument(
+        name: 'مستند',
+        header: ExamHeaderModel.ministerialDefault(),
+        floatingElements: <FloatingElement>[element],
+        questions: <QuestionModel>[
+          QuestionModel(
+            questionNumber: 1,
+            attachments: <FloatingElement>[element],
+            branches: <BranchModel>[
+              BranchModel(
+                content: BranchContent.empty(QuestionType.essay),
+                attachments: <FloatingElement>[element],
+              ),
+            ],
+          ),
+        ],
+      );
+
+      final duplicatedQuestion = document.withQuestionDuplicated(0);
+      expect(duplicatedQuestion.floatingElements, hasLength(1));
+      expect(duplicatedQuestion.questions[1].attachments, isEmpty);
+      expect(duplicatedQuestion.questions[1].branches.single.attachments, isEmpty);
+
+      final duplicatedBranch = document.withBranchDuplicated(
+        const BranchRef(questionIndex: 0, branchIndex: 0),
+      );
+      expect(duplicatedBranch.floatingElements, hasLength(1));
+      expect(duplicatedBranch.questions.single.branches[1].attachments, isEmpty);
     });
 
     test('round-trips the full tree (header, questions, branches, attachments)', () {

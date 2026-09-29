@@ -34,6 +34,7 @@ class QuestionModel {
     List<BranchItem>? items,
     List<FloatingElement>? attachments,
     PaperTextStyle? style,
+    this.titleColor,
     this.showFrame = false,
     this.dividerAfter,
   })  : id = id ?? const Uuid().v4(),
@@ -88,8 +89,15 @@ class QuestionModel {
   /// صور وأشكال ومربعات نص على مستوى السؤال كاملاً.
   final List<FloatingElement> attachments;
 
-  /// تنسيق خاص بالسؤال (يُطبق على العنوان والنص).
+  /// تنسيق السؤال المشترك بين العنوان والمتن.
+  /// يبقى [PaperTextStyle.color] القديم مقروءاً للتوافق ويُعامل كلون عنوان فقط.
   final PaperTextStyle style;
+
+  /// لون عنوان السؤال فقط (ARGB). `null` = لون القالب.
+  final int? titleColor;
+
+  /// اللون المعروض للعنوان؛ ينتقل من الحقل القديم في الملفات المخزنة.
+  int? get effectiveTitleColor => titleColor ?? style.color;
 
   /// إطار حول السؤال كاملاً.
   final bool showFrame;
@@ -117,6 +125,28 @@ class QuestionModel {
     return branches.any((branch) => !branch.content.isEmpty);
   }
 
+  /// هل يستحق السؤال الظهور في النسخة المصدّرة؟
+  ///
+  /// الأسئلة الفارغة التي تبقى كمساحة تحرير في المنشئ لا تُطبع ولا تحجز
+  /// مكاناً في ترقيم الصفحات. مرفقات السؤال والفروع والفواصل محتوى مقصود.
+  bool hasExportableContent({
+    required bool teacher,
+    Set<String> ignoredAttachmentIds = const <String>{},
+  }) {
+    if (prompt.trim().isNotEmpty ||
+        items.any((item) => item.showsInExport(teacher: teacher, trueFalse: false)) ||
+        attachments.any((element) => !ignoredAttachmentIds.contains(element.id)) ||
+        dividerAfter != null) {
+      return true;
+    }
+    return branches.any(
+      (branch) => branch.hasExportableContent(
+        teacher: teacher,
+        ignoredAttachmentIds: ignoredAttachmentIds,
+      ),
+    );
+  }
+
   QuestionModel copyWith({
     int? questionNumber,
     QuestionType? type,
@@ -129,6 +159,7 @@ class QuestionModel {
     List<BranchItem>? items,
     List<FloatingElement>? attachments,
     PaperTextStyle? style,
+    int? Function()? titleColor,
     bool? showFrame,
     PaperDivider? Function()? dividerAfter,
   }) {
@@ -145,6 +176,7 @@ class QuestionModel {
       items: items ?? this.items,
       attachments: attachments ?? this.attachments,
       style: style ?? this.style,
+      titleColor: titleColor != null ? titleColor() : this.titleColor,
       showFrame: showFrame ?? this.showFrame,
       dividerAfter: dividerAfter != null ? dividerAfter() : this.dividerAfter,
     );
@@ -252,6 +284,7 @@ class QuestionModel {
       category: category,
       prompt: prompt,
       marksOverride: marksOverride,
+      spacingAfter: spacingAfter,
       items: <BranchItem>[
         for (final item in items)
           BranchItem(
@@ -263,6 +296,7 @@ class QuestionModel {
       ],
       attachments: attachments.map((element) => element.duplicated()).toList(),
       style: style,
+      titleColor: titleColor,
       showFrame: showFrame,
       dividerAfter: dividerAfter,
     );
@@ -286,6 +320,7 @@ class QuestionModel {
         'attachments':
             attachments.map((element) => element.toMap()).toList(growable: false),
       if (style.isNotEmpty) 'style': style.toMap(),
+      if (titleColor != null) 'titleColor': titleColor,
       if (showFrame) 'showFrame': true,
       if (dividerAfter != null) 'dividerAfter': dividerAfter!.toMap(),
     };
@@ -343,13 +378,16 @@ class QuestionModel {
       marksOverride: marksOverride,
       numberOverride:
           rawNumberOverride == null || rawNumberOverride.isEmpty ? null : rawNumberOverride,
-      spacingAfter: (map['spacingAfter'] is num && (map['spacingAfter'] as num) >= 0)
-          ? (map['spacingAfter'] as num).toDouble()
+      spacingAfter: (map['spacingAfter'] is num &&
+              (map['spacingAfter'] as num).isFinite &&
+              (map['spacingAfter'] as num) >= 0)
+          ? (map['spacingAfter'] as num).toDouble().clamp(0, 200).toDouble()
           : 10,
       // نقاط السؤال حقل جديد متسامح (كباقي حقول النقاط) لتبقى الأسئلة القديمة صالحة.
       items: BranchItem.listFromValue(map['items']),
       attachments: attachments,
       style: PaperTextStyle.fromValue(map['style']),
+      titleColor: PaperTextStyle.parseColor(map['titleColor']),
       showFrame: map['showFrame'] == true,
       dividerAfter: PaperDivider.fromValue(map['dividerAfter']),
     );

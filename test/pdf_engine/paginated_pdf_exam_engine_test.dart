@@ -76,6 +76,78 @@ void main() {
       expect(_countPages(bytes), greaterThan(1));
     });
 
+    test('excludes non-printable placeholders from student and teacher pagination', () async {
+      final document = ExamDocument(
+        name: 'ترقيم الطباعة',
+        header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
+        questions: <QuestionModel>[
+          QuestionModel(id: 'blank', questionNumber: 1),
+          QuestionModel(id: 'student', questionNumber: 2, prompt: 'سؤال ظاهر للطالب'),
+          QuestionModel(
+            id: 'teacher-answer',
+            questionNumber: 3,
+            branches: <BranchModel>[
+              BranchModel(
+                content: BranchContent(
+                  type: QuestionType.essay,
+                  modelAnswer: 'إجابة تظهر للمعلم فقط',
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+      final engine = PaginatedPdfExamEngine();
+      final studentPages = await engine.resolveQuestionPages(document: document);
+      final teacherPages = await engine.resolveQuestionPages(
+        document: document,
+        isTeacherVersion: true,
+      );
+
+      expect(studentPages.expand((page) => page), <String>['student']);
+      expect(
+        teacherPages.expand((page) => page),
+        <String>['student', 'teacher-answer'],
+      );
+      // توزيع قديم يتضمن السؤال الفارغ يُعاد حسابه، لا يُطبع كصفحة أو فراغ.
+      final bytes = await engine.generate(
+        document: document,
+        pageAssignments: const <List<String>>[
+          <String>['blank', 'student', 'teacher-answer'],
+        ],
+      );
+      expect(_countPages(bytes), 1);
+
+      final globalMirror = FloatingElement(
+        id: 'global-only-mirror',
+        type: FloatingElementType.shape,
+        shape: FloatingShapeType.square,
+        dx: 0,
+        dy: 0,
+        width: 24,
+        height: 24,
+      );
+      final mirrorDocument = ExamDocument(
+        name: 'مرآة عنصر حر',
+        header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
+        questions: <QuestionModel>[
+          QuestionModel(
+            id: 'mirror-owner',
+            questionNumber: 1,
+            branches: <BranchModel>[
+              BranchModel(
+                content: BranchContent.empty(),
+                attachments: <FloatingElement>[globalMirror],
+              ),
+            ],
+          ),
+        ],
+        floatingElements: <FloatingElement>[globalMirror],
+      );
+      final mirrorPages = await engine.resolveQuestionPages(document: mirrorDocument);
+      expect(mirrorPages.expand((page) => page), isEmpty);
+    });
+
     test('honours the on-screen page assignments exactly', () async {
       final document = _document(questionCount: 4, branchesPerQuestion: 1);
       final bytes = await PaginatedPdfExamEngine().generate(
@@ -119,6 +191,29 @@ void main() {
       expect(String.fromCharCodes(student), startsWith('%PDF-'));
       expect(_countPages(student), greaterThanOrEqualTo(1));
       expect(_countPages(teacher), greaterThanOrEqualTo(1));
+    });
+
+    test('renders document-level floating elements without any question owner', () async {
+      final document = ExamDocument(
+        name: 'ورقة بلا أسئلة',
+        header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
+        floatingElements: <FloatingElement>[
+          FloatingElement(
+            id: 'free-shape',
+            type: FloatingElementType.shape,
+            shape: FloatingShapeType.circle,
+            dx: 280,
+            dy: 360,
+            width: 90,
+            height: 90,
+          ),
+        ],
+      );
+
+      final bytes = await PaginatedPdfExamEngine().generate(document: document);
+
+      expect(_countPages(bytes), 1);
+      expect(String.fromCharCodes(bytes), startsWith('%PDF-'));
     });
 
     test('embeds branch attachments (shapes) anchored to their branch', () async {
