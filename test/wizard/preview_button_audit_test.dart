@@ -574,6 +574,8 @@ void main() {
     await _pump(tester, controller);
     expect(find.byTooltip('نقل النقطة لأعلى'), findsNothing);
     expect(find.byTooltip('نقل النقطة لأسفل'), findsNothing);
+    final firstItemId = controller.document.branchAt(ref).content.items.first.id;
+    await _tap(tester, find.byKey(ValueKey<String>('item-$firstItemId')));
     await _tap(tester, find.byTooltip('انقر لتعديل ترقيم النقطة').first);
     await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), 'أولاً');
     await _tap(tester, find.text('حفظ'));
