@@ -871,7 +871,7 @@ void main() {
     await _tap(tester, find.byTooltip('عرض نموذج الإجابة'));
 
     const ref = BranchRef(questionIndex: 1, branchIndex: 0);
-    await _tap(tester, find.byKey(ValueKey<String>('item-bi1')));
+    await _tap(tester, find.byKey(const ValueKey<String>('item-bi1')));
     await _tap(tester, find.text('صح').first);
     expect(controller.document.branchAt(ref).content.items[0].isCorrect, isTrue);
 

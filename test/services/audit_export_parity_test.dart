@@ -640,7 +640,7 @@ void main() {
                     BranchItem(id: 'i1', text: 'عبارة أولى', isCorrect: true),
                   ],
                 ),
-              ],
+              ),
             ],
           ),
           QuestionModel(
