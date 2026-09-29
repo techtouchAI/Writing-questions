@@ -8,7 +8,6 @@
 // الدليل ليس: وجود الشيفرة، نظافة المحلل، أو أن "الناتج وُجد".
 // =============================================================================
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
@@ -270,9 +269,9 @@ void main() {
       () async {
     final naskh = await rootBundle.load(ExamFonts.regularAsset);
     // خط الشاشة الحقيقي نفسه المستخدم في الورقة (وإلا قاست قياسات خط الاختبار).
-    await FontLoader(ExamFont.arabicFamily)
-        .addFont(Future<ByteData>.value(naskh))
-        .load();
+    final fontLoader = FontLoader(ExamFont.arabicFamily);
+    fontLoader.addFont(Future<ByteData>.value(naskh));
+    await fontLoader.load();
     final natural = spaceAdvanceFor(naskh, 10.5);
     expect(natural, greaterThan(0));
 
@@ -316,7 +315,7 @@ void main() {
           reason: 'PDF يجب أن يلتف ≥3 أسطر متن (lineHeight=$lineHeight).');
       final pdfDeltas = <double>[
         for (var i = 0; i + 1 < body.length; i++)
-          (body[i].y - body[i + 1].y).abs(),
+          (body[i].words.first.y - body[i + 1].words.first.y).abs(),
       ];
       final pdfPt = pdfDeltas.reduce((a, b) => a + b) / pdfDeltas.length;
 
@@ -357,7 +356,7 @@ void main() {
           probe.lines.where((line) => line.fontSize == 10.5).toList();
       expect(body, isNotEmpty,
           reason: 'لا يوجد متن للسؤال الثاني (spacing=$spacing).');
-      return body.first.y;
+      return body.first.words.first.y;
     }
 
     final y0 = await firstBodyY(0);
@@ -395,7 +394,7 @@ void main() {
       expect(body, hasLength(2),
           reason: 'النقاط يجب أن تُرسم سطراً لكل نقطة (spacing=$paragraphSpacing، '
               'أسطر=${body.length}).');
-      return (body[0].y - body[1].y).abs();
+      return (body[0].words.first.y - body[1].words.first.y).abs();
     }
 
     final gap0 = await itemGap(0);
