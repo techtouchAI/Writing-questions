@@ -176,6 +176,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   _AttachmentRef? _selectedAttachment;
   String? _selectedDividerKey;
   String? _activeItemFieldKey;
+  String? _activeFieldKey;
+  final Map<String, PaperAlign> _fieldAlignments = <String, PaperAlign>{};
   bool _isBusy = false;
 
   /// سحب فوري لأي عنصر حر. نقطة الإمساك تبقى ثابتة داخل العنصر، ويُعاد
@@ -439,6 +441,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _selectedAttachment = null;
     _selectedDividerKey = null;
     _activeItemFieldKey = null;
+    _activeFieldKey = null;
   }
 
   void _tapQuestion(int index) {
@@ -792,6 +795,144 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       return document.settings.headerBorder;
     }
     return null;
+  }
+
+  BranchItem? _findItem(String itemId) {
+    final doc = _controller?.document;
+    if (doc == null) return null;
+    for (final q in doc.questions) {
+      for (final it in q.items) {
+        if (it.id == itemId) return it;
+      }
+      for (final b in q.branches) {
+        for (final it in b.content.items) {
+          if (it.id == itemId) return it;
+        }
+      }
+    }
+    return null;
+  }
+
+  TextAlign _textAlignFor(String fieldKey, {TextAlign fallback = TextAlign.start}) {
+    if (_fieldAlignments.containsKey(fieldKey)) {
+      return PaperStyles.toTextAlign(_fieldAlignments[fieldKey]);
+    }
+    if (fieldKey.startsWith('item-')) {
+      final itemId = fieldKey.substring('item-'.length);
+      final item = _findItem(itemId);
+      if (item?.align != null) {
+        return PaperStyles.toTextAlign(item!.align);
+      }
+    }
+    return fallback;
+  }
+
+  PaperAlign? _activeAlign() {
+    if (_activeFieldKey != null) {
+      if (_fieldAlignments.containsKey(_activeFieldKey)) {
+        return _fieldAlignments[_activeFieldKey];
+      }
+      if (_activeFieldKey!.startsWith('item-')) {
+        final itemId = _activeFieldKey!.substring('item-'.length);
+        final item = _findItem(itemId);
+        if (item?.align != null) {
+          return item!.align;
+        }
+      }
+      if (_activeFieldKey!.startsWith('prompt-')) {
+        final qId = _activeFieldKey!.substring('prompt-'.length);
+        final doc = _controller?.document;
+        final questionIndex = doc?.indexOfQuestion(qId) ?? -1;
+        if (questionIndex >= 0) {
+          final question = doc!.questions[questionIndex];
+          if (question.promptAlign != null) {
+            return question.promptAlign;
+          }
+        }
+      }
+    }
+    return _activeStyle().align;
+  }
+
+  void _onAlignChanged(PaperAlign align) {
+    setState(() {
+      if (_activeFieldKey != null) {
+        _fieldAlignments[_activeFieldKey!] = align;
+      }
+    });
+
+    final controller = _controller!;
+    final document = controller.document;
+
+    // 1. إذا كان الحقل النشط نقطة محددة، تتغير محاذاة تلك النقطة وحدها
+    if (_activeFieldKey != null && _activeFieldKey!.startsWith('item-')) {
+      final itemId = _activeFieldKey!.substring('item-'.length);
+      for (var q = 0; q < document.questions.length; q++) {
+        final question = document.questions[q];
+        final itemIdx = question.items.indexWhere((it) => it.id == itemId);
+        if (itemIdx != -1) {
+          final updated = question.items[itemIdx].copyWith(align: () => align);
+          controller.updateQuestionItems(
+            q,
+            List<BranchItem>.of(question.items)..[itemIdx] = updated,
+          );
+          return;
+        }
+        for (var b = 0; b < question.branches.length; b++) {
+          final branch = question.branches[b];
+          final bItemIdx = branch.content.items.indexWhere((it) => it.id == itemId);
+          if (bItemIdx != -1) {
+            final ref = BranchRef(questionIndex: q, branchIndex: b);
+            final updated = branch.content.items[bItemIdx].copyWith(align: () => align);
+            controller.updateBranchContent(
+              ref,
+              branch.content.withItemAt(bItemIdx, updated),
+            );
+            return;
+          }
+        }
+      }
+      return;
+    }
+
+    // 2. إذا كان الحقل النشط نص السؤال/التعليمات (prompt)
+    if (_activeFieldKey != null && _activeFieldKey!.startsWith('prompt-')) {
+      final qId = _activeFieldKey!.substring('prompt-'.length);
+      final qIndex = document.indexOfQuestion(qId);
+      if (qIndex != -1) {
+        controller.updateQuestionPromptAlign(qIndex, align);
+        controller.updateQuestionStyle(
+          qIndex,
+          document.questions[qIndex].style.copyWith(align: () => align),
+        );
+        return;
+      }
+    }
+
+    // 3. إذا كان الحقل النشط نص فرع محدد
+    if (_activeFieldKey != null && _activeFieldKey!.startsWith('branch-')) {
+      final bId = _activeFieldKey!.substring('branch-'.length);
+      for (var q = 0; q < document.questions.length; q++) {
+        final bIdx = document.questions[q].indexOfBranch(bId);
+        if (bIdx != -1) {
+          final ref = BranchRef(questionIndex: q, branchIndex: bIdx);
+          controller.updateBranchStyle(
+            ref,
+            document.branchAt(ref).style.copyWith(align: () => align),
+          );
+          return;
+        }
+      }
+    }
+
+    // 4. إذا كان هناك حقل نشط محدد (كالخيارات أو الترويسة أو الإجابة النموذجية)،
+    // فقد حُفظت محاذاته في _fieldAlignments وحدها فلا نُحرّك السؤال أو الفرع كاملاً.
+    if (_activeFieldKey != null) {
+      return;
+    }
+
+    // 5. السلوك الافتراضي: تطبيق المحاذاة على الأهداف المحددة (سؤال/فرع كامل بلا مؤشر في حقل معين)
+    _applyStyle((current) => current.copyWith(align: () => align));
   }
 
   void _applyStyle(PaperTextStyle Function(PaperTextStyle current) update) {
@@ -2244,10 +2385,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               (current) =>
                   current.copyWith(underline: () => !(current.underline ?? false)),
             ),
-            activeAlign: activeStyle.align,
-            onAlignChanged: (align) => _applyStyle(
-              (current) => current.copyWith(align: () => align),
-            ),
+            activeAlign: _activeAlign(),
+            onAlignChanged: _onAlignChanged,
             activeLineHeight: activeStyle.lineHeight,
             onLineHeightChanged: (value) {
               // القيمة المميزة NaN تعني «تباعد مخصص» من قائمة الشريط.
@@ -2792,7 +2931,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   (value) => controller.updateHeaderLine(slot, index, value),
                 ),
                 style: center ? centerStyle : lineStyle,
-                textAlign: center ? TextAlign.center : TextAlign.start,
+                textAlign: _textAlignFor(_headerKey(slot, index), fallback: center ? TextAlign.center : TextAlign.start),
                 hint: 'سطر ${index + 1}',
               ),
           ],
@@ -2825,7 +2964,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   controller.updateHeaderTitle,
                 ),
                 style: titleStyle,
-                textAlign: PaperStyles.toTextAlign(header.style.align, TextAlign.center),
+                textAlign: _textAlignFor(_headerTitleKey, fallback: PaperStyles.toTextAlign(header.style.align, TextAlign.center)),
                 hint: 'عنوان الامتحان...',
               ),
             Container(
@@ -2854,7 +2993,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               controller:
                   _field(_instructionsKey, header.instructions, controller.updateInstructions),
               style: _scaled(PaperStyles.note),
-              textAlign: TextAlign.center,
+              textAlign: _textAlignFor(_instructionsKey, fallback: TextAlign.center),
               hint: 'ملاحظة / تعليمات للطلاب...',
             ),
             if (header.notes.trim().isNotEmpty || _headerSelected)
@@ -2862,7 +3001,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 fieldKey: _headerNotesKey,
                 controller: _field(_headerNotesKey, header.notes, controller.updateHeaderNotes),
                 style: _scaled(PaperStyles.note),
-                textAlign: TextAlign.center,
+                textAlign: _textAlignFor(_headerNotesKey, fallback: TextAlign.center),
                 hint: 'ملاحظات إضافية (وقت/درجة/...)...',
               ),
             const Divider(thickness: 1.5, color: PaperStyles.primary, height: 10),
@@ -2925,7 +3064,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               (value) => controller.updateQuestionCategory(questionIndex, value),
             ),
             style: _scaled(PaperStyles.category),
-            textAlign: PaperStyles.toTextAlign(question.style.align),
+            textAlign: _textAlignFor(_categoryKey(question.id), fallback: TextAlign.start),
             hint: 'القسم الوزاري...',
           ),
         GestureDetector(
@@ -2971,7 +3110,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                     child: Text(
                       '$label$marksPart',
                       style: titleStyle,
-                      textAlign: PaperStyles.toTextAlign(question.style.align),
+                      textAlign: PaperStyles.toTextAlign(question.titleAlign ?? PaperAlign.start),
                     ),
                   ),
                 ),
@@ -3013,7 +3152,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             (value) => controller.updateQuestionPrompt(questionIndex, value),
           ),
           style: promptStyle,
-          textAlign: PaperStyles.toTextAlign(question.style.align),
+          textAlign: _textAlignFor(_promptKey(question.id), fallback: PaperStyles.toTextAlign(question.promptAlign ?? question.style.align)),
           hint: layout.isLtr
               ? 'Question text / instructions...'
               : 'نص السؤال / التعليمات (أجب عن فرعين فقط: ...)...',
@@ -3305,7 +3444,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   (value) => controller.updateBranchText(ref, value),
                 ),
                 style: bodyStyle,
-                textAlign: PaperStyles.toTextAlign(branch.style.align),
+                textAlign: _textAlignFor(_branchTextKey(branch.id), fallback: PaperStyles.toTextAlign(branch.style.align)),
                 hint: layout.isLtr ? 'Branch text...' : 'نص الفرع...',
 
                 mushafStyle: true,
@@ -3427,8 +3566,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     ExamWizardController controller,
     BranchRef ref,
     int index,
-    BranchItem item,
-  ) {
+    BranchItem item, [
+    String format = 'words',
+  ]) {
+    final isSymbols = format == 'symbols';
     Widget chip(String text, bool value) {
       final selected = item.isCorrect == value;
       return GestureDetector(
@@ -3460,7 +3601,56 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: <Widget>[chip('صح', true), chip('خطأ', false)],
+      children: <Widget>[
+        chip(isSymbols ? '✓' : 'صح', true),
+        chip(isSymbols ? '✗' : 'خطأ', false),
+      ],
+    );
+  }
+
+  Widget _buildQuestionItemAnswerToggle(
+    ExamWizardController controller,
+    int questionIndex,
+    int index,
+    BranchItem item, [
+    String format = 'words',
+  ]) {
+    final isSymbols = format == 'symbols';
+    Widget chip(String text, bool value) {
+      final selected = item.isCorrect == value;
+      return GestureDetector(
+        onTap: () => controller.updateQuestionItemAnswer(
+          questionIndex,
+          index,
+          selected ? null : value,
+        ),
+        child: Container(
+          margin: const EdgeInsets.only(left: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: selected ? PaperStyles.answer : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected ? PaperStyles.answer : Colors.grey.shade400,
+            ),
+          ),
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 10,
+              color: selected ? Colors.white : Colors.grey.shade700,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        chip(isSymbols ? '✓' : 'صح', true),
+        chip(isSymbols ? '✗' : 'خطأ', false),
+      ],
     );
   }
 
@@ -3487,8 +3677,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       fieldKey: _itemKey(itemId),
       showActions: _activeItemFieldKey == _itemKey(itemId),
       label: document.displayItemLabel(item, index),
+      textAlign: _textAlignFor(_itemKey(itemId), fallback: PaperStyles.toTextAlign(question.style.align)),
       onEditLabel: () => _editQuestionItemLabel(questionId, index),
       onTextChanged: (value) => _updateQuestionItemText(questionId, itemId, value),
+      answerToggle: _showTeacherAnswers && question.type == QuestionType.trueFalse
+          ? _buildQuestionItemAnswerToggle(controller, questionIndex, index, item, question.trueFalseFormat)
+          : null,
       onMoveUp: index == 0
           ? null
           : () => controller.moveQuestionItem(questionIndex, index, index - 1),
@@ -3508,7 +3702,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     TextStyle bodyStyle,
   ) {
     final document = controller.document;
-    final content = document.branchAt(ref).content;
+    final branch = document.branchAt(ref);
+    final content = branch.content;
     final item = content.items[index];
     final itemId = item.id;
     return _buildItemRow(
@@ -3520,10 +3715,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       fieldKey: _itemKey(itemId),
       showActions: _activeItemFieldKey == _itemKey(itemId),
       label: document.displayItemLabel(item, index),
+      textAlign: _textAlignFor(_itemKey(itemId), fallback: PaperStyles.toTextAlign(branch.style.align)),
       onEditLabel: () => _editItemLabel(ref, index),
       onTextChanged: (value) => _updateBranchItemText(ref, itemId, value),
       answerToggle: _showTeacherAnswers && content.type == QuestionType.trueFalse
-          ? _buildItemAnswerToggle(controller, ref, index, item)
+          ? _buildItemAnswerToggle(controller, ref, index, item, content.trueFalseFormat)
           : null,
       onMoveUp: index == 0
           ? null
@@ -3556,6 +3752,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     VoidCallback? onMoveUp,
     VoidCallback? onMoveDown,
     Widget? answerToggle,
+    TextAlign textAlign = TextAlign.start,
   }) {
     return Padding(
       padding: const EdgeInsetsDirectional.only(start: 36),
@@ -3588,22 +3785,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 onTextChanged,
               ),
               style: bodyStyle,
+              textAlign: textAlign,
               hint: layout.isLtr ? 'Item...' : 'نص النقطة...',
             ),
           ),
           if (showActions) ...<Widget>[
-            IconButton(
-              tooltip: 'نقل النقطة لأعلى',
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.arrow_drop_up, size: 18),
-              onPressed: onMoveUp,
-            ),
-            IconButton(
-              tooltip: 'نقل النقطة لأسفل',
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.arrow_drop_down, size: 18),
-              onPressed: onMoveDown,
-            ),
             IconButton(
               tooltip: 'حذف النقطة',
               visualDensity: VisualDensity.compact,
@@ -4541,6 +4727,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                             style: _showTeacherAnswers && content.options[index].isCorrect
                                 ? optionAnswerStyle
                                 : optionStyle,
+                            textAlign: _textAlignFor(_optionKey(branch.id, index), fallback: PaperStyles.toTextAlign(branch.style.align)),
                             hint: layout.isLtr ? 'Option...' : 'نص الخيار...',
                           ),
                         ],
@@ -4588,11 +4775,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         // ورقة الطالب: الأسئلة فقط — الإجابة في دفتر الطالب، بلا مساحة
         // إجابة مولَّدة؛ والإجابة الصحيحة تظهر في نموذج المعلم وحده.
         if (_showTeacherAnswers) {
+          if (content.items.isNotEmpty) {
+            return const SizedBox.shrink();
+          }
           final answer = content.trueFalseAnswer;
+          final answerStr = content.trueFalseFormat == 'symbols'
+              ? (answer ? '✓' : '✗')
+              : (answer ? 'صح' : 'خطأ');
           return Text(
             layout.isLtr
-                ? 'Answer: ${answer ? 'True' : 'False'} •'
-                : 'الإجابة الصحيحة: ${answer ? 'صح' : 'خطأ'} •',
+                ? 'Answer: $answerStr •'
+                : 'الإجابة الصحيحة: $answerStr •',
             style: answerStyle,
           );
         }
@@ -4643,6 +4836,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   (value) => controller.updateBranchModelAnswer(ref, value),
                 ),
                 style: answerStyle,
+                textAlign: _textAlignFor(_modelAnswerKey(branch.id), fallback: PaperStyles.toTextAlign(branch.style.align)),
                 hint: layout.isLtr ? 'Model answer...' : 'اكتب الإجابة النموذجية...',
               ),
             ],
@@ -4677,6 +4871,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       } else {
         _activeItemFieldKey = null;
       }
+      _activeFieldKey = key;
       if (key.startsWith('header-') || key == _instructionsKey) {
         _headerSelected = true;
         controller.selectBranch(null);

@@ -581,7 +581,7 @@ class PaginatedPdfExamEngine {
       defaultFont: settings.defaultFont,
     );
     final titleAlign =
-        PaperStyleResolver.toPdfAlign(question.style.align) ?? pw.TextAlign.start;
+        PaperStyleResolver.toPdfAlign(question.titleAlign ?? question.style.align) ?? pw.TextAlign.start;
 
     final prompt = question.prompt.trim();
     final promptStyle = PaperStyleResolver.apply(
@@ -609,7 +609,7 @@ class PaginatedPdfExamEngine {
             prompt,
             promptStyle,
             fonts.quranic,
-            align: PaperStyleResolver.toPdfAlign(question.style.align),
+            align: PaperStyleResolver.toPdfAlign(question.promptAlign ?? question.style.align),
           ),
         ),
       // نقاط السؤال المباشرة (1، 2، 3...) — ترقيم تلقائي كما في نقاط الفرع.
@@ -626,6 +626,7 @@ class PaginatedPdfExamEngine {
             isTeacherVersion,
             bodyOverride,
             trueFalse: false,
+            trueFalseFormat: question.trueFalseFormat,
           ),
         ),
       for (var index = 0; index < question.branches.length; index++)
@@ -758,6 +759,7 @@ class PaginatedPdfExamEngine {
             isTeacherVersion,
             branch.style,
             trueFalse: content.type == QuestionType.trueFalse,
+            trueFalseFormat: content.trueFalseFormat,
           ),
         ),
       if (hasVisibleTypeBody)
@@ -815,6 +817,7 @@ class PaginatedPdfExamEngine {
     bool isTeacherVersion,
     PaperTextStyle? ownerStyle, {
     required bool trueFalse,
+    String trueFalseFormat = 'words',
   }) {
     final settings = document.settings;
     final itemStyle = PaperStyleResolver.apply(
@@ -844,8 +847,9 @@ class PaginatedPdfExamEngine {
           itemStyle,
           fonts,
           isTeacherVersion,
-          align,
+          PaperStyleResolver.toPdfAlign(items[index].align) ?? align,
           trueFalse: trueFalse,
+          trueFalseFormat: trueFalseFormat,
         ),
       );
       visibleItemCount++;
@@ -867,6 +871,7 @@ class PaginatedPdfExamEngine {
     bool isTeacherVersion,
     pw.TextAlign? align, {
     required bool trueFalse,
+    String trueFalseFormat = 'words',
   }) {
     final marksSuffix = item.marks > 0
         ? ' (${document.formatNumber(item.marks)} ${layout.marksUnit})'
@@ -874,9 +879,13 @@ class PaginatedPdfExamEngine {
     // إجابة النقطة لصح/خطأ — في نموذج المعلم فقط.
     var answerSuffix = '';
     if (isTeacherVersion && trueFalse && item.isCorrect != null) {
-      answerSuffix = layout.isLtr
-          ? (item.isCorrect! ? ' (True)' : ' (False)')
-          : (item.isCorrect! ? ' (صح)' : ' (خطأ)');
+      if (trueFalseFormat == 'symbols') {
+        answerSuffix = item.isCorrect! ? ' (✓)' : ' (✗)';
+      } else {
+        answerSuffix = layout.isLtr
+            ? (item.isCorrect! ? ' (True)' : ' (False)')
+            : (item.isCorrect! ? ' (صح)' : ' (خطأ)');
+      }
     }
     final itemLabel = document.displayItemLabel(item, index);
     final chunks = <String>[
@@ -998,14 +1007,19 @@ class PaginatedPdfExamEngine {
       case QuestionType.trueFalse:
         // ورقة الطالب: الأسئلة فقط — الإجابة في دفتر الطالب، بلا مساحة
         // إجابة مولَّدة على الورقة.
-        if (!isTeacherVersion) {
+        if (!isTeacherVersion || content.items.isNotEmpty) {
           return pw.SizedBox();
         }
         final answer = content.trueFalseAnswer;
+        final answerStr = content.trueFalseFormat == 'symbols'
+            ? (answer ? '✓' : '✗')
+            : (layout.isLtr
+                ? (answer ? 'True' : 'False')
+                : (answer ? 'صح' : 'خطأ'));
         return pw.Text(
           layout.isLtr
-              ? 'Answer: ${answer ? 'True' : 'False'} •'
-              : 'الإجابة الصحيحة: ${answer ? 'صح' : 'خطأ'} •',
+              ? 'Answer: $answerStr •'
+              : 'الإجابة الصحيحة: $answerStr •',
           style: styledAnswer,
           textAlign: align,
         );

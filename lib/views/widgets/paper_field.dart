@@ -132,36 +132,74 @@ class _PaperFieldState extends State<PaperField> {
     _focusNode.requestFocus();
   }
 
+  TextStyle _resolveEffectiveStyle(BoxConstraints constraints) {
+    final baseStyle = widget.style;
+    if (widget.textAlign != TextAlign.justify || !constraints.hasBoundedWidth) {
+      return baseStyle;
+    }
+    final text = widget.controller.text;
+    if (text.trim().isEmpty) {
+      return baseStyle;
+    }
+    final words = text.trim().split(RegExp(r'\s+'));
+    if (words.length <= 1) {
+      return baseStyle;
+    }
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: baseStyle),
+      textDirection: TextDirection.rtl,
+    )..layout();
+    final availableWidth = constraints.maxWidth;
+    if (painter.width < availableWidth) {
+      final diff = availableWidth - painter.width;
+      if (diff > 0) {
+        final maxPerWord = (availableWidth / words.length).clamp(12.0, 60.0);
+        final rawSpacing = diff / (words.length - 1);
+        final addedSpacing = rawSpacing.clamp(0.0, maxPerWord);
+        return baseStyle.copyWith(
+          wordSpacing: ((baseStyle.wordSpacing) ?? 0) + addedSpacing,
+        );
+      }
+    }
+    return baseStyle;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final showRendered = _isRenderable && !_editing && !_focusNode.hasFocus;
-    if (showRendered) {
-      return Tooltip(
-        message: 'انقر للتحرير',
-        child: InkWell(
-          onTap: _handleRenderedTap,
-          child: SizedBox(
-            width: double.infinity,
-            child: widget.renderBuilder(widget.controller.text),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final effectiveStyle = _resolveEffectiveStyle(constraints);
+        final showRendered = _isRenderable && !_editing && !_focusNode.hasFocus;
+        if (showRendered) {
+          return Tooltip(
+            message: 'انقر للتحرير',
+            child: InkWell(
+              onTap: _handleRenderedTap,
+              child: SizedBox(
+                width: double.infinity,
+                child: widget.renderBuilder(widget.controller.text),
+              ),
+            ),
+          );
+        }
+        return SizedBox(
+          width: double.infinity,
+          child: TextField(
+            controller: widget.controller,
+            focusNode: _focusNode,
+            maxLines: null,
+            textAlign: widget.textAlign,
+            style: effectiveStyle,
+            decoration: InputDecoration.collapsed(
+              hintText: widget.hint,
+              hintStyle: effectiveStyle.copyWith(color: Colors.grey),
+            ),
+            onTap: () {
+              setState(() => _editing = true);
+              widget.onActivate?.call();
+            },
           ),
-        ),
-      );
-    }
-    return TextField(
-      controller: widget.controller,
-      focusNode: _focusNode,
-      maxLines: null,
-      textAlign: widget.textAlign,
-      style: widget.style,
-      decoration: InputDecoration.collapsed(
-        hintText: widget.hint,
-        // نفس منطق `PaperStyles.hint` (رمادي على النمط الأصلي) دون استيراد
-        // أنماط لوحة المعاينة في هذا المكوّن العام.
-        hintStyle: widget.style.copyWith(color: Colors.grey),
-      ),
-      onTap: () {
-        setState(() => _editing = true);
-        widget.onActivate?.call();
+        );
       },
     );
   }

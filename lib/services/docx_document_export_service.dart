@@ -710,6 +710,7 @@ class _DocxBuilder {
     final questionIndex = document.indexOfQuestion(question.id);
     final bodyStyle = question.style.copyWith(color: () => null);
     final titleStyle = question.style.copyWith(
+      align: () => question.titleAlign ?? question.style.align,
       color: () => question.effectiveTitleColor,
     );
     final titleColor = titleStyle.colorHex ?? '111827';
@@ -744,7 +745,9 @@ class _DocxBuilder {
       _writeStyledParagraph(
         body,
         question.prompt,
-        style: bodyStyle,
+        style: bodyStyle.copyWith(
+          align: () => question.promptAlign ?? question.style.align,
+        ),
         size: 24,
         before: question.style.paragraphSpacing == null ? 40 : 0,
         after: 40,
@@ -762,6 +765,7 @@ class _DocxBuilder {
         i,
         style: bodyStyle,
         trueFalse: false,
+        trueFalseFormat: question.trueFalseFormat,
       );
     }
     for (var index = 0; index < question.branches.length; index++) {
@@ -785,6 +789,7 @@ class _DocxBuilder {
     int index, {
     required PaperTextStyle? style,
     required bool trueFalse,
+    String trueFalseFormat = 'words',
   }) {
     final layout = document.layout;
     final itemMarks = item.marks > 0
@@ -792,9 +797,13 @@ class _DocxBuilder {
         : '';
     var itemAnswer = '';
     if (isTeacherVersion && trueFalse && item.isCorrect != null) {
-      itemAnswer = layout.isLtr
-          ? (item.isCorrect! ? ' (True)' : ' (False)')
-          : (item.isCorrect! ? ' (صح)' : ' (خطأ)');
+      if (trueFalseFormat == 'symbols') {
+        itemAnswer = item.isCorrect! ? ' (✓)' : ' (✗)';
+      } else {
+        itemAnswer = layout.isLtr
+            ? (item.isCorrect! ? ' (True)' : ' (False)')
+            : (item.isCorrect! ? ' (صح)' : ' (خطأ)');
+      }
     }
     final itemLabel = document.displayItemLabel(item, index);
     final chunks = <String>[
@@ -805,10 +814,11 @@ class _DocxBuilder {
     if (line.trim().isEmpty) {
       return;
     }
+    final itemStyle = item.align != null ? style?.copyWith(align: () => item.align) : style;
     _writeStyledParagraph(
       body,
       line,
-      style: style,
+      style: itemStyle,
       size: 22,
       indent: 800,
       before: style?.paragraphSpacing == null ? 30 : 0,
@@ -866,6 +876,7 @@ class _DocxBuilder {
         i,
         style: branch.style,
         trueFalse: content.type == QuestionType.trueFalse,
+        trueFalseFormat: content.trueFalseFormat,
       );
     }
     // مطابقة اللوحة ومحرك PDF حرفياً (انظر BranchContent.hasPrintableTypeBody).
@@ -911,13 +922,16 @@ class _DocxBuilder {
         }
       case QuestionType.trueFalse:
         // ورقة الطالب: الأسئلة فقط — بلا مساحة إجابة مولَّدة على الورقة.
-        if (!isTeacherVersion) {
+        if (!isTeacherVersion || content.items.isNotEmpty) {
           return;
         }
         final answer = content.trueFalseAnswer;
+        final answerStr = content.trueFalseFormat == 'symbols'
+            ? (answer ? '✓' : '✗')
+            : (answer ? 'صح' : 'خطأ');
         _writeParagraph(
           body,
-          'الإجابة الصحيحة: ${answer ? 'صح' : 'خطأ'} ✔',
+          'الإجابة الصحيحة: $answerStr ✔',
           bold: true,
           size: 22,
           color: styleColor ?? '065F46',

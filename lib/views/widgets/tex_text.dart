@@ -41,70 +41,99 @@ class TexText extends StatelessWidget {
       return Text('', style: style, textAlign: textAlign);
     }
 
-    final blocks = <Widget>[];
-    final inlineSpans = <InlineSpan>[];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final blocks = <Widget>[];
+        final inlineSpans = <InlineSpan>[];
 
-    void flushInline() {
-      if (inlineSpans.isEmpty) {
-        return;
-      }
-      blocks.add(
-        Text.rich(
-          TextSpan(children: List<InlineSpan>.of(inlineSpans)),
-          textAlign: textAlign,
-          style: style,
-        ),
-      );
-      inlineSpans.clear();
-    }
-
-    for (final segment in segments) {
-      if (segment.isMath && segment.isBlock) {
-        flushInline();
-        blocks.add(
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Center(
-              child: Math.tex(
-                segment.text,
-                mathStyle: MathStyle.display,
-                textStyle: mathTextStyle ?? style,
-              ),
-            ),
-          ),
-        );
-      } else if (segment.isMath) {
-        inlineSpans.add(
-          WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: Math.tex(
-              segment.text,
-              mathStyle: MathStyle.text,
-              textStyle: mathTextStyle ?? style,
-            ),
-          ),
-        );
-      } else if (segment.text.isNotEmpty) {
-        // النص العادي نفسه قد يحمل آيات موسومة بالقوسين المزخرفين.
-        for (final piece in QuranText.split(segment.text)) {
-          if (piece.text.isEmpty) {
-            continue;
+        TextStyle? effectiveStyle = style;
+        if (textAlign == TextAlign.justify &&
+            constraints.hasBoundedWidth &&
+            text.trim().isNotEmpty) {
+          final words = text.trim().split(RegExp(r'\s+'));
+          if (words.length > 1) {
+            final naturalPainter = TextPainter(
+              text: TextSpan(text: text, style: style),
+              textDirection: TextDirection.rtl,
+            )..layout();
+            final gap = constraints.maxWidth - naturalPainter.width;
+            if (gap > 0) {
+              final maxPerWord = (constraints.maxWidth / words.length).clamp(12.0, 60.0);
+              final rawSpacing = gap / (words.length - 1);
+              final addedSpacing = rawSpacing.clamp(0.0, maxPerWord);
+              effectiveStyle = (style ?? const TextStyle()).copyWith(
+                wordSpacing: ((style?.wordSpacing) ?? 0) + addedSpacing,
+              );
+            }
           }
-          inlineSpans.add(
-            TextSpan(
-              text: piece.text,
-              style: piece.isQuran ? _resolvedQuranStyle : null,
+        }
+
+        void flushInline() {
+          if (inlineSpans.isEmpty) {
+            return;
+          }
+          blocks.add(
+            Text.rich(
+              TextSpan(children: List<InlineSpan>.of(inlineSpans)),
+              textAlign: textAlign,
+              style: effectiveStyle,
             ),
           );
+          inlineSpans.clear();
         }
-      }
-    }
-    flushInline();
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: blocks,
+        for (final segment in segments) {
+          if (segment.isMath && segment.isBlock) {
+            flushInline();
+            blocks.add(
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Center(
+                  child: Math.tex(
+                    segment.text,
+                    mathStyle: MathStyle.display,
+                    textStyle: mathTextStyle ?? style,
+                  ),
+                ),
+              ),
+            );
+          } else if (segment.isMath) {
+            inlineSpans.add(
+              WidgetSpan(
+                alignment: PlaceholderAlignment.middle,
+                child: Math.tex(
+                  segment.text,
+                  mathStyle: MathStyle.text,
+                  textStyle: mathTextStyle ?? style,
+                ),
+              ),
+            );
+          } else if (segment.text.isNotEmpty) {
+            // النص العادي نفسه قد يحمل آيات موسومة بالقوسين المزخرفين.
+            for (final piece in QuranText.split(segment.text)) {
+              if (piece.text.isEmpty) {
+                continue;
+              }
+              inlineSpans.add(
+                TextSpan(
+                  text: piece.text,
+                  style: piece.isQuran ? _resolvedQuranStyle : null,
+                ),
+              );
+            }
+          }
+        }
+        flushInline();
+
+        return SizedBox(
+          width: double.infinity,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: blocks,
+          ),
+        );
+      },
     );
   }
 }

@@ -564,7 +564,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('branch point add, reorder, label, answer and delete buttons', (tester) async {
+  testWidgets('branch point add, label, answer and delete without reorder controls', (tester) async {
     final controller = ExamWizardController(document: _document());
     const ref = BranchRef(questionIndex: 0, branchIndex: 0);
     controller.updateBranchType(ref, QuestionType.trueFalse);
@@ -572,12 +572,10 @@ void main() {
     controller.updateBranchItemText(ref, 0, 'الأولى');
     controller.updateBranchItemText(ref, 1, 'الثانية');
     await _pump(tester, controller);
+    expect(find.byTooltip('نقل النقطة لأعلى'), findsNothing);
+    expect(find.byTooltip('نقل النقطة لأسفل'), findsNothing);
     final firstItemId = controller.document.branchAt(ref).content.items.first.id;
     await _tap(tester, find.byKey(ValueKey<String>('item-$firstItemId')));
-    await _tap(tester, find.byTooltip('نقل النقطة لأسفل').first);
-    expect(controller.document.branchAt(ref).content.items.first.text, 'الثانية');
-    await _tap(tester, find.byTooltip('نقل النقطة لأعلى').last);
-    expect(controller.document.branchAt(ref).content.items.first.text, 'الأولى');
     await _tap(tester, find.byTooltip('انقر لتعديل ترقيم النقطة').first);
     await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), 'أولاً');
     await _tap(tester, find.text('حفظ'));

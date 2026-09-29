@@ -22,6 +22,7 @@ class BranchContent {
     this.modelAnswer = '',
     List<BranchItem>? items,
     this.plainText = false,
+    this.trueFalseFormat = 'words',
   })  : options = List<QuestionOption>.unmodifiable(
           (options ?? const <QuestionOption>[]).map((option) => option.copyWith()),
         ),
@@ -51,6 +52,9 @@ class BranchContent {
   /// يبقى نوع الفرع محفوظاً (للإجابة النموذجية والتصدير) لكن العرض
   /// يقتصر على ما كتبه المدرس حرفياً.
   final bool plainText;
+
+  /// نمط علامة إجابة صح وخطأ: 'words' (صح/خطأ) أو 'symbols' (✓/✗).
+  final String trueFalseFormat;
 
   /// الخيار الصحيح في صح/خطأ: `true` = صح.
   bool get trueFalseAnswer {
@@ -107,6 +111,7 @@ class BranchContent {
     String? modelAnswer,
     List<BranchItem>? items,
     bool? plainText,
+    String? trueFalseFormat,
   }) {
     final nextType = type ?? this.type;
     return BranchContent(
@@ -120,6 +125,7 @@ class BranchContent {
       modelAnswer: modelAnswer ?? this.modelAnswer,
       items: items ?? this.items,
       plainText: plainText ?? this.plainText,
+      trueFalseFormat: trueFalseFormat ?? this.trueFalseFormat,
     );
   }
 
@@ -198,6 +204,7 @@ class BranchContent {
       if (items.isNotEmpty)
         'items': items.map((item) => item.toMap()).toList(growable: false),
       if (plainText) 'plainText': true,
+      if (trueFalseFormat != 'words') 'trueFalseFormat': trueFalseFormat,
     };
   }
 
@@ -230,6 +237,7 @@ class BranchContent {
       modelAnswer: map['modelAnswer']?.toString() ?? '',
       items: BranchItem.listFromValue(map['items']),
       plainText: map['plainText'] == true,
+      trueFalseFormat: map['trueFalseFormat']?.toString() ?? 'words',
     );
   }
 
@@ -248,9 +256,11 @@ class BranchContent {
             marks: item.marks,
             isCorrect: item.isCorrect,
             labelOverride: item.labelOverride,
+            align: item.align,
           ),
       ],
       plainText: plainText,
+      trueFalseFormat: trueFalseFormat,
     );
   }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../models/branch_item.dart';
 import '../../models/branch_model.dart';
 import '../../models/question_type.dart';
 import '../widgets/items_editor.dart';
@@ -204,7 +205,11 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
               onChanged: widget.enabled
                   ? (type) {
                       if (type != null && type != _content.type) {
-                        _emitContent(_content.copyWith(type: type));
+                        var next = _content.copyWith(type: type);
+                        if (type == QuestionType.trueFalse && next.items.isEmpty) {
+                          next = next.copyWith(items: <BranchItem>[BranchItem()]);
+                        }
+                        _emitContent(next);
                       }
                     }
                   : null,
@@ -243,6 +248,8 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
               items: _content.items,
               enabled: widget.enabled,
               showTrueFalseAnswers: _content.type == QuestionType.trueFalse,
+              trueFalseFormat: _content.trueFalseFormat,
+              onFormatChanged: (format) => _emitContent(_content.copyWith(trueFalseFormat: format)),
               onChanged: (items) => _emitContent(_content.copyWith(items: items)),
             ),
             const SizedBox(height: 10),
@@ -256,22 +263,21 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
   Widget _buildTypeSpecificEditor() {
     switch (_content.type) {
       case QuestionType.multipleChoice:
-        // الاختيار يُكتب كسطر واحد في حقل نص الفرع، حفاظاً على ترتيب
-        // الخيارات وصياغة المدرس دون أن يعيد التطبيق بناءها.
-        return const Padding(
-          padding: EdgeInsets.only(top: 4),
-          child: Text(
-            'اكتب السؤال والخيارات معاً في الحقل أعلاه كما ستظهر في الورقة.',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
-          ),
+        return McqOptionsEditor(
+          options: _content.options,
+          enabled: widget.enabled,
+          onChanged: (options) => _emitContent(_content.copyWith(options: options)),
         );
       case QuestionType.trueFalse:
+        if (_content.items.isNotEmpty) {
+          return const SizedBox.shrink();
+        }
         return Row(
           children: <Widget>[
             Expanded(
               child: RadioListTile<bool>(
                 dense: true,
-                title: const Text('صح'),
+                title: Text(_content.trueFalseFormat == 'symbols' ? 'صح (✓)' : 'صح'),
                 value: true,
                 groupValue: _content.trueFalseAnswer,
                 onChanged: widget.enabled
@@ -282,7 +288,7 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
             Expanded(
               child: RadioListTile<bool>(
                 dense: true,
-                title: const Text('خطأ'),
+                title: Text(_content.trueFalseFormat == 'symbols' ? 'خطأ (✗)' : 'خطأ'),
                 value: false,
                 groupValue: _content.trueFalseAnswer,
                 onChanged: widget.enabled
