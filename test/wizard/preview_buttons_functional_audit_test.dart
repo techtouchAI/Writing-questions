@@ -133,6 +133,26 @@ Finder _field(String key) => find.descendant(
 String _snapshot(ExamWizardController controller) =>
     jsonEncode(controller.document.toMap());
 
+/// أول فرق بين مستندين كنصوص JSON — رسالة فشل قصيرة تصل في تعليقات CI
+/// (رسالة expect بالكامل تُقتطع عند القيمة 6KB لتعليق GitHub).
+String? _firstDiff(String actual, String baseline) {
+  if (actual == baseline) {
+    return null;
+  }
+  final limit =
+      actual.length < baseline.length ? actual.length : baseline.length;
+  var i = 0;
+  while (i < limit && actual.codeUnitAt(i) == baseline.codeUnitAt(i)) {
+    i++;
+  }
+  final from = i > 60 ? i - 60 : 0;
+  final aEnd = actual.length < i + 90 ? actual.length : i + 90;
+  final bEnd = baseline.length < i + 90 ? baseline.length : i + 90;
+  return 'أول فرق عند $i (actual=${actual.length}، baseline=${baseline.length})\n'
+      'baseline …${baseline.substring(from, bEnd)}…\n'
+      'actual   …${actual.substring(from, aEnd)}…';
+}
+
 Future<void> _settleSnackbars(WidgetTester tester) async {
   // رسائل الخطأ SnackBar مؤقت؛ نُفضيها قبل المرة التالية كي لا تتراكم.
   await tester.pumpAndSettle(const Duration(seconds: 5));
@@ -289,16 +309,16 @@ void main() {
       final baseline = _snapshot(controller);
       operation(controller);
       final applied = _snapshot(controller);
-      expect(applied, isNot(baseline),
+      expect(_firstDiff(applied, baseline), isNotNull,
           reason: 'AUD-UR-01 [$key]: العملية لم تغيّر المستند إطلاقاً.');
 
       controller.undo();
-      expect(_snapshot(controller), baseline,
+      expect(_firstDiff(_snapshot(controller), baseline), isNull,
           reason:
               'AUD-UR-01 [$key]: التراجع لم يُرجع المستند كما كان قبل العملية.');
 
       controller.redo();
-      expect(_snapshot(controller), applied,
+      expect(_firstDiff(_snapshot(controller), applied), isNull,
           reason: 'AUD-UR-01 [$key]: الإعادة لم تُعيد نتيجة العملية حرفياً.');
     }
   });
@@ -328,9 +348,9 @@ void main() {
     controller.updateBranchText(ref, 'ن');
     controller.updateBranchText(ref, 'نص ');
     controller.updateBranchText(ref, 'نص جديد');
-    expect(_snapshot(controller), isNot(baseline));
+    expect(_firstDiff(_snapshot(controller), baseline), isNotNull);
     controller.undo();
-    expect(_snapshot(controller), baseline,
+    expect(_firstDiff(_snapshot(controller), baseline), isNull,
         reason:
             'AUD-UR-03: دفعة الكتابة المتصلة يجب أن تُراجع بخطوة تراجع واحدة.');
 
@@ -399,6 +419,17 @@ void main() {
     expect(
         controller.questions.first.branches.first.style.align, PaperAlign.center);
 
+    // دليل قابل للفهرسة: إن غاب زر التراجع تُنشر رسائل Tooltip المرئية
+    // كاملةً في تعليق CI بدل خطأ StateError مبهم.
+    expect(
+      find.descendant(
+        of: find.byType(PreviewToolbar),
+        matching: find.byTooltip('تراجع'),
+      ),
+      findsOneWidget,
+      reason: 'AUD-UR-06: زر التراجع غير موجود في الشريط — Tooltip مرئية: '
+          '${tester.widgetList(find.byType(Tooltip)).map((w) => (w as Tooltip).message).join(' | ')}',
+    );
     await _tap(tester, _tool('تراجع'));
     expect(controller.questions.first.branches.first.style.align, isNull,
         reason: 'الموديل تراجع — السؤال هنا هو الشكل المعروض.');
@@ -425,18 +456,21 @@ void main() {
     final shown = tester.widget<TextField>(_field('option-b2-0')).textAlign;
     expect(shown, TextAlign.center, reason: 'الشاشة: الخيار يبدو منسوّقاً.');
 
-    // ما يقرأه المصدّران (PDF/Word) هو محاذاة الموديل — لا خريطة الشاشة.
+    // ما يقرأه المصدّران (PDF/Word) هو محاذاة الخيار في الموديل — لا خريطة الشاشة.
     final exported = controller
         .document
         .branchAt(const BranchRef(questionIndex: 0, branchIndex: 1))
-        .style
+        .content
+        .options
+        .first
         .align;
     expect(
       exported,
       PaperAlign.center,
       reason: 'AUD-ALIGN-OPT-01: محاذاة الخيار المعروضة مركزاً على الشاشة لم '
-          'تُحفظ في الموديل إطلاقاً (خريطة محلية فقط في _onAlignChanged الحالة '
-          '4)؛ التصدير وإعادة الفتح يفقدانها فيبدو الشكل غير ما يُطبع.',
+          'تُحفظ في خيار الموديل (كانت خريطة محلية فقط في _onAlignChanged الحالة '
+          '4)؛ التصدير وإعادة الفتح يفقدانها فيبدو الشكل غير ما يُطبع — Word '
+          'يحاذى كل فقرة خيار على حدة.',
     );
   });
 
@@ -471,11 +505,12 @@ void main() {
     expect(
       controller.document
           .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
-          .style
-          .align,
+          .content
+          .modelAnswerAlign,
       PaperAlign.center,
       reason: 'AUD-ALIGN-ANS-01: محاذاة الإجابة النموذجية لا تُحفظ في الموديل '
-          '(خريطة محلية فقط)؛ تضيع عند الحفظ/إعادة الفتح وغائبة عن التصدير.',
+          '(خريطة محلية فقط)؛ تضيع عند الحفظ/إعادة الفتح وغائبة عن التصدير — '
+          'Word يحاذي فقرة الإجابة على حدة.',
     );
   });
 

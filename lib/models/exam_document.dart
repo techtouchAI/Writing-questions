@@ -217,7 +217,9 @@ class ExamDocument {
       questions: questions ?? this.questions,
       floatingElements: floatingElements ?? this.floatingElements,
       createdAt: createdAt,
-      updatedAt: updatedAt,
+      // يُحفظ الطابع الزمني ما لم يُمرَّر وقت جديد صراحةً — وإلا خفّ كل
+      // copyWith/normalized على updatedAt وانتقصت مطابقة التراجع الحرفي.
+      updatedAt: updatedAt ?? this.updatedAt,
       settings: settings ?? this.settings,
     );
   }

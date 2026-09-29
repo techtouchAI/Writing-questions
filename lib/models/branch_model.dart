@@ -20,6 +20,7 @@ class BranchContent {
     this.text = '',
     List<QuestionOption>? options,
     this.modelAnswer = '',
+    this.modelAnswerAlign,
     List<BranchItem>? items,
     this.plainText = false,
     this.trueFalseFormat = 'words',
@@ -43,6 +44,11 @@ class BranchContent {
 
   /// الإجابة النموذجية (فراغات/مقالي) لنموذج المعلم.
   final String modelAnswer;
+
+  /// محاذاة الإجابة النموذجية وحدها (null = وراثة من محاذاة الفرع) —
+  /// النقر على زر المحاذاة داخل حقل الإجابة لا يجوز أن يُعيد توجيه نص
+  /// الفرع أو الخيارات؛ Word يحاذي كل فقرة على حدة.
+  final PaperAlign? modelAnswerAlign;
 
   /// النقاط داخل الفرع (1، 2، 3...): عبارات، فراغات، تعداد — بلا حد.
   final List<BranchItem> items;
@@ -109,6 +115,7 @@ class BranchContent {
     String? text,
     List<QuestionOption>? options,
     String? modelAnswer,
+    PaperAlign? Function()? modelAnswerAlign,
     List<BranchItem>? items,
     bool? plainText,
     String? trueFalseFormat,
@@ -123,6 +130,9 @@ class BranchContent {
               ? this.options
               : _defaultOptionsFor(nextType)),
       modelAnswer: modelAnswer ?? this.modelAnswer,
+      modelAnswerAlign: modelAnswerAlign == null
+          ? this.modelAnswerAlign
+          : modelAnswerAlign(),
       items: items ?? this.items,
       plainText: plainText ?? this.plainText,
       trueFalseFormat: trueFalseFormat ?? this.trueFalseFormat,
@@ -201,6 +211,7 @@ class BranchContent {
       'text': text,
       'options': options.map((option) => option.toMap()).toList(growable: false),
       'modelAnswer': modelAnswer,
+      if (modelAnswerAlign != null) 'modelAnswerAlign': modelAnswerAlign!.name,
       if (items.isNotEmpty)
         'items': items.map((item) => item.toMap()).toList(growable: false),
       if (plainText) 'plainText': true,
@@ -235,6 +246,9 @@ class BranchContent {
       text: rawText?.toString() ?? '',
       options: options,
       modelAnswer: map['modelAnswer']?.toString() ?? '',
+      modelAnswerAlign: map['modelAnswerAlign'] != null
+          ? PaperAlign.parse(map['modelAnswerAlign'])
+          : null,
       items: BranchItem.listFromValue(map['items']),
       plainText: map['plainText'] == true,
       trueFalseFormat: map['trueFalseFormat']?.toString() ?? 'words',
@@ -249,6 +263,7 @@ class BranchContent {
       text: text,
       options: options.map((option) => option.copyWith()).toList(growable: false),
       modelAnswer: modelAnswer,
+      modelAnswerAlign: modelAnswerAlign,
       items: <BranchItem>[
         for (final item in items)
           BranchItem(

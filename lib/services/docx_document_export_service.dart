@@ -691,13 +691,18 @@ class _DocxBuilder {
     final font = DocxDocumentExportService._fontName(
       headerStyle.font ?? document.settings.defaultFont,
     );
+    // محاذاة الترويسة كما حددها المدرس في الموديل تعلو الافتراضي العمودي
+    // (يمين/وسط) — نفس ما تعرضه الشاشة بعد النقر على زر المحاذاة.
+    final effectiveAlign = headerStyle.align != null
+        ? _wordAlign(headerStyle.align)
+        : alignment;
     final line = (240 * document.settings.lineSpacing).round();
     final runProperties =
         '<w:rPr><w:rtl/>${effectiveBold ? '<w:b/>' : ''}${effectiveItalic ? '<w:i/>' : ''}'
         '${headerStyle.underline == true ? '<w:u w:val="single"/>' : ''}'
         '${color == null ? '' : '<w:color w:val="$color"/>'}'
         '<w:sz w:val="$effectiveSize"/><w:rFonts w:cs="$font"/></w:rPr>';
-    return '<w:p><w:pPr><w:bidi/><w:jc w:val="$alignment"/>'
+    return '<w:p><w:pPr><w:bidi/><w:jc w:val="$effectiveAlign"/>'
         '<w:spacing w:line="$line" w:lineRule="auto"/></w:pPr>'
         '${_runsXml(text, runProperties, effectiveSize / 2)}'
         '</w:p>';
@@ -890,6 +895,11 @@ class _DocxBuilder {
   void _buildTypeBody(
       StringBuffer body, BranchContent content, PaperTextStyle? style) {
     final alignment = _wordAlign(style?.align);
+    // محاذاة الإجابة النموذجية/صح-خطأ لها نظيرها في الموديل (فقرة مستقلة
+    // كما في Word) وترث محاذاة الفرع عند غيابها.
+    final answerAlign = content.modelAnswerAlign != null
+        ? _wordAlign(content.modelAnswerAlign)
+        : alignment;
     final lineHeight = style?.lineHeight;
     final styleColor = style?.colorHex;
     switch (content.type) {
@@ -916,7 +926,8 @@ class _DocxBuilder {
             after: style?.paragraphSpacing == null
                 ? 30
                 : _paragraphSpacingTwips(style!.paragraphSpacing!),
-            alignment: alignment,
+            alignment:
+                option.align != null ? _wordAlign(option.align) : alignment,
             lineHeight: lineHeight,
           );
         }
@@ -941,7 +952,7 @@ class _DocxBuilder {
           after: style?.paragraphSpacing == null
               ? 40
               : _paragraphSpacingTwips(style!.paragraphSpacing!),
-          alignment: alignment,
+          alignment: answerAlign,
           lineHeight: lineHeight,
         );
       case QuestionType.fillInTheBlank:
@@ -963,7 +974,7 @@ class _DocxBuilder {
           after: style?.paragraphSpacing == null
               ? 40
               : _paragraphSpacingTwips(style!.paragraphSpacing!),
-          alignment: alignment,
+          alignment: answerAlign,
           lineHeight: lineHeight,
         );
       case QuestionType.definitions:
@@ -983,7 +994,7 @@ class _DocxBuilder {
             after: style?.paragraphSpacing == null
                 ? 40
                 : _paragraphSpacingTwips(style!.paragraphSpacing!),
-            alignment: alignment,
+            alignment: answerAlign,
             lineHeight: lineHeight,
           );
           return;
