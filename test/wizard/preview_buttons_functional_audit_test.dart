@@ -118,7 +118,76 @@ Finder _tool(String tooltip) => find.descendant(
       matching: find.byTooltip(tooltip),
     ).last;
 
+/// يعيد التمرير الأفقي لشريط الأدوات إلى بدايته (كما يسحب المستخدم الشريط
+/// إلى أوله) فتُبنى أزرار أوائل الشريط: التراجع والإعادة والقفل.
+void _rewindToolbar(WidgetTester tester) {
+  final scrollables = find.descendant(
+    of: find.byType(PreviewToolbar),
+    matching: find.byType(Scrollable),
+  );
+  if (scrollables.evaluate().isEmpty) {
+    return;
+  }
+  final position = tester.state<ScrollableState>(scrollables.first).position;
+  if (position.pixels != 0) {
+    position.jumpTo(0);
+  }
+}
+
+/// يضمن بناء الزر المطلوب داخل شريط الأدوات قبل النقر عليه.
+///
+/// الشريط `ListView` أفقي **كسول**: ما يبعد عن نافذته يُلغى بناؤه عند تمرير
+/// الشريط (وبعض النقرات تمرّره عبر `ensureVisible`) فيفشل `_tool(...)`
+/// بـ«Bad state: No element» رغم أن الزر موجود في المنتج. نُعيد التمرير إلى
+/// بداية الشريط (كما يسحب المستخدم الشريط إلى أوله) ثم نُمرّره خطوة خطوة حتى
+/// يُبنى الزر المطلوب.
+///
+/// الـ Finder من نوع `.last` يرمي `StateError` (`Bad state: No element`) إذا
+/// لم تكن هناك مطابقة، وهي حالة نتوقعها هنا فلا يجوز أن تُسقط الاختبار،
+/// لذلك نفحص البناء عبر [_isBuilt] لا عبر `evaluate()` مباشرةً.
+bool _isBuilt(Finder finder) {
+  try {
+    return finder.evaluate().isNotEmpty;
+  } on StateError {
+    return false;
+  }
+}
+
+Future<void> _revealToolbarButton(WidgetTester tester, Finder finder) async {
+  final scrollables = find.descendant(
+    of: find.byType(PreviewToolbar),
+    matching: find.byType(Scrollable),
+  );
+  if (scrollables.evaluate().isEmpty || _isBuilt(finder)) {
+    return;
+  }
+  final position = tester.state<ScrollableState>(scrollables.first).position;
+  _rewindToolbar(tester);
+  await tester.pumpAndSettle();
+  var steps = 0;
+  while (!_isBuilt(finder)) {
+    if (position.pixels >= position.maxScrollExtent || steps >= 80) {
+      final built = tester
+          .widgetList(find.descendant(
+            of: find.byType(PreviewToolbar),
+            matching: find.byType(Tooltip),
+          ))
+          .map((widget) => (widget as Tooltip).message ?? '')
+          .join(' | ');
+      throw StateError('الزر المطلوب غير موجود في شريط الأدوات — '
+          'المبنيّ فعلاً: [$built]');
+    }
+    final next = position.pixels + 240;
+    position.jumpTo(
+      next > position.maxScrollExtent ? position.maxScrollExtent : next,
+    );
+    await tester.pumpAndSettle();
+    steps++;
+  }
+}
+
 Future<void> _tap(WidgetTester tester, Finder finder) async {
+  await _revealToolbarButton(tester, finder);
   await tester.ensureVisible(finder);
   await tester.pumpAndSettle();
   await tester.tap(finder);
@@ -422,6 +491,10 @@ void main() {
     // دليل قابل للتشخيص في تعليق CI: عدد نسخ الشريط، إزاحة تمريره، ورسائل
     // Tooltip المبنية فعلياً داخله (بدل خطأ StateError مبهم).
     final toolbarFinder = find.byType(PreviewToolbar);
+    // أزرار أوائل الشريط تُلغى عند تمريره؛ نُعيد التمرير إلى أوله قبل
+    // التحقق (كما يفعل المستخدم حين يريد زر التراجع).
+    _rewindToolbar(tester);
+    await tester.pumpAndSettle();
     final toolbarTips = tester
         .widgetList(
           find.descendant(of: toolbarFinder, matching: find.byType(Tooltip)),
