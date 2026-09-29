@@ -182,7 +182,12 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
                   child: Text(type.arabicLabel),
                 )).toList(growable: false),
                 onChanged: (type) {
-                  if (type != null) controller.updateQuestionType(questionIndex, type);
+                  if (type != null) {
+                    controller.updateQuestionType(questionIndex, type);
+                    if (type == QuestionType.trueFalse && question.items.isEmpty) {
+                      controller.updateQuestionItems(questionIndex, <BranchItem>[BranchItem()]);
+                    }
+                  }
                 },
               ),
               const SizedBox(height: 12),
@@ -264,6 +269,8 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
               ItemsEditor(
                 items: question.items,
                 showTrueFalseAnswers: question.type == QuestionType.trueFalse,
+                trueFalseFormat: question.trueFalseFormat,
+                onFormatChanged: (format) => controller.updateQuestionTrueFalseFormat(questionIndex, format),
                 onChanged: (items) => controller.updateQuestionItems(questionIndex, items),
               ),
             const SizedBox(height: 12),

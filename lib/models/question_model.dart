@@ -37,6 +37,9 @@ class QuestionModel {
     this.titleColor,
     this.showFrame = false,
     this.dividerAfter,
+    this.trueFalseFormat = 'words',
+    this.titleAlign,
+    this.promptAlign,
   })  : id = id ?? const Uuid().v4(),
         // السؤال الجديد يبدأ بلا فروع؛ تُنشأ فقط بطلب صريح من المدرس.
         branches = List<BranchModel>.unmodifiable(
@@ -102,6 +105,15 @@ class QuestionModel {
   /// إطار حول السؤال كاملاً.
   final bool showFrame;
 
+  /// نمط علامة إجابة صح وخطأ: 'words' (صح/خطأ) أو 'symbols' (✓/✗).
+  final String trueFalseFormat;
+
+  /// محاذاة خاصة لعنوان السؤال (null = وراثة من نمط السؤال).
+  final PaperAlign? titleAlign;
+
+  /// محاذاة خاصة لنص السؤال / التعليمات (null = وراثة من نمط السؤال).
+  final PaperAlign? promptAlign;
+
   /// فاصل بعد السؤال كاملاً.
   final PaperDivider? dividerAfter;
 
@@ -162,6 +174,9 @@ class QuestionModel {
     int? Function()? titleColor,
     bool? showFrame,
     PaperDivider? Function()? dividerAfter,
+    String? trueFalseFormat,
+    PaperAlign? Function()? titleAlign,
+    PaperAlign? Function()? promptAlign,
   }) {
     return QuestionModel(
       id: id,
@@ -179,6 +194,9 @@ class QuestionModel {
       titleColor: titleColor != null ? titleColor() : this.titleColor,
       showFrame: showFrame ?? this.showFrame,
       dividerAfter: dividerAfter != null ? dividerAfter() : this.dividerAfter,
+      trueFalseFormat: trueFalseFormat ?? this.trueFalseFormat,
+      titleAlign: titleAlign != null ? titleAlign() : this.titleAlign,
+      promptAlign: promptAlign != null ? promptAlign() : this.promptAlign,
     );
   }
 
@@ -292,6 +310,7 @@ class QuestionModel {
             marks: item.marks,
             isCorrect: item.isCorrect,
             labelOverride: item.labelOverride,
+            align: item.align,
           ),
       ],
       attachments: attachments.map((element) => element.duplicated()).toList(),
@@ -299,6 +318,9 @@ class QuestionModel {
       titleColor: titleColor,
       showFrame: showFrame,
       dividerAfter: dividerAfter,
+      trueFalseFormat: trueFalseFormat,
+      titleAlign: titleAlign,
+      promptAlign: promptAlign,
     );
   }
 
@@ -323,6 +345,9 @@ class QuestionModel {
       if (titleColor != null) 'titleColor': titleColor,
       if (showFrame) 'showFrame': true,
       if (dividerAfter != null) 'dividerAfter': dividerAfter!.toMap(),
+      if (trueFalseFormat != 'words') 'trueFalseFormat': trueFalseFormat,
+      if (titleAlign != null) 'titleAlign': titleAlign!.name,
+      if (promptAlign != null) 'promptAlign': promptAlign!.name,
     };
   }
 
@@ -366,6 +391,8 @@ class QuestionModel {
       }
     }
     final rawNumberOverride = map['numberOverride']?.toString().trim();
+    final rawTitleAlign = map['titleAlign'];
+    final rawPromptAlign = map['promptAlign'];
     return QuestionModel(
       id: map['id'] is String && (map['id'] as String).trim().isNotEmpty
           ? map['id'] as String
@@ -390,6 +417,9 @@ class QuestionModel {
       titleColor: PaperTextStyle.parseColor(map['titleColor']),
       showFrame: map['showFrame'] == true,
       dividerAfter: PaperDivider.fromValue(map['dividerAfter']),
+      trueFalseFormat: map['trueFalseFormat']?.toString() ?? 'words',
+      titleAlign: rawTitleAlign != null ? PaperAlign.parse(rawTitleAlign) : null,
+      promptAlign: rawPromptAlign != null ? PaperAlign.parse(rawPromptAlign) : null,
     );
   }
 }

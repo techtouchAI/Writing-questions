@@ -435,6 +435,50 @@ class ExamWizardController extends ChangeNotifier {
     );
   }
 
+  void updateQuestionPromptAlign(int index, PaperAlign? align) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    if (questions[index].promptAlign == align) {
+      return;
+    }
+    _commit(_document.withQuestionAt(
+      index,
+      questions[index].copyWith(promptAlign: () => align),
+    ));
+  }
+
+  void updateQuestionTitleAlign(int index, PaperAlign? align) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    if (questions[index].titleAlign == align) {
+      return;
+    }
+    _commit(_document.withQuestionAt(
+      index,
+      questions[index].copyWith(titleAlign: () => align),
+    ));
+  }
+
+  void updateQuestionTrueFalseFormat(int index, String format) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    if (questions[index].trueFalseFormat == format) {
+      return;
+    }
+    _commit(_document.withQuestionAt(
+      index,
+      questions[index].copyWith(trueFalseFormat: format),
+    ));
+  }
+
+  void updateBranchTrueFalseFormat(BranchRef ref, String format) {
+    if (!_document.containsRef(ref)) {
+      return;
+    }
+    final branch = _document.branchAt(ref);
+    if (branch.content.trueFalseFormat == format) {
+      return;
+    }
+    updateBranchContent(ref, branch.content.copyWith(trueFalseFormat: format));
+  }
+
   void toggleQuestionFrame(int index) {
     RangeError.checkValidIndex(index, questions, 'index');
     final question = questions[index];
@@ -537,6 +581,24 @@ class ExamWizardController extends ChangeNotifier {
       <BranchItem>[
         for (var i = 0; i < question.items.length; i++)
           i == itemIndex ? question.items[i].copyWith(marks: marks) : question.items[i],
+      ],
+    );
+  }
+
+  void updateQuestionItemAnswer(int index, int itemIndex, bool? answer) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    final question = questions[index];
+    RangeError.checkValidIndex(itemIndex, question.items, 'itemIndex');
+    if (question.items[itemIndex].isCorrect == answer) {
+      return;
+    }
+    updateQuestionItems(
+      index,
+      <BranchItem>[
+        for (var i = 0; i < question.items.length; i++)
+          i == itemIndex
+              ? question.items[i].copyWith(isCorrect: () => answer)
+              : question.items[i],
       ],
     );
   }

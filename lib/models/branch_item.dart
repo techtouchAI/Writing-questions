@@ -1,5 +1,7 @@
 import 'package:uuid/uuid.dart';
 
+import 'paper_text_style.dart';
+
 /// نقطة واحدة داخل فرع (1، 2، 3...): عبارة صح/خطأ، فراغ، تعداد...
 ///
 /// عدد النقاط غير محدود، والمدرس يضيف/يحذف/يعيد ترتيبها بحرية.
@@ -12,6 +14,7 @@ class BranchItem {
     this.marks = 0.0,
     this.isCorrect,
     this.labelOverride,
+    this.align,
   }) : id = id ?? const Uuid().v4() {
     if (!marks.isFinite || marks < 0) {
       throw ArgumentError.value(marks, 'marks', 'درجة النقطة يجب أن تكون رقماً موجباً.');
@@ -32,6 +35,9 @@ class BranchItem {
 
   /// تسمية مخصصة: `null` = تلقائية من الفهرس، `''` = بلا تسمية.
   final String? labelOverride;
+
+  /// محاذاة خاصة بهذه النقطة (null = وراثة من الفرع/السؤال).
+  final PaperAlign? align;
 
   bool get isEmpty => text.trim().isEmpty;
 
@@ -59,6 +65,7 @@ class BranchItem {
     double? marks,
     bool? Function()? isCorrect,
     String? Function()? labelOverride,
+    PaperAlign? Function()? align,
   }) {
     return BranchItem(
       id: id,
@@ -67,6 +74,7 @@ class BranchItem {
       isCorrect: isCorrect == null ? this.isCorrect : isCorrect(),
       labelOverride:
           labelOverride == null ? this.labelOverride : labelOverride(),
+      align: align == null ? this.align : align(),
     );
   }
 
@@ -77,6 +85,7 @@ class BranchItem {
       'marks': marks,
       if (isCorrect != null) 'isCorrect': isCorrect,
       if (labelOverride != null) 'labelOverride': labelOverride,
+      if (align != null) 'align': align!.name,
     };
   }
 
@@ -88,6 +97,7 @@ class BranchItem {
         ? rawMarks.toDouble()
         : double.tryParse(rawMarks?.toString() ?? '');
     final rawLabel = map['labelOverride'];
+    final rawAlign = map['align'];
     return BranchItem(
       id: map['id'] is String && (map['id'] as String).trim().isNotEmpty
           ? map['id'] as String
@@ -96,6 +106,7 @@ class BranchItem {
       marks: marks == null || !marks.isFinite || marks < 0 ? 0.0 : marks,
       isCorrect: map['isCorrect'] is bool ? map['isCorrect'] as bool : null,
       labelOverride: rawLabel is String ? rawLabel : null,
+      align: rawAlign != null ? PaperAlign.parse(rawAlign) : null,
     );
   }
 
