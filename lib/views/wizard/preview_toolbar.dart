@@ -166,27 +166,42 @@ class PreviewToolbar extends StatelessWidget {
       elevation: 2,
       child: SizedBox(
         height: 52,
-        child: ListView(
+        child: Row(
+          children: <Widget>[
+            // مجموعة ثابتة (مثل Word): التراجع والإعادة والقفل خارج شريط
+            // التمرير فتبقى ظاهرة مهما انزلق الشريط — النقر على أي زر بعيد
+            // يستدعي ensureVisible الذي يمرّر القائمة ويُلغي بناء أوائلها.
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  _ToolButton(
+                    icon: Icons.undo,
+                    tooltip: 'تراجع',
+                    onTap: canUndo && !isBusy ? onUndo : null,
+                  ),
+                  _ToolButton(
+                    icon: Icons.redo,
+                    tooltip: 'إعادة',
+                    onTap: canRedo && !isBusy ? onRedo : null,
+                  ),
+                  _ToolButton(
+                    icon: locked ? Icons.lock : Icons.lock_open,
+                    tooltip:
+                        locked ? 'فتح القفل (السماح بالتحريك)' : 'قفل التحريك',
+                    onTap: onToggleLock,
+                    selected: locked,
+                  ),
+                  const _Divider(),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
           children: <Widget>[
-            _ToolButton(
-              icon: Icons.undo,
-              tooltip: 'تراجع',
-              onTap: canUndo && !isBusy ? onUndo : null,
-            ),
-            _ToolButton(
-              icon: Icons.redo,
-              tooltip: 'إعادة',
-              onTap: canRedo && !isBusy ? onRedo : null,
-            ),
-            _ToolButton(
-              icon: locked ? Icons.lock : Icons.lock_open,
-              tooltip: locked ? 'فتح القفل (السماح بالتحريك)' : 'قفل التحريك',
-              onTap: onToggleLock,
-              selected: locked,
-            ),
-            const _Divider(),
             _ToolButton(icon: Icons.remove, tooltip: 'تصغير', onTap: onZoomOut),
             _ZoomLabel(zoom: zoom, onTap: onZoomReset),
             _ToolButton(icon: Icons.add, tooltip: 'تكبير', onTap: onZoomIn),
@@ -304,6 +319,9 @@ class PreviewToolbar extends StatelessWidget {
               onTap: isBusy ? null : onExportWord,
             ),
             if (selectionLabel.isNotEmpty) _SelectionChip(label: selectionLabel),
+          ],
+              ),
+            ),
           ],
         ),
       ),

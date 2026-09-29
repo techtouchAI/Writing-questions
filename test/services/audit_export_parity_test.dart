@@ -186,31 +186,23 @@ void main() {
         reason: 'AUD-PDF-02: ترتيب سطور المتن غير متوقع (${body.length} سطراً) '
             '— يجب أن يضم: 3 أسطر قصيرة + ≥3 أسطر الضبط + سطر أخير.');
 
+    // كل قياسات الحواف تُحسب أولاً ثم يفحصها expect واحد جامع، حتى يحمل
+    // تعليق CI كل القيم دفعة واحدة بدل أن يقتطعه أول expect فاشل.
     final rightLine = body[0];
     final rightMost = rightLine.words.first.x + rightLine.words.first.advanceWidth;
-    expect(rightMost, closeTo(rightEdge, edgeTolerance),
-        reason: 'AUD-PDF-02: محاذاة «لليمين» يجب أن تصل ب край صندوق المحتوى '
-            'اليمين ($rightEdge) — القيمة الفعلية $rightMost. سطر: '
-            '${rightLine.describe()}');
 
     final leftLine = body[1];
     final leftMost =
         leftLine.words.map((word) => word.x).reduce((a, b) => a < b ? a : b);
-    expect(leftMost, closeTo(leftEdge, edgeTolerance),
-        reason: 'AUD-PDF-02: محاذاة «لليسار» يجب أن تصل ب край صندوق المحتوى '
-            'اليسار ($leftEdge) — القيمة الفعلية $leftMost. سطر: '
-            '${leftLine.describe()}');
 
     final centerParagraph = body[2];
-    final minLeft = centerParagraph.words
+    final minLeftCenter = centerParagraph.words
         .map((word) => word.x)
         .reduce((a, b) => a < b ? a : b);
-    final maxRight = centerParagraph.words
+    final maxRightCenter = centerParagraph.words
         .map((word) => word.x + word.advanceWidth)
         .reduce((a, b) => a > b ? a : b);
-    expect((minLeft + maxRight) / 2, closeTo(centerLine, edgeTolerance),
-        reason: 'AUD-PDF-02: محاذاة «توسيط» يجب أن تتوسط صندوق المحتوى '
-            '($centerLine) — القيمة الفعلية ${(minLeft + maxRight) / 2}.');
+    final center = (minLeftCenter + maxRightCenter) / 2;
 
     // فجوة المسافة الطبيعية لنفس الخط/الحجم (مرجع خارجي من ملف الخط نفسه).
     final naskh = await rootBundle.load(ExamFonts.regularAsset);
@@ -223,6 +215,31 @@ void main() {
     // الأسطر الملتفّة: يمتد كل سطر متوسط حتى حافة صندوق المحتوى
     // (MSO: الضبط يملأ السطر من الحافة إلى الحافة).
     const contentWidth = rightEdge - leftEdge;
+
+    // أضيق سطر ضبط ممتد — دليل إضافي داخل نفس الخطأ لو كانت حواف الصندوق
+    // محشورة بمقياس تقليل (FittedBox) أو بإزاحة.
+    double worstJustifyExtent = contentWidth;
+    for (final line in justifyLines.sublist(0, justifyLines.length - 1)) {
+      final lo = line.words.map((w) => w.x).reduce((a, b) => a < b ? a : b);
+      final hi = line.words
+          .map((w) => w.x + w.advanceWidth)
+          .reduce((a, b) => a > b ? a : b);
+      if (hi - lo < worstJustifyExtent) {
+        worstJustifyExtent = hi - lo;
+      }
+    }
+    final edgesOk = (rightMost - rightEdge).abs() <= edgeTolerance &&
+        (leftMost - leftEdge).abs() <= edgeTolerance &&
+        (center - centerLine).abs() <= edgeTolerance;
+    expect(edgesOk, isTrue,
+        reason: 'AUD-PDF-02: حواف السطور لا تطابق صندوق المحتوى — '
+            'يمين=$rightMost (المطلوب $rightEdge ±$edgeTolerance)، '
+            'يسار=$leftMost (المطلوب $leftEdge)، '
+            'وسط=$center (المطلوب $centerLine)، '
+            'أضيق تمدّد ضبط=$worstJustifyExtent من $contentWidth. '
+            'سطر اليمين: ${rightLine.describe()} — '
+            'سطر اليسار: ${leftLine.describe()}.');
+
     for (final line in justifyLines.sublist(0, justifyLines.length - 1)) {
       final minLeft = line.words
           .map((word) => word.x)
@@ -340,7 +357,9 @@ void main() {
   // ===========================================================================
   test('AUD-PDF-04: المسافة بين الأسئلة تظهر في PDF بالمقدار المحدد (px→pt)',
       () async {
-    Future<double> firstBodyY(double spacing) async {
+    // يُقاس سطر «الثاني» بحروفه لا بحجمه (.fontSize==10.5) حتى لا يلتقط
+    // قارئ المحتوى سطر عنوان/متن آخر ويُظهر فرقاً صفرياً كاذباً.
+    Future<(double y, String dump)> secondQuestionY(double spacing) async {
       final document = _doc(questions: <QuestionModel>[
         QuestionModel(
           id: 'q1',
@@ -354,22 +373,35 @@ void main() {
       final bytes =
           await PaginatedPdfExamEngine().generate(document: document);
       final probe = PdfContentProbe.fromBytes(bytes);
-      final body =
-          probe.lines.where((line) => line.fontSize == 10.5).toList();
-      expect(body, isNotEmpty,
-          reason: 'لا يوجد متن للسؤال الثاني (spacing=$spacing).');
-      return body.first.words.first.y;
+      final dump = probe.lines
+          .take(14)
+          .map((line) =>
+              'fs=${line.fontSize} '
+              'y=${line.words.isEmpty ? "-" : line.words.first.y.toStringAsFixed(2)} '
+              ':: ${line.words.take(6).map((w) => w.text).join(" ")}')
+          .join('\n');
+      final matching = probe.lines
+          .where((line) => line.words.any((word) => word.text.contains('الثاني')))
+          .toList();
+      if (matching.isEmpty) {
+        fail('AUD-PDF-04: لم يُعثر على سطر السؤال الثاني في PDF '
+            '(spacing=$spacing) — بنية السطور:\n$dump');
+      }
+      return (matching.first.words.first.y, dump);
     }
 
-    final y0 = await firstBodyY(0);
-    final y40 = await firstBodyY(40);
+    final r0 = await secondQuestionY(0);
+    final r40 = await secondQuestionY(40);
+    final y0 = r0.$1;
+    final y40 = r40.$1;
     final delta = y0 - y40; // 40px إضافية تدفع الثاني للأسفل → أصغر y.
     final expected = PaperMetrics.pt(40);
     expect(delta, closeTo(expected, 2.5),
         reason: 'AUD-PDF-04: المسافة بين السؤالين يجب أن يساوي '
             '${expected.toStringAsFixed(2)}pt (40px) — القيمة الفعلية '
-            '${delta.toStringAsFixed(2)}pt؛ إما أن spacingAfter غير مطبَّق في '
-            'PDF أو محوّل بوحدات خاطئة.');
+            '${delta.toStringAsFixed(2)}pt (y0=$y0, y40=$y40)؛ إما أن '
+            'spacingAfter غير مطبَّق في PDF أو محوّل بوحدات خاطئة.\n'
+            'سطور spacing=0:\n${r0.$2}\nسطور spacing=40:\n${r40.$2}');
   });
 
   test('AUD-PDF-05: المسافة بين الفقرات (النقاط) تظهر في PDF بالمقدار المحدد',

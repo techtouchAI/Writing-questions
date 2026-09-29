@@ -4333,6 +4333,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     required String tooltip,
     required Color color,
     required VoidCallback onTap,
+    required double size,
     ValueChanged<DragUpdateDetails>? onPanUpdate,
   }) {
     return Tooltip(
@@ -4343,13 +4344,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         onTap: onTap,
         onPanUpdate: onPanUpdate,
         child: SizedBox(
-          width: 40,
-          height: 40,
+          width: size,
+          height: size,
           child: Center(
             child: CircleAvatar(
-              radius: 10,
+              radius: size / 4,
               backgroundColor: color,
-              child: Icon(icon, size: 12, color: Colors.white),
+              child: Icon(icon, size: size * 0.3, color: Colors.white),
             ),
           ),
         ),
@@ -4393,6 +4394,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     FloatingElement element,
   ) {
     final selected = _selectedAttachment?.elementId == ref.elementId;
+    // مقاس المقبض يتكيّف مع حجم العنصر: على العناصر الصغيرة (٦٠×٦٠) كان
+    // مقبضان ٤٠×٤٠ يتداخلان في الزاوية نفسها فتسقط نقرة التدوير داخل
+    // مساحة تغيير الحجم (الشقيق الأحدث يفوز). النصف من أصغر بُعد
+    // (بحدّ ٨…٤٠) يفصل المقبضين تماماً.
+    final double handleSize =
+        ((element.width < element.height ? element.width : element.height) / 2)
+            .clamp(8.0, 40.0)
+            .toDouble();
     return PositionedDirectional(
       start: element.dx,
       top: element.dy,
@@ -4430,6 +4439,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   top: 0,
                   child: _elementHandle(
                     key: ValueKey<String>('delete-element-${element.id}'),
+                    size: handleSize,
                     icon: Icons.close,
                     tooltip: 'حذف العنصر',
                     color: PaperStyles.danger,
@@ -4442,6 +4452,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   top: 0,
                   child: _elementHandle(
                     key: ValueKey<String>('edit-element-${element.id}'),
+                    size: handleSize,
                     icon: Icons.functions,
                     tooltip: 'تحرير المعادلة',
                     color: PaperStyles.accent,
@@ -4454,6 +4465,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   top: 0,
                   child: _elementHandle(
                     key: ValueKey<String>('edit-element-${element.id}'),
+                    size: handleSize,
                     icon: Icons.edit,
                     tooltip: 'تحرير مربع النص',
                     color: PaperStyles.accent,
@@ -4469,6 +4481,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   bottom: 0,
                   child: _elementHandle(
                     key: ValueKey<String>('rotate-element-${element.id}'),
+                    size: handleSize,
                     icon: Icons.rotate_right,
                     tooltip: 'تدوير العنصر 45°',
                     color: PaperStyles.accent,
@@ -4486,6 +4499,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   bottom: 0,
                   child: _elementHandle(
                     key: ValueKey<String>('resize-element-${element.id}'),
+                    size: handleSize,
                     icon: Icons.south_east,
                     tooltip: 'اسحب لتغيير الحجم',
                     color: PaperStyles.accent,
