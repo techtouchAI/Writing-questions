@@ -183,8 +183,8 @@ class DocxDocumentExportService {
     </w:rPrDefault>
     <w:pPrDefault>
       <w:pPr>
-        <w:bidi/>
-        <w:jc w:val="right"/>
+        ${document.layout.isLtr ? '' : '<w:bidi/>'}
+        <w:jc w:val="${document.layout.isLtr ? 'left' : 'right'}"/>
       </w:pPr>
     </w:pPrDefault>
   </w:docDefaults>
@@ -244,7 +244,6 @@ class _DocxBuilder {
       _writeParagraph(
         body,
         document.header.instructions.trim(),
-        italic: true,
         color: '4B5563',
         alignment: 'center',
         before: 120,
@@ -255,7 +254,6 @@ class _DocxBuilder {
       _writeParagraph(
         body,
         document.header.notes.trim(),
-        italic: true,
         color: '4B5563',
         alignment: 'center',
         before: 40,
@@ -308,7 +306,7 @@ class _DocxBuilder {
         '<w:pgSz w:w="11906" w:h="16838"/>'
         '<w:pgMar w:top="$marginTwips" w:right="$marginTwips" w:bottom="$marginTwips" w:left="$marginTwips"/>'
         '${document.settings.pageBorder ? '<w:pgBorders w:offsetFrom="page"><w:top w:val="single" w:sz="12" w:space="24" w:color="1E3A8A"/><w:left w:val="single" w:sz="12" w:space="24" w:color="1E3A8A"/><w:bottom w:val="single" w:sz="12" w:space="24" w:color="1E3A8A"/><w:right w:val="single" w:sz="12" w:space="24" w:color="1E3A8A"/></w:pgBorders>' : ''}'
-        '<w:bidi/>'
+        '${document.layout.isLtr ? '' : '<w:bidi/>'}'
         '${footerXml == null ? '' : '<w:footerReference r:id="$_footerRelationId" w:type="default"/>'}'
         '</w:sectPr>'
         '</w:body>'
@@ -525,7 +523,7 @@ class _DocxBuilder {
       return;
     }
     body.write(
-      '<w:p><w:pPr><w:bidi/><w:spacing w:before="0" w:after="0" '
+      '<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:spacing w:before="0" w:after="0" '
       'w:line="1" w:lineRule="exact"/></w:pPr>'
       '<w:r>${_positionedDrawingXml(bytes, widthPt, heightPt, dx: dx, dy: dy, rotationDegrees: rotationDegrees)}</w:r></w:p>',
     );
@@ -591,7 +589,7 @@ class _DocxBuilder {
     final before = layout.isLtr ? 'Page ' : 'صفحة ';
     final middle = layout.isLtr ? ' of ' : ' من ';
     String run(String text) =>
-        '<w:r><w:rPr><w:rtl/><w:sz w:val="18"/><w:color w:val="4B5563"/>'
+        '<w:r><w:rPr>${document.layout.isLtr ? '' : '<w:rtl/>'}<w:sz w:val="18"/><w:color w:val="4B5563"/>'
         '<w:rFonts w:cs="${DocxDocumentExportService._fontName(document.settings.defaultFont)}"/>'
         '</w:rPr><w:t xml:space="preserve">${_escapeXml(text)}</w:t></w:r>';
     String field(String instruction) =>
@@ -602,7 +600,7 @@ class _DocxBuilder {
         '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-        '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/></w:pPr>'
+        '<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:jc w:val="center"/></w:pPr>'
         '${run(before)}${field('PAGE')}${run(middle)}${field('NUMPAGES')}'
         '</w:p>'
         '</w:ftr>';
@@ -698,11 +696,11 @@ class _DocxBuilder {
         : alignment;
     final line = (240 * document.settings.lineSpacing).round();
     final runProperties =
-        '<w:rPr><w:rtl/>${effectiveBold ? '<w:b/>' : ''}${effectiveItalic ? '<w:i/>' : ''}'
+        '<w:rPr>${document.layout.isLtr ? '' : '<w:rtl/>'}${effectiveBold ? '<w:b/>' : ''}${effectiveItalic ? '<w:i/>' : ''}'
         '${headerStyle.underline == true ? '<w:u w:val="single"/>' : ''}'
         '${color == null ? '' : '<w:color w:val="$color"/>'}'
         '<w:sz w:val="$effectiveSize"/><w:rFonts w:cs="$font"/></w:rPr>';
-    return '<w:p><w:pPr><w:bidi/><w:jc w:val="$effectiveAlign"/>'
+    return '<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:jc w:val="$effectiveAlign"/>'
         '<w:spacing w:line="$line" w:lineRule="auto"/></w:pPr>'
         '${_runsXml(text, runProperties, effectiveSize / 2)}'
         '</w:p>';
@@ -916,11 +914,10 @@ class _DocxBuilder {
           final prefix = optionLabel.isEmpty ? '' : '$optionLabel  ';
           _writeParagraph(
             body,
-            '$prefix${option.text}${correct ? '  ✔ الإجابة الصحيحة' : ''}',
+            '$prefix${option.text}${correct ? ' •' : ''}',
             bold: correct,
             size: 22,
             color: styleColor ?? (correct ? '065F46' : null),
-            highlight: correct,
             indent: 800,
             before: style?.paragraphSpacing == null ? 30 : 0,
             after: style?.paragraphSpacing == null
@@ -1098,7 +1095,7 @@ class _DocxBuilder {
     final size = (baseSize * 2).round().clamp(16, 72);
     final line = (240 * document.settings.lineSpacing).round();
     final runProperties =
-        '<w:rPr><w:rtl/>'
+        '<w:rPr>${document.layout.isLtr ? '' : '<w:rtl/>'}'
         '${element.textStyle.bold == true ? '<w:b/>' : ''}'
         '${element.textStyle.italic == true ? '<w:i/>' : ''}'
         '${element.textStyle.underline == true ? '<w:u w:val="single"/>' : ''}'
@@ -1128,7 +1125,7 @@ class _DocxBuilder {
     body.write(
       '<w:tbl><w:tblPr>$tablePosition<w:bidiVisual/>$tableWidth$border$tableLayout</w:tblPr>'
       '$grid<w:tr>$rowProperties<w:tc><w:tcPr>$cellWidth</w:tcPr>'
-      '<w:p><w:pPr><w:bidi/><w:jc w:val="$align"/>'
+      '<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:jc w:val="$align"/>'
       '<w:spacing w:line="$line" w:lineRule="auto"/></w:pPr>'
       '${_runsXml(text, runProperties, size / 2)}</w:p></w:tc></w:tr></w:tbl>',
     );
@@ -1141,7 +1138,7 @@ class _DocxBuilder {
       return;
     }
     body.write(
-      '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/><w:spacing w:before="120" w:after="120"/></w:pPr>'
+      '<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:jc w:val="center"/><w:spacing w:before="120" w:after="120"/></w:pPr>'
       '<w:r>${_drawingXml(bytes, widthPt, heightPt)}</w:r></w:p>',
     );
   }
@@ -1187,7 +1184,7 @@ class _DocxBuilder {
       heightPt = naturalHeight * scale;
     }
     body.write(
-      '<w:p><w:pPr><w:bidi/><w:jc w:val="center"/><w:spacing w:before="120" w:after="120"/></w:pPr>'
+      '<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:jc w:val="center"/><w:spacing w:before="120" w:after="120"/></w:pPr>'
       '<w:r>${_drawingXml(raster.pngBytes, widthPt, heightPt)}</w:r></w:p>',
     );
   }
@@ -1314,7 +1311,7 @@ class _DocxBuilder {
         : size.clamp(12, 96);
     // تباعد أسطر العنصر المخصص يسود، وإلا العام من إعدادات الورقة (240 = مفرد).
     final line = (240 * (lineHeight ?? document.settings.lineSpacing)).round();
-    body.write('<w:p><w:pPr><w:bidi/><w:jc w:val="$alignment"/>');
+    body.write('<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:jc w:val="$alignment"/>');
     if (border) {
       body.write(
         '<w:pBdr><w:top w:val="single" w:sz="6" w:space="4" w:color="1E3A8A"/>'
@@ -1330,7 +1327,7 @@ class _DocxBuilder {
     body.write(
       '<w:spacing${before == null ? '' : ' w:before="$before"'}${after == null ? '' : ' w:after="$after"'} w:line="$line" w:lineRule="auto"/>',
     );
-    final runProperties = StringBuffer('<w:rPr><w:rtl/>');
+    final runProperties = StringBuffer('<w:rPr>${document.layout.isLtr ? '' : '<w:rtl/>'}');
     if (bold) {
       runProperties.write('<w:b/>');
     }

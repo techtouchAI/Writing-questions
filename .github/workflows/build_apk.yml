@@ -114,7 +114,7 @@ jobs:
               count=$((count + 1))
               [ "$count" -le 12 ] || break
               start=$((line > 2 ? line - 2 : 1))
-              excerpt="$(sed -n "${start},$((start + 45))p" "$file")"
+              excerpt="$(sed -n "${start},$((start + 70))p" "$file")"
               [ -n "$excerpt" ] || continue
               excerpt="${excerpt//%/%25}"
               excerpt="${excerpt//$'\r'/%0D}"

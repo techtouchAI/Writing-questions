@@ -460,14 +460,14 @@ class PaginatedPdfExamEngine {
     final header = document.header;
     final settings = document.settings;
     final lineStyle = PaperStyleResolver.apply(
-      styles.headerBody.copyWith(lineSpacing: 2 * settings.heightScale),
+      styles.headerBody.copyWith(lineSpacing: 1.6 * settings.heightScale),
       header.style,
       fonts: fonts,
       defaultFont: settings.defaultFont,
     );
     final centerStyle = PaperStyleResolver.apply(
       styles.headerBody.copyWith(
-          fontWeight: pw.FontWeight.bold, lineSpacing: 2 * settings.heightScale),
+          fontWeight: pw.FontWeight.bold, lineSpacing: 1.6 * settings.heightScale),
       header.style,
       fonts: fonts,
       defaultFont: settings.defaultFont,
@@ -589,7 +589,8 @@ class PaginatedPdfExamEngine {
     final prompt = question.prompt.trim();
     final promptStyle = PaperStyleResolver.apply(
       styles.body.copyWith(
-          lineSpacing: layout.lineHeightFactor * 2 * settings.heightScale),
+          fontSize: 11,
+          lineSpacing: 1.7 * settings.heightScale),
       bodyOverride,
       fonts: fonts,
       defaultFont: settings.defaultFont,
@@ -724,9 +725,9 @@ class PaginatedPdfExamEngine {
         ? styles.body.copyWith(
             fontSize: 12 * settings.fontScale,
             lineSpacing:
-                (layout.lineHeightFactor * 2 + 2) * settings.heightScale)
+                (layout.lineHeightFactor + 1) * settings.heightScale)
         : styles.body.copyWith(
-            lineSpacing: layout.lineHeightFactor * 2 * settings.heightScale);
+            lineSpacing: layout.lineHeightFactor * settings.heightScale);
     final bodyStyle = PaperStyleResolver.apply(
       baseBody,
       branch.style,
@@ -824,8 +825,7 @@ class PaginatedPdfExamEngine {
   }) {
     final settings = document.settings;
     final itemStyle = PaperStyleResolver.apply(
-      styles.body.copyWith(
-          lineSpacing: layout.lineHeightFactor * 2 * settings.heightScale),
+      styles.body.copyWith(lineSpacing: 1.5 * settings.heightScale),
       ownerStyle,
       fonts: fonts,
       defaultFont: settings.defaultFont,

@@ -190,14 +190,16 @@ void main() {
     final rightMost = rightLine.words.first.x + rightLine.words.first.advanceWidth;
     expect(rightMost, closeTo(rightEdge, edgeTolerance),
         reason: 'AUD-PDF-02: محاذاة «لليمين» يجب أن تصل ب край صندوق المحتوى '
-            'اليمين ($rightEdge) — القيمة الفعلية $rightMost.');
+            'اليمين ($rightEdge) — القيمة الفعلية $rightMost. سطر: '
+            '${rightLine.describe()}');
 
     final leftLine = body[1];
     final leftMost =
         leftLine.words.map((word) => word.x).reduce((a, b) => a < b ? a : b);
     expect(leftMost, closeTo(leftEdge, edgeTolerance),
         reason: 'AUD-PDF-02: محاذاة «لليسار» يجب أن تصل ب край صندوق المحتوى '
-            'اليسار ($leftEdge) — القيمة الفعلية $leftMost.');
+            'اليسار ($leftEdge) — القيمة الفعلية $leftMost. سطر: '
+            '${leftLine.describe()}');
 
     final centerParagraph = body[2];
     final minLeft = centerParagraph.words

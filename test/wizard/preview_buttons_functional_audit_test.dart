@@ -419,16 +419,23 @@ void main() {
     expect(
         controller.questions.first.branches.first.style.align, PaperAlign.center);
 
-    // دليل قابل للفهرسة: إن غاب زر التراجع تُنشر رسائل Tooltip المرئية
-    // كاملةً في تعليق CI بدل خطأ StateError مبهم.
+    // دليل قابل للتشخيص في تعليق CI: عدد نسخ الشريط، إزاحة تمريره، ورسائل
+    // Tooltip المبنية فعلياً داخله (بدل خطأ StateError مبهم).
+    final toolbarFinder = find.byType(PreviewToolbar);
+    final toolbarTips = tester
+        .widgetList(
+          find.descendant(of: toolbarFinder, matching: find.byType(Tooltip)),
+        )
+        .map((w) => (w as Tooltip).message ?? '')
+        .join(' | ');
     expect(
       find.descendant(
-        of: find.byType(PreviewToolbar),
+        of: toolbarFinder,
         matching: find.byTooltip('تراجع'),
       ),
       findsOneWidget,
-      reason: 'AUD-UR-06: زر التراجع غير موجود في الشريط — Tooltip مرئية: '
-          '${tester.widgetList(find.byType(Tooltip)).map((w) => (w as Tooltip).message).join(' | ')}',
+      reason: 'AUD-UR-06: زر التراجع غير موجود — نسخ الشريط='
+          '${toolbarFinder.evaluate().length}، Tooltip بنيته=$toolbarTips',
     );
     await _tap(tester, _tool('تراجع'));
     expect(controller.questions.first.branches.first.style.align, isNull,
@@ -907,17 +914,20 @@ void main() {
 
     const ref = BranchRef(questionIndex: 1, branchIndex: 0);
     await _tap(tester, find.byKey(const ValueKey<String>('item-bi1')));
-    await _tap(tester, find.text('صح').first);
-    expect(controller.document.branchAt(ref).content.items[0].isCorrect, isTrue);
-
+    // bi1 محددة مسبقاً (isCorrect: true) — النقرة الأولى تُلغي التحديد (null)
+    // مثل زر Radio في Word، والنقرة الثانية تعيده إلى «صح».
     await _tap(tester, find.text('صح').first);
     expect(
       controller.document.branchAt(ref).content.items[0].isCorrect,
       isNull,
-      reason: 'AUD-TF-01: نقرة على الإجابة المختارة يجب أن تُلغي تحديدها '
+      reason: 'AUD-TF-01: النقرة على الإجابة المختارة يجب أن تُلغي تحديدها '
           '(غير محددة) — لا أن تُقفل الاختيار (سلوك Radio في Word forms يعيد '
           'التحديد نفسه فقط؛ الإلغاء المتاح هنا هو المسار الموثّق في المرجع).',
     );
+
+    await _tap(tester, find.text('صح').first);
+    expect(controller.document.branchAt(ref).content.items[0].isCorrect, isTrue,
+        reason: 'AUD-TF-01: نقرة على «صح» غير المحددة تضبط الإجابة صحيحة.');
     expect(tester.takeException(), isNull);
   });
 
