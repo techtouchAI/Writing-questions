@@ -51,8 +51,8 @@ class BranchContent {
   /// هل يعرض نوع الفرع جسماً مستقلاً في المطبوع؟
   ///
   /// «اختيار من متعدد» وحده يعرض خياراته؛ و«صح/خطأ» بلا جسم إطلاقاً
-  /// (العبارات في نقاطها)، و«الفراغ»/«المقالي» مساحتهما نص الفرع —
-  /// **ولا عنصر إجابة في أي مرحلة** (التطبيق لكتابة الأسئلة وحدها).
+  /// (العبارات في نقاطها)، و«الفراغ»/«المقالي» مساحتهما نص الفرع
+  /// (التطبيق لكتابة الأسئلة وحدها).
   bool get hasPrintableTypeBody {
     if (plainText) {
       return false;
@@ -183,10 +183,15 @@ class BranchContent {
       }
       options.add(QuestionOption.fromMap(Map<String, dynamic>.from(entry)));
     }
+    final type = QuestionType.parse(rawType);
     return BranchContent(
-      type: QuestionType.parse(rawType),
+      type: type,
       text: rawText?.toString() ?? '',
-      options: options,
+      // الخيارات لا معنى لها إلا في «اختيار من متعدد»؛ ملفات قديمة كانت تخزّن
+      // لغيره (مثل صح/خطأ) خيارات إجابة، فتُتجاهل ولا تنتقل إلى النموذج الجديد.
+      options: type == QuestionType.multipleChoice
+          ? options
+          : const <QuestionOption>[],
       items: BranchItem.listFromValue(map['items']),
       plainText: map['plainText'] == true,
     );

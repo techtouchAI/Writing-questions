@@ -1046,7 +1046,7 @@ class PaginatedPdfExamEngine {
       case QuestionType.definitions:
       case QuestionType.essay:
         // لا جسم مطبوع لهذه الأنواع: العبارات في نقاطها، ومساحة الفراغ/
-        // المقالي في نص الفرع — **ولا عنصر إجابة في أي مرحلة**.
+        // المقالي في نص الفرع.
         return pw.SizedBox();
     }
   }

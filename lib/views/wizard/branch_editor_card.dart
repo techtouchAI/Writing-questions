@@ -14,8 +14,7 @@ import '../widgets/rich_content_field.dart';
 /// للخيارات، و[LtrNumericField] للدرجة — مع نوع السؤال قابل للاختيار لكل
 /// فرع على حدة، ووضع «نص حر»، ونقاط غير محدودة (1، 2، 3...).
 ///
-/// **لا عنصر إجابة إطلاقاً**: التطبيق لكتابة الأسئلة وحدها، فلا حقل إجابة
-/// نموذجية ولا خيار تصحيح — والحقول هي: النص ← النقاط ← الخيارات
+/// التطبيق لكتابة الأسئلة وحدها، والحقول هي: النص ← النقاط ← الخيارات
 /// (نفس ترتيب العرض في المعاينة والـ PDF وWord حرفياً).
 class BranchEditorCard extends StatefulWidget {
   const BranchEditorCard({
@@ -205,7 +204,7 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
             SwitchListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
-              title: const Text('نص حر فقط (بدون مساحة إجابة)', style: TextStyle(fontSize: 13)),
+              title: const Text('نص حر فقط', style: TextStyle(fontSize: 13)),
               subtitle: const Text(
                 'يعرض النص والنقاط كما كتبتها تماماً',
                 style: TextStyle(fontSize: 11),
@@ -251,12 +250,12 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
         );
       case QuestionType.trueFalse:
         // «صح/خطأ» = عبارات مرقّمة فقط: تُطبع في نقاطها بالترتيب، ولا يُكتب
-        // عنها أي شيء آخر ولا يُضبط لها أي عنصر إجابة (كتابة أسئلة فقط).
+        // عنها أي شيء آخر (كتابة أسئلة فقط).
         return const SizedBox.shrink();
       case QuestionType.fillInTheBlank:
       case QuestionType.definitions:
       case QuestionType.essay:
-        // لا حقل إجابة نموذجية: التطبيق لكتابة الأسئلة وحدها.
+        // لا جسم مستقل لهذه الأنواع: التطبيق لكتابة الأسئلة وحدها.
         return const SizedBox.shrink();
     }
   }
