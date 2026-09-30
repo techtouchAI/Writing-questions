@@ -1,4 +1,5 @@
 import 'math_symbols.dart';
+import 'tex_content.dart';
 
 /// تمثيل نصي مقروء لصيغة رياضية — **بلا أي رمز LaTeX إطلاقاً**.
 ///
@@ -12,6 +13,20 @@ import 'math_symbols.dart';
 /// - الأوامر الرمزية (`\alpha`، `\times`...) ← محارفها المرئية (α، ×).
 /// - أي أمر مجهول يُكتب باسمه بلا شرطة مائلة (`\lim` ← `lim`).
 abstract final class LatexPlainText {
+  /// يحوّل نصاً مختلطاً (نص عادي و`$صيغ$` بداخله) إلى نص مقروء خالٍ تماماً من
+  /// رموز LaTeX — يُستعمل في مسارات التصدير التي لا يتوفر فيها مرسّم صيغ،
+  /// فيبقى المعنى الرياضي ظاهراً بدل أن يظهر الكود.
+  static String ofMixed(String source) {
+    if (!TexContent.containsMath(source)) {
+      return source;
+    }
+    final buffer = StringBuffer();
+    for (final segment in TexContent.split(source)) {
+      buffer.write(segment.isMath ? of(segment.text) : segment.text);
+    }
+    return buffer.toString();
+  }
+
   /// يحوّل [latex] إلى نص مقروء مضمون الخلو من رموز LaTeX.
   static String of(String latex) {
     if (latex.trim().isEmpty) {

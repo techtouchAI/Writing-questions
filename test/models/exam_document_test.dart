@@ -161,8 +161,7 @@ void main() {
 
     test('question exportability includes intended attachments and excludes blanks', () {
       final empty = QuestionModel(questionNumber: 1);
-      expect(empty.hasExportableContent, isFalse);
-      expect(empty.hasExportableContent, isFalse);
+      expect(empty.hasExportableContent(), isFalse);
 
       final attachedOnly = QuestionModel(
         questionNumber: 2,
@@ -182,7 +181,7 @@ void main() {
           ),
         ],
       );
-      expect(attachedOnly.hasExportableContent, isTrue);
+      expect(attachedOnly.hasExportableContent(), isTrue);
 
       final globalMirror = QuestionModel(
         questionNumber: 3,
@@ -203,9 +202,10 @@ void main() {
           ),
         ],
       );
-      expect(globalMirror.hasExportableContent, isTrue);
+      expect(globalMirror.hasExportableContent(), isTrue);
       expect(
-        globalMirror.hasExportableContent(ignoredAttachmentIds: const <String>{'global-mirror'},
+        globalMirror.hasExportableContent(
+          ignoredAttachmentIds: const <String>{'global-mirror'},
         ),
         isFalse,
       );

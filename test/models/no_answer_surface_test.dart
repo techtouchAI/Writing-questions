@@ -5,6 +5,7 @@ import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/question_model.dart';
+import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 
@@ -73,8 +74,15 @@ void main() {
       ]) {
         expect(BranchContent(type: type).hasPrintableTypeBody, isFalse);
       }
-      // الاختيار من متعدد وحده له جسم مطبوع (الخيارات).
-      expect(BranchContent.empty(QuestionType.multipleChoice).hasPrintableTypeBody, isTrue);
+      // الاختيار من متعدد وحده له جسم مطبوع — بشرط أن يحمل الخيار نصاً.
+      expect(BranchContent.empty(QuestionType.multipleChoice).hasPrintableTypeBody, isFalse);
+      expect(
+        BranchContent(
+          type: QuestionType.multipleChoice,
+          options: <QuestionOption>[QuestionOption(text: 'خيار')],
+        ).hasPrintableTypeBody,
+        isTrue,
+      );
     });
   });
 

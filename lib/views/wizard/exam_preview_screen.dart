@@ -14,6 +14,7 @@ import '../../models/branch_model.dart';
 import '../../models/exam_canvas_geometry.dart';
 import '../../models/exam_document.dart';
 import '../../models/exam_header_model.dart';
+import '../../models/latex_plain_text.dart';
 import '../../models/floating_element.dart';
 import '../../models/paper_divider.dart';
 import '../../models/paper_font.dart';
@@ -3448,8 +3449,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               child: Container(
                 width: 320,
                 padding: const EdgeInsets.all(8),
+                // معاينة السحب تُعرض نصاً مقروءاً: لا كود LaTeX حتى في
+                // العنصر العائم أثناء السحب.
                 child: Text(
-                  '$label) ${branch.content.text}',
+                  '$label) ${LatexPlainText.ofMixed(branch.content.text)}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: _scaled(PaperStyles.body(layout)),

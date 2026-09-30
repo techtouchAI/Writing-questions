@@ -305,7 +305,9 @@ void main() {
     for (final format in ['PDF', 'Word']) {
       await tapTool('مراجعة وتصدير $format');
       expect(find.text('مراجعة الورقة'), findsOneWidget);
-      expect(find.text('ورقة الطالب'), findsOneWidget);
+      // ورقة واحدة للأسئلة: لا مبدّل «ورقة الطالب/نموذج الإجابة» إطلاقاً.
+      expect(find.text('ورقة الطالب'), findsNothing);
+      expect(find.textContaining('نموذج الإجابة'), findsNothing);
       await _tap(tester, find.text('رجوع'));
     }
     // لا وجود لنسخة «نموذج الإجابة» ولا لأي زر يفتحها في أي مرحلة.

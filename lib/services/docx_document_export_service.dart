@@ -1308,8 +1308,14 @@ class _DocxBuilder {
   /// (انظر [_resolveMath]) — فيظهر الرمز المرسوم مكان `$...$` تماماً،
   /// وبالترتيب نفسه داخل السطر.
   String _runsXml(String text, String runProperties, double fontSizePt) {
-    if (mathRasterizer == null || !TexContent.containsMath(text)) {
+    if (!TexContent.containsMath(text)) {
       return '<w:r>$runProperties<w:t xml:space="preserve">${_escapeXml(text)}</w:t></w:r>';
+    }
+    if (mathRasterizer == null) {
+      // بلا مرسّم صيغ: تُكتب الصيغ نصاً رياضياً مقروءاً — لا كود LaTeX إطلاقاً
+      // في أي ملف مهما كان سبب تعذّر الرسم.
+      return '<w:r>$runProperties<w:t xml:space="preserve">'
+          '${_escapeXml(LatexPlainText.ofMixed(text))}</w:t></w:r>';
     }
     final buffer = StringBuffer();
     for (final segment in TexContent.split(text)) {

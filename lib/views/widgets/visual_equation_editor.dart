@@ -846,7 +846,6 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
           _Tool('±', () => _insertSymbol('±')),
           _Tool('∫', () => _insertSymbol('∫')),
           _Tool('∑', () => _insertSymbol('∑')),
-          _Tool('√', () => _insertSymbol('√')),
         ]),
         _toolRow(context, 'العلاقات', <_Tool>[
           _Tool('=', () => _insertSymbol('=')),

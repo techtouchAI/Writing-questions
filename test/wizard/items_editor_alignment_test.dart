@@ -98,8 +98,17 @@ void main() {
       initialItems: <BranchItem>[BranchItem(id: 'i1', text: r'احسب $1+1$')],
     );
 
-    // لا حقول نصية مكشوفة على الشاشة (المصدر ذو الصيغة يُعرض منسّقاً).
-    expect(find.byType(TextField), findsNothing);
+    // لا حقل نصي مكشوف على المصدر: الصيغة تُعرض مرئية لا كوداً، ولا يوجد أي
+    // حقل يحمل علامات الدولار الخام (حقل العدد وحده حقل رقمي).
+    expect(find.text(r'$1+1$'), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            (widget.controller?.text.contains(r'$') ?? false),
+      ),
+      findsNothing,
+    );
     expect(read().single.text, r'احسب $1+1$');
   });
 }
