@@ -489,7 +489,10 @@ void main() {
         'Model answer': joined.contains('Model answer'),
         'Answer:': joined.contains('Answer:'),
         '(True)': joined.contains('(True)'),
+        '(False)': joined.contains('(False)'),
         '•': joined.contains('•'),
+        'Statements': joined.contains('True or false statement') &&
+            joined.contains('First statement'),
       };
     }
 
@@ -500,7 +503,9 @@ void main() {
         'Model answer': false,
         'Answer:': false,
         '(True)': false,
+        '(False)': false,
         '•': false,
+        'Statements': true,
       },
       reason: 'AUD-PDF-06: ورقة الطالب في PDF تحوي إجابات المعلم — '
           'التسرّب: $student.',
@@ -510,13 +515,18 @@ void main() {
     expect(
       teacher,
       <String, bool>{
+        // الإجابة النموذجية للمقالي تبقى في نموذج المعلم…
         'Model answer': true,
-        'Answer:': true,
-        '(True)': true,
+        // …أما صح/خطأ فلا تُكتب إجابته على الورقة إطلاقاً (كما في الفراغات).
+        'Answer:': false,
+        '(True)': false,
+        '(False)': false,
+        // وعلامة الخيار الصحيح «•» خاصة بالاختيار من متعدد وحده.
         '•': true,
+        'Statements': true,
       },
-      reason: 'AUD-PDF-06: نموذج الإجابة في PDF يجب أن يحوي كل علامات المعلم — '
-          'الناقص: $teacher.',
+      reason: 'AUD-PDF-06: صح/خطأ يجب أن يخلو من أي كتابة إجابة على الورقة '
+          '(كلمة أو علامة أو سطر) — المخالف: $teacher.',
     );
   });
 
@@ -616,7 +626,7 @@ void main() {
   // ===========================================================================
   // DOCX: نموذج المعلم/الطالب
   // ===========================================================================
-  test('AUD-DOCX-03: إجابات المعلم غائبة عن DOCX الطالب وموجودة في المعلم',
+  test('AUD-DOCX-03: لا تُكتب إجابات صح/خطأ على الورقة في أي نسخة (طالب/معلم)',
       () async {
     ExamDocument examDoc() => _doc(questions: <QuestionModel>[
           _essay('q1',
@@ -676,6 +686,10 @@ void main() {
         'الإجابة الصحيحة': xml.contains('الإجابة الصحيحة'),
         '✔': xml.contains('✔'),
         '(صح)': xml.contains('(صح)'),
+        '(خطأ)': xml.contains('(خطأ)'),
+        '(✓)': xml.contains('(✓)'),
+        'العبارات مطبوعة': xml.contains('عبارة صح/خطأ بنقاط') &&
+            xml.contains('عبارة أولى'),
       };
     }
 
@@ -687,6 +701,9 @@ void main() {
         'الإجابة الصحيحة': false,
         '✔': false,
         '(صح)': false,
+        '(خطأ)': false,
+        '(✓)': false,
+        'العبارات مطبوعة': true,
       },
       reason: 'AUD-DOCX-03: ورقة الطالب في Word تحوي إجابات المعلم — '
           'التسرّب: $student.',
@@ -696,13 +713,19 @@ void main() {
     expect(
       teacher,
       <String, bool>{
+        // الإجابة النموذجية للمقالي تبقى في نموذج المعلم…
         'الإجابة النموذجية': true,
-        'الإجابة الصحيحة': true,
-        '✔': true,
-        '(صح)': true,
+        // …أما صح/خطأ فلا يُكتب على الورقة إطلاقاً (كما في الفراغات):
+        // لا كلمة ولا علامة ولا سطر «الإجابة الصحيحة».
+        'الإجابة الصحيحة': false,
+        '✔': false,
+        '(صح)': false,
+        '(خطأ)': false,
+        '(✓)': false,
+        'العبارات مطبوعة': true,
       },
-      reason: 'AUD-DOCX-03: نموذج الإجابة في Word يجب أن يحوي كل علامات '
-          'المعلم — الناقص: $teacher.',
+      reason: 'AUD-DOCX-03: صح/خطأ يجب أن يخلو من أي كتابة/علامة إجابة على '
+          'الورقة (طلبا وطالباً) — المخالف: $teacher.',
     );
   });
 

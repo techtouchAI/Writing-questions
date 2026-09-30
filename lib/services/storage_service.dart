@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/app_backup.dart';
 import '../models/exam_document.dart';
 
 class StorageLoadResult<T> {
@@ -26,6 +29,7 @@ class StorageService {
 
   static const String _examDocumentsKey = 'app_saved_exam_documents';
   static const String _lastOpenDocumentKey = 'app_last_open_document_id';
+  static const String _lastBackupMetadataKey = 'app_last_backup_metadata';
 
   final Future<SharedPreferences> Function() _preferencesLoader;
   Future<SharedPreferences>? _preferences;
@@ -67,6 +71,36 @@ class StorageService {
     final saved = await preferences.setString(_lastOpenDocumentKey, id);
     if (!saved) {
       throw StateError('تعذر حفظ آخر نموذج مفتوح على الجهاز.');
+    }
+  }
+
+  /// بيانات آخر نسخة احتياطية أُنشئت على هذا الجهاز (للعرض في الإعدادات).
+  Future<BackupMetadata?> loadLastBackupMetadata() async {
+    final preferences = await _getPreferences();
+    final raw = preferences.getString(_lastBackupMetadataKey);
+    if (raw == null || raw.isEmpty) {
+      return null;
+    }
+    try {
+      return BackupMetadata.fromValue(jsonDecode(raw));
+    } catch (_) {
+      // بيانات وصفية تالفة لا تُسقط الإعدادات — تُعامل كعدم وجود نسخة.
+      return null;
+    }
+  }
+
+  Future<void> saveLastBackupMetadata(BackupMetadata? metadata) async {
+    final preferences = await _getPreferences();
+    if (metadata == null) {
+      await preferences.remove(_lastBackupMetadataKey);
+      return;
+    }
+    final saved = await preferences.setString(
+      _lastBackupMetadataKey,
+      jsonEncode(metadata.toMap()),
+    );
+    if (!saved) {
+      throw StateError('تعذر حفظ بيانات النسخة الاحتياطية على الجهاز.');
     }
   }
 

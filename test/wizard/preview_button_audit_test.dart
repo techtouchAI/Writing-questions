@@ -581,10 +581,15 @@ void main() {
     await _tap(tester, find.text('حفظ'));
     expect(controller.document.branchAt(ref).content.items.first.labelOverride, 'أولاً');
     await _tap(tester, find.byTooltip('عرض نموذج الإجابة'));
-    await _tap(tester, find.text('صح').first);
+    // إجابات صح/خطأ: شريط واحد مجمّع بترتيب العبارات (خيار واحد لكل عبارة)،
+    // والنقرة تبدّل: بلا إجابة ← صح ← خطأ ← بلا إجابة.
+    final firstAnswer = find.byKey(const ValueKey<String>('b-b1-answer-0'));
+    await _tap(tester, firstAnswer);
     expect(controller.document.branchAt(ref).content.items.first.isCorrect, isTrue);
-    await _tap(tester, find.text('خطأ').first);
+    await _tap(tester, firstAnswer);
     expect(controller.document.branchAt(ref).content.items.first.isCorrect, isFalse);
+    await _tap(tester, firstAnswer);
+    expect(controller.document.branchAt(ref).content.items.first.isCorrect, isNull);
     await _tap(tester, find.byTooltip('إضافة نقطة'));
     expect(controller.document.branchAt(ref).content.items, hasLength(3));
     await _tap(tester, find.byTooltip('حذف النقطة').last);

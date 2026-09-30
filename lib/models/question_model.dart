@@ -37,7 +37,6 @@ class QuestionModel {
     this.titleColor,
     this.showFrame = false,
     this.dividerAfter,
-    this.trueFalseFormat = 'words',
     this.titleAlign,
     this.promptAlign,
   })  : id = id ?? const Uuid().v4(),
@@ -105,9 +104,6 @@ class QuestionModel {
   /// إطار حول السؤال كاملاً.
   final bool showFrame;
 
-  /// نمط علامة إجابة صح وخطأ: 'words' (صح/خطأ) أو 'symbols' (✓/✗).
-  final String trueFalseFormat;
-
   /// محاذاة خاصة لعنوان السؤال (null = وراثة من نمط السؤال).
   final PaperAlign? titleAlign;
 
@@ -146,7 +142,7 @@ class QuestionModel {
     Set<String> ignoredAttachmentIds = const <String>{},
   }) {
     if (prompt.trim().isNotEmpty ||
-        items.any((item) => item.showsInExport(teacher: teacher, trueFalse: false)) ||
+        items.any((item) => item.showsInExport) ||
         attachments.any((element) => !ignoredAttachmentIds.contains(element.id)) ||
         dividerAfter != null) {
       return true;
@@ -174,7 +170,6 @@ class QuestionModel {
     int? Function()? titleColor,
     bool? showFrame,
     PaperDivider? Function()? dividerAfter,
-    String? trueFalseFormat,
     PaperAlign? Function()? titleAlign,
     PaperAlign? Function()? promptAlign,
   }) {
@@ -194,7 +189,6 @@ class QuestionModel {
       titleColor: titleColor != null ? titleColor() : this.titleColor,
       showFrame: showFrame ?? this.showFrame,
       dividerAfter: dividerAfter != null ? dividerAfter() : this.dividerAfter,
-      trueFalseFormat: trueFalseFormat ?? this.trueFalseFormat,
       titleAlign: titleAlign != null ? titleAlign() : this.titleAlign,
       promptAlign: promptAlign != null ? promptAlign() : this.promptAlign,
     );
@@ -318,7 +312,6 @@ class QuestionModel {
       titleColor: titleColor,
       showFrame: showFrame,
       dividerAfter: dividerAfter,
-      trueFalseFormat: trueFalseFormat,
       titleAlign: titleAlign,
       promptAlign: promptAlign,
     );
@@ -345,7 +338,6 @@ class QuestionModel {
       if (titleColor != null) 'titleColor': titleColor,
       if (showFrame) 'showFrame': true,
       if (dividerAfter != null) 'dividerAfter': dividerAfter!.toMap(),
-      if (trueFalseFormat != 'words') 'trueFalseFormat': trueFalseFormat,
       if (titleAlign != null) 'titleAlign': titleAlign!.name,
       if (promptAlign != null) 'promptAlign': promptAlign!.name,
     };
@@ -417,7 +409,6 @@ class QuestionModel {
       titleColor: PaperTextStyle.parseColor(map['titleColor']),
       showFrame: map['showFrame'] == true,
       dividerAfter: PaperDivider.fromValue(map['dividerAfter']),
-      trueFalseFormat: map['trueFalseFormat']?.toString() ?? 'words',
       titleAlign: rawTitleAlign != null ? PaperAlign.parse(rawTitleAlign) : null,
       promptAlign: rawPromptAlign != null ? PaperAlign.parse(rawPromptAlign) : null,
     );

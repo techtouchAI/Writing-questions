@@ -498,28 +498,6 @@ class ExamWizardController extends ChangeNotifier {
     ));
   }
 
-  void updateQuestionTrueFalseFormat(int index, String format) {
-    RangeError.checkValidIndex(index, questions, 'index');
-    if (questions[index].trueFalseFormat == format) {
-      return;
-    }
-    _commit(_document.withQuestionAt(
-      index,
-      questions[index].copyWith(trueFalseFormat: format),
-    ));
-  }
-
-  void updateBranchTrueFalseFormat(BranchRef ref, String format) {
-    if (!_document.containsRef(ref)) {
-      return;
-    }
-    final branch = _document.branchAt(ref);
-    if (branch.content.trueFalseFormat == format) {
-      return;
-    }
-    updateBranchContent(ref, branch.content.copyWith(trueFalseFormat: format));
-  }
-
   void toggleQuestionFrame(int index) {
     RangeError.checkValidIndex(index, questions, 'index');
     final question = questions[index];
@@ -968,6 +946,21 @@ class ExamWizardController extends ChangeNotifier {
   }
 
   /// يثبّت إجابة نقطة لصح/خطأ (نموذج المعلم فقط).
+  /// إجابة صح/خطأ على مستوى الفرع (فرع بلا نقاط = عبارة واحدة) —
+  /// «خيار واحد» لإجابة الفرع، ولا تُطبع على الورقة (تُعرض في شريط
+  /// التصحيح المجمّع في المعاينة عند تشغيل نموذج الإجابة).
+  void updateBranchTrueFalseAnswer(BranchRef ref, bool answer) {
+    if (!_document.containsRef(ref)) {
+      return;
+    }
+    final branch = _document.branchAt(ref);
+    final content = branch.content;
+    if (content.type == QuestionType.trueFalse && content.trueFalseAnswer == answer) {
+      return;
+    }
+    updateBranchContent(ref, content.withTrueFalseAnswer(answer));
+  }
+
   void updateBranchItemAnswer(BranchRef ref, int itemIndex, bool? answer) {
     if (!_document.containsRef(ref)) {
       return;

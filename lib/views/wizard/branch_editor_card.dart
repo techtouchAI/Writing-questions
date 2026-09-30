@@ -248,8 +248,6 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
               items: _content.items,
               enabled: widget.enabled,
               showTrueFalseAnswers: _content.type == QuestionType.trueFalse,
-              trueFalseFormat: _content.trueFalseFormat,
-              onFormatChanged: (format) => _emitContent(_content.copyWith(trueFalseFormat: format)),
               onChanged: (items) => _emitContent(_content.copyWith(items: items)),
             ),
             const SizedBox(height: 10),
@@ -269,32 +267,45 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
           onChanged: (options) => _emitContent(_content.copyWith(options: options)),
         );
       case QuestionType.trueFalse:
+        // الفرع بلا نقاط = عبارة واحدة، فإجابتها خيار واحد للفرع؛ ومع وجود
+        // نقاط تُضبط إجابة كل عبارة من خيارها الواحد في محرر النقاط أعلاه.
         if (_content.items.isNotEmpty) {
           return const SizedBox.shrink();
         }
-        return Row(
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Expanded(
-              child: RadioListTile<bool>(
-                dense: true,
-                title: Text(_content.trueFalseFormat == 'symbols' ? 'صح (✓)' : 'صح'),
-                value: true,
-                groupValue: _content.trueFalseAnswer,
-                onChanged: widget.enabled
-                    ? (value) => _emitContent(_content.withTrueFalseAnswer(value ?? true))
-                    : null,
-              ),
+            const Text(
+              'الإجابة (للتصحيح — لا تُطبع على الورقة):',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
             ),
-            Expanded(
-              child: RadioListTile<bool>(
-                dense: true,
-                title: Text(_content.trueFalseFormat == 'symbols' ? 'خطأ (✗)' : 'خطأ'),
-                value: false,
-                groupValue: _content.trueFalseAnswer,
-                onChanged: widget.enabled
-                    ? (value) => _emitContent(_content.withTrueFalseAnswer(value ?? false))
-                    : null,
-              ),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: RadioListTile<bool>(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('صح ✓', style: TextStyle(fontSize: 13)),
+                    value: true,
+                    groupValue: _content.trueFalseAnswer,
+                    onChanged: widget.enabled
+                        ? (value) => _emitContent(_content.withTrueFalseAnswer(value ?? true))
+                        : null,
+                  ),
+                ),
+                Expanded(
+                  child: RadioListTile<bool>(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('خطأ ✗', style: TextStyle(fontSize: 13)),
+                    value: false,
+                    groupValue: _content.trueFalseAnswer,
+                    onChanged: widget.enabled
+                        ? (value) => _emitContent(_content.withTrueFalseAnswer(value ?? false))
+                        : null,
+                  ),
+                ),
+              ],
             ),
           ],
         );

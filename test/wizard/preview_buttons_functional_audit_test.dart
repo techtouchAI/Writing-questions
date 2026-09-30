@@ -986,21 +986,35 @@ void main() {
     await _tap(tester, find.byTooltip('عرض نموذج الإجابة'));
 
     const ref = BranchRef(questionIndex: 1, branchIndex: 0);
-    await _tap(tester, find.byKey(const ValueKey<String>('item-bi1')));
-    // bi1 محددة مسبقاً (isCorrect: true) — النقرة الأولى تُلغي التحديد (null)
-    // مثل زر Radio في Word، والنقرة الثانية تعيده إلى «صح».
-    await _tap(tester, find.text('صح').first);
+
+    // شريط واحد مجمّع لإجابات العبارات المتشابهة مرتَّب بترتيبها، فلا شرائح
+    // «صح/خطأ» مكرّرة أمام كل سطر ولا كتابة إجابة على الورقة.
+    expect(
+      find.textContaining('الإجابات بترتيب العبارات'),
+      findsOneWidget,
+      reason: 'AUD-TF-01: إجابات صح/خطأ تُضبط من شريط واحد مجمّع بترتيب '
+          'العبارات في نموذج المعلم.',
+    );
+    expect(find.text('الإجابة الصحيحة'), findsNothing,
+        reason: 'AUD-TF-01: لا تُكتب إجابة صح/خطأ على الورقة إطلاقاً.');
+
+    final firstAnswer = find.byKey(const ValueKey<String>('b-b3-answer-0'));
+    // bi1 محددة مسبقاً (isCorrect: true) — النقرة الأولى تنقلها إلى «خطأ»،
+    // والثانية تُلغي التحديد (بلا إجابة)، والثالثة تعيده إلى «صح».
+    await _tap(tester, firstAnswer);
+    expect(controller.document.branchAt(ref).content.items[0].isCorrect, isFalse,
+        reason: 'AUD-TF-01: نقرة على عبارة إجابتها «صح» تنقلها إلى «خطأ».');
+
+    await _tap(tester, firstAnswer);
     expect(
       controller.document.branchAt(ref).content.items[0].isCorrect,
       isNull,
-      reason: 'AUD-TF-01: النقرة على الإجابة المختارة يجب أن تُلغي تحديدها '
-          '(غير محددة) — لا أن تُقفل الاختيار (سلوك Radio في Word forms يعيد '
-          'التحديد نفسه فقط؛ الإلغاء المتاح هنا هو المسار الموثّق في المرجع).',
+      reason: 'AUD-TF-01: النقرة الثانية تُلغي التحديد (بلا إجابة).',
     );
 
-    await _tap(tester, find.text('صح').first);
+    await _tap(tester, firstAnswer);
     expect(controller.document.branchAt(ref).content.items[0].isCorrect, isTrue,
-        reason: 'AUD-TF-01: نقرة على «صح» غير المحددة تضبط الإجابة صحيحة.');
+        reason: 'AUD-TF-01: النقرة الثالثة تعيد الإجابة إلى «صح».');
     expect(tester.takeException(), isNull);
   });
 
@@ -1037,16 +1051,18 @@ void main() {
         reason: 'MCQ: خانات الخيارات تظهر في ورقة الطالب.');
     expect(find.byKey(const ValueKey<String>('answer-b1')), findsNothing,
         reason: 'المقالي: الإجابة النموذجية مخفية في ورقة الطالب.');
-    expect(find.text('صح'), findsNothing,
-        reason: 'مفاتيح صح/خطأ تظهر في نموذج المعلم فقط.');
+    expect(find.textContaining('الإجابات بترتيب العبارات'), findsNothing,
+        reason: 'شريط إجابات صح/خطأ يظهر في نموذج المعلم فقط.');
     expect(find.byKey(const ValueKey<String>('item-bi1')), findsOneWidget,
         reason: 'نقاط صح/خطأ تظهر للطالب كنقاط عادية.');
 
     await _tap(tester, find.byTooltip('عرض نموذج الإجابة'));
     expect(find.byKey(const ValueKey<String>('answer-b1')), findsOneWidget,
         reason: 'المقالي: الإجابة النموذجية قابلة للتحرير في نموذج المعلم.');
-    expect(find.text('صح'), findsWidgets,
-        reason: 'نقاط صح/خطأ تحمل مفاتيح الإجابة في نموذج المعلم.');
+    expect(find.textContaining('الإجابات بترتيب العبارات'), findsOneWidget,
+        reason: 'نقاط صح/خطأ تُضبط من شريط الإجابات المجمّع في نموذج المعلم.');
+    expect(find.text('صح'), findsNothing,
+        reason: 'لا تُكتب كلمة «صح» على الورقة، حتى في نموذج المعلم.');
     expect(find.byKey(const ValueKey<String>('option-b2-0')), findsOneWidget,
         reason: 'الخيارات تبقى ظاهرة في المعلم.');
 

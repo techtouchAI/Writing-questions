@@ -624,8 +624,7 @@ class PaginatedPdfExamEngine {
           ),
         ),
       // نقاط السؤال المباشرة (1، 2، 3...) — ترقيم تلقائي كما في نقاط الفرع.
-      if (question.items.any((item) =>
-          item.showsInExport(teacher: isTeacherVersion, trueFalse: false)))
+      if (question.items.any((item) => item.showsInExport))
         pw.Padding(
           padding: pw.EdgeInsetsDirectional.only(start: 14, top: paragraphGap),
           child: _buildItems(
@@ -634,10 +633,7 @@ class PaginatedPdfExamEngine {
             layout,
             styles,
             fonts,
-            isTeacherVersion,
             bodyOverride,
-            trueFalse: false,
-            trueFalseFormat: question.trueFalseFormat,
           ),
         ),
       for (var index = 0; index < question.branches.length; index++)
@@ -757,9 +753,7 @@ class PaginatedPdfExamEngine {
         centerVerse: standaloneVerse,
         align: branchAlign,
       ),
-      if (content.items.any((item) => item.showsInExport(
-          teacher: isTeacherVersion,
-          trueFalse: content.type == QuestionType.trueFalse)))
+      if (content.items.any((item) => item.showsInExport))
         pw.Padding(
           padding: pw.EdgeInsetsDirectional.only(start: 14, top: paragraphGap),
           child: _buildItems(
@@ -768,10 +762,7 @@ class PaginatedPdfExamEngine {
             layout,
             styles,
             fonts,
-            isTeacherVersion,
             branch.style,
-            trueFalse: content.type == QuestionType.trueFalse,
-            trueFalseFormat: content.trueFalseFormat,
           ),
         ),
       if (hasVisibleTypeBody)
@@ -826,10 +817,7 @@ class PaginatedPdfExamEngine {
     SubjectLayoutTemplate layout,
     ExamTextStyles styles,
     ExamFonts fonts,
-    bool isTeacherVersion,
-    PaperTextStyle? ownerStyle, {
-    required bool trueFalse,
-    String trueFalseFormat = 'words',
+    PaperTextStyle? ownerStyle,
   }) {
     final settings = document.settings;
     final itemStyle = PaperStyleResolver.apply(
@@ -843,7 +831,7 @@ class PaginatedPdfExamEngine {
     final children = <pw.Widget>[];
     var visibleItemCount = 0;
     for (var index = 0; index < items.length; index++) {
-      if (!items[index].showsInExport(teacher: isTeacherVersion, trueFalse: trueFalse)) {
+      if (!items[index].showsInExport) {
         continue;
       }
       if (visibleItemCount > 0 && paragraphGap > 0) {
@@ -857,10 +845,7 @@ class PaginatedPdfExamEngine {
           layout,
           itemStyle,
           fonts,
-          isTeacherVersion,
           PaperStyleResolver.toPdfAlign(items[index].align) ?? align,
-          trueFalse: trueFalse,
-          trueFalseFormat: trueFalseFormat,
         ),
       );
       visibleItemCount++;
@@ -879,31 +864,17 @@ class PaginatedPdfExamEngine {
     SubjectLayoutTemplate layout,
     pw.TextStyle style,
     ExamFonts fonts,
-    bool isTeacherVersion,
-    pw.TextAlign? align, {
-    required bool trueFalse,
-    String trueFalseFormat = 'words',
+    pw.TextAlign? align,
   }) {
     final marksSuffix = item.marks > 0
         ? ' (${document.formatNumber(item.marks)} ${layout.marksUnit})'
         : '';
-    // إجابة النقطة لصح/خطأ — في نموذج المعلم فقط.
-    var answerSuffix = '';
-    if (isTeacherVersion && trueFalse && item.isCorrect != null) {
-      if (trueFalseFormat == 'symbols') {
-        answerSuffix = item.isCorrect! ? ' (✓)' : ' (✗)';
-      } else {
-        answerSuffix = layout.isLtr
-            ? (item.isCorrect! ? ' (True)' : ' (False)')
-            : (item.isCorrect! ? ' (صح)' : ' (خطأ)');
-      }
-    }
     final itemLabel = document.displayItemLabel(item, index);
     final chunks = <String>[
       if (itemLabel.isNotEmpty) itemLabel,
       if (item.text.trim().isNotEmpty) item.text,
     ];
-    final line = '${chunks.join(' ')}$marksSuffix$answerSuffix';
+    final line = '${chunks.join(' ')}$marksSuffix';
     if (line.trim().isEmpty) {
       return pw.SizedBox();
     }
@@ -1022,24 +993,10 @@ class PaginatedPdfExamEngine {
           ],
         );
       case QuestionType.trueFalse:
-        // ورقة الطالب: الأسئلة فقط — الإجابة في دفتر الطالب، بلا مساحة
-        // إجابة مولَّدة على الورقة.
-        if (!isTeacherVersion || content.items.isNotEmpty) {
-          return pw.SizedBox();
-        }
-        final answer = content.trueFalseAnswer;
-        final answerStr = content.trueFalseFormat == 'symbols'
-            ? (answer ? '✓' : '✗')
-            : (layout.isLtr
-                ? (answer ? 'True' : 'False')
-                : (answer ? 'صح' : 'خطأ'));
-        return pw.Text(
-          layout.isLtr
-              ? 'Answer: $answerStr •'
-              : 'الإجابة الصحيحة: $answerStr •',
-          style: styledAnswer,
-          textAlign: answerAlign,
-        );
+        // لا جسم مطبوع لصح/خطأ إطلاقاً — كما في الفراغات: العبارات وحدها
+        // بالترتيب في نقاطها، والإجابة محفوظة في النموذج للتصحيح ولا تُكتب
+        // على الورقة (لا كلمة «صح/خطأ» ولا علامة ولا سطر إجابة).
+        return pw.SizedBox();
       case QuestionType.fillInTheBlank:
         if (!isTeacherVersion) {
           return pw.SizedBox();

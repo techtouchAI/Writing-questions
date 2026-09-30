@@ -23,7 +23,6 @@ class BranchContent {
     this.modelAnswerAlign,
     List<BranchItem>? items,
     this.plainText = false,
-    this.trueFalseFormat = 'words',
   })  : options = List<QuestionOption>.unmodifiable(
           (options ?? const <QuestionOption>[]).map((option) => option.copyWith()),
         ),
@@ -59,9 +58,6 @@ class BranchContent {
   /// يقتصر على ما كتبه المدرس حرفياً.
   final bool plainText;
 
-  /// نمط علامة إجابة صح وخطأ: 'words' (صح/خطأ) أو 'symbols' (✓/✗).
-  final String trueFalseFormat;
-
   /// الخيار الصحيح في صح/خطأ: `true` = صح.
   bool get trueFalseAnswer {
     final correct = options.where((option) => option.isCorrect).toList();
@@ -81,11 +77,10 @@ class BranchContent {
       case QuestionType.multipleChoice:
         return options.any((option) => option.text.trim().isNotEmpty);
       case QuestionType.trueFalse:
-        // «صح/خطأ» هما نموذجا إجابة ثابتان، لا محتوى سؤال بذاتهما؛ تُطبع
-        // الإجابة للمعلم فقط عندما يوجد نص/نقطة فعلية تحملها.
-        return teacher &&
-            (text.trim().isNotEmpty ||
-                items.any((item) => item.showsInExport(teacher: true, trueFalse: true)));
+        // «صح/خطأ» بلا جسم مطبوع إطلاقاً — كالفراغات: العبارات تُطبع في
+        // نقاطها بالترتيب، والإجابة تبقى في النموذج للتصحيح ولا تُكتب على
+        // الورقة (لا كلمة «صح/خطأ» ولا علامة ولا سطر «الإجابة الصحيحة»).
+        return false;
       case QuestionType.fillInTheBlank:
       case QuestionType.definitions:
       case QuestionType.essay:
@@ -96,9 +91,7 @@ class BranchContent {
   /// هل يحمل الفرع محتوى يستحق الظهور في المخرجات (PDF/Word/طباعة)؟
   /// الفرع الفارغ تماماً يُحذف من المطبوع كاملاً ولا يترك أي مسافة.
   bool hasExportableContent({required bool teacher}) {
-    if (text.trim().isNotEmpty ||
-        items.any((item) =>
-            item.showsInExport(teacher: teacher, trueFalse: type == QuestionType.trueFalse))) {
+    if (text.trim().isNotEmpty || items.any((item) => item.showsInExport)) {
       return true;
     }
     return hasPrintableTypeBody(teacher: teacher);
@@ -118,7 +111,6 @@ class BranchContent {
     PaperAlign? Function()? modelAnswerAlign,
     List<BranchItem>? items,
     bool? plainText,
-    String? trueFalseFormat,
   }) {
     final nextType = type ?? this.type;
     return BranchContent(
@@ -135,7 +127,6 @@ class BranchContent {
           : modelAnswerAlign(),
       items: items ?? this.items,
       plainText: plainText ?? this.plainText,
-      trueFalseFormat: trueFalseFormat ?? this.trueFalseFormat,
     );
   }
 
@@ -215,7 +206,6 @@ class BranchContent {
       if (items.isNotEmpty)
         'items': items.map((item) => item.toMap()).toList(growable: false),
       if (plainText) 'plainText': true,
-      if (trueFalseFormat != 'words') 'trueFalseFormat': trueFalseFormat,
     };
   }
 
@@ -251,7 +241,6 @@ class BranchContent {
           : null,
       items: BranchItem.listFromValue(map['items']),
       plainText: map['plainText'] == true,
-      trueFalseFormat: map['trueFalseFormat']?.toString() ?? 'words',
     );
   }
 
@@ -275,7 +264,6 @@ class BranchContent {
           ),
       ],
       plainText: plainText,
-      trueFalseFormat: trueFalseFormat,
     );
   }
 

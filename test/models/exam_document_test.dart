@@ -242,13 +242,21 @@ void main() {
             .hasExportableContent(teacher: false),
         isTrue,
       );
-      // إجابة صح/خطأ وحدها لا تكفي في نسخة الطالب.
+      // إجابة صح/خطأ لا تُطبع على الورقة (كما في الفراغات)، فلا تكفي
+      // إجابة وحدها لإظهار النقطة في أي نسخة (طالب/معلم).
       final trueFalseOnly = BranchContent(
         type: QuestionType.trueFalse,
         items: <BranchItem>[BranchItem(isCorrect: true)],
       );
       expect(trueFalseOnly.hasExportableContent(teacher: false), isFalse);
-      expect(trueFalseOnly.hasExportableContent(teacher: true), isTrue);
+      expect(trueFalseOnly.hasExportableContent(teacher: true), isFalse);
+      // العبارة المكتوبة وحدها هي ما يُطبع.
+      final trueFalseWithText = BranchContent(
+        type: QuestionType.trueFalse,
+        items: <BranchItem>[BranchItem(text: 'الأرض كروية', isCorrect: true)],
+      );
+      expect(trueFalseWithText.hasExportableContent(teacher: false), isTrue);
+      expect(trueFalseWithText.hasExportableContent(teacher: true), isTrue);
       final emptyTrueFalse = BranchContent.empty(QuestionType.trueFalse);
       expect(emptyTrueFalse.hasExportableContent(teacher: false), isFalse);
       expect(emptyTrueFalse.hasExportableContent(teacher: true), isFalse);
@@ -513,24 +521,22 @@ void main() {
     });
 
 
-    test('showsInExport: النص يظهر للجميع، وإجابة صح/خطأ وحدها للمعلم، والفارغة تُحجب', () {
+    test('showsInExport: النص أو الدرجة أو التسمية تُظهر النقطة، والإجابة وحدها لا', () {
       final withText = BranchItem(id: 'a', text: '١', isCorrect: true);
       final answerOnly = BranchItem(id: 'b', isCorrect: true);
       final emptyItem = BranchItem(id: 'c');
-      final freeItem = BranchItem(id: 'd', text: '٣');
+      final withMarks = BranchItem(id: 'd', marks: 1);
+      final labeledOnly = BranchItem(id: 'e', labelOverride: 'أ-');
 
-      // نص النقطة يكفي لعرضها في النسختين (هو جزء من الأسئلة).
-      expect(withText.showsInExport(teacher: false, trueFalse: true), isTrue);
-      expect(withText.showsInExport(teacher: true, trueFalse: true), isTrue);
-      // إجابة صح/خطأ بلا نص: تُحجب عن ورقة الطالب وتظهر في نموذج المعلم.
-      expect(answerOnly.showsInExport(teacher: false, trueFalse: true), isFalse);
-      expect(answerOnly.showsInExport(teacher: true, trueFalse: true), isTrue);
-      // الفارغة تماماً تُحجب من الجميع.
-      expect(emptyItem.showsInExport(teacher: false, trueFalse: true), isFalse);
-      expect(emptyItem.showsInExport(teacher: true, trueFalse: true), isFalse);
-      // MCQ وغيرها: تظهر للجميع.
-      expect(freeItem.showsInExport(teacher: false, trueFalse: false), isTrue);
-      expect(freeItem.showsInExport(teacher: true, trueFalse: false), isTrue);
+      // النص يكفي لعرض النقطة (في المعاينة وPDF وWord على السواء).
+      expect(withText.showsInExport, isTrue);
+      // إجابة صح/خطأ بلا نص: لا تُطبع على الورقة إطلاقاً (كما في الفراغات).
+      expect(answerOnly.showsInExport, isFalse);
+      // الفارغة تماماً تُحجب.
+      expect(emptyItem.showsInExport, isFalse);
+      // الدرجة والتسمية المخصصة محتوى مقصود.
+      expect(withMarks.showsInExport, isTrue);
+      expect(labeledOnly.showsInExport, isTrue);
     });
 
   });

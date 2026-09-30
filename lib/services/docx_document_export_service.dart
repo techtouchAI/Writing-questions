@@ -759,17 +759,10 @@ class _DocxBuilder {
     // نقاط السؤال المباشرة (1، 2، 3...) — نفس مسار نقاط الفرع في الطباعة.
     for (var i = 0; i < question.items.length; i++) {
       final item = question.items[i];
-      if (!item.showsInExport(teacher: isTeacherVersion, trueFalse: false)) {
+      if (!item.showsInExport) {
         continue;
       }
-      _writeItemParagraph(
-        body,
-        item,
-        i,
-        style: bodyStyle,
-        trueFalse: false,
-        trueFalseFormat: question.trueFalseFormat,
-      );
+      _writeItemParagraph(body, item, i, style: bodyStyle);
     }
     for (var index = 0; index < question.branches.length; index++) {
       await _buildBranch(
@@ -784,36 +777,26 @@ class _DocxBuilder {
     _buildDivider(body, question.dividerAfter);
   }
 
-  /// فقرة نقطة مرقَّمة (داخل سؤال أو فرع) — ترقيم تلقائي/مخصص + درجة +
-  /// إجابة صح/خطأ في نموذج المعلم وحده.
+  /// فقرة نقطة مرقَّمة (داخل سؤال أو فرع) — ترقيم تلقائي/مخصص + درجة.
+  ///
+  /// إجابة صح/خطأ لا تُكتب على الورقة إطلاقاً (كما في الفراغات): العبارات
+  /// تُطبع بالترتيب في نقاطها، والإجابة تبقى في النموذج للتصحيح وحده.
   void _writeItemParagraph(
     StringBuffer body,
     BranchItem item,
     int index, {
     required PaperTextStyle? style,
-    required bool trueFalse,
-    String trueFalseFormat = 'words',
   }) {
     final layout = document.layout;
     final itemMarks = item.marks > 0
         ? ' [${document.formatNumber(item.marks)} ${layout.marksUnit}]'
         : '';
-    var itemAnswer = '';
-    if (isTeacherVersion && trueFalse && item.isCorrect != null) {
-      if (trueFalseFormat == 'symbols') {
-        itemAnswer = item.isCorrect! ? ' (✓)' : ' (✗)';
-      } else {
-        itemAnswer = layout.isLtr
-            ? (item.isCorrect! ? ' (True)' : ' (False)')
-            : (item.isCorrect! ? ' (صح)' : ' (خطأ)');
-      }
-    }
     final itemLabel = document.displayItemLabel(item, index);
     final chunks = <String>[
       if (itemLabel.isNotEmpty) itemLabel,
       if (item.text.trim().isNotEmpty) item.text,
     ];
-    final line = '${chunks.join(' ')}$itemMarks$itemAnswer';
+    final line = '${chunks.join(' ')}$itemMarks';
     if (line.trim().isEmpty) {
       return;
     }
@@ -868,19 +851,10 @@ class _DocxBuilder {
     );
     for (var i = 0; i < content.items.length; i++) {
       final item = content.items[i];
-      if (!item.showsInExport(
-          teacher: isTeacherVersion,
-          trueFalse: content.type == QuestionType.trueFalse)) {
+      if (!item.showsInExport) {
         continue;
       }
-      _writeItemParagraph(
-        body,
-        item,
-        i,
-        style: branch.style,
-        trueFalse: content.type == QuestionType.trueFalse,
-        trueFalseFormat: content.trueFalseFormat,
-      );
+      _writeItemParagraph(body, item, i, style: branch.style);
     }
     // مطابقة اللوحة ومحرك PDF حرفياً (انظر BranchContent.hasPrintableTypeBody).
     if (content.hasPrintableTypeBody(teacher: isTeacherVersion)) {
@@ -929,29 +903,9 @@ class _DocxBuilder {
           );
         }
       case QuestionType.trueFalse:
-        // ورقة الطالب: الأسئلة فقط — بلا مساحة إجابة مولَّدة على الورقة.
-        if (!isTeacherVersion || content.items.isNotEmpty) {
-          return;
-        }
-        final answer = content.trueFalseAnswer;
-        final answerStr = content.trueFalseFormat == 'symbols'
-            ? (answer ? '✓' : '✗')
-            : (answer ? 'صح' : 'خطأ');
-        _writeParagraph(
-          body,
-          'الإجابة الصحيحة: $answerStr ✔',
-          bold: true,
-          size: 22,
-          color: styleColor ?? '065F46',
-          highlight: true,
-          indent: 800,
-          before: style?.paragraphSpacing == null ? 40 : 0,
-          after: style?.paragraphSpacing == null
-              ? 40
-              : _paragraphSpacingTwips(style!.paragraphSpacing!),
-          alignment: answerAlign,
-          lineHeight: lineHeight,
-        );
+        // لا جسم مطبوع لصح/خطأ إطلاقاً — كما في الفراغات: العبارات وحدها
+        // بالترتيب، والإجابة في النموذج للتصحيح ولا تُكتب على الورقة.
+        return;
       case QuestionType.fillInTheBlank:
         if (!isTeacherVersion) {
           return;

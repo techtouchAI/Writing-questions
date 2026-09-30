@@ -3260,6 +3260,31 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             SizedBox(height: index == 0 ? blockSpacing : itemSpacing),
           _questionItemRow(controller, layout, question.id, index, promptStyle),
         ],
+        // إجابات نقاط صح/خطأ: شريط واحد مجمّع مرتَّب بترتيب العبارات
+        // (نموذج المعلم فقط) بدل شرائح مكرّرة أمام كل سطر.
+        if (_showTeacherAnswers &&
+            question.type == QuestionType.trueFalse &&
+            question.items.isNotEmpty)
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 36, top: 3),
+            child: _buildTrueFalseAnswerBar(
+              layout,
+              keyPrefix: 'q-${question.id}',
+              answers: <bool?>[
+                for (final item in question.items) item.isCorrect,
+              ],
+              labels: <String>[
+                for (var index = 0; index < question.items.length; index++)
+                  document.displayItemLabel(question.items[index], index),
+              ],
+              onToggle: (index, answer) => controller.updateQuestionItemAnswer(
+                questionIndex,
+                index,
+                answer,
+              ),
+              style: promptStyle,
+            ),
+          ),
         // السؤال الجديد يبدأ بلا فروع؛ تُنشأ فقط بطلب صريح (زر +).
         if (question.branches.isEmpty)
           Padding(
@@ -3503,14 +3528,23 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       fontScale: _fontScale,
       heightScale: _heightScale,
     );
+    // نمط إجابات التصحيح (صح/خطأ/الإجابة النموذجية) بنفس نمط الورقة.
+    final answerStyle = PaperStyles.resolve(
+      PaperStyles.answerBody(layout),
+      branch.style,
+      defaultFont: document.settings.defaultFont,
+      fontScale: _fontScale,
+      heightScale: _heightScale,
+    );
     final paragraphSpacing = branch.style.paragraphSpacing;
     final firstItemSpacing = paragraphSpacing ?? 1;
     final itemSpacing = paragraphSpacing ?? 0;
     final typeBodySpacing = paragraphSpacing ?? 1;
-    final showTypeBody = !(
-      (content.plainText && (!_showTeacherAnswers || content.type == QuestionType.multipleChoice)) ||
-      (!_showTeacherAnswers && content.type != QuestionType.multipleChoice)
-    );
+    // صح/خطأ بلا جسم مطبوع إطلاقاً، فإجاباته في الشريط المجمّع وحده.
+    final showTypeBody = content.type != QuestionType.trueFalse &&
+        !((content.plainText &&
+                (!_showTeacherAnswers || content.type == QuestionType.multipleChoice)) ||
+            (!_showTeacherAnswers && content.type != QuestionType.multipleChoice));
     final text = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -3599,6 +3633,39 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             SizedBox(height: index == 0 ? firstItemSpacing : itemSpacing),
           _branchItemRow(controller, layout, ref, index, bodyStyle),
         ],
+        // إجابات صح/خطأ: شريط واحد مجمّع مرتَّب بترتيب العبارات (نموذج
+        // المعلم فقط)؛ وللفرع بلا نقاط خيار واحد لإجابته المفردة.
+        if (_showTeacherAnswers && content.type == QuestionType.trueFalse)
+          Padding(
+            padding: EdgeInsetsDirectional.only(start: 36, top: typeBodySpacing),
+            child: content.items.isEmpty
+                ? _buildTrueFalseAnswerBar(
+                    layout,
+                    keyPrefix: 'b-${branch.id}',
+                    answers: <bool?>[content.trueFalseAnswer],
+                    labels: const <String>[''],
+                    allowClear: false,
+                    onToggle: (_, answer) => controller.updateBranchTrueFalseAnswer(
+                      ref,
+                      answer ?? true,
+                    ),
+                    style: answerStyle,
+                  )
+                : _buildTrueFalseAnswerBar(
+                    layout,
+                    keyPrefix: 'b-${branch.id}',
+                    answers: <bool?>[
+                      for (final item in content.items) item.isCorrect,
+                    ],
+                    labels: <String>[
+                      for (var index = 0; index < content.items.length; index++)
+                        document.displayItemLabel(content.items[index], index),
+                    ],
+                    onToggle: (index, answer) =>
+                        controller.updateBranchItemAnswer(ref, index, answer),
+                    style: answerStyle,
+                  ),
+          ),
         if (showTypeBody)
           Padding(
             padding: EdgeInsetsDirectional.only(
@@ -3655,98 +3722,119 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// مفتاحا صح/خطأ المصغّران لإجابة النقطة (نموذج المعلم فقط).
+  /// شريط إجابات صح/خطأ المجمَّع — **خيار واحد لكل مجموعة متشابهة**.
   ///
-  /// النقر على المحدد يمسح الإجابة (غير محددة).
-  Widget _buildItemAnswerToggle(
-    ExamWizardController controller,
-    BranchRef ref,
-    int index,
-    BranchItem item, [
-    String format = 'words',
-  ]) {
-    final isSymbols = format == 'symbols';
-    Widget chip(String text, bool value) {
-      final selected = item.isCorrect == value;
-      return GestureDetector(
-        onTap: () => controller.updateBranchItemAnswer(
-          ref,
-          index,
-          selected ? null : value,
-        ),
-        child: Container(
-          margin: const EdgeInsets.only(left: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: selected ? PaperStyles.answer : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: selected ? PaperStyles.answer : Colors.grey.shade400,
+  /// العبارات تُطبع بالترتيب نفسه، فيكفي شريط واحد مرتَّب بترتيب العبارات
+  /// لضبط الإجابات، بدل تكرار شرائح «صح/خطأ» أمام كل سطر. وهو أداة تصحيح
+  /// للمعلم لا يُطبع: لا يُكتب على الورقة أي حرف «صح/خطأ» ولا علامة (✓/✗)
+  /// ولا سطر «الإجابة الصحيحة» — تماماً كالفراغات (انظر `BranchItem.showsInExport`).
+  ///
+  /// [answers] إجابات القائمة بالترتيب، و[onToggle] تستقبل الإجابة الجديدة
+  /// (`null` = مسح الإجابة)، و[allowClear] يسمح بالحالة الثالثة (بلا إجابة).
+  Widget _buildTrueFalseAnswerBar(
+    SubjectLayoutTemplate layout, {
+    required String keyPrefix,
+    required List<bool?> answers,
+    required List<String> labels,
+    required void Function(int index, bool? answer) onToggle,
+    required TextStyle style,
+    bool allowClear = true,
+  }) {
+    if (answers.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    // دورة النقر: صح (✓) ← خطأ (✗) ← بلا إجابة (—) ثم تعود.
+    bool? nextAnswer(bool? current) {
+      if (current == null) {
+        return true;
+      }
+      if (current) {
+        return false;
+      }
+      return allowClear ? null : true;
+    }
+
+    String labelFor(int index) =>
+        index < labels.length ? labels[index].trim() : '';
+
+    Widget selector(int index, bool? answer) {
+      final isTrue = answer == true;
+      final isFalse = answer == false;
+      final color = isTrue
+          ? PaperStyles.answer
+          : isFalse
+              ? PaperStyles.danger
+              : Colors.grey.shade500;
+      final glyph = isTrue
+          ? '✓'
+          : isFalse
+              ? '✗'
+              : '—';
+      final stateLabel = isTrue
+          ? (layout.isLtr ? 'True' : 'صح')
+          : isFalse
+              ? (layout.isLtr ? 'False' : 'خطأ')
+              : (layout.isLtr ? 'Not set' : 'بلا إجابة');
+      return Tooltip(
+        message: layout.isLtr
+            ? 'Statement ${index + 1}: $stateLabel — tap to change'
+            : 'العبارة ${index + 1}: $stateLabel — انقر للتبديل',
+        child: InkWell(
+          key: ValueKey<String>('$keyPrefix-answer-$index'),
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => onToggle(index, nextAnswer(answer)),
+          child: Container(
+            margin: const EdgeInsetsDirectional.only(end: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: answer == null ? Colors.grey.shade400 : color,
+                width: answer == null ? 1 : 1.4,
+              ),
             ),
-          ),
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: 10,
-              color: selected ? Colors.white : Colors.grey.shade700,
+            child: Text(
+              labelFor(index).isEmpty ? glyph : '${labelFor(index)} $glyph',
+              style: style.copyWith(
+                fontSize: (style.fontSize ?? 12) - 1,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
             ),
           ),
         ),
       );
     }
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        chip(isSymbols ? '✓' : 'صح', true),
-        chip(isSymbols ? '✗' : 'خطأ', false),
-      ],
-    );
-  }
-
-  Widget _buildQuestionItemAnswerToggle(
-    ExamWizardController controller,
-    int questionIndex,
-    int index,
-    BranchItem item, [
-    String format = 'words',
-  ]) {
-    final isSymbols = format == 'symbols';
-    Widget chip(String text, bool value) {
-      final selected = item.isCorrect == value;
-      return GestureDetector(
-        onTap: () => controller.updateQuestionItemAnswer(
-          questionIndex,
-          index,
-          selected ? null : value,
-        ),
-        child: Container(
-          margin: const EdgeInsets.only(left: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: selected ? PaperStyles.answer : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: selected ? PaperStyles.answer : Colors.grey.shade400,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0x0F065F46),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 2,
+        runSpacing: 2,
+        children: <Widget>[
+          Text(
+            layout.isLtr ? 'Answers (in order): ' : 'الإجابات بترتيب العبارات: ',
+            style: style.copyWith(fontSize: (style.fontSize ?? 12) - 1),
+          ),
+          for (var index = 0; index < answers.length; index++)
+            selector(index, answers[index]),
+          Text(
+            layout.isLtr
+                ? '(tap: true ← false${allowClear ? ' ← clear' : ''})'
+                : '(نقرة: صح ← خطأ${allowClear ? ' ← بلا إجابة' : ''})',
+            style: style.copyWith(
+              fontSize: (style.fontSize ?? 12) - 2,
+              color: Colors.grey.shade600,
             ),
           ),
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: 10,
-              color: selected ? Colors.white : Colors.grey.shade700,
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        chip(isSymbols ? '✓' : 'صح', true),
-        chip(isSymbols ? '✗' : 'خطأ', false),
-      ],
+        ],
+      ),
     );
   }
 
@@ -3776,9 +3864,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       textAlign: _textAlignFor(_itemKey(itemId), fallback: PaperStyles.toTextAlign(question.style.align)),
       onEditLabel: () => _editQuestionItemLabel(questionId, index),
       onTextChanged: (value) => _updateQuestionItemText(questionId, itemId, value),
-      answerToggle: _showTeacherAnswers && question.type == QuestionType.trueFalse
-          ? _buildQuestionItemAnswerToggle(controller, questionIndex, index, item, question.trueFalseFormat)
-          : null,
       onMoveUp: index == 0
           ? null
           : () => controller.moveQuestionItem(questionIndex, index, index - 1),
@@ -3814,9 +3899,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       textAlign: _textAlignFor(_itemKey(itemId), fallback: PaperStyles.toTextAlign(branch.style.align)),
       onEditLabel: () => _editItemLabel(ref, index),
       onTextChanged: (value) => _updateBranchItemText(ref, itemId, value),
-      answerToggle: _showTeacherAnswers && content.type == QuestionType.trueFalse
-          ? _buildItemAnswerToggle(controller, ref, index, item, content.trueFalseFormat)
-          : null,
       onMoveUp: index == 0
           ? null
           : () => controller.moveBranchItem(ref, index, index - 1),
@@ -3831,8 +3913,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// خامة، والتسمية والترتيب والحذف في مكانها.
   ///
   /// يُستخدم لنقاط السؤال المباشرة ونقاط الفروع بالمسار نفسه (نفس ما
-  /// يُطبع في الـ PDF حرفياً)؛ وإجابة صح/خطأ ([answerToggle]) تظهر في
-  /// نموذج المعلم لفروع صح/خطأ وحدها.
+  /// يُطبع في الـ PDF حرفياً)؛ وإجابات صح/خطأ تُضبط من الشريط المجمّع
+  /// ([_buildTrueFalseAnswerBar]) في نموذج المعلم وحده، ولا تُكتب هنا.
   Widget _buildItemRow({
     required SubjectLayoutTemplate layout,
     required BranchItem item,
@@ -3847,7 +3929,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     required VoidCallback onDelete,
     VoidCallback? onMoveUp,
     VoidCallback? onMoveDown,
-    Widget? answerToggle,
     TextAlign textAlign = TextAlign.start,
   }) {
     return Padding(
@@ -3870,8 +3951,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               ),
             ),
           ),
-          // إجابة النقطة لصح/خطأ — تظهر وتُحرَّر في نموذج المعلم فقط.
-          if (answerToggle != null) answerToggle,
           Expanded(
             child: _paperField(
               fieldKey: fieldKey,
@@ -4874,23 +4953,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ],
         );
       case QuestionType.trueFalse:
-        // ورقة الطالب: الأسئلة فقط — الإجابة في دفتر الطالب، بلا مساحة
-        // إجابة مولَّدة؛ والإجابة الصحيحة تظهر في نموذج المعلم وحده.
-        if (_showTeacherAnswers) {
-          if (content.items.isNotEmpty) {
-            return const SizedBox.shrink();
-          }
-          final answer = content.trueFalseAnswer;
-          final answerStr = content.trueFalseFormat == 'symbols'
-              ? (answer ? '✓' : '✗')
-              : (answer ? 'صح' : 'خطأ');
-          return Text(
-            layout.isLtr
-                ? 'Answer: $answerStr •'
-                : 'الإجابة الصحيحة: $answerStr •',
-            style: answerStyle,
-          );
-        }
+        // لا جسم مطبوع لصح/خطأ إطلاقاً — كما في الفراغات: العبارات وحدها
+        // بالترتيب في نقاطها، والإجابة في شريط التصحيح المجمّع للمعلم
+        // ([_buildTrueFalseAnswerBar]) ولا تُكتب على الورقة.
         return const SizedBox.shrink();
       case QuestionType.fillInTheBlank:
         if (_showTeacherAnswers) {

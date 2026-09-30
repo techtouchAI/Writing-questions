@@ -143,9 +143,12 @@ void main() {
     expect(xml.contains('الدرجة الكلية'), isFalse);
     expect(xml.contains('عدد الأسئلة'), isFalse);
 
-    // إجابات عناصر صح/خطأ في نموذج المعلم وحده.
-    expect(xml.contains('(صح)'), isTrue);
-    expect(xml.contains('(خطأ)'), isTrue);
+    // إجابات صح/خطأ لا تُكتب على الورقة إطلاقاً — لا في ورقة الطالب ولا في
+    // نموذج المعلم (كما في الفراغات: العبارات وحدها بالترتيب).
+    expect(xml.contains('(صح)'), isFalse);
+    expect(xml.contains('(خطأ)'), isFalse);
+    expect(xml.contains('الإجابة الصحيحة'), isFalse);
+    // أما الإجابات النموذجية (فراغ/مقالي) فتبقى في نموذج المعلم.
     expect(xml.contains('الإجابة النموذجية'), isTrue);
   });
 

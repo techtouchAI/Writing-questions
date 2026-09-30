@@ -45,20 +45,13 @@ class BranchItem {
   bool get hasOwnContent =>
       text.trim().isNotEmpty || marks > 0 || isCorrect != null;
 
-  /// تظهر النقطة في التصدير؟ الفارغة تماماً تُحذف دائماً، وإجابة
-  /// صح/خطأ وحدها لا تكفي في نسخة الطالب (إجابات المعلم مخفية).
+  /// هل تظهر النقطة على الورقة (المعاينة/PDF/Word)؟
   ///
-  /// [trueFalse] يحدد فقط هل يُسمح بإظهار إجابة النقطة في نسخة المعلم؛
-  /// نقاط السؤال المباشرة تمرر `false` (لا إجابات مولَّدة على الورقة).
-  bool showsInExport({required bool teacher, required bool trueFalse}) {
-    if (text.trim().isNotEmpty || marks > 0) {
-      return true;
-    }
-    if (labelOverride != null) {
-      return true;
-    }
-    return teacher && trueFalse && isCorrect != null;
-  }
+  /// إجابات صح/خطأ **لا تُطبع على الورقة إطلاقاً** — تماماً كالفراغات:
+  /// العبارات وحدها بالترتيب نفسه، والإجابة محفوظة في النموذج للتصحيح.
+  /// لذلك لا تكفي إجابة وحدها لإظهار النقطة؛ نص أو درجة أو تسمية مطلوبة.
+  bool get showsInExport =>
+      text.trim().isNotEmpty || marks > 0 || labelOverride != null;
 
   BranchItem copyWith({
     String? text,

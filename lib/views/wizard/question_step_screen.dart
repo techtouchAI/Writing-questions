@@ -270,8 +270,6 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
               ItemsEditor(
                 items: question.items,
                 showTrueFalseAnswers: question.type == QuestionType.trueFalse,
-                trueFalseFormat: question.trueFalseFormat,
-                onFormatChanged: (format) => controller.updateQuestionTrueFalseFormat(questionIndex, format),
                 onChanged: (items) => controller.updateQuestionItems(questionIndex, items),
               ),
             const SizedBox(height: 12),
