@@ -722,7 +722,7 @@ class PaginatedPdfExamEngine {
           ),
         ),
       for (var index = 0; index < question.branches.length; index++)
-        if (question.branches[index].hasExportableContent(
+        if (question.branches[index].hasExportableContentIn(
           ignoredAttachmentIds: globalElementIds,
         ))
           pw.Padding(
