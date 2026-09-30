@@ -1127,10 +1127,39 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   ///
   /// العناصر تُرسم الآن في طبقة الصفحة بإحداثي مطلق، فلو تُرك (0،0) لظهرت في
   /// أعلى الورقة بعيداً عن السؤال — ومن هنا جاء هذا الحساب.
+  /// السؤال المحدد حالياً (مالك العناصر الجديدة) أو `null` إن لا تحديد.
+  String? _selectedOwnerQuestionId() {
+    final controller = _controller;
+    if (controller == null || controller.questions.isEmpty) {
+      return null;
+    }
+    final index = controller.selectedBranch?.questionIndex ??
+        controller.selectedQuestionIndex;
+    if (index == null || index < 0 || index >= controller.questions.length) {
+      return null;
+    }
+    return controller.questions[index].id;
+  }
+
+  /// موضع افتراضي للعنصر الجديد: داخل السؤال المحدد (مرتبطاً به) إن وُجد
+  /// تحديد — وإلا موضع حر على صفحة السؤال النشط.
   FloatingElement _withDefaultPosition(FloatingElement element) {
     final controller = _controller;
     if (controller == null) {
       return element;
+    }
+    final owner = _selectedOwnerQuestionId();
+    if (owner != null) {
+      final rect = controller.questionRect(owner);
+      if (rect != null) {
+        final maxDx = math.max(0.0, rect.width - element.width);
+        final maxDy = math.max(0.0, rect.height - element.height);
+        return element.withOwner(owner).copyWith(
+              pageIndex: rect.pageIndex,
+              dx: maxDx / 2,
+              dy: math.min(maxDy, 8),
+            );
+      }
     }
     if (controller.questions.isEmpty) {
       return element.copyWith(
@@ -1174,9 +1203,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       dy: rect.top + element.dy,
     );
   }
-
-  /// السؤال المالك للعنصر (أو `null` لعنصر حر على الورقة).
-  String? _elementOwnerId(FloatingElement element) => element.ownerQuestionId;
 
   /// أعلى كتلة السؤال [questionIndex] داخل صفحتها (إحداثي ورقة مطلق)، أو
   /// `null` إن لم تُقسَّم الورقة بعد.
@@ -2059,7 +2085,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         .toList(growable: false);
     final exportableBranchCount = exportableQuestions
         .expand((question) => question.branches)
-        .where((branch) => branch.hasExportableContent(
+        .where((branch) => branch.hasExportableContentIn(
               ignoredAttachmentIds: globalElementIds,
             ))
         .length;
@@ -3670,6 +3696,82 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         minWidth: double.infinity,
       ),
       child: text,
+    );
+  }
+
+  /// سطر نقطة سؤال مباشرة (1، 2، 3...) على الورقة — بلا أي عنصر إجابة.
+  Widget _questionItemRow(
+    ExamWizardController controller,
+    SubjectLayoutTemplate layout,
+    String questionId,
+    int index,
+    TextStyle bodyStyle,
+  ) {
+    final document = controller.document;
+    final questionIndex = document.indexOfQuestion(questionId);
+    final question = controller.questions[questionIndex];
+    final item = question.items[index];
+    final itemId = item.id;
+    return _buildItemRow(
+      layout: layout,
+      item: item,
+      index: index,
+      count: question.items.length,
+      bodyStyle: bodyStyle,
+      fieldKey: _itemKey(itemId),
+      showActions: _activeItemFieldKey == _itemKey(itemId),
+      label: document.displayItemLabel(item, index),
+      textAlign: _textAlignFor(
+        _itemKey(itemId),
+        fallback: PaperStyles.toTextAlign(question.style.align),
+      ),
+      onEditLabel: () => _editQuestionItemLabel(questionId, index),
+      onTextChanged: (value) => _updateQuestionItemText(questionId, itemId, value),
+      onMoveUp: index == 0
+          ? null
+          : () => controller.moveQuestionItem(questionIndex, index, index - 1),
+      onMoveDown: index == question.items.length - 1
+          ? null
+          : () => controller.moveQuestionItem(questionIndex, index, index + 1),
+      onDelete: () => controller.removeQuestionItem(questionIndex, index),
+    );
+  }
+
+  /// سطر نقطة داخل فرع — نفس مسار نقاط السؤال، وبلا أي إجابة.
+  Widget _branchItemRow(
+    ExamWizardController controller,
+    SubjectLayoutTemplate layout,
+    BranchRef ref,
+    int index,
+    TextStyle bodyStyle,
+  ) {
+    final document = controller.document;
+    final branch = document.branchAt(ref);
+    final content = branch.content;
+    final item = content.items[index];
+    final itemId = item.id;
+    return _buildItemRow(
+      layout: layout,
+      item: item,
+      index: index,
+      count: content.items.length,
+      bodyStyle: bodyStyle,
+      fieldKey: _itemKey(itemId),
+      showActions: _activeItemFieldKey == _itemKey(itemId),
+      label: document.displayItemLabel(item, index),
+      textAlign: _textAlignFor(
+        _itemKey(itemId),
+        fallback: PaperStyles.toTextAlign(branch.style.align),
+      ),
+      onEditLabel: () => _editItemLabel(ref, index),
+      onTextChanged: (value) => _updateBranchItemText(ref, itemId, value),
+      onMoveUp: index == 0
+          ? null
+          : () => controller.moveBranchItem(ref, index, index - 1),
+      onMoveDown: index == content.items.length - 1
+          ? null
+          : () => controller.moveBranchItem(ref, index, index + 1),
+      onDelete: () => controller.removeBranchItem(ref, index),
     );
   }
 

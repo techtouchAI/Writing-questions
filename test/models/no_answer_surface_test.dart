@@ -56,13 +56,13 @@ void main() {
         type: QuestionType.trueFalse,
         items: <BranchItem>[BranchItem(text: 'عبارة')],
       );
-      expect(withItems.hasPrintableTypeBody(), isFalse);
+      expect(withItems.hasPrintableTypeBody, isFalse);
 
       final emptyStatement = BranchContent(
         type: QuestionType.trueFalse,
         items: <BranchItem>[BranchItem()],
       );
-      expect(emptyStatement.hasExportableContent(), isFalse);
+      expect(emptyStatement.hasExportableContent, isFalse);
     });
 
     test('الفراغات والمقالي بلا جسم مطبوع أيضاً (مساحتها في نص الفرع)', () {
@@ -71,10 +71,10 @@ void main() {
         QuestionType.definitions,
         QuestionType.essay,
       ]) {
-        expect(BranchContent(type: type).hasPrintableTypeBody(), isFalse);
+        expect(BranchContent(type: type).hasPrintableTypeBody, isFalse);
       }
       // الاختيار من متعدد وحده له جسم مطبوع (الخيارات).
-      expect(BranchContent.empty(QuestionType.multipleChoice).hasPrintableTypeBody(), isTrue);
+      expect(BranchContent.empty(QuestionType.multipleChoice).hasPrintableTypeBody, isTrue);
     });
   });
 

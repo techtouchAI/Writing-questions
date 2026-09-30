@@ -410,12 +410,10 @@ class _MixedBlock {
 
   _MixedBlock.math({
     required this.id,
-    required String latex,
-    required bool isBlock,
+    required this.latex,
+    required this.isBlock,
   })  : isText = false,
         text = '',
-        latex = latex,
-        isBlock = isBlock,
         controller = null;
 
   final int id;
