@@ -700,7 +700,7 @@ class ExamWizardController extends ChangeNotifier {
     updateBranchContent(ref, branch.content.copyWith(type: type));
   }
 
-  /// وضع النص الحر: عرض النص والنقاط فقط دون مساحة إجابة مولّدة.
+  /// وضع النص الحر: عرض النص والنقاط فقط دون أي جسم مولَّد.
   void setBranchPlainText(BranchRef ref, bool plainText) {
     if (!_document.containsRef(ref)) {
       return;

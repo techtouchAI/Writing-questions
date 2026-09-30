@@ -169,7 +169,7 @@ void main() {
       expect(_countPages(bytes), 1);
     });
 
-    test('renders the English (LTR) layout and the teacher version', () async {
+    test('renders the English (LTR) layout', () async {
       final english = _document(
         questionCount: 3,
         subject: 'اللغة الإنجليزية',
@@ -177,14 +177,10 @@ void main() {
       );
       expect(english.layout.isLtr, isTrue);
 
-      final student = await PaginatedPdfExamEngine().generate(document: english);
-      final teacher = await PaginatedPdfExamEngine().generate(
-        document: english,
-        );
+      final bytes = await PaginatedPdfExamEngine().generate(document: english);
 
-      expect(String.fromCharCodes(student), startsWith('%PDF-'));
-      expect(_countPages(student), greaterThanOrEqualTo(1));
-      expect(_countPages(teacher), greaterThanOrEqualTo(1));
+      expect(String.fromCharCodes(bytes), startsWith('%PDF-'));
+      expect(_countPages(bytes), greaterThanOrEqualTo(1));
     });
 
     test('renders document-level floating elements without any question owner', () async {

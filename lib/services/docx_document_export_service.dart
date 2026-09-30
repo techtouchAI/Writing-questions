@@ -656,8 +656,7 @@ class _DocxBuilder {
         ? header.center.lines[1]
         : header.title.trim();
     // ورقة الأسئلة بلا أي عدّادات على الورقة (لا الدرجة الكلية ولا عدد
-    // الأسئلة — الإجابة في دفتر الطالب) ولا أي عنصر إجابة.
-    const versionLabel = '';
+    // الأسئلة).
     final titleAlign = header.style.align == null
         ? 'center'
         : _wordAlign(header.style.align);
@@ -689,7 +688,6 @@ class _DocxBuilder {
       ${title.trim().isEmpty ? '' : _tableParagraph(title, bold: true, size: 28, alignment: titleAlign, color: '1E3A8A')}
       ${_tableParagraph(header.center.lines[0], alignment: 'center')}
       ${_tableParagraph(header.center.lines[2], alignment: 'center')}
-      ${versionLabel.isEmpty ? '' : _tableParagraph(versionLabel, italic: true, alignment: 'center', color: 'DC2626')}
     </w:tc>
     <w:tc>
       <w:tcPr><w:tcW w:w="1700" w:type="pct"/></w:tcPr>
@@ -822,7 +820,7 @@ class _DocxBuilder {
 
   /// فقرة نقطة مرقَّمة (داخل سؤال أو فرع) — ترقيم تلقائي/مخصص + درجة.
   ///
-  /// تُطبع العبارات وحدها بالترتيب — ولا أي عنصر إجابة في أي مرحلة.
+  /// تُطبع العبارات وحدها بالترتيب.
   void _writeItemParagraph(
     StringBuffer body,
     BranchItem item,
@@ -941,7 +939,7 @@ class _DocxBuilder {
       case QuestionType.definitions:
       case QuestionType.essay:
         // لا جسم مطبوع لهذه الأنواع: العبارات في نقاطها، ومساحة الفراغ/
-        // المقالي في نص الفرع — **ولا عنصر إجابة في أي مرحلة**.
+        // المقالي في نص الفرع.
         return;
     }
   }

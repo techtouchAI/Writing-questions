@@ -3346,7 +3346,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
     // Keep the render/widget ancestry stable when focus selects a question.
     // Inserting wrappers here used to dispose PaperField's FocusNode while
-    // a tap was opening rich text or the keyboard was entering an answer.
+    // a tap was opening rich text or the keyboard was entering text.
     block = Container(
       padding: EdgeInsets.all(question.showFrame ? 4 : 0),
       decoration: BoxDecoration(
@@ -3702,7 +3702,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// سطر نقطة سؤال مباشرة (1، 2، 3...) على الورقة — بلا أي عنصر إجابة.
+  /// سطر نقطة سؤال مباشرة (1، 2، 3...) على الورقة.
   Widget _questionItemRow(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
@@ -3740,7 +3740,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// سطر نقطة داخل فرع — نفس مسار نقاط السؤال، وبلا أي إجابة.
+  /// سطر نقطة داخل فرع — نفس مسار نقاط السؤال.
   Widget _branchItemRow(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
@@ -3782,8 +3782,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// خامة، والتسمية والترتيب والحذف في مكانها.
   ///
   /// يُستخدم لنقاط السؤال المباشرة ونقاط الفروع بالمسار نفسه (نفس ما
-  /// يُطبع في الـ PDF حرفياً)؛ وإجابات صح/خطأ تُضبط من الشريط المجمّع
-  /// ولا يُضبط لها أي عنصر إجابة هنا (كتابة أسئلة فقط).
+  /// يُطبع في الـ PDF حرفياً).
   Widget _buildItemRow({
     required SubjectLayoutTemplate layout,
     required BranchItem item,
@@ -4745,7 +4744,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   ///
   /// كل نصوصه قابلة للتحرير في مكانها — بما فيها نصوص الخيارات.
   /// و«صح/خطأ» و«الفراغ» و«المقالي» بلا جسم مولَّد إطلاقاً: العبارات/الفراغ
-  /// مكانه في نص الفرع ونقاطه، **ولا عنصر إجابة في أي مرحلة**.
+  /// مكانه في نص الفرع ونقاطه.
   Widget _buildTypeBody(
     ExamWizardController controller,
     BranchRef ref,
@@ -4848,7 +4847,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       case QuestionType.definitions:
       case QuestionType.essay:
         // لا جسم مطبوع لهذه الأنواع: العبارات في نقاطها، والفراغ/المقالي
-        // مساحته في نص الفرع — **ولا عنصر إجابة في أي مرحلة**.
+        // مساحته في نص الفرع.
         return const SizedBox.shrink();
     }
   }
