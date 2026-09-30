@@ -18,6 +18,7 @@ import 'package:writing_questions_app/views/widgets/tex_text.dart';
 import 'package:writing_questions_app/views/wizard/branch_editor_card.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 import 'package:writing_questions_app/views/wizard/exam_wizard_screen.dart';
+import 'package:writing_questions_app/views/wizard/question_step_screen.dart';
 
 Widget _app(Widget home) {
   return Directionality(
@@ -188,6 +189,81 @@ void main() {
       expect(find.textContaining('الخطوة 3: معاينة A4'), findsOneWidget);
       expect(find.byKey(const ValueKey<String>('a4-page-0')), findsOneWidget);
       expect(find.text('السؤال الأول: [٥ درجة]'), findsOneWidget);
+    });
+
+    // خيارات «اختيار من متعدد» ليس لها محرر في بطاقة الفرع (حُذف عمداً):
+    // مكانها خانة الخيار على ورقة المعاينة، حيث تُعرض كما تُطبع حرفياً وتُحرَّر
+    // في مكانها. الحذف من الواجهة وحدها — نموذج الخيارات لا يُمسّ.
+    testWidgets('بطاقة الفرع بلا محرر خيارات — والخيارات تبقى على ورقة المعاينة',
+        (tester) async {
+      tester.view.physicalSize = const Size(1200, 2000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final controller = ExamWizardController(
+        document: ExamDocument(
+          name: 'خيارات',
+          header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+          questions: <QuestionModel>[
+            QuestionModel(
+              id: 'q1',
+              questionNumber: 1,
+              branches: <BranchModel>[
+                BranchModel(
+                  id: 'q1a',
+                  content: BranchContent(
+                    type: QuestionType.multipleChoice,
+                    text: 'اختر الإجابة الصحيحة',
+                    options: <QuestionOption>[
+                      QuestionOption(text: 'الأولى'),
+                      QuestionOption(text: 'الثانية'),
+                    ],
+                  ),
+                  marks: 2,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      const ref = BranchRef(questionIndex: 0, branchIndex: 0);
+
+      await tester.pumpWidget(
+        _app(
+          ChangeNotifierProvider<ExamWizardController>.value(
+            value: controller,
+            child: QuestionStepScreen(onFinish: () {}, onBack: () {}),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BranchEditorCard), findsOneWidget);
+      // لا عنوان «الخيارات:» ولا زر إضافة خيار في بطاقة الفرع.
+      expect(find.text('الخيارات:'), findsNothing);
+      expect(find.text('إضافة خيار'), findsNothing);
+      // بدلها سطر توجيه واحد نحو ورقة المعاينة.
+      expect(
+        find.textContaining('خيارات هذا الفرع تُكتب على ورقة المعاينة'),
+        findsOneWidget,
+      );
+      // خيارات النموذج محفوظة كما هي (الحذف من الواجهة لا يمسّ البيانات).
+      expect(
+        controller.document.branchAt(ref).content.options.map((o) => o.text),
+        <String>['الأولى', 'الثانية'],
+      );
+
+      // وعلى الورقة (الخطوة 3) خانات الخيارات تُعرض وتُحرَّر في مكانها.
+      await tester.pumpWidget(_preview(controller));
+      await tester.pump();
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('option-q1a-0')),
+        findsOneWidget,
+        reason: 'خانات الخيارات تظهر على الورقة وتُكتب فيها مباشرة.',
+      );
+      expect(find.byKey(const ValueKey<String>('option-q1a-1')), findsOneWidget);
     });
   });
 

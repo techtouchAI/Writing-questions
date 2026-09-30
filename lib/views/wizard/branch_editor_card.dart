@@ -5,17 +5,19 @@ import '../../models/branch_model.dart';
 import '../../models/question_type.dart';
 import '../widgets/items_editor.dart';
 import '../widgets/ltr_numeric_field.dart';
-import '../widgets/mcq_options_editor.dart';
 import '../widgets/rich_content_field.dart';
 
 /// بطاقة تحرير فرع واحد (أ، ب، ج...) داخل خطوة «إعداد السؤال».
 ///
-/// تُغلّف أدوات الإدخال الحالية بدل إعادة برمجتها: [McqOptionsEditor]
-/// للخيارات، و[LtrNumericField] للدرجة — مع نوع السؤال قابل للاختيار لكل
-/// فرع على حدة، ووضع «نص حر»، ونقاط غير محدودة (1، 2، 3...).
+/// تُغلّف أدوات الإدخال الحالية بدل إعادة برمجتها: [ItemsEditor] للنقاط
+/// و[LtrNumericField] للدرجة — مع نوع السؤال قابل للاختيار لكل فرع على حدة،
+/// ووضع «نص حر»، ونقاط غير محدودة (1، 2، 3...).
 ///
-/// التطبيق لكتابة الأسئلة وحدها، والحقول هي: النص ← النقاط ← الخيارات
-/// (نفس ترتيب العرض في المعاينة والـ PDF وWord حرفياً).
+/// التطبيق لكتابة الأسئلة وحدها، والحقول هنا هي: النص ← النقاط.
+/// **خيارات «اختيار من متعدد» لا تُكتب في هذه البطاقة إطلاقاً**: مكانها
+/// خانة الخيار على ورقة المعاينة (الخطوة 3) حيث تُعرض كما تُطبع حرفياً
+/// وتُحرَّر في مكانها (والإضافة بزر «+ خيار» عند تحديد الفرع). لهذا لا يوجد
+/// هنا محرر خيارات، بل سطر توجيه واحد لفرع «اختيار من متعدد».
 class BranchEditorCard extends StatefulWidget {
   const BranchEditorCard({
     super.key,
@@ -232,31 +234,37 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
               enabled: widget.enabled,
               onChanged: (items) => _emitContent(_content.copyWith(items: items)),
             ),
-            const SizedBox(height: 10),
-            _buildTypeSpecificEditor(),
+            // لا محرر خيارات هنا: خيارات «اختيار من متعدد» تُكتب على ورقة
+            // المعاينة حيث تُعرض كما تُطبع حرفياً. السطر توجيه فقط، ولا يُنشئ
+            // ولا يعدّل أي خيار (الخيارات الافتراضية الأربعة تبقى جاهزة هناك).
+            if (_content.type == QuestionType.multipleChoice)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Icon(
+                      Icons.touch_app_outlined,
+                      size: 14,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'خيارات هذا الفرع تُكتب على ورقة المعاينة (الخطوة 3): '
+                        'انقر خانة الخيار واكتب نصها، وزر «+ خيار» يظهر عند تحديد الفرع.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
     );
-  }
-
-  Widget _buildTypeSpecificEditor() {
-    switch (_content.type) {
-      case QuestionType.multipleChoice:
-        return McqOptionsEditor(
-          options: _content.options,
-          enabled: widget.enabled,
-          onChanged: (options) => _emitContent(_content.copyWith(options: options)),
-        );
-      case QuestionType.trueFalse:
-        // «صح/خطأ» = عبارات مرقّمة فقط: تُطبع في نقاطها بالترتيب، ولا يُكتب
-        // عنها أي شيء آخر (كتابة أسئلة فقط).
-        return const SizedBox.shrink();
-      case QuestionType.fillInTheBlank:
-      case QuestionType.definitions:
-      case QuestionType.essay:
-        // لا جسم مستقل لهذه الأنواع: التطبيق لكتابة الأسئلة وحدها.
-        return const SizedBox.shrink();
-    }
   }
 }
