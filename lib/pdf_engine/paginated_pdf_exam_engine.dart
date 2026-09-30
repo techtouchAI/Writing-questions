@@ -818,7 +818,7 @@ class PaginatedPdfExamEngine {
     ExamTextStyles styles,
     ExamFonts fonts,
     PaperTextStyle? ownerStyle,
-  }) {
+  ) {
     final settings = document.settings;
     final itemStyle = PaperStyleResolver.apply(
       styles.body.copyWith(lineSpacing: 1.5 * settings.heightScale),
@@ -865,7 +865,7 @@ class PaginatedPdfExamEngine {
     pw.TextStyle style,
     ExamFonts fonts,
     pw.TextAlign? align,
-  }) {
+  ) {
     final marksSuffix = item.marks > 0
         ? ' (${document.formatNumber(item.marks)} ${layout.marksUnit})'
         : '';

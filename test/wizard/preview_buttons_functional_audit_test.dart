@@ -1332,7 +1332,6 @@ void main() {
           marksOverride: 15,
           spacingAfter: 45,
           category: 'القسم الأول',
-          trueFalseFormat: 'symbols',
           style: const PaperTextStyle(
             font: PaperFont.amiri,
             fontSize: 13,
@@ -1361,7 +1360,6 @@ void main() {
               content: BranchContent(
                 type: QuestionType.multipleChoice,
                 text: 'اختر',
-                trueFalseFormat: 'symbols',
                 options: <QuestionOption>[
                   QuestionOption(
                       text: 'صحيح', isCorrect: true, labelOverride: 'أ'),
