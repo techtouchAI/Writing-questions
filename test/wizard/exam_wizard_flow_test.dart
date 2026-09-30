@@ -12,10 +12,11 @@ import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
-import 'package:writing_questions_app/views/widgets/tex_text.dart';
-import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
+import 'package:writing_questions_app/views/widgets/mixed_content_editor.dart';
 import 'package:writing_questions_app/views/widgets/rich_content_field.dart';
+import 'package:writing_questions_app/views/widgets/tex_text.dart';
 import 'package:writing_questions_app/views/wizard/branch_editor_card.dart';
+import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 import 'package:writing_questions_app/views/wizard/exam_wizard_screen.dart';
 
 Widget _app(Widget home) {
@@ -147,15 +148,26 @@ void main() {
       // كتابة محتوى ودرجة ثم [التالي] يفتح «إعداد السؤال الثاني».
       // نص الفرع يُكتب من الحقل الغني: النقر يفتح محرر المحتوى، فلا كود خام
       // على الشاشة ولا في المخزون.
-      final branchText = find.descendant(
-        of: find.byType(BranchEditorCard).first,
-        matching: find.byType(RichContentField).first,
-      );
+      final branchText = find
+          .descendant(
+            of: find.byType(BranchEditorCard).first,
+            matching: find.byType(RichContentField),
+          )
+          .first;
       await tester.ensureVisible(branchText);
       await tester.tap(branchText);
       await tester.pump();
       await tester.pump();
-      await tester.enterText(find.byType(TextField).last, 'عرّف الفاعل');
+      // محرر المحتوى المرئي: قسم نصي واحد يُكتب فيه نص الفرع ثم يُحفظ.
+      await tester.enterText(
+        find
+            .descendant(
+              of: find.byType(MixedContentEditor),
+              matching: find.byType(TextField),
+            )
+            .first,
+        'عرّف الفاعل',
+      );
       await tester.tap(find.text('حفظ المحتوى'));
       await tester.pump();
       await tester.pump();
