@@ -150,12 +150,12 @@ class MainActivity : FlutterActivity() {
     }
 
     /** اسم إصدار التطبيق (فارغ إن تعذّرت قراءته). */
+    @Suppress("DEPRECATION")
     private fun appVersionName(): String {
         return try {
             val versionName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0)).versionName
             } else {
-                @Suppress("DEPRECATION")
                 packageManager.getPackageInfo(packageName, 0).versionName
             }
             versionName ?: ""

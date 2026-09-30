@@ -144,11 +144,36 @@ jobs:
           path: |
             ${{ runner.temp }}/flutter-analyze.log
             ${{ runner.temp }}/flutter-test.log
+            ${{ runner.temp }}/flutter-build.log
           if-no-files-found: ignore
           retention-days: 7
 
       - name: Build release APK
-        run: flutter build apk --release
+        id: build
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter build apk --release 2>&1 | tee "$RUNNER_TEMP/flutter-build.log"
+
+      # تعذّر فشل بناء APK لا يُظهره محلّل Dart ولا الاختبارات (Kotlin/Gradle)،
+      # فننشر أخطاء البناء نفسها كتعليقات على التشغيل.
+      - name: Publish build diagnostics
+        if: failure() && steps.build.outcome == 'failure'
+        shell: bash
+        run: |
+          publish_excerpt() {
+            local label="$1" excerpt="$2"
+            [ -n "$excerpt" ] || return 0
+            excerpt="${excerpt//%/%25}"
+            excerpt="${excerpt//$'\r'/%0D}"
+            excerpt="${excerpt//$'\n'/%0A}"
+            echo "::error title=$label::$excerpt"
+          }
+          file="$RUNNER_TEMP/flutter-build.log"
+          [ -f "$file" ] || exit 0
+          errors="$(grep -E '^e: |^w: |error:|FAILURE: |Execution failed for task|> Task .*FAILED|Caused by: |What went wrong|Could not (resolve|determine)|A problem occurred' "$file" | head -n 60 || true)"
+          publish_excerpt 'Flutter/Gradle build errors' "$errors"
+          publish_excerpt 'Flutter/Gradle build log tail' "$(tail -n 80 "$file")"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
