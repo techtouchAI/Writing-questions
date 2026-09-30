@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_math_fork/flutter_math.dart' show Math;
 
 import '../../models/exam_canvas_geometry.dart';
 import '../../models/floating_element.dart';
@@ -10,6 +9,7 @@ import '../../models/subject_layout.dart';
 import '../../models/tex_content.dart';
 import '../wizard/paper_styles.dart';
 import 'paper_shape_painter.dart';
+import 'safe_math_tex.dart';
 import 'tex_text.dart';
 
 /// عرض عنصر عائم (صورة/شكل/مربع نص) فوق لوحة الورقة التفاعلية.
@@ -85,7 +85,7 @@ class FloatingElementView extends StatelessWidget {
       padding: const EdgeInsets.all(2),
       child: FittedBox(
         fit: BoxFit.contain,
-        child: Math.tex(
+        child: SafeMathTex(
           element.label,
           textStyle: const TextStyle(
             fontSize: ExamCanvasGeometry.formulaBaseFontSize,

@@ -35,7 +35,7 @@ ExamDocument _document() => ExamDocument(
                 type: QuestionType.multipleChoice,
                 text: 'اختر الإجابة',
                 options: <QuestionOption>[
-                  QuestionOption(text: 'أربعة', isCorrect: true),
+                  QuestionOption(text: 'أربعة'),
                   QuestionOption(text: 'خمسة'),
                 ],
                 items: <BranchItem>[
@@ -75,8 +75,7 @@ ExamDocument _document() => ExamDocument(
               marks: 4,
               content: BranchContent(
                 type: QuestionType.essay,
-                modelAnswer: 'مقال نموذجي',
-              ),
+                ),
             ),
           ],
         ),
@@ -104,7 +103,7 @@ void main() {
 
   test('ورقة الطالب: الأسئلة فقط — نقاط السؤال مدرجة والترقيم تلقائي وبلا مساحات إجابة', () async {
     final document = _document();
-    final xml = await _documentXml(document, teacher: false);
+    final xml = await _documentXml(document, );
 
     // الترويسة بلا فقرة الدرجة الكلية وعدد الأسئلة.
     expect(xml.contains('الدرجة الكلية'), isFalse);
@@ -137,7 +136,7 @@ void main() {
 
   test('نموذج المعلم: توزيع الدرجات كامل وبلا فقرة الدرجة الكلية العامة', () async {
     final document = _document();
-    final xml = await _documentXml(document, teacher: true);
+    final xml = await _documentXml(document, );
 
     expect(xml.contains('نموذج الإجابة وتوزيع الدرجات للمعلم'), isTrue);
     expect(xml.contains('الدرجة الكلية'), isFalse);
@@ -181,7 +180,7 @@ void main() {
         ),
       ],
     );
-    final xml = await _documentXml(document, teacher: false);
+    final xml = await _documentXml(document, );
     final questionSpacingTwips = (PaperMetrics.pt(6) * 20).round();
     final optionSpacingTwips = (PaperMetrics.pt(12) * 20).round();
 
@@ -213,7 +212,6 @@ void main() {
     );
     final xml = await _documentXml(
       document,
-      teacher: false,
       pageAssignments: const <List<String>>[
         <String>['empty', 'visible'],
       ],

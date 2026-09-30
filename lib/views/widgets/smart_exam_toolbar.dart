@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_math_fork/flutter_math.dart' show Math;
 import 'package:image_picker/image_picker.dart';
 
 import '../../models/floating_element.dart';
 import '../../models/quran_text.dart';
 import 'formula_inserter.dart';
+import 'safe_math_tex.dart';
 
 /// يفتح بلاطة صور النظام ويعيد بايتات الصورة المختارة (أو null عند الإلغاء).
 Future<List<int>?> pickImageBytes({VoidCallback? onError}) async {
@@ -333,7 +333,7 @@ class _StagedFormulaBar extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Center(
-        child: Math.tex(
+        child: SafeMathTex(
           latex,
           textStyle: const TextStyle(fontSize: 16),
         ),

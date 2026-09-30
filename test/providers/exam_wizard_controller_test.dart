@@ -115,7 +115,7 @@ void main() {
         ref,
         controller.document.branchAt(ref).content.copyWith(
               options: <QuestionOption>[
-                QuestionOption(text: 'الأولى', isCorrect: true),
+                QuestionOption(text: 'الأولى'),
                 QuestionOption(text: 'الثانية'),
               ],
             ),

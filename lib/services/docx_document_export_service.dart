@@ -10,6 +10,7 @@ import '../models/branch_item.dart';
 import '../models/branch_model.dart';
 import '../models/exam_canvas_geometry.dart';
 import '../models/exam_document.dart';
+import '../models/latex_plain_text.dart';
 import '../models/floating_element.dart';
 import '../models/paper_divider.dart';
 import '../models/paper_font.dart';
@@ -86,7 +87,6 @@ class DocxDocumentExportService {
 
   static Future<File> exportDocumentToDocx({
     required ExamDocument document,
-    bool isTeacherVersion = false,
     String? fileName,
     Directory? outputDirectory,
     ShapeRasterizer? shapeRasterizer,
@@ -95,14 +95,12 @@ class DocxDocumentExportService {
   }) async {
     final bytes = await buildDocumentDocxBytes(
       document: document,
-      isTeacherVersion: isTeacherVersion,
       shapeRasterizer: shapeRasterizer,
       mathRasterizer: mathRasterizer,
       pageAssignments: pageAssignments,
     );
-    final suffix = isTeacherVersion ? 'نموذج_الإجابة' : 'ورقة_الامتحان';
     return ExportFileService.writeExportFile(
-      baseName: fileName ?? '${document.name}_$suffix',
+      baseName: fileName ?? '${document.name}_ورقة_الامتحان',
       extension: 'docx',
       bytes: bytes,
       destination: outputDirectory,
@@ -111,14 +109,12 @@ class DocxDocumentExportService {
 
   static Future<Uint8List> buildDocumentDocxBytes({
     required ExamDocument document,
-    bool isTeacherVersion = false,
     ShapeRasterizer? shapeRasterizer,
     MathRasterizer? mathRasterizer,
     List<List<String>>? pageAssignments,
   }) async {
     final builder = _DocxBuilder(
       document: document,
-      isTeacherVersion: isTeacherVersion,
       shapeRasterizer: shapeRasterizer,
       mathRasterizer: mathRasterizer,
       pageAssignments: pageAssignments,
@@ -209,14 +205,12 @@ class DocxDocumentExportService {
 class _DocxBuilder {
   _DocxBuilder({
     required this.document,
-    required this.isTeacherVersion,
     required this.shapeRasterizer,
     required this.mathRasterizer,
     required this.pageAssignments,
   });
 
   final ExamDocument document;
-  final bool isTeacherVersion;
   final ShapeRasterizer? shapeRasterizer;
   final MathRasterizer? mathRasterizer;
   final List<List<String>>? pageAssignments;
@@ -353,7 +347,6 @@ class _DocxBuilder {
         document.floatingElements.map((element) => element.id).toSet();
     final printableQuestions = document.questions
         .where((question) => question.hasExportableContent(
-              teacher: isTeacherVersion,
               ignoredAttachmentIds: globalElementIds,
             ))
         .toList(growable: false);
@@ -379,7 +372,6 @@ class _DocxBuilder {
     if (!validAssignments) {
       candidate = await PaginatedPdfExamEngine().resolveQuestionPages(
         document: document,
-        isTeacherVersion: isTeacherVersion,
       );
     }
 
@@ -416,98 +408,137 @@ class _DocxBuilder {
     }
     final seenIds = <String>{};
     for (final element in document.floatingElements) {
+      // العناصر المرتبطة بسؤال تُصدَّر مع فقرات سؤالها لا في طبقة الصفحة،
+      // فتبقى معه عند تحريكه في Word أيضاً.
+      if (element.isQuestionOwned) {
+        continue;
+      }
       final assignedPage = element.pageIndex.clamp(0, pageCount - 1).toInt();
       if (assignedPage != pageIndex || !seenIds.add(element.id)) {
         continue;
       }
-      if (element.isTextBox) {
-        _buildTextBox(body, element, floatingOnPage: true);
-        continue;
-      }
-      if (element.isFormula) {
-        final label = element.label.trim();
-        if (label.isEmpty) {
-          continue;
-        }
-        final boxWidthPt = PaperMetrics.pt(element.width);
-        final boxHeightPt = PaperMetrics.pt(element.height);
-        final raster = await _rasterizeMath(_MathPlaceholder(label, boxHeightPt));
-        if (raster == null || raster.pngBytes.isEmpty) {
-          _buildTextBox(
-            body,
-            element,
-            floatingOnPage: true,
-            textOverride: '\$$label\$',
-          );
-          continue;
-        }
-        var widthPt = boxWidthPt;
-        var heightPt = boxHeightPt;
-        if (raster.widthPt > 0 && raster.heightPt > 0 && widthPt > 0 && heightPt > 0) {
-          final scale = math.min(
-            math.min(widthPt / raster.widthPt, heightPt / raster.heightPt),
-            2.0,
-          );
-          widthPt = raster.widthPt * scale;
-          heightPt = raster.heightPt * scale;
-        }
-        final widthPx = PaperMetrics.px(widthPt);
-        final heightPx = PaperMetrics.px(heightPt);
-        _writeAnchoredImageParagraph(
-          body,
-          raster.pngBytes,
-          widthPt,
-          heightPt,
-          dx: element.dx + (element.width - widthPx) / 2,
-          dy: element.dy + (element.height - heightPx) / 2,
-          rotationDegrees: element.rotationDegrees,
-        );
-        continue;
-      }
-      if (element.isImage) {
-        final bytes = element.bytes;
-        if (bytes == null || bytes.isEmpty) {
-          continue;
-        }
-        _writeAnchoredImageParagraph(
-          body,
-          Uint8List.fromList(bytes),
-          PaperMetrics.pt(element.width),
-          PaperMetrics.pt(element.height),
-          dx: element.dx,
-          dy: element.dy,
-          rotationDegrees: element.rotationDegrees,
-        );
-        continue;
-      }
+      await _buildFloatingElement(body, element, pageAnchored: true);
+    }
+  }
 
-      Uint8List? raster;
-      if (shapeRasterizer != null) {
-        try {
-          raster = await shapeRasterizer!(element, element.width, element.height);
-        } catch (_) {
-          raster = null;
-        }
+  /// يُصدّر العناصر المرتبطة بالسؤال [questionId] داخل فقرات السؤال نفسه
+  /// (مرساة نسبية للفقرة) — فيبقى كل عنصر مع سؤاله.
+  Future<void> _buildOwnedElements(StringBuffer body, String questionId) async {
+    for (final element in document.floatingElements) {
+      if (element.ownerQuestionId != questionId) {
+        continue;
       }
-      if (raster != null && raster.isNotEmpty) {
-        _writeAnchoredImageParagraph(
-          body,
-          raster,
-          PaperMetrics.pt(element.width),
-          PaperMetrics.pt(element.height),
-          dx: element.dx,
-          dy: element.dy,
-          rotationDegrees: element.rotationDegrees,
-        );
-      } else {
+      await _buildFloatingElement(body, element, pageAnchored: false);
+    }
+  }
+
+  /// يصدّر عنصراً عائماً واحداً: مربع نص / معادلة / صورة / شكل.
+  ///
+  /// [pageAnchored]: مرساة بترتيب الصفحة (عنصر حر) أو نسبةً لفقرة السؤال
+  /// (عنصر مرتبط بسؤال).
+  Future<void> _buildFloatingElement(
+    StringBuffer body,
+    FloatingElement element, {
+    required bool pageAnchored,
+  }) async {
+    if (element.isTextBox) {
+      _buildTextBox(
+        body,
+        element,
+        floatingOnPage: true,
+        pageAnchored: pageAnchored,
+      );
+      return;
+    }
+    if (element.isFormula) {
+      final label = element.label.trim();
+      if (label.isEmpty) {
+        return;
+      }
+      final boxWidthPt = PaperMetrics.pt(element.width);
+      final boxHeightPt = PaperMetrics.pt(element.height);
+      final raster = await _rasterizeMath(_MathPlaceholder(label, boxHeightPt));
+      if (raster == null || raster.pngBytes.isEmpty) {
+        // تعذّر ترسيم المعادلة: تُكتب نصاً رياضياً مقروءاً بدل كودها.
         _buildTextBox(
           body,
           element,
           floatingOnPage: true,
-          textOverride: '[شكل: ${element.shape?.arabicLabel ?? 'شكل'}]',
+          pageAnchored: pageAnchored,
+          textOverride: LatexPlainText.of(label),
         );
+        return;
+      }
+      var widthPt = boxWidthPt;
+      var heightPt = boxHeightPt;
+      if (raster.widthPt > 0 && raster.heightPt > 0 && widthPt > 0 && heightPt > 0) {
+        final scale = math.min(
+          math.min(widthPt / raster.widthPt, heightPt / raster.heightPt),
+          2.0,
+        );
+        widthPt = raster.widthPt * scale;
+        heightPt = raster.heightPt * scale;
+      }
+      final widthPx = PaperMetrics.px(widthPt);
+      final heightPx = PaperMetrics.px(heightPt);
+      _writeAnchoredImageParagraph(
+        body,
+        raster.pngBytes,
+        widthPt,
+        heightPt,
+        dx: element.dx + (element.width - widthPx) / 2,
+        dy: element.dy + (element.height - heightPx) / 2,
+        rotationDegrees: element.rotationDegrees,
+        pageAnchored: pageAnchored,
+      );
+      return;
+    }
+    if (element.isImage) {
+      final bytes = element.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        return;
+      }
+      _writeAnchoredImageParagraph(
+        body,
+        Uint8List.fromList(bytes),
+        PaperMetrics.pt(element.width),
+        PaperMetrics.pt(element.height),
+        dx: element.dx,
+        dy: element.dy,
+        rotationDegrees: element.rotationDegrees,
+        pageAnchored: pageAnchored,
+      );
+      return;
+    }
+
+    Uint8List? raster;
+    if (shapeRasterizer != null) {
+      try {
+        raster = await shapeRasterizer!(element, element.width, element.height);
+      } catch (_) {
+        raster = null;
       }
     }
+    if (raster != null && raster.isNotEmpty) {
+      _writeAnchoredImageParagraph(
+        body,
+        raster,
+        PaperMetrics.pt(element.width),
+        PaperMetrics.pt(element.height),
+        dx: element.dx,
+        dy: element.dy,
+        rotationDegrees: element.rotationDegrees,
+        pageAnchored: pageAnchored,
+      );
+      return;
+    }
+    _buildTextBox(
+      body,
+      element,
+      floatingOnPage: true,
+      pageAnchored: pageAnchored,
+      textOverride: '[شكل: ${element.shape?.arabicLabel ?? 'شكل'}]',
+    );
   }
 
   void _writeAnchoredImageParagraph(
@@ -518,6 +549,7 @@ class _DocxBuilder {
     required double dx,
     required double dy,
     required double rotationDegrees,
+    bool pageAnchored = true,
   }) {
     if (bytes.isEmpty || widthPt <= 0 || heightPt <= 0) {
       return;
@@ -525,7 +557,7 @@ class _DocxBuilder {
     body.write(
       '<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:spacing w:before="0" w:after="0" '
       'w:line="1" w:lineRule="exact"/></w:pPr>'
-      '<w:r>${_positionedDrawingXml(bytes, widthPt, heightPt, dx: dx, dy: dy, rotationDegrees: rotationDegrees)}</w:r></w:p>',
+      '<w:r>${_positionedDrawingXml(bytes, widthPt, heightPt, dx: dx, dy: dy, rotationDegrees: rotationDegrees, pageAnchored: pageAnchored)}</w:r></w:p>',
     );
   }
 
@@ -536,6 +568,7 @@ class _DocxBuilder {
     required double dx,
     required double dy,
     required double rotationDegrees,
+    bool pageAnchored = true,
   }) {
     var width = widthPt;
     var height = heightPt;
@@ -547,9 +580,14 @@ class _DocxBuilder {
     final widthEmu = (width / 72 * 914400).round();
     final heightEmu = (height / 72 * 914400).round();
     final widthPx = PaperMetrics.px(width);
+    // في RTL يقاس `dx` من حافة القراءة (اليمين): إما حافة الصفحة (عنصر حر)
+    // أو حافة عمود نص السؤال (عنصر مرتبط بسؤال).
+    final referenceWidth = pageAnchored
+        ? ExamCanvasGeometry.width
+        : ExamCanvasGeometry.contentWidthFor(document.settings.marginMm);
     final physicalLeftPx = document.layout.isLtr
         ? dx
-        : ExamCanvasGeometry.width - dx - widthPx;
+        : referenceWidth - dx - widthPx;
     final xEmu = (PaperMetrics.pt(physicalLeftPx) * 12700).round();
     final yEmu = (PaperMetrics.pt(dy) * 12700).round();
     final rotation = (rotationDegrees * 60000).round();
@@ -566,12 +604,16 @@ class _DocxBuilder {
       ),
     );
     final id = _drawingId++;
+    // عنصر السؤال يُثبَّت نسبةً إلى فقرته (column/paragraph) فيبقى مع سؤاله،
+    // والعنصر الحر يُثبَّت على الصفحة كما كان.
+    final horizontalFrom = pageAnchored ? 'page' : 'column';
+    final verticalFrom = pageAnchored ? 'page' : 'paragraph';
     return '<w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" '
         'simplePos="0" relativeHeight="$id" behindDoc="0" locked="0" '
         'layoutInCell="1" allowOverlap="1">'
         '<wp:simplePos x="0" y="0"/>'
-        '<wp:positionH relativeFrom="page"><wp:posOffset>$xEmu</wp:posOffset></wp:positionH>'
-        '<wp:positionV relativeFrom="page"><wp:posOffset>$yEmu</wp:posOffset></wp:positionV>'
+        '<wp:positionH relativeFrom="$horizontalFrom"><wp:posOffset>$xEmu</wp:posOffset></wp:positionH>'
+        '<wp:positionV relativeFrom="$verticalFrom"><wp:posOffset>$yEmu</wp:posOffset></wp:positionV>'
         '<wp:extent cx="$widthEmu" cy="$heightEmu"/><wp:wrapNone/>'
         '<wp:docPr id="$id" name="Floating element $id"/>'
         '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>'
@@ -613,10 +655,9 @@ class _DocxBuilder {
     final title = header.title.trim().isEmpty
         ? header.center.lines[1]
         : header.title.trim();
-    // نموذج المعلم يُوسم باسمه؛ وورقة الطالب بلا أي عدّادات على الورقة
-    // (لا الدرجة الكلية ولا عدد الأسئلة — الإجابة في دفتر الطالب).
-    final versionLabel =
-        isTeacherVersion ? 'نموذج الإجابة وتوزيع الدرجات للمعلم' : '';
+    // ورقة الأسئلة بلا أي عدّادات على الورقة (لا الدرجة الكلية ولا عدد
+    // الأسئلة — الإجابة في دفتر الطالب) ولا أي عنصر إجابة.
+    const versionLabel = '';
     final titleAlign = header.style.align == null
         ? 'center'
         : _wordAlign(header.style.align);
@@ -774,13 +815,14 @@ class _DocxBuilder {
       );
     }
     await _buildAttachments(body, question.attachments);
+    // العناصر المرتبطة بهذا السؤال تُكتب مع فقراته (مرساة نسبية للفقرة).
+    await _buildOwnedElements(body, question.id);
     _buildDivider(body, question.dividerAfter);
   }
 
   /// فقرة نقطة مرقَّمة (داخل سؤال أو فرع) — ترقيم تلقائي/مخصص + درجة.
   ///
-  /// إجابة صح/خطأ لا تُكتب على الورقة إطلاقاً (كما في الفراغات): العبارات
-  /// تُطبع بالترتيب في نقاطها، والإجابة تبقى في النموذج للتصحيح وحده.
+  /// تُطبع العبارات وحدها بالترتيب — ولا أي عنصر إجابة في أي مرحلة.
   void _writeItemParagraph(
     StringBuffer body,
     BranchItem item,
@@ -824,8 +866,7 @@ class _DocxBuilder {
     final globalElementIds =
         document.floatingElements.map((element) => element.id).toSet();
     // الفرع الفارغ تماماً يُحذف من الملف كاملاً ولا يترك فقرات فارغة.
-    if (!branch.hasExportableContent(
-      teacher: isTeacherVersion,
+    if (!branch.hasExportableContentIn(
       ignoredAttachmentIds: globalElementIds,
     )) {
       return;
@@ -857,7 +898,7 @@ class _DocxBuilder {
       _writeItemParagraph(body, item, i, style: branch.style);
     }
     // مطابقة اللوحة ومحرك PDF حرفياً (انظر BranchContent.hasPrintableTypeBody).
-    if (content.hasPrintableTypeBody(teacher: isTeacherVersion)) {
+    if (content.hasPrintableTypeBody) {
       _buildTypeBody(body, content, branch.style);
     }
     await _buildAttachments(body, branch.attachments);
@@ -867,11 +908,6 @@ class _DocxBuilder {
   void _buildTypeBody(
       StringBuffer body, BranchContent content, PaperTextStyle? style) {
     final alignment = _wordAlign(style?.align);
-    // محاذاة الإجابة النموذجية/صح-خطأ لها نظيرها في الموديل (فقرة مستقلة
-    // كما في Word) وترث محاذاة الفرع عند غيابها.
-    final answerAlign = content.modelAnswerAlign != null
-        ? _wordAlign(content.modelAnswerAlign)
-        : alignment;
     final lineHeight = style?.lineHeight;
     final styleColor = style?.colorHex;
     switch (content.type) {
@@ -883,15 +919,13 @@ class _DocxBuilder {
           if (option.text.trim().isEmpty) {
             continue;
           }
-          final correct = isTeacherVersion && option.isCorrect;
           final optionLabel = document.displayOptionLabel(option, i);
           final prefix = optionLabel.isEmpty ? '' : '$optionLabel  ';
           _writeParagraph(
             body,
-            '$prefix${option.text}${correct ? ' •' : ''}',
-            bold: correct,
+            '$prefix${option.text}',
             size: 22,
-            color: styleColor ?? (correct ? '065F46' : null),
+            color: styleColor,
             indent: 800,
             before: style?.paragraphSpacing == null ? 30 : 0,
             after: style?.paragraphSpacing == null
@@ -903,54 +937,12 @@ class _DocxBuilder {
           );
         }
       case QuestionType.trueFalse:
-        // لا جسم مطبوع لصح/خطأ إطلاقاً — كما في الفراغات: العبارات وحدها
-        // بالترتيب، والإجابة في النموذج للتصحيح ولا تُكتب على الورقة.
-        return;
       case QuestionType.fillInTheBlank:
-        if (!isTeacherVersion) {
-          return;
-        }
-        if (content.modelAnswer.trim().isEmpty) {
-          return;
-        }
-        _writeParagraph(
-          body,
-          'الإجابة النموذجية: ${content.modelAnswer.trim()}',
-          bold: true,
-          size: 22,
-          color: styleColor ?? '065F46',
-          highlight: true,
-          indent: 800,
-          before: style?.paragraphSpacing == null ? 40 : 0,
-          after: style?.paragraphSpacing == null
-              ? 40
-              : _paragraphSpacingTwips(style!.paragraphSpacing!),
-          alignment: answerAlign,
-          lineHeight: lineHeight,
-        );
       case QuestionType.definitions:
       case QuestionType.essay:
-        if (isTeacherVersion) {
-          if (content.modelAnswer.trim().isEmpty) {
-            return;
-          }
-          _writeParagraph(
-            body,
-            'الإجابة النموذجية وعناصر التقييم: ${content.modelAnswer.trim()}',
-            bold: true,
-            size: 22,
-            color: styleColor ?? '065F46',
-            indent: 800,
-            before: style?.paragraphSpacing == null ? 40 : 0,
-            after: style?.paragraphSpacing == null
-                ? 40
-                : _paragraphSpacingTwips(style!.paragraphSpacing!),
-            alignment: answerAlign,
-            lineHeight: lineHeight,
-          );
-          return;
-        }
-        // ورقة الطالب للأسئلة المقالية: بلا أسطر إجابة مولَّدة (الإجابة في دفتر الطالب).
+        // لا جسم مطبوع لهذه الأنواع: العبارات في نقاطها، ومساحة الفراغ/
+        // المقالي في نص الفرع — **ولا عنصر إجابة في أي مرحلة**.
+        return;
     }
   }
 
@@ -1023,6 +1015,7 @@ class _DocxBuilder {
     StringBuffer body,
     FloatingElement element, {
     bool floatingOnPage = false,
+    bool pageAnchored = true,
     String? textOverride,
   }) {
     final text = textOverride ??
@@ -1056,16 +1049,23 @@ class _DocxBuilder {
         '<w:sz w:val="$size"/><w:rFonts w:cs="$font"/></w:rPr>';
     final widthTwips = (PaperMetrics.pt(element.width) * 20).round();
     final heightTwips = (PaperMetrics.pt(element.height) * 20).round();
+    final referenceWidth = pageAnchored
+        ? ExamCanvasGeometry.width
+        : ExamCanvasGeometry.contentWidthFor(document.settings.marginMm);
     final physicalLeftPx = document.layout.isLtr
         ? element.dx
-        : ExamCanvasGeometry.width - element.dx - element.width;
+        : referenceWidth - element.dx - element.width;
     final xTwips = (PaperMetrics.pt(physicalLeftPx) * 20).round();
     final yTwips = (PaperMetrics.pt(element.dy) * 20).round();
     final tableWidth = floatingOnPage
         ? '<w:tblW w:w="$widthTwips" w:type="dxa"/>'
         : '<w:tblW w:w="5000" w:type="pct"/>';
+    // عنصر السؤال يُثبَّت على margin النص (column) ويتبع فقرته (text)،
+    // والعنصر الحر يُثبَّت على الصفحة كما كان.
+    final horizontalAnchor = pageAnchored ? 'page' : 'margin';
+    final verticalAnchor = pageAnchored ? 'page' : 'text';
     final tablePosition = floatingOnPage
-        ? '<w:tblpPr w:horzAnchor="page" w:vertAnchor="page" '
+        ? '<w:tblpPr w:horzAnchor="$horizontalAnchor" w:vertAnchor="$verticalAnchor" '
             'w:tblpX="$xTwips" w:tblpY="$yTwips"/>'
         : '';
     final tableLayout = floatingOnPage ? '<w:tblLayout w:type="fixed"/>' : '';
@@ -1333,7 +1333,7 @@ class _DocxBuilder {
   static String _mathMarker(int index) => '\uE000$index\uE001';
 
   /// يرسم كل صيغ LaTeX المكتشفة ويستبدل علاماتها برسوم مضمّنة داخل الـ run
-  /// نفسه؛ وما تعذّر رسمه يُكتب نصاً كما كان (سلوك التصدير قبل إضافة الرسم).
+  /// نفسه؛ وما تعذّر رسمه يُكتب **نصاً رياضياً مقروءاً** (بلا أي كود LaTeX).
   Future<String> _resolveMath(String xml) async {
     if (_mathQueue.isEmpty) {
       return xml;
@@ -1351,7 +1351,8 @@ class _DocxBuilder {
       resolved = resolved.replaceAll(
         marker,
         raster == null
-            ? '<w:t xml:space="preserve">${_escapeXml(placeholder.latex)}</w:t>'
+            ? '<w:t xml:space="preserve">'
+                '${_escapeXml(LatexPlainText.of(placeholder.latex))}</w:t>'
             : _drawingXml(raster.pngBytes, raster.widthPt, raster.heightPt),
       );
     }

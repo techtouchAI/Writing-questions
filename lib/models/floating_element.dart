@@ -88,9 +88,13 @@ enum FloatingShapeType {
 /// عنصر حر فوق ورقة الاختبار (صورة/شكل/مربع نص/معادلة).
 ///
 /// الإحداثيات (`dx`, `dy`) والمقاسات (`width`, `height`) **بكسلات منطقية
-/// نسبةً إلى صفحة A4 نفسها**، وليست نسبةً إلى سؤال أو فرع. يحدد [pageIndex]
-/// صفحة المستند التي يظهر عليها العنصر؛ لذا يبقى حراً حتى عند نقل الأسئلة أو
-/// حذفها، وتنتقل إحداثياته بنسبة ثابتة إلى `pw.Positioned` في محرك PDF.
+/// على لوحة A4**، ومعناها يتبع ملكية العنصر:
+/// - **عنصر صفحة** ([ownerQuestionId] = null): `dx`/`dy` من أعلى الورقة
+///   وحافة القراءة، و[pageIndex] صفحته. يبقى حراً في أي نقطة من الورقة.
+/// - **عنصر سؤال** ([ownerQuestionId] معرّف): `dx`/`dy` من أعلى-يمين محتوى
+///   سؤال المالك — فيبقى **داخل السؤال** دائماً، ويُرسم معه في المعاينة
+///   والـ PDF، ويسافر معه بين الصفحات عند إعادة التقسيم ([pageIndex] يتبع
+///   صفحة السؤال تلقائياً ولا يُعتمد عليه للعناصر المملوكة).
 class FloatingElement {
   FloatingElement({
     String? id,
@@ -104,6 +108,7 @@ class FloatingElement {
     required this.width,
     required this.height,
     this.label = '',
+    this.ownerQuestionId,
     this.strokeWidth = 2.0,
     this.rotationDegrees = 0.0,
     PaperTextStyle? textStyle,
@@ -143,6 +148,15 @@ class FloatingElement {
   /// نص مربع النص ([FloatingShapeType.textBox]) — فارغ لغيره.
   String label;
 
+  /// معرّف السؤال المالك، أو `null` لعنصر حر على مستوى الورقة.
+  ///
+  /// العنصر المملوك حرّ **داخل سؤال** المالك فقط (شرط المطلوب: المرتبط
+  /// بالسؤال يبقى داخل السؤال)، ويُرسم ويُصدَّر معه.
+  final String? ownerQuestionId;
+
+  /// هل هذا العنصر مرتبط بسؤال بعينه؟
+  bool get isQuestionOwned => ownerQuestionId != null;
+
   /// سماكة حد الشكل بالنقاط (للأشكال الهندسية والخطوط).
   double strokeWidth;
 
@@ -178,6 +192,7 @@ class FloatingElement {
       'width': width,
       'height': height,
       if (label.isNotEmpty) 'label': label,
+      if (ownerQuestionId != null) 'ownerQuestionId': ownerQuestionId,
       if (strokeWidth != 2.0) 'strokeWidth': strokeWidth,
       if (rotationDegrees != 0) 'rotationDegrees': rotationDegrees,
       if (textStyle.isNotEmpty) 'textStyle': textStyle.toMap(),
@@ -244,6 +259,10 @@ class FloatingElement {
       width: width,
       height: height,
       label: map['label']?.toString() ?? '',
+      ownerQuestionId: switch (map['ownerQuestionId']) {
+        final String value when value.trim().isNotEmpty => value,
+        _ => null,
+      },
       strokeWidth: _lenientNum(map['strokeWidth'], fallback: 2, min: 0.5, max: 12),
       rotationDegrees: _lenientNum(map['rotationDegrees'], fallback: 0, min: -360, max: 360),
       textStyle: PaperTextStyle.fromValue(map['textStyle']),
@@ -286,6 +305,7 @@ class FloatingElement {
       width: width ?? this.width,
       height: height ?? this.height,
       label: label ?? this.label,
+      ownerQuestionId: ownerQuestionId,
       strokeWidth: strokeWidth ?? this.strokeWidth,
       rotationDegrees: rotationDegrees ?? this.rotationDegrees,
       textStyle: textStyle ?? this.textStyle,
@@ -306,6 +326,30 @@ class FloatingElement {
       width: width,
       height: height,
       label: label,
+      // العنصر المكرَّر داخل سؤال يُنسخ فيبقى مرتبطاً بالسؤال نفسه.
+      ownerQuestionId: ownerQuestionId,
+      strokeWidth: strokeWidth,
+      rotationDegrees: rotationDegrees,
+      textStyle: textStyle,
+      framed: framed,
+    );
+  }
+
+  /// نسخة مرتبطة بسؤال ([questionId]) — أو حرة على الورقة عند `null`.
+  FloatingElement withOwner(String? questionId) {
+    return FloatingElement(
+      id: id,
+      type: type,
+      shape: shape,
+      bytes: bytes,
+      svgSource: svgSource,
+      dx: dx,
+      dy: dy,
+      pageIndex: pageIndex,
+      width: width,
+      height: height,
+      label: label,
+      ownerQuestionId: questionId,
       strokeWidth: strokeWidth,
       rotationDegrees: rotationDegrees,
       textStyle: textStyle,

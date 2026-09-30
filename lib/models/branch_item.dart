@@ -12,7 +12,6 @@ class BranchItem {
     String? id,
     this.text = '',
     this.marks = 0.0,
-    this.isCorrect,
     this.labelOverride,
     this.align,
   }) : id = id ?? const Uuid().v4() {
@@ -29,10 +28,6 @@ class BranchItem {
   /// درجة النقطة (0 = بلا درجة معلنة).
   final double marks;
 
-  /// إجابة النقطة لفروع صح/خطأ (`true` = صح، `false` = خطأ، `null` =
-  /// غير محددة) — تظهر في نموذج المعلم فقط.
-  final bool? isCorrect;
-
   /// تسمية مخصصة: `null` = تلقائية من الفهرس، `''` = بلا تسمية.
   final String? labelOverride;
 
@@ -41,22 +36,17 @@ class BranchItem {
 
   bool get isEmpty => text.trim().isEmpty;
 
-  /// محتوى النقطة الخاص (نص أو درجة أو إجابة) — دون التسمية.
-  bool get hasOwnContent =>
-      text.trim().isNotEmpty || marks > 0 || isCorrect != null;
+  /// محتوى النقطة الخاص (نص أو درجة) — دون التسمية.
+  bool get hasOwnContent => text.trim().isNotEmpty || marks > 0;
 
   /// هل تظهر النقطة على الورقة (المعاينة/PDF/Word)؟
-  ///
-  /// إجابات صح/خطأ **لا تُطبع على الورقة إطلاقاً** — تماماً كالفراغات:
-  /// العبارات وحدها بالترتيب نفسه، والإجابة محفوظة في النموذج للتصحيح.
-  /// لذلك لا تكفي إجابة وحدها لإظهار النقطة؛ نص أو درجة أو تسمية مطلوبة.
+  /// تكفي درجة أو تسمية لإظهار النقطة حتى بلا نص.
   bool get showsInExport =>
       text.trim().isNotEmpty || marks > 0 || labelOverride != null;
 
   BranchItem copyWith({
     String? text,
     double? marks,
-    bool? Function()? isCorrect,
     String? Function()? labelOverride,
     PaperAlign? Function()? align,
   }) {
@@ -64,7 +54,6 @@ class BranchItem {
       id: id,
       text: text ?? this.text,
       marks: marks ?? this.marks,
-      isCorrect: isCorrect == null ? this.isCorrect : isCorrect(),
       labelOverride:
           labelOverride == null ? this.labelOverride : labelOverride(),
       align: align == null ? this.align : align(),
@@ -76,7 +65,6 @@ class BranchItem {
       'id': id,
       'text': text,
       'marks': marks,
-      if (isCorrect != null) 'isCorrect': isCorrect,
       if (labelOverride != null) 'labelOverride': labelOverride,
       if (align != null) 'align': align!.name,
     };
@@ -97,7 +85,6 @@ class BranchItem {
           : null,
       text: rawText?.toString() ?? '',
       marks: marks == null || !marks.isFinite || marks < 0 ? 0.0 : marks,
-      isCorrect: map['isCorrect'] is bool ? map['isCorrect'] as bool : null,
       labelOverride: rawLabel is String ? rawLabel : null,
       align: rawAlign != null ? PaperAlign.parse(rawAlign) : null,
     );

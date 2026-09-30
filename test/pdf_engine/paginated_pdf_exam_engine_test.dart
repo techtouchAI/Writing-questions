@@ -37,13 +37,12 @@ ExamDocument _document({
                       'لاختبار الالتفاف داخل عرض الورقة المتاح بالكامل.',
                   options: type == QuestionType.multipleChoice
                       ? <QuestionOption>[
-                          QuestionOption(text: 'خيار أول', isCorrect: true),
+                          QuestionOption(text: 'خيار أول'),
                           QuestionOption(text: 'خيار ثانٍ'),
                           QuestionOption(text: 'خيار ثالث'),
                         ]
                       : const <QuestionOption>[],
-                  modelAnswer: 'إجابة نموذجية',
-                ),
+                  ),
                 marks: 2,
               ),
           ],
@@ -90,8 +89,7 @@ void main() {
               BranchModel(
                 content: BranchContent(
                   type: QuestionType.essay,
-                  modelAnswer: 'إجابة تظهر للمعلم فقط',
-                ),
+                  ),
               ),
             ],
           ),
@@ -101,8 +99,7 @@ void main() {
       final studentPages = await engine.resolveQuestionPages(document: document);
       final teacherPages = await engine.resolveQuestionPages(
         document: document,
-        isTeacherVersion: true,
-      );
+        );
 
       expect(studentPages.expand((page) => page), <String>['student']);
       expect(
@@ -185,8 +182,7 @@ void main() {
       final student = await PaginatedPdfExamEngine().generate(document: english);
       final teacher = await PaginatedPdfExamEngine().generate(
         document: english,
-        isTeacherVersion: true,
-      );
+        );
 
       expect(String.fromCharCodes(student), startsWith('%PDF-'));
       expect(_countPages(student), greaterThanOrEqualTo(1));

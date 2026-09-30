@@ -97,7 +97,7 @@ class _McqOptionsEditorState extends State<McqOptionsEditor> {
           runSpacing: 4,
           children: <Widget>[
             const Text(
-              'خيارات الإجابة (حدد الإجابة الصحيحة):',
+              'الخيارات:',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             TextButton.icon(
@@ -114,19 +114,6 @@ class _McqOptionsEditorState extends State<McqOptionsEditor> {
             padding: const EdgeInsets.only(bottom: 8),
             child: Row(
               children: <Widget>[
-                Tooltip(
-                  message: 'تحديد كإجابة صحيحة',
-                  child: Checkbox(
-                    value: option.isCorrect,
-                    activeColor: Colors.green,
-                    onChanged: widget.enabled
-                        ? (value) => _updateOption(
-                              index,
-                              option.copyWith(isCorrect: value ?? false),
-                            )
-                        : null,
-                  ),
-                ),
                 Expanded(
                   child: TextFormField(
                     key: ValueKey<String>(option.id),
@@ -209,7 +196,6 @@ class _McqOptionsEditorState extends State<McqOptionsEditor> {
       final secondOption = second[index];
       if (firstOption.id != secondOption.id ||
           firstOption.text != secondOption.text ||
-          firstOption.isCorrect != secondOption.isCorrect ||
           firstOption.labelOverride != secondOption.labelOverride) {
         return false;
       }

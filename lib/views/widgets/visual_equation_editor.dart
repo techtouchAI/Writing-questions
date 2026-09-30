@@ -3,6 +3,7 @@ import 'package:flutter_math_fork/flutter_math.dart';
 
 import '../../models/equation_model.dart';
 import '../../models/tex_content.dart';
+import 'safe_math_tex.dart';
 
 /// يفتح محرر المعادلات المرئي (بأسلوب Word) ويعيد المقطع الجاهز للإدراج.
 ///
@@ -21,7 +22,7 @@ Future<String?> showVisualEquationEditor({
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 560),
-        child: _VisualEquationEditor(
+        child: VisualEquationEditor(
           initialLatex: initialLatex ?? '',
           initialIsBlock: initialIsBlock,
           saveLabel: saveLabel,
@@ -58,7 +59,7 @@ Future<TexMathSpan?> showEquationSpanPicker({
                   scrollDirection: Axis.horizontal,
                   child: span.latex.trim().isEmpty
                       ? const Text('(معادلة فارغة)')
-                      : Math.tex(
+                      : SafeMathTex(
                           span.latex,
                           mathStyle: MathStyle.text,
                           textStyle: const TextStyle(fontSize: 17),
@@ -77,22 +78,38 @@ Future<TexMathSpan?> showEquationSpanPicker({
 
 /// محرر معادلات مرئي: بنى قابلة للنقر والتحرير (بسط/مقام، جذور، أسس...)
 /// مع معاينة حية تُحدَّث فوراً — وLaTeX يبقى تمثيلاً داخلياً فقط.
-class _VisualEquationEditor extends StatefulWidget {
-  const _VisualEquationEditor({
+///
+/// يُستعمل في وضعين:
+/// - **حوار مستقل** ([embedded] = false): أزرار «إلغاء/حفظ» تُعيد المقطع
+///   الجاهز `$...$` أو `$$...$$` إلى من فتحه.
+/// - **مضمَّن** ([embedded] = true): بلا حوار ولا أزرار، يبلغ عن الصيغة
+///   الحالية عبر [onChanged] ليستعملها محرر المحتوى المختلط
+///   (`mixed_content_editor.dart`) داخل قائمة أقسام المتن.
+class VisualEquationEditor extends StatefulWidget {
+  const VisualEquationEditor({
+    super.key,
     required this.initialLatex,
-    required this.initialIsBlock,
-    required this.saveLabel,
+    this.initialIsBlock = false,
+    this.saveLabel = 'إدراج',
+    this.embedded = false,
+    this.onChanged,
   });
 
   final String initialLatex;
   final bool initialIsBlock;
   final String saveLabel;
 
+  /// مضمَّن داخل محرر آخر: بلا ترويسة/معاينة/أزرار حفظ.
+  final bool embedded;
+
+  /// يُبلَّغ بعد كل تعديل بالصيغة الحالية (وضع التحليل المضمَّن).
+  final void Function(String latex, bool isBlock)? onChanged;
+
   @override
-  State<_VisualEquationEditor> createState() => _VisualEquationEditorState();
+  State<VisualEquationEditor> createState() => _VisualEquationEditorState();
 }
 
-class _VisualEquationEditorState extends State<_VisualEquationEditor> {
+class _VisualEquationEditorState extends State<VisualEquationEditor> {
   late EquationModel _model;
   late bool _isBlock;
   final Map<EqText, TextEditingController> _controllers = {};
@@ -379,71 +396,109 @@ class _VisualEquationEditorState extends State<_VisualEquationEditor> {
 
   // ---------------------------------------------------------- البناء
 
+  /// يبلّغ الوالد المضمَّن بالصيغة الحالية بعد اكتمال الإطار (لا أثناء البناء).
+  void _scheduleNotify() {
+    final onChanged = widget.onChanged;
+    if (!widget.embedded || onChanged == null) {
+      return;
+    }
+    final latex = _latex.trim();
+    final isBlock = _isBlock;
+    if (latex == _lastNotifiedLatex && isBlock == _lastNotifiedBlock) {
+      return;
+    }
+    _lastNotifiedLatex = latex;
+    _lastNotifiedBlock = isBlock;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        widget.onChanged?.call(latex, isBlock);
+      }
+    });
+  }
+
+  String? _lastNotifiedLatex;
+  bool? _lastNotifiedBlock;
+
   @override
   Widget build(BuildContext context) {
+    _scheduleNotify();
+    final blockSwitch = SegmentedButton<bool>(
+      style: SegmentedButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      showSelectedIcon: false,
+      segments: const <ButtonSegment<bool>>[
+        ButtonSegment<bool>(
+          value: false,
+          label: Text('سطرية', style: TextStyle(fontSize: 12)),
+        ),
+        ButtonSegment<bool>(
+          value: true,
+          label: Text('منفردة', style: TextStyle(fontSize: 12)),
+        ),
+      ],
+      selected: <bool>{_isBlock},
+      onSelectionChanged: (selection) =>
+          setState(() => _isBlock = selection.single),
+    );
     return SingleChildScrollView(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        padding: EdgeInsets.fromLTRB(16, widget.embedded ? 4 : 16, 16, 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Row(
-              children: <Widget>[
-                const Icon(Icons.functions),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'محرر المعادلات',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                ),
-                SegmentedButton<bool>(
-                  style: SegmentedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  showSelectedIcon: false,
-                  segments: const <ButtonSegment<bool>>[
-                    ButtonSegment<bool>(
-                      value: false,
-                      label: Text('سطرية', style: TextStyle(fontSize: 12)),
+            if (widget.embedded)
+              Row(
+                children: <Widget>[
+                  const Text('المعادلة:', style: TextStyle(fontSize: 12)),
+                  const Spacer(),
+                  blockSwitch,
+                ],
+              )
+            else
+              Row(
+                children: <Widget>[
+                  const Icon(Icons.functions),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'محرر المعادلات',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                     ),
-                    ButtonSegment<bool>(
-                      value: true,
-                      label: Text('منفردة', style: TextStyle(fontSize: 12)),
-                    ),
-                  ],
-                  selected: <bool>{_isBlock},
-                  onSelectionChanged: (selection) =>
-                      setState(() => _isBlock = selection.single),
-                ),
-              ],
-            ),
+                  ),
+                  blockSwitch,
+                ],
+              ),
             const SizedBox(height: 10),
-            _buildPreview(context),
-            const SizedBox(height: 10),
+            if (!widget.embedded) ...[
+              _buildPreview(context),
+              const SizedBox(height: 10),
+            ],
             _buildModelArea(context),
             const SizedBox(height: 10),
             _buildToolbar(context),
-            const SizedBox(height: 12),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('إلغاء'),
+            if (!widget.embedded) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('إلغاء'),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: _save,
-                    child: Text(widget.saveLabel),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: _save,
+                      child: Text(widget.saveLabel),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -479,7 +534,7 @@ class _VisualEquationEditorState extends State<_VisualEquationEditor> {
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Center(
-                  child: Math.tex(
+                  child: SafeMathTex(
                     latex,
                     mathStyle: _isBlock ? MathStyle.display : MathStyle.text,
                     textStyle: const TextStyle(fontSize: 20),
@@ -778,34 +833,46 @@ class _VisualEquationEditorState extends State<_VisualEquationEditor> {
           _Tool('[ ]', () => _addFence('[', ']')),
           _Tool('{ }', () => _addFence(r'\{', r'\}')),
         ]),
+        // الرموز تُدرَج بمحارفها المرئية (×، α...) لا بأوامر LaTeX:
+        // المستخدم لا يرى أي كود في أي مرحلة، والمحارف ترسمها كل المحركات
+        // (الشاشة والـ PDF وWord) بالشكل نفسه.
         _toolRow(context, 'العمليات', <_Tool>[
           _Tool('+', () => _insertSymbol('+')),
-          _Tool('−', () => _insertSymbol('-')),
-          _Tool('×', () => _insertSymbol(r'\times ')),
-          _Tool('÷', () => _insertSymbol(r'\div ')),
+          _Tool('−', () => _insertSymbol('−')),
+          _Tool('×', () => _insertSymbol('×')),
+          _Tool('÷', () => _insertSymbol('÷')),
           _Tool('/', () => _insertSymbol('/')),
-          _Tool('·', () => _insertSymbol(r'\cdot ')),
-          _Tool('±', () => _insertSymbol(r'\pm ')),
+          _Tool('·', () => _insertSymbol('·')),
+          _Tool('±', () => _insertSymbol('±')),
+          _Tool('∫', () => _insertSymbol('∫')),
+          _Tool('∑', () => _insertSymbol('∑')),
+          _Tool('√', () => _insertSymbol('√')),
         ]),
         _toolRow(context, 'العلاقات', <_Tool>[
           _Tool('=', () => _insertSymbol('=')),
           _Tool('<', () => _insertSymbol('<')),
           _Tool('>', () => _insertSymbol('>')),
-          _Tool('≤', () => _insertSymbol(r'\leq ')),
-          _Tool('≥', () => _insertSymbol(r'\geq ')),
-          _Tool('≠', () => _insertSymbol(r'\neq ')),
+          _Tool('≤', () => _insertSymbol('≤')),
+          _Tool('≥', () => _insertSymbol('≥')),
+          _Tool('≠', () => _insertSymbol('≠')),
+          _Tool('≈', () => _insertSymbol('≈')),
+          _Tool('∞', () => _insertSymbol('∞')),
+          _Tool('→', () => _insertSymbol('→')),
           _Tool('«»', () => _insertSymbol('«»')),
         ]),
         _toolRow(context, 'اليونانية', <_Tool>[
-          _Tool('α', () => _insertSymbol(r'\alpha ')),
-          _Tool('β', () => _insertSymbol(r'\beta ')),
-          _Tool('γ', () => _insertSymbol(r'\gamma ')),
-          _Tool('θ', () => _insertSymbol(r'\theta ')),
-          _Tool('λ', () => _insertSymbol(r'\lambda ')),
-          _Tool('μ', () => _insertSymbol(r'\mu ')),
-          _Tool('π', () => _insertSymbol(r'\pi ')),
-          _Tool('σ', () => _insertSymbol(r'\sigma ')),
-          _Tool('Ω', () => _insertSymbol(r'\Omega ')),
+          _Tool('α', () => _insertSymbol('α')),
+          _Tool('β', () => _insertSymbol('β')),
+          _Tool('γ', () => _insertSymbol('γ')),
+          _Tool('δ', () => _insertSymbol('δ')),
+          _Tool('θ', () => _insertSymbol('θ')),
+          _Tool('λ', () => _insertSymbol('λ')),
+          _Tool('μ', () => _insertSymbol('μ')),
+          _Tool('π', () => _insertSymbol('π')),
+          _Tool('σ', () => _insertSymbol('σ')),
+          _Tool('φ', () => _insertSymbol('φ')),
+          _Tool('ω', () => _insertSymbol('ω')),
+          _Tool('Ω', () => _insertSymbol('Ω')),
         ]),
         _toolRow(context, 'تحرير', <_Tool>[
           _Tool('⌫ حذف الأخير', () {

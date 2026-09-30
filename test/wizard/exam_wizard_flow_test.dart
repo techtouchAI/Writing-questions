@@ -327,7 +327,7 @@ void main() {
                     type: QuestionType.multipleChoice,
                     text: 'اختر الإجابة الصحيحة',
                     options: <QuestionOption>[
-                      QuestionOption(text: 'الخيار الأول', isCorrect: true),
+                      QuestionOption(text: 'الخيار الأول'),
                       QuestionOption(text: 'الخيار الثاني'),
                     ],
                   ),

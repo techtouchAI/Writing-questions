@@ -426,7 +426,7 @@ void main() {
           questions: <QuestionModel>[
             _essay('q1',
                 text: 'Write your answer here.',
-                modelAnswer: 'The capital is Baghdad'),
+                ),
             QuestionModel(
               id: 'q2',
               questionNumber: 1,
@@ -466,7 +466,7 @@ void main() {
                     type: QuestionType.multipleChoice,
                     text: 'Choose one.',
                     options: <QuestionOption>[
-                      QuestionOption(text: 'Option one', isCorrect: true),
+                      QuestionOption(text: 'Option one'),
                       QuestionOption(text: 'Option two'),
                     ],
                   ),
@@ -496,7 +496,7 @@ void main() {
       };
     }
 
-    final student = await tokens(teacher: false);
+    final student = await tokens();
     expect(
       student,
       <String, bool>{
@@ -511,7 +511,7 @@ void main() {
           'التسرّب: $student.',
     );
 
-    final teacher = await tokens(teacher: true);
+    final teacher = await tokens();
     expect(
       teacher,
       <String, bool>{
@@ -630,7 +630,7 @@ void main() {
       () async {
     ExamDocument examDoc() => _doc(questions: <QuestionModel>[
           _essay('q1',
-              text: 'مقالي', modelAnswer: 'إجابة نموذجية مكتوبة هنا'),
+              text: 'مقالي', ),
           QuestionModel(
             id: 'q2',
             questionNumber: 1,
@@ -670,7 +670,7 @@ void main() {
                   type: QuestionType.multipleChoice,
                   text: 'اختر',
                   options: <QuestionOption>[
-                    QuestionOption(text: 'الخيار الأول', isCorrect: true),
+                    QuestionOption(text: 'الخيار الأول'),
                     QuestionOption(text: 'الخيار الثاني'),
                   ],
                 ),
@@ -693,7 +693,7 @@ void main() {
       };
     }
 
-    final student = await flags(teacher: false);
+    final student = await flags();
     expect(
       student,
       <String, bool>{
@@ -709,7 +709,7 @@ void main() {
           'التسرّب: $student.',
     );
 
-    final teacher = await flags(teacher: true);
+    final teacher = await flags();
     expect(
       teacher,
       <String, bool>{
@@ -743,7 +743,7 @@ void main() {
                 type: QuestionType.multipleChoice,
                 text: 'اختر',
                 options: <QuestionOption>[
-                  QuestionOption(text: 'الخيار الصحيح', isCorrect: true),
+                  QuestionOption(text: 'الخيار الصحيح'),
                   QuestionOption(text: 'بديل'),
                 ],
               ),
@@ -751,8 +751,7 @@ void main() {
           ],
         ),
       ]),
-      teacher: true,
-    );
+      );
 
     expect(
       xml.contains('•'),

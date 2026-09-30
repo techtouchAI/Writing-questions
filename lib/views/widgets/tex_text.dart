@@ -4,6 +4,7 @@ import 'package:flutter_math_fork/flutter_math.dart';
 import '../../models/exam_font.dart';
 import '../../models/quran_text.dart';
 import '../../models/tex_content.dart';
+import 'safe_math_tex.dart';
 
 /// نص علمي يعرض مقاطع LaTeX ($...$ سطرية، $$...$$ منفردة) بجانب النص العادي،
 /// ويُبرز آيات القرآن الموسومة بـ `﴿ ... ﴾` بالخط القرآني (Amiri).
@@ -89,7 +90,7 @@ class TexText extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Center(
-                  child: Math.tex(
+                  child: SafeMathTex(
                     segment.text,
                     mathStyle: MathStyle.display,
                     textStyle: mathTextStyle ?? style,
@@ -101,7 +102,7 @@ class TexText extends StatelessWidget {
             inlineSpans.add(
               WidgetSpan(
                 alignment: PlaceholderAlignment.middle,
-                child: Math.tex(
+                child: SafeMathTex(
                   segment.text,
                   mathStyle: MathStyle.text,
                   textStyle: mathTextStyle ?? style,

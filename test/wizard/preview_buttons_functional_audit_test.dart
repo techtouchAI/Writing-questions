@@ -60,7 +60,7 @@ ExamDocument _document() => ExamDocument(
                 type: QuestionType.multipleChoice,
                 text: 'اختر الإجابة',
                 options: <QuestionOption>[
-                  QuestionOption(text: 'الخيار الأول', isCorrect: true),
+                  QuestionOption(text: 'الخيار الأول'),
                   QuestionOption(text: 'الخيار الثاني'),
                 ],
               ),
@@ -1368,8 +1368,7 @@ void main() {
                 items: <BranchItem>[
                   BranchItem(id: 'bi1', text: 'عبارة', isCorrect: false),
                 ],
-                modelAnswer: 'إجابة نموذجية',
-              ),
+                ),
             ),
           ],
         ),

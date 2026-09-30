@@ -43,7 +43,7 @@ ExamDocument _mathDoc() {
                 BranchItem(text: r'نقطة $\times$'),
               ],
               options: <QuestionOption>[
-                QuestionOption(text: r'أول $x^{2}$', isCorrect: true),
+                QuestionOption(text: r'أول $x^{2}$'),
                 QuestionOption(text: r'ثانٍ $y_{3}$'),
               ],
             ),

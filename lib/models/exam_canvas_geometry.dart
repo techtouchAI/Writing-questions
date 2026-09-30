@@ -56,3 +56,36 @@ abstract final class ExamCanvasGeometry {
 
   static double normalizedHeight(double h) => h / height;
 }
+
+/// مستطيل سؤال على لوحته (بكسل اللوحة المنطقي) — المرجع الذي تُحصر فيه
+/// العناصر المرتبطة بالسؤال وتُرسم نسبةً إليه في المعاينة والتصدير.
+class QuestionRect {
+  const QuestionRect({
+    required this.pageIndex,
+    required this.left,
+    required this.top,
+    required this.width,
+    required this.height,
+  });
+
+  /// صفحة السؤال الحالية (تتبع إعادة التقسيم).
+  final int pageIndex;
+
+  /// حافة المحتوى الفيزيائية اليسرى على الورقة.
+  final double left;
+
+  /// أعلى كتلة السؤال على الورقة.
+  final double top;
+
+  /// عرض محتوى الورقة (يتسع للعناصر المملوكة أفقياً).
+  final double width;
+
+  /// ارتفاع الكتلة الفعّال (محتوى السؤال أو امتداد عناصره أيّهما أكبر).
+  final double height;
+
+  /// أقصى موضع أفقي مسموح للعنصر بعرض [elementWidth].
+  double maxDxFor(double elementWidth) => (width - elementWidth).clamp(0.0, width);
+
+  /// أقصى موضع رأسي مسموح للعنصر بارتفاع [elementHeight].
+  double maxDyFor(double elementHeight) => (height - elementHeight).clamp(0.0, height);
+}

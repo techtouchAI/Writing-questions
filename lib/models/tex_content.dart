@@ -6,6 +6,10 @@ abstract final class TexContent {
   static final RegExp _blockPattern = RegExp(r'\$\$(.+?)\$\$', dotAll: true);
   static final RegExp _inlinePattern = RegExp(r'(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)', dotAll: true);
 
+  /// يهرّب علامات الدولار الحرفية في نص عادي (`$` ← `\$`) كي لا يبدأ
+  /// محتواه صيغةً عند التخزين. العرض يعيدها دولاراً عادياً بلا أي شرطة مائلة.
+  static String escapeLiteral(String text) => text.replaceAll(r'$', r'\$');
+
   /// هل يحتوي النص صيغ LaTeX قابلة للعرض كمعادلات؟
   static bool containsMath(String source) {
     return _blockPattern.hasMatch(source) || _inlinePattern.hasMatch(source);
@@ -33,7 +37,9 @@ abstract final class TexContent {
     return segments
         .map((segment) => segment.isMath
             ? TexSegment.math(segment.text, isBlock: segment.isBlock)
-            : TexSegment.plain(segment.text.replaceAll('\u0000', r'\$')))
+            // الدولار الحرفي يُعاد محرفاً عادياً: لا شرطة مائلة في النص
+            // المعروض إطلاقاً (النص ليس كوداً).
+            : TexSegment.plain(segment.text.replaceAll('\u0000', r'$')))
         .toList(growable: false);
   }
 

@@ -41,7 +41,7 @@ ExamDocument _twoQuestionDocument() {
               type: QuestionType.multipleChoice,
               text: 'اختر الصحيح',
               options: <QuestionOption>[
-                QuestionOption(text: 'بغداد', isCorrect: true),
+                QuestionOption(text: 'بغداد'),
                 QuestionOption(text: 'البصرة'),
               ],
             ),
@@ -161,8 +161,8 @@ void main() {
 
     test('question exportability includes intended attachments and excludes blanks', () {
       final empty = QuestionModel(questionNumber: 1);
-      expect(empty.hasExportableContent(teacher: false), isFalse);
-      expect(empty.hasExportableContent(teacher: true), isFalse);
+      expect(empty.hasExportableContent(), isFalse);
+      expect(empty.hasExportableContent(), isFalse);
 
       final attachedOnly = QuestionModel(
         questionNumber: 2,
@@ -182,7 +182,7 @@ void main() {
           ),
         ],
       );
-      expect(attachedOnly.hasExportableContent(teacher: false), isTrue);
+      expect(attachedOnly.hasExportableContent(), isTrue);
 
       final globalMirror = QuestionModel(
         questionNumber: 3,
@@ -203,11 +203,9 @@ void main() {
           ),
         ],
       );
-      expect(globalMirror.hasExportableContent(teacher: false), isTrue);
+      expect(globalMirror.hasExportableContent(), isTrue);
       expect(
-        globalMirror.hasExportableContent(
-          teacher: false,
-          ignoredAttachmentIds: const <String>{'global-mirror'},
+        globalMirror.hasExportableContent(ignoredAttachmentIds: const <String>{'global-mirror'},
         ),
         isFalse,
       );
@@ -234,46 +232,46 @@ void main() {
     test('detects branches with no exportable content', () {
       expect(
         BranchContent(type: QuestionType.essay, text: '  ')
-            .hasExportableContent(teacher: false),
+            .hasExportableContent(),
         isFalse,
       );
       expect(
         BranchContent(type: QuestionType.essay, text: 'نص')
-            .hasExportableContent(teacher: false),
+            .hasExportableContent(),
         isTrue,
       );
       // إجابة صح/خطأ لا تُطبع على الورقة (كما في الفراغات)، فلا تكفي
       // إجابة وحدها لإظهار النقطة في أي نسخة (طالب/معلم).
       final trueFalseOnly = BranchContent(
         type: QuestionType.trueFalse,
-        items: <BranchItem>[BranchItem(isCorrect: true)],
+        items: <BranchItem>[BranchItem()],
       );
-      expect(trueFalseOnly.hasExportableContent(teacher: false), isFalse);
-      expect(trueFalseOnly.hasExportableContent(teacher: true), isFalse);
+      expect(trueFalseOnly.hasExportableContent(), isFalse);
+      expect(trueFalseOnly.hasExportableContent(), isFalse);
       // العبارة المكتوبة وحدها هي ما يُطبع.
       final trueFalseWithText = BranchContent(
         type: QuestionType.trueFalse,
         items: <BranchItem>[BranchItem(text: 'الأرض كروية', isCorrect: true)],
       );
-      expect(trueFalseWithText.hasExportableContent(teacher: false), isTrue);
-      expect(trueFalseWithText.hasExportableContent(teacher: true), isTrue);
+      expect(trueFalseWithText.hasExportableContent(), isTrue);
+      expect(trueFalseWithText.hasExportableContent(), isTrue);
       final emptyTrueFalse = BranchContent.empty(QuestionType.trueFalse);
-      expect(emptyTrueFalse.hasExportableContent(teacher: false), isFalse);
-      expect(emptyTrueFalse.hasExportableContent(teacher: true), isFalse);
+      expect(emptyTrueFalse.hasExportableContent(), isFalse);
+      expect(emptyTrueFalse.hasExportableContent(), isFalse);
       final explicitTrueFalse = emptyTrueFalse.withTrueFalseAnswer(false);
-      expect(explicitTrueFalse.hasExportableContent(teacher: true), isFalse);
+      expect(explicitTrueFalse.hasExportableContent(), isFalse);
       // خيارات الاختيار المخفية في النص الحر لا تُبقي فرعاً فارغاً بالطباعة.
       final hiddenChoices = BranchContent(
         type: QuestionType.multipleChoice,
         plainText: true,
         options: <QuestionOption>[QuestionOption(text: 'خيار لا يظهر')],
       );
-      expect(hiddenChoices.hasExportableContent(teacher: false), isFalse);
-      expect(hiddenChoices.hasExportableContent(teacher: true), isFalse);
+      expect(hiddenChoices.hasExportableContent(), isFalse);
+      expect(hiddenChoices.hasExportableContent(), isFalse);
       // النموذجية الفارغة تُحذف من نسخة المعلم.
       expect(
-        BranchContent(type: QuestionType.essay, modelAnswer: '  ')
-            .hasExportableContent(teacher: true),
+        BranchContent(type: QuestionType.essay, )
+            .hasExportableContent(),
         isFalse,
       );
     });

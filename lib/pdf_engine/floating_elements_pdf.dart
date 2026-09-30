@@ -4,6 +4,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../models/exam_canvas_geometry.dart';
 import '../models/floating_element.dart';
+import '../models/latex_plain_text.dart';
 import '../models/paper_font.dart';
 import '../models/tex_content.dart';
 import 'exam_fonts.dart';
@@ -181,7 +182,9 @@ abstract final class FloatingElementsPdf {
       }
       final latex = LatexSvgRenderer.tryToSvg(segment.text, fontSize: fontSize);
       if (latex == null) {
-        inline.add(pw.Text('\$${segment.text}\$', style: style));
+        inline.add(
+          pw.Text(LatexPlainText.of(segment.text), style: style, textAlign: align),
+        );
         continue;
       }
       final image = pw.SvgImage(
@@ -318,7 +321,8 @@ abstract final class FloatingElementsPdf {
         child: rendered == null
             ? pw.Center(
                 child: pw.Text(
-                  '\$${element.label}\$',
+                  // معادلة قديمة تعذّر ترسيمها: نص رياضي مقروء بلا كود.
+                  LatexPlainText.of(element.label),
                   style: const pw.TextStyle(fontSize: 10.5),
                   textAlign: pw.TextAlign.center,
                 ),

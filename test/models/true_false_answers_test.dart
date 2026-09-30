@@ -76,20 +76,20 @@ void main() {
         type: QuestionType.trueFalse,
         items: <BranchItem>[BranchItem(text: 'عبارة', isCorrect: true)],
       );
-      expect(withItems.hasPrintableTypeBody(teacher: false), isFalse);
-      expect(withItems.hasPrintableTypeBody(teacher: true), isFalse);
+      expect(withItems.hasPrintableTypeBody(), isFalse);
+      expect(withItems.hasPrintableTypeBody(), isFalse);
 
       final answerOnly = BranchContent(
         type: QuestionType.trueFalse,
-        items: <BranchItem>[BranchItem(isCorrect: true)],
+        items: <BranchItem>[BranchItem()],
       );
-      expect(answerOnly.hasExportableContent(teacher: false), isFalse);
-      expect(answerOnly.hasExportableContent(teacher: true), isFalse);
+      expect(answerOnly.hasExportableContent(), isFalse);
+      expect(answerOnly.hasExportableContent(), isFalse);
 
       // الإجابة النموذجية لبقية الأنواع تبقى في نموذج المعلم وحده.
-      final essay = BranchContent(type: QuestionType.essay, modelAnswer: 'إجابة');
-      expect(essay.hasPrintableTypeBody(teacher: false), isFalse);
-      expect(essay.hasPrintableTypeBody(teacher: true), isTrue);
+      final essay = BranchContent(type: QuestionType.essay, );
+      expect(essay.hasPrintableTypeBody(), isFalse);
+      expect(essay.hasPrintableTypeBody(), isTrue);
     });
 
     test('answers follow the statements when they are reordered', () {

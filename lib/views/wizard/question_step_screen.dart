@@ -8,6 +8,7 @@ import '../../models/question_type.dart';
 import '../../providers/exam_wizard_controller.dart';
 import '../widgets/items_editor.dart';
 import '../widgets/ltr_numeric_field.dart';
+import '../widgets/rich_content_field.dart';
 import 'branch_editor_card.dart';
 
 /// الخطوة 2 من المعالج: إعداد سؤال واحد بنصه ونقاطه وفروعه (أ، ب، ج...).
@@ -37,17 +38,12 @@ class QuestionStepScreen extends StatefulWidget {
 }
 
 class _QuestionStepScreenState extends State<QuestionStepScreen> {
-  final TextEditingController _promptController = TextEditingController();
   final TextEditingController _manualMarksController = TextEditingController();
-  final FocusNode _promptFocus = FocusNode();
-  int? _promptQuestionIndex;
   int? _marksQuestionIndex;
 
   @override
   void dispose() {
-    _promptController.dispose();
     _manualMarksController.dispose();
-    _promptFocus.dispose();
     super.dispose();
   }
 
@@ -66,14 +62,6 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
   }
 
   void _syncPromptField(ExamWizardController controller, int questionIndex) {
-    if (_promptQuestionIndex != questionIndex) {
-      _promptQuestionIndex = questionIndex;
-      _promptController.text = controller.questions[questionIndex].prompt;
-    } else if (!_promptFocus.hasFocus &&
-        _promptController.text != controller.questions[questionIndex].prompt) {
-      // مزامنة خارجية (تراجع/نقل) فقط — لا نسرق نص المستخدم أثناء الكتابة.
-      _promptController.text = controller.questions[questionIndex].prompt;
-    }
     if (_marksQuestionIndex != questionIndex) {
       _marksQuestionIndex = questionIndex;
       _manualMarksController.text =
@@ -147,26 +135,25 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Text(
-                  'ملاحظة: اكتب الرموز والمعادلات باستخدام محرر المعادلات المتوفر أثناء العرض؛ النص هنا ليس بالضرورة الشكل الرياضي النهائي.',
+                  'اكتب النص في محرره، وأضف المعادلات من محرر النص والمعادلات: '
+                  'النص والمعادلات يظهران دائماً بشكلهما النهائي بلا أي أكواد.',
                   textDirection: TextDirection.rtl,
                 ),
               ),
-            TextFormField(
-              controller: _promptController,
-              focusNode: _promptFocus,
-              maxLines: null,
-              minLines: 2,
-              decoration: InputDecoration(
-                labelText: layout.isLtr
-                    ? 'Question text / instructions (optional)'
-                    : 'نص السؤال / التعليمات (اختياري)',
-                hintText: layout.isLtr
-                    ? 'e.g. Answer two branches only:'
-                    : 'مثال: أجب عن فرعين فقط:',
-                border: const OutlineInputBorder(),
-                alignLabelWithHint: true,
-              ),
-              onChanged: (value) => controller.updateQuestionPrompt(questionIndex, value),
+            // نص السؤال: عرض نهائي + تحرير في محرر المحتوى المختلط (نص
+            // ومعادلات مرئية) — فلا يظهر كود LaTeX في أي مرحلة.
+            RichContentField(
+              label: layout.isLtr
+                  ? 'Question text / instructions (optional)'
+                  : 'نص السؤال / التعليمات (اختياري)',
+              hint: layout.isLtr
+                  ? 'e.g. Answer two branches only:'
+                  : 'مثال: أجب عن فرعين فقط:',
+              title: 'تحرير نص السؤال',
+              value: question.prompt,
+              minHeight: 64,
+              onChanged: (value) =>
+                  controller.updateQuestionPrompt(questionIndex, value),
             ),
             const SizedBox(height: 12),
             _buildQuestionLabelField(controller, questionIndex, question),
@@ -269,7 +256,6 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
             if (question.type != QuestionType.essay && question.type != QuestionType.definitions)
               ItemsEditor(
                 items: question.items,
-                showTrueFalseAnswers: question.type == QuestionType.trueFalse,
                 onChanged: (items) => controller.updateQuestionItems(questionIndex, items),
               ),
             const SizedBox(height: 12),

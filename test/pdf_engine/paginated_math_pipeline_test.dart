@@ -97,7 +97,7 @@ ExamDocument _document({required bool withMath}) {
             content: BranchContent(
               type: QuestionType.fillInTheBlank,
               text: 'أكمل الناقص',
-              modelAnswer: 'M7 ${formula(r'\frac{5}{8}=0.625', 'مباشر')}',
+              \frac{5}{8}=0.625', 'مباشر')}',
             ),
             marks: 1,
           ),
@@ -177,8 +177,7 @@ void main() {
     test('الإجابة النموذجية في نموذج المعلم تُرسم معادلةً لا نصاً خاماً', () async {
       final bytes = await PaginatedPdfExamEngine().generate(
         document: _document(withMath: true),
-        isTeacherVersion: true,
-      );
+        );
       final probe = PdfContentProbe.fromBytes(bytes);
 
       expectNoRawLatex(probe, surface: 'نموذج المعلم');
@@ -208,16 +207,14 @@ void main() {
         PdfContentProbe.fromBytes(
           await PaginatedPdfExamEngine().generate(
             document: _document(withMath: true),
-            isTeacherVersion: true,
-          ),
+            ),
         ),
       );
       final teacherControl = _drawnWords(
         PdfContentProbe.fromBytes(
           await PaginatedPdfExamEngine().generate(
             document: _document(withMath: false),
-            isTeacherVersion: true,
-          ),
+            ),
         ),
       );
       expect(teacherControl.length - teacherMath.length, _teacherFormulaCount);

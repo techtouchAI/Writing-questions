@@ -138,7 +138,6 @@ class QuestionModel {
   /// الأسئلة الفارغة التي تبقى كمساحة تحرير في المنشئ لا تُطبع ولا تحجز
   /// مكاناً في ترقيم الصفحات. مرفقات السؤال والفروع والفواصل محتوى مقصود.
   bool hasExportableContent({
-    required bool teacher,
     Set<String> ignoredAttachmentIds = const <String>{},
   }) {
     if (prompt.trim().isNotEmpty ||
@@ -148,8 +147,7 @@ class QuestionModel {
       return true;
     }
     return branches.any(
-      (branch) => branch.hasExportableContent(
-        teacher: teacher,
+      (branch) => branch.hasExportableContentIn(
         ignoredAttachmentIds: ignoredAttachmentIds,
       ),
     );
@@ -302,7 +300,6 @@ class QuestionModel {
           BranchItem(
             text: item.text,
             marks: item.marks,
-            isCorrect: item.isCorrect,
             labelOverride: item.labelOverride,
             align: item.align,
           ),
