@@ -137,7 +137,7 @@ jobs:
           publish_analyzer_findings() {
             local file="$1" level="$2" label="$3" limit="$4" lines count
             [ -f "$file" ] || return 0
-            lines="$(grep -E " • .+ • $level • " "$file" | sort -u | head -n "$limit" || true)"
+            lines="$(grep -E "(^|[[:space:]])$level • " "$file" | sort -u | head -n "$limit" || true)"
             [ -n "$lines" ] || return 0
             count="$(printf '%s\n' "$lines" | wc -l | tr -d ' ')"
             lines="${lines//%/%25}"

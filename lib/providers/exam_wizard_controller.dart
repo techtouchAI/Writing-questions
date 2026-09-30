@@ -1256,9 +1256,6 @@ class ExamWizardController extends ChangeNotifier {
 
   // ==================== ارتباط العناصر بالسؤال ====================
 
-  /// ارتفاع محتوى السؤال ([questionId]) داخل صفحته بالبكسل المنطقي.
-  double _contentHeightOfQuestion(String questionId) => _blockHeights[questionId] ?? 0;
-
   /// هل يملك السؤال [questionId] عناصر حرة؟
   bool hasOwnedElements(String questionId) => _document.floatingElements
       .any((element) => element.ownerQuestionId == questionId);

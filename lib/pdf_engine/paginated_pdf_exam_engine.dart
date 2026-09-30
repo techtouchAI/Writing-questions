@@ -786,7 +786,7 @@ class PaginatedPdfExamEngine {
     final settings = document.settings;
     final content = branch.content;
     // الفرع الفارغ تماماً يُحذف من المطبوع كاملاً (مع فاصله) ولا يترك مسافة.
-    if (!branch.hasExportableContent(ignoredAttachmentIds: globalElementIds)) {
+    if (!branch.hasExportableContentIn(ignoredAttachmentIds: globalElementIds)) {
       return pw.SizedBox();
     }
     final marksSuffix = branch.marks > 0
