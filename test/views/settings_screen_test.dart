@@ -17,8 +17,6 @@ import 'package:writing_questions_app/services/storage_service.dart';
 import 'package:writing_questions_app/views/settings_screen.dart';
 
 class _FakeGateway implements BackupFileGateway {
-  _FakeGateway({this.picked});
-
   PickedBackupFile? picked;
   BackupFileException? saveError;
   String? savedName;
@@ -129,7 +127,7 @@ void main() {
   });
 
   testWidgets('reviews the backup file and restores it after confirmation', (tester) async {
-    final backup = BackupService().createBackup(
+    final backup = const BackupService().createBackup(
       documents: <ExamDocument>[_document(id: 'restored', name: 'ورقة مستعادة')],
       lastOpenDocumentId: 'restored',
     );

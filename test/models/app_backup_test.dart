@@ -83,7 +83,7 @@ void main() {
     });
 
     test('rejects a backup created by a newer app version', () {
-      final source = '{"format":"${AppBackup.formatId}",'
+      const source = '{"format":"${AppBackup.formatId}",'
           '"schemaVersion":${AppBackup.currentSchemaVersion + 1},'
           '"createdAt":"2026-09-30T10:00:00.000","documents":[]}';
       expect(

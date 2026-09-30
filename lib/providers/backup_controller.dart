@@ -14,20 +14,12 @@ import 'exam_document_provider.dart';
 
 /// نسخة احتياطية مقروءة من ملف، جاهزة للعرض في نافذة التأكيد قبل التطبيق.
 class BackupPreview {
-  const BackupPreview({
-    required this.backup,
-    required this.sourceName,
-    required this.plan,
-  });
+  const BackupPreview({required this.backup, required this.sourceName});
 
   final AppBackup backup;
 
   /// اسم الملف المختار (فارغ إن لم يوفّره النظام).
   final String sourceName;
-
-  /// خطة الاستعادة (دمج) المحسوبة مسبقاً — تُعرض ثم يُعاد حسابها بالوضع
-  /// المختار عند التأكيد (نفس الحساب بلا مفاجآت).
-  final BackupRestorePlan plan;
 }
 
 /// حصيلة الاستعادة بعد تطبيقها فعلياً على المكتبة.
@@ -198,11 +190,7 @@ class BackupController extends ChangeNotifier {
         _errorMessage = 'النسخة الاحتياطية المختارة لا تحوي أي ورقة.';
         return null;
       }
-      return BackupPreview(
-        backup: backup,
-        sourceName: picked.name,
-        plan: planRestore(backup: backup, mode: BackupRestoreMode.merge),
-      );
+      return BackupPreview(backup: backup, sourceName: picked.name);
     } on BackupFileException catch (error) {
       _errorMessage = error.message;
       return null;
@@ -262,6 +250,13 @@ class BackupController extends ChangeNotifier {
     );
   }
 
+  /// يُعلن رسالة نجاح (تعرضها الشاشة ثم تمسحها بـ[clearMessages]).
+  void reportSuccess(String message) {
+    _statusMessage = message;
+    _errorMessage = null;
+    notifyListeners();
+  }
+
   void clearMessages() {
     if (_statusMessage == null && _errorMessage == null) {
       return;
@@ -297,6 +292,14 @@ class BackupController extends ChangeNotifier {
 
   static Uint8List _backupBytes(AppBackup backup) =>
       Uint8List.fromList(utf8.encode(backup.toJson()));
+
+  void _setBusy(bool value) {
+    if (_isBusy == value) {
+      return;
+    }
+    _isBusy = value;
+    notifyListeners();
+  }
 
   Future<void> _rememberBackup(AppBackup backup) async {
     final metadata = BackupMetadata(

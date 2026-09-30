@@ -18,21 +18,13 @@ import 'package:writing_questions_app/services/storage_service.dart';
 
 /// بوابة ملفات وهمية: تسجّل ما طُلب منها وتعيد ما حُدّد مسبقاً.
 class _FakeGateway implements BackupFileGateway {
-  _FakeGateway({
-    this.pickResult,
-    this.pickError,
-    this.saveResult = 'content://saved/1',
-    this.saveError,
-    this.isSupported = true,
-  });
-
   PickedBackupFile? pickResult;
   BackupFileException? pickError;
-  String? saveResult;
+  String? saveResult = 'content://saved/1';
   BackupFileException? saveError;
 
   @override
-  final bool isSupported;
+  bool get isSupported => true;
 
   String? savedName;
   Uint8List? savedBytes;
@@ -62,12 +54,8 @@ class _FakeGateway implements BackupFileGateway {
 }
 
 class _FakeAppInfo implements AppInfoService {
-  _FakeAppInfo([this.version = '1.0.0+1']);
-
-  final String version;
-
   @override
-  Future<String> appVersion() async => version;
+  Future<String> appVersion() async => '1.0.0+1';
 }
 
 ExamDocument _document({
@@ -161,7 +149,7 @@ void main() {
   group('pickBackup and restore', () {
     test('parses the picked file and plans a merge preview', () async {
       await provider.saveDocument(_document(id: 'local', updatedAt: DateTime(2026, 6, 1)));
-      final backup = BackupService().createBackup(
+      final backup = const BackupService().createBackup(
         documents: <ExamDocument>[
           _document(id: 'local', updatedAt: DateTime(2026, 7, 1), name: 'من النسخة'),
           _document(id: 'new', updatedAt: DateTime(2026, 7, 1)),
@@ -179,8 +167,12 @@ void main() {
       expect(preview, isNotNull);
       expect(preview!.sourceName, 'نسخة.json');
       expect(preview.backup.documentCount, 2);
-      expect(preview.plan.added, 1);
-      expect(preview.plan.updated, 1);
+      final plan = controller.planRestore(
+        backup: preview.backup,
+        mode: BackupRestoreMode.merge,
+      );
+      expect(plan.added, 1);
+      expect(plan.updated, 1);
       // القراءة لا تعدّل شيئاً قبل التأكيد.
       expect(provider.documents, hasLength(1));
     });
@@ -199,7 +191,7 @@ void main() {
 
     test('restores in merge mode without losing local documents', () async {
       await provider.saveDocument(_document(id: 'keep', updatedAt: DateTime(2026, 6, 1)));
-      final backup = BackupService().createBackup(
+      final backup = const BackupService().createBackup(
         documents: <ExamDocument>[
           _document(id: 'added', updatedAt: DateTime(2026, 7, 1)),
         ],
@@ -220,7 +212,7 @@ void main() {
 
     test('replaces the library exactly and restores the session', () async {
       await provider.saveDocument(_document(id: 'old', updatedAt: DateTime(2026, 6, 1)));
-      final backup = BackupService().createBackup(
+      final backup = const BackupService().createBackup(
         documents: <ExamDocument>[
           _document(id: 'only', updatedAt: DateTime(2026, 7, 1)),
         ],
@@ -244,7 +236,7 @@ void main() {
       final controller = controllerWith();
 
       final outcome = await controller.restore(
-        backup: BackupService().createBackup(documents: <ExamDocument>[]),
+        backup: const BackupService().createBackup(documents: <ExamDocument>[]),
         mode: BackupRestoreMode.replace,
       );
 
