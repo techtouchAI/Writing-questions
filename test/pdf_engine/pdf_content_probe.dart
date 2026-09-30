@@ -163,19 +163,37 @@ class PdfContentProbe {
 
   // ------------------------------------------------------------------
   // تحليل أوامر الرسم: Tf (الخط والحجم) / Td (موضع كلمة) / <cids> (الكلمة)
+  // مع تتبّع مصفوفة التحويل (q/Q/cm) لتكون المواضع المُبلَّغة **مطلقة على
+  // الصفحة** لا محلية داخل صندوق الودجة الذي رُسمت فيه.
   // ------------------------------------------------------------------
   static const double _sameLineTolerance = 0.5;
+
+  /// مصفوفة التحويل الابتدائية [a, b, c, d, e, f].
+  static const List<double> _identity = <double>[1, 0, 0, 1, 0, 0];
+
+  /// ضرب مصفوفتين (تُطبَّق [n] أولاً ثم [m]، كما في `cm` بمكتبة pdf).
+  static List<double> _multiply(List<double> m, List<double> n) => <double>[
+        m[0] * n[0] + m[2] * n[1],
+        m[1] * n[0] + m[3] * n[1],
+        m[0] * n[2] + m[2] * n[3],
+        m[1] * n[2] + m[3] * n[3],
+        m[0] * n[4] + m[2] * n[5] + m[4],
+        m[1] * n[4] + m[3] * n[5] + m[5],
+      ];
+
+  static final RegExp _tokenPattern = RegExp(
+    r'(?<font>\w+)\s+(?<size>[\d.]+)\s+Tf'
+    r'|(?<tdx>-?[\d.]+)\s+(?<tdy>-?[\d.]+)\s+Td'
+    r'|(?<a>-?[\d.]+)\s+(?<b>-?[\d.]+)\s+(?<c>-?[\d.]+)\s+'
+    r'(?<d>-?[\d.]+)\s+(?<e>-?[\d.]+)\s+(?<f>-?[\d.]+)\s+cm'
+    r'|(?<![A-Za-z0-9/])(?<save>[qQ])(?![A-Za-z0-9])'
+    r'|<(?<hex>[0-9A-Fa-f]*)>',
+  );
 
   static List<ProbedLine> _parseContent(
     String content,
     Map<String, _FontData> fonts,
   ) {
-    final tokenPattern = RegExp(
-      r'/(\w+)\s+([\d.]+)\s+Tf'
-      r'|(-?[\d.]+)\s+(-?[\d.]+)\s+Td'
-      r'|<([0-9A-Fa-f]*)>',
-    );
-
     final words = <ProbedWord>[];
     var fontSize = 0.0;
     var fontName = '';
@@ -183,20 +201,47 @@ class PdfContentProbe {
     double? pendingX;
     double? pendingY;
 
-    for (final match in tokenPattern.allMatches(content)) {
-      if (match.group(1) != null) {
-        fontName = '/${match.group(1)}';
+    // مصفوفة التحويل الحالية ومكدّس حالات الرسم (q يدفع، Q يسحب).
+    var ctm = _identity;
+    final stack = <List<double>>[];
+
+    for (final match in _tokenPattern.allMatches(content)) {
+      final fontToken = match.namedGroup('font');
+      if (fontToken != null) {
+        fontName = '/$fontToken';
         font = fonts[fontName];
-        fontSize = double.parse(match.group(2)!);
+        fontSize = double.parse(match.namedGroup('size')!);
         continue;
       }
-      if (match.group(3) != null) {
-        pendingX = double.parse(match.group(3)!);
-        pendingY = double.parse(match.group(4)!);
+      if (match.namedGroup('tdx') != null) {
+        pendingX = double.parse(match.namedGroup('tdx')!);
+        pendingY = double.parse(match.namedGroup('tdy')!);
+        continue;
+      }
+      if (match.namedGroup('a') != null) {
+        ctm = _multiply(ctm, <double>[
+          double.parse(match.namedGroup('a')!),
+          double.parse(match.namedGroup('b')!),
+          double.parse(match.namedGroup('c')!),
+          double.parse(match.namedGroup('d')!),
+          double.parse(match.namedGroup('e')!),
+          double.parse(match.namedGroup('f')!),
+        ]);
+        continue;
+      }
+      final save = match.namedGroup('save');
+      if (save == 'q') {
+        stack.add(ctm);
+        continue;
+      }
+      if (save == 'Q') {
+        if (stack.isNotEmpty) {
+          ctm = stack.removeLast();
+        }
         continue;
       }
 
-      final hex = match.group(5) ?? '';
+      final hex = match.namedGroup('hex') ?? '';
       if (hex.length < 4 || pendingX == null || pendingY == null) {
         continue;
       }
@@ -213,17 +258,22 @@ class PdfContentProbe {
                   cid < data.widths.length ? data.widths[cid] : 1000;
               return sum + width * fontSize / 1000;
             });
+      // الموضع المطلق: Td محلي داخل مصفوفة الودجة الحالية، فنُلحق ctm به،
+      // ونُقيس عرض التقدّم بمقدار تمدّد المحور الأفقي للمصفوفة.
+      final x = ctm[0] * pendingX + ctm[2] * pendingY + ctm[4];
+      final y = ctm[1] * pendingX + ctm[3] * pendingY + ctm[5];
+      final scaleX = math.sqrt(ctm[0] * ctm[0] + ctm[1] * ctm[1]);
       words.add(ProbedWord(
         text: data == null
             ? ''
             : String.fromCharCodes(
                 cids.map((cid) => data.cidToUnicode[cid] ?? 0xFFFD),
               ),
-        x: pendingX,
-        y: pendingY,
+        x: x,
+        y: y,
         fontSize: fontSize,
         fontName: fontName,
-        advanceWidth: advance,
+        advanceWidth: advance * (scaleX == 0 ? 1 : scaleX),
         baseFont: data?.baseFont ?? '',
       ));
       pendingX = null;

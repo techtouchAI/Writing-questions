@@ -49,6 +49,13 @@ class PaginatedPdfExamEngine {
   static double get contentWidth =>
       PdfPageFormat.a4.width - 2 * pageMarginMillimeters * PdfPageFormat.mm;
 
+  /// إزاحة بداية كتلة الفرع عن صندوق المحتوى (بنقاط PDF).
+  ///
+  /// الفرع يُزاح عن بداية صندوق المحتوى كما تُزاح الفقرة الأولى في Word،
+  /// فتصير مساحة نص الفرع = [صندوق المحتوى − الإزاحة]. الاختبارات تقيس
+  /// المحاذاة على هذه المساحة نفسها (لا على صندوق المحتوى كاملاً).
+  static const double branchIndent = 10;
+
   /// ارتفاع المحتوى الافتراضي (للهامش الافتراضي) بعد حسم التذييل.
   static double get pageContentHeight =>
       PdfPageFormat.a4.height -
@@ -639,7 +646,8 @@ class PaginatedPdfExamEngine {
           ignoredAttachmentIds: globalElementIds,
         ))
           pw.Padding(
-            padding: pw.EdgeInsetsDirectional.only(start: 10, top: paragraphGap),
+            padding: pw.EdgeInsetsDirectional.only(
+                start: branchIndent, top: paragraphGap),
             child: _buildBranch(
               document,
               question.branches[index],
@@ -1007,6 +1015,9 @@ class PaginatedPdfExamEngine {
                   fonts.quranic,
                   align: PaperStyleResolver.toPdfAlign(content.options[index].align) ??
                       align,
+                  // الخيار عنصر داخل Wrap: يأخذ عرضه الطبيعي حتى تتشارك
+                  // الخيارات السطر الواحد كما في الشاشة.
+                  fillWidth: false,
                 ),
           ],
         );
@@ -1101,7 +1112,8 @@ class PaginatedPdfExamEngine {
   /// بـ `﴿ ... ﴾` تُرسم بالخط القرآني (Amiri) إن توفّر، والباقي نص عادي.
   ///
   /// [centerVerse] يوسّط آية قائمة بذاتها كما في لوحة المعاينة، و[align]
-  /// محاذاة الكتلة المختارة من شريط التنسيق.
+  /// محاذاة الكتلة المختارة من شريط التنسيق، و[fillWidth] يمنح الكتلة عرض
+  /// صندوق المحتوى (يُطفأ حين تكون الكتلة عنصراً داخل `Wrap` يتقاسمان السطر).
   pw.Widget _renderText(
     String text,
     pw.TextStyle style,
@@ -1109,12 +1121,14 @@ class PaginatedPdfExamEngine {
     bool centerVerse = false,
     pw.TextAlign? align,
     int? maxLines,
+    bool fillWidth = true,
   }) {
     final segments = TexContent.split(text);
     final hasMath = segments.any((segment) => segment.isMath);
     if (!hasMath) {
-      return _plainText(text, style, quranFont,
+      final plain = _plainText(text, style, quranFont,
           centerVerse: centerVerse, align: align, maxLines: maxLines);
+      return fillWidth ? _fullWidth(plain) : plain;
     }
     final fontSize = style.fontSize ?? 10.5;
     final rows = <pw.Widget>[];
@@ -1158,12 +1172,24 @@ class PaginatedPdfExamEngine {
       }
     }
     flushInline();
-    return pw.Column(
+    final block = pw.Column(
       crossAxisAlignment: _columnAlign(align),
       mainAxisSize: pw.MainAxisSize.min,
       children: rows,
     );
+    return fillWidth ? _fullWidth(block) : block;
   }
+
+  /// يمنح كتلة النص عرض صندوق المحتوى كاملاً قبل حساب الالتفاف والمحاذاة.
+  ///
+  /// `pw.Text` في مكتبة pdf يقيس صندوقه على عرض **أطول سطر** (تقلّص)،
+  /// والمحاذاة والضبط يُحسبان على ذلك العرض المتقلّص: فلا يظهر أثر لمحاذاة
+  /// «يسار/وسط/يمين» على فقرة سطرها واحد، ولا يمدّ الضبط أسطره إلا إلى
+  /// عرض أطول سطر — بخلاف `TextPainter` على شاشة المعاينة الذي يعطي النص
+  /// عرض الورقة المتاح. `pw.SizedBox` بعرض لانهائي يُقيَّد بالمُتاح فيمنح
+  /// النص صندوقاً مطابقاً لصندوق الشاشة (WYSIWYG).
+  static pw.Widget _fullWidth(pw.Widget child) =>
+      pw.SizedBox(width: double.infinity, child: child);
 
   static pw.CrossAxisAlignment _columnAlign(pw.TextAlign? align) {
     switch (align) {

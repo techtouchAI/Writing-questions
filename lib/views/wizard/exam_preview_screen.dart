@@ -4460,6 +4460,26 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                     onTap: () => _editTextBox(ref),
                   ),
                 ),
+              if (selected && !_locked)
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: _elementHandle(
+                    key: ValueKey<String>('resize-element-${element.id}'),
+                    icon: Icons.south_east,
+                    tooltip: 'اسحب لتغيير الحجم',
+                    color: PaperStyles.accent,
+                    onTap: () => _scaleAttachment(ref, element, 1.1),
+                    onPanUpdate: (details) =>
+                        _resizeAttachmentByDrag(ref, element, details),
+                  ),
+                ),
+              // مقبض التدوير يأتي **بعد** مقبض تغيير الحجم في الـStack:
+              // الإيماءات تُختبر من آخر ابن إلى أوله، فمع العناصر الصغيرة
+              // (60×60) يتقاطع صندوقا المقبضين (40×40 لكل منهما) ويبتلع
+              // مقبضُ الحجم نقرةَ التدوير إن كان هو الأخير — فلا يدور العنصر
+              // أبداً. جعله الأخير يضمن وصول النقرة إلى التدوير، ويبقى مقبض
+              // الحجم فعالاً في وسطه (خارج تقاطع الصندوقين).
               if (selected &&
                   !_locked &&
                   !element.isTextBox &&
@@ -4478,20 +4498,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                         rotationDegrees: (element.rotationDegrees + 45) % 360,
                       ),
                     ),
-                  ),
-                ),
-              if (selected && !_locked)
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: _elementHandle(
-                    key: ValueKey<String>('resize-element-${element.id}'),
-                    icon: Icons.south_east,
-                    tooltip: 'اسحب لتغيير الحجم',
-                    color: PaperStyles.accent,
-                    onTap: () => _scaleAttachment(ref, element, 1.1),
-                    onPanUpdate: (details) =>
-                        _resizeAttachmentByDrag(ref, element, details),
                   ),
                 ),
 

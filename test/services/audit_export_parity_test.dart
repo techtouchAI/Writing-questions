@@ -177,8 +177,14 @@ void main() {
     // صندوق المحتوى: هوامش 15مم على A4 → 42.52 … 552.76 نقطة.
     const leftEdge = 42.52;
     const rightEdge = 552.76;
-    const centerLine = 297.64;
     const edgeTolerance = 1.5;
+    // النص المقيس هنا نص **فرع**، وكتلة الفرع مُزاحة عن بداية صندوق المحتوى
+    // بمقدار [PaginatedPdfExamEngine.branchIndent] (كما تُزاح فقرة الفرع في
+    // Word)؛ فمساحة نص الفرع تبدأ من حدّ المحتوى الأيسر وتنتهي عند الحدّ
+    // الأيمن ناقص الإزاحة — وعليها تُقاس المحاذاة والضبط.
+    const branchRightEdge = rightEdge - PaginatedPdfExamEngine.branchIndent;
+    const branchWidth = branchRightEdge - leftEdge;
+    const branchCenterLine = (leftEdge + branchRightEdge) / 2;
 
     final body =
         probe.lines.where((line) => line.fontSize == 10.5).toList();
@@ -188,17 +194,17 @@ void main() {
 
     final rightLine = body[0];
     final rightMost = rightLine.words.first.x + rightLine.words.first.advanceWidth;
-    expect(rightMost, closeTo(rightEdge, edgeTolerance),
-        reason: 'AUD-PDF-02: محاذاة «لليمين» يجب أن تصل ب край صندوق المحتوى '
-            'اليمين ($rightEdge) — القيمة الفعلية $rightMost. سطر: '
+    expect(rightMost, closeTo(branchRightEdge, edgeTolerance),
+        reason: 'AUD-PDF-02: محاذاة «لليمين» يجب أن تصل بحدّ مساحة نص الفرع '
+            'الأيمن ($branchRightEdge) — القيمة الفعلية $rightMost. سطر: '
             '${rightLine.describe()}');
 
     final leftLine = body[1];
     final leftMost =
         leftLine.words.map((word) => word.x).reduce((a, b) => a < b ? a : b);
     expect(leftMost, closeTo(leftEdge, edgeTolerance),
-        reason: 'AUD-PDF-02: محاذاة «لليسار» يجب أن تصل ب край صندوق المحتوى '
-            'اليسار ($leftEdge) — القيمة الفعلية $leftMost. سطر: '
+        reason: 'AUD-PDF-02: محاذاة «لليسار» يجب أن تصل بحدّ مساحة نص الفرع '
+            'الأيسر ($leftEdge) — القيمة الفعلية $leftMost. سطر: '
             '${leftLine.describe()}');
 
     final centerParagraph = body[2];
@@ -208,9 +214,9 @@ void main() {
     final maxRight = centerParagraph.words
         .map((word) => word.x + word.advanceWidth)
         .reduce((a, b) => a > b ? a : b);
-    expect((minLeft + maxRight) / 2, closeTo(centerLine, edgeTolerance),
-        reason: 'AUD-PDF-02: محاذاة «توسيط» يجب أن تتوسط صندوق المحتوى '
-            '($centerLine) — القيمة الفعلية ${(minLeft + maxRight) / 2}.');
+    expect((minLeft + maxRight) / 2, closeTo(branchCenterLine, edgeTolerance),
+        reason: 'AUD-PDF-02: محاذاة «توسيط» يجب أن تتوسط مساحة نص الفرع '
+            '($branchCenterLine) — القيمة الفعلية ${(minLeft + maxRight) / 2}.');
 
     // فجوة المسافة الطبيعية لنفس الخط/الحجم (مرجع خارجي من ملف الخط نفسه).
     final naskh = await rootBundle.load(ExamFonts.regularAsset);
@@ -220,9 +226,9 @@ void main() {
     expect(justifyLines.length, greaterThanOrEqualTo(3),
         reason: 'AUD-PDF-02: نص الضبط يجب أن يلتف على ≥3 أسطر لقياس التمدّد.');
 
-    // الأسطر الملتفّة: يمتد كل سطر متوسط حتى حافة صندوق المحتوى
+    // الأسطر الملتفّة: يمتد كل سطر متوسط حتى حافة مساحة نص الفرع
     // (MSO: الضبط يملأ السطر من الحافة إلى الحافة).
-    const contentWidth = rightEdge - leftEdge;
+    const contentWidth = branchWidth;
     for (final line in justifyLines.sublist(0, justifyLines.length - 1)) {
       final minLeft = line.words
           .map((word) => word.x)
