@@ -308,10 +308,8 @@ void main() {
       expect(find.text('ورقة الطالب'), findsOneWidget);
       await _tap(tester, find.text('رجوع'));
     }
-    await _tap(tester, find.byTooltip('عرض نموذج الإجابة'));
-    await tapTool('مراجعة وتصدير PDF');
-    expect(find.text('نموذج الإجابة'), findsOneWidget);
-    await _tap(tester, find.text('رجوع'));
+    // لا وجود لنسخة «نموذج الإجابة» ولا لأي زر يفتحها في أي مرحلة.
+    expect(find.byTooltip('عرض نموذج الإجابة'), findsNothing);
     await _tap(tester, find.byTooltip('العودة للأسئلة'));
     expect(back, isTrue);
     expect(tester.takeException(), isNull);
@@ -580,16 +578,11 @@ void main() {
     await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), 'أولاً');
     await _tap(tester, find.text('حفظ'));
     expect(controller.document.branchAt(ref).content.items.first.labelOverride, 'أولاً');
-    await _tap(tester, find.byTooltip('عرض نموذج الإجابة'));
-    // إجابات صح/خطأ: شريط واحد مجمّع بترتيب العبارات (خيار واحد لكل عبارة)،
-    // والنقرة تبدّل: بلا إجابة ← صح ← خطأ ← بلا إجابة.
-    final firstAnswer = find.byKey(const ValueKey<String>('b-b1-answer-0'));
-    await _tap(tester, firstAnswer);
-    expect(controller.document.branchAt(ref).content.items.first.isCorrect, isTrue);
-    await _tap(tester, firstAnswer);
-    expect(controller.document.branchAt(ref).content.items.first.isCorrect, isFalse);
-    await _tap(tester, firstAnswer);
-    expect(controller.document.branchAt(ref).content.items.first.isCorrect, isNull);
+    // لا زر «نموذج الإجابة» ولا أي عنصر إجابة في الواجهة إطلاقاً.
+    expect(find.byTooltip('عرض نموذج الإجابة'), findsNothing);
+    expect(find.byKey(const ValueKey<String>('b-b1-answer-0')), findsNothing);
+    final firstItem = controller.document.branchAt(ref).content.items.first;
+    expect(firstItem.toMap().containsKey('isCorrect'), isFalse);
     await _tap(tester, find.byTooltip('إضافة نقطة'));
     expect(controller.document.branchAt(ref).content.items, hasLength(3));
     await _tap(tester, find.byTooltip('حذف النقطة').last);

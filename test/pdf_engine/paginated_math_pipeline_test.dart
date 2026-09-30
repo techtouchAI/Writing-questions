@@ -28,12 +28,8 @@ import 'package:writing_questions_app/pdf_engine/pdf_engine.dart';
 
 import 'pdf_content_probe.dart';
 
-/// عدد مقاطع الصيغ في نسخة الطالب (الإجابة النموذجية مخفية) — كل مقطع
-/// يُلغي كلمة ضابطة واحدة من طبقة النص.
-const int _studentFormulaCount = 7;
-
-/// ونسخة المعلم تضيف مقطع الإجابة النموذجية.
-const int _teacherFormulaCount = 8;
+/// عدد مقاطع الصيغ في الورقة — كل مقطع يُلغي كلمة ضابطة واحدة من طبقة النص.
+const int _documentFormulaCount = 8;
 
 /// يحقن الصيغ في كل الحقول، أو يبني المستند الضابط المطابق بكلمة
 /// (بلا كلمة في نص السؤال — مِرساتا F5A/F5B بقيتا لقياس الفجوة).
@@ -83,21 +79,17 @@ ExamDocument _document({required bool withMath}) {
                 ),
               ],
               options: <QuestionOption>[
-                QuestionOption(
-                  text: 'أول ${formula(r'x^{2}', 'التربيعي')}',
-                  isCorrect: true,
-                ),
+                QuestionOption(text: 'أول ${formula(r'x^{2}', 'التربيعي')}'),
                 QuestionOption(text: 'ثانٍ ${formula(r'y_{3}', 'التالين')}'),
               ],
             ),
             marks: 1,
           ),
-          // فرع فراغات — إجابته النموذجية تُطبع في نموذج المعلم وحده.
+          // فرع فراغات — نصه يحمل صيغة تُرسم معادلةً لا نصاً خاماً.
           BranchModel(
             content: BranchContent(
               type: QuestionType.fillInTheBlank,
-              text: 'أكمل الناقص',
-              \frac{5}{8}=0.625', 'مباشر')}',
+              text: 'أكمل الناقص ${formula(r'\frac{5}{8}=0.625', 'مباشر')}',
             ),
             marks: 1,
           ),
@@ -156,37 +148,24 @@ double _anchorsSpan(PdfContentProbe probe) {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('خط أنابيب رسم المعادلات في الـ PDF (ورقة الطالب والمعلم)', () {
+  group('خط أنابيب رسم المعادلات في الـ PDF (ورقة الأسئلة)', () {
     test('يطبع كل صيغ الحقول كرسم متجه ولا يترك LaTeX خاماً في أي منها', () async {
       final bytes = await PaginatedPdfExamEngine().generate(
         document: _document(withMath: true),
       );
       final probe = PdfContentProbe.fromBytes(bytes);
 
-      expectNoRawLatex(probe, surface: 'ورقة الطالب');
+      expectNoRawLatex(probe, surface: 'ورقة الأسئلة');
 
       // المِرساة الرقمية الوحيدة في الترويسة (60 دقيقة) حية — طبقة النص
-      // تعمل ولم تُبتلع الصفحة كلها؛ والإجابة النموذجية مخفية عند الطالب.
+      // تعمل ولم تُبتلع الصفحة كلها.
       final words = _drawnWords(probe);
       expect(words, contains('60'));
       expect(words, contains('F5A'));
       expect(words, contains('F5B'));
+      // ولا وجود لأي أثر إجابة (لا نص مكتوب ولا علامة).
+      expect(words.where((word) => word.contains('الإجابة')), isEmpty);
       expect(words.where((word) => word == 'M7'), isEmpty);
-    });
-
-    test('الإجابة النموذجية في نموذج المعلم تُرسم معادلةً لا نصاً خاماً', () async {
-      final bytes = await PaginatedPdfExamEngine().generate(
-        document: _document(withMath: true),
-        );
-      final probe = PdfContentProbe.fromBytes(bytes);
-
-      expectNoRawLatex(probe, surface: 'نموذج المعلم');
-      // رقم الكسر العشري عاش داخل جسم المعادلة فقط: لو طُبعت الصيغة خاماً
-      // لظهر «0.625» كلمةً نصية؛ غيابه مع حضور مِرساة الإجابة «M7» يثبت
-      // أنها رُسِمَت متجهه هناك بالذات.
-      final words = _drawnWords(probe);
-      expect(words.where((word) => word.contains('0.625')), isEmpty);
-      expect(words, contains('M7'));
     });
 
     test('عدد الكلمات المطبوعة ينقص بمقدار عدد الصيغ بالضبط — لا نص زائد', () async {
@@ -201,23 +180,7 @@ void main() {
 
       // لو طُبعت أي صيغة خاماً لَظهرت كلماتها (مثل $\frac{5}{8}$) وزاد
       // العدد عن الضابط؛ والنقصان المطلوب = عدد المقاطع بالضبط.
-      expect(controlWords.length - mathWords.length, _studentFormulaCount);
-
-      final teacherMath = _drawnWords(
-        PdfContentProbe.fromBytes(
-          await PaginatedPdfExamEngine().generate(
-            document: _document(withMath: true),
-            ),
-        ),
-      );
-      final teacherControl = _drawnWords(
-        PdfContentProbe.fromBytes(
-          await PaginatedPdfExamEngine().generate(
-            document: _document(withMath: false),
-            ),
-        ),
-      );
-      expect(teacherControl.length - teacherMath.length, _teacherFormulaCount);
+      expect(controlWords.length - mathWords.length, _documentFormulaCount);
     });
 
     test('موضع المعادلة يشغل فراغ الرسم المتجه — لا حذف صامت', () async {

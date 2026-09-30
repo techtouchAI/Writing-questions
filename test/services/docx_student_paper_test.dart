@@ -57,8 +57,8 @@ ExamDocument _document() => ExamDocument(
               content: BranchContent(
                 type: QuestionType.trueFalse,
                 items: <BranchItem>[
-                  BranchItem(id: 'bi2', text: '١ + ١ = ٢', isCorrect: true),
-                  BranchItem(id: 'bi3', text: '١ + ١ = ٣', isCorrect: false),
+                  BranchItem(id: 'bi2', text: '١ + ١ = ٢'),
+                  BranchItem(id: 'bi3', text: '١ + ١ = ٣'),
                 ],
               ),
             ),
@@ -84,12 +84,10 @@ ExamDocument _document() => ExamDocument(
 
 Future<String> _documentXml(
   ExamDocument document, {
-  required bool teacher,
   List<List<String>>? pageAssignments,
 }) async {
   final bytes = await DocxDocumentExportService.buildDocumentDocxBytes(
     document: document,
-    isTeacherVersion: teacher,
     pageAssignments: pageAssignments,
   );
   final archive = ZipDecoder().decodeBytes(bytes);
@@ -103,7 +101,7 @@ void main() {
 
   test('ورقة الطالب: الأسئلة فقط — نقاط السؤال مدرجة والترقيم تلقائي وبلا مساحات إجابة', () async {
     final document = _document();
-    final xml = await _documentXml(document, );
+    final xml = await _documentXml(document);
 
     // الترويسة بلا فقرة الدرجة الكلية وعدد الأسئلة.
     expect(xml.contains('الدرجة الكلية'), isFalse);
@@ -134,21 +132,26 @@ void main() {
     expect(xml.contains('خمسة'), isTrue);
   });
 
-  test('نموذج المعلم: توزيع الدرجات كامل وبلا فقرة الدرجة الكلية العامة', () async {
+  test('الملف الواحد: الأسئلة فقط بلا أي عنصر إجابة أو ترويسة نموذج', () async {
     final document = _document();
-    final xml = await _documentXml(document, );
+    final xml = await _documentXml(document);
 
-    expect(xml.contains('نموذج الإجابة وتوزيع الدرجات للمعلم'), isTrue);
+    // لا ترويسة «نموذج الإجابة» ولا فقرة درجات عامة.
+    expect(xml.contains('نموذج الإجابة وتوزيع الدرجات للمعلم'), isFalse);
+    expect(xml.contains('نموذج المعلم'), isFalse);
     expect(xml.contains('الدرجة الكلية'), isFalse);
     expect(xml.contains('عدد الأسئلة'), isFalse);
 
-    // إجابات صح/خطأ لا تُكتب على الورقة إطلاقاً — لا في ورقة الطالب ولا في
-    // نموذج المعلم (كما في الفراغات: العبارات وحدها بالترتيب).
+    // لا إجابة صح/خطأ ولا سطر إجابة ولا مساحة إجابة في أي موضع.
     expect(xml.contains('(صح)'), isFalse);
     expect(xml.contains('(خطأ)'), isFalse);
     expect(xml.contains('الإجابة الصحيحة'), isFalse);
-    // أما الإجابات النموذجية (فراغ/مقالي) فتبقى في نموذج المعلم.
-    expect(xml.contains('الإجابة النموذجية'), isTrue);
+    expect(xml.contains('الإجابة النموذجية'), isFalse);
+    expect(xml.contains('الإجابة:'), isFalse);
+
+    // والنص المكتوب يُصدَّر كما هو (العبارات والخيارات والمقالي).
+    expect(xml.contains('١ + ١ = ٢'), isTrue);
+    expect(xml.contains('نص الفرع بعنصر'), isTrue);
   });
 
   test('uses paragraph spacing and line height while coloring only the title', () async {
@@ -180,7 +183,7 @@ void main() {
         ),
       ],
     );
-    final xml = await _documentXml(document, );
+    final xml = await _documentXml(document);
     final questionSpacingTwips = (PaperMetrics.pt(6) * 20).round();
     final optionSpacingTwips = (PaperMetrics.pt(12) * 20).round();
 

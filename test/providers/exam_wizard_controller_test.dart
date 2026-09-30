@@ -106,7 +106,7 @@ void main() {
   });
 
   group('ExamWizardController in-place editing', () {
-    test('updates an option text while keeping the correct-answer flag', () {
+    test('updates an option text in place (بدون أي علم إجابة)', () {
       final controller = ExamWizardController();
       controller.addBranch(0);
       const ref = BranchRef(questionIndex: 0, branchIndex: 0);
@@ -126,21 +126,23 @@ void main() {
 
       final options = controller.document.branchAt(ref).content.options;
       expect(options[0].text, 'الأولى');
-      expect(options[0].isCorrect, isTrue);
       expect(options[1].text, 'الثانية معدّلة');
-      expect(options[1].isCorrect, isFalse);
+      // الخيارات نصّية فقط: لا حقل إجابة ولا تمييز لخيار صحيح.
+      expect(options.map((option) => option.toMap().containsKey('isCorrect')),
+          everyElement(isFalse));
       expect(controller.document.branchAt(ref).content.type, QuestionType.multipleChoice);
     });
 
-    test('updates the model answer used by the teacher version', () {
+    test('لا يوجد أي إدخال لإجابة نموذجية في النموذج المخزَّن', () {
       final controller = ExamWizardController();
       controller.addBranch(0);
       const ref = BranchRef(questionIndex: 0, branchIndex: 0);
-      expect(controller.document.branchAt(ref).content.modelAnswer, isEmpty);
+      controller.updateBranchText(ref, 'اكتب تعريف العَلم');
 
-      controller.updateBranchModelAnswer(ref, 'الإجابة: العَلم');
-
-      expect(controller.document.branchAt(ref).content.modelAnswer, 'الإجابة: العَلم');
+      final map = controller.document.branchAt(ref).content.toMap();
+      expect(map.containsKey('modelAnswer'), isFalse);
+      expect(map.containsKey('modelAnswerAlign'), isFalse);
+      expect(controller.document.branchAt(ref).content.text, 'اكتب تعريف العَلم');
       expect(controller.document.branchAt(ref).content.type, QuestionType.essay);
     });
   });

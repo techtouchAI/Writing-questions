@@ -240,26 +240,20 @@ void main() {
             .hasExportableContent(),
         isTrue,
       );
-      // إجابة صح/خطأ لا تُطبع على الورقة (كما في الفراغات)، فلا تكفي
-      // إجابة وحدها لإظهار النقطة في أي نسخة (طالب/معلم).
+      // عبارة صح/خطأ بلا نص لا تُظهر نقطة على الورقة (لا يوجد عنصر إجابة).
       final trueFalseOnly = BranchContent(
         type: QuestionType.trueFalse,
         items: <BranchItem>[BranchItem()],
       );
       expect(trueFalseOnly.hasExportableContent(), isFalse);
-      expect(trueFalseOnly.hasExportableContent(), isFalse);
       // العبارة المكتوبة وحدها هي ما يُطبع.
       final trueFalseWithText = BranchContent(
         type: QuestionType.trueFalse,
-        items: <BranchItem>[BranchItem(text: 'الأرض كروية', isCorrect: true)],
+        items: <BranchItem>[BranchItem(text: 'الأرض كروية')],
       );
-      expect(trueFalseWithText.hasExportableContent(), isTrue);
       expect(trueFalseWithText.hasExportableContent(), isTrue);
       final emptyTrueFalse = BranchContent.empty(QuestionType.trueFalse);
       expect(emptyTrueFalse.hasExportableContent(), isFalse);
-      expect(emptyTrueFalse.hasExportableContent(), isFalse);
-      final explicitTrueFalse = emptyTrueFalse.withTrueFalseAnswer(false);
-      expect(explicitTrueFalse.hasExportableContent(), isFalse);
       // خيارات الاختيار المخفية في النص الحر لا تُبقي فرعاً فارغاً بالطباعة.
       final hiddenChoices = BranchContent(
         type: QuestionType.multipleChoice,
@@ -268,10 +262,9 @@ void main() {
       );
       expect(hiddenChoices.hasExportableContent(), isFalse);
       expect(hiddenChoices.hasExportableContent(), isFalse);
-      // النموذجية الفارغة تُحذف من نسخة المعلم.
+      // فرع المقالي الفارغ لا يُظهر شيئاً.
       expect(
-        BranchContent(type: QuestionType.essay, )
-            .hasExportableContent(),
+        BranchContent(type: QuestionType.essay).hasExportableContent(),
         isFalse,
       );
     });
@@ -280,11 +273,12 @@ void main() {
       final essay = BranchContent.empty();
       final mcq = essay.copyWith(type: QuestionType.multipleChoice);
       expect(mcq.options, hasLength(4));
-      expect(mcq.options.first.isCorrect, isTrue);
-
-      final trueFalse = mcq.withTrueFalseAnswer(false);
+      // لا تمييز لخيار صحيح: الخيارات نصّية فقط.
+      expect(mcq.options.map((option) => option.text), everyElement(isEmpty));
+      // صح/خطأ بلا خيارات: لا إجابة مخزَّنة أصلاً.
+      final trueFalse = mcq.copyWith(type: QuestionType.trueFalse);
       expect(trueFalse.type, QuestionType.trueFalse);
-      expect(trueFalse.trueFalseAnswer, isFalse);
+      expect(trueFalse.options, isEmpty);
     });
 
     test('rejects negative marks and unknown types strictly', () {
@@ -519,17 +513,14 @@ void main() {
     });
 
 
-    test('showsInExport: النص أو الدرجة أو التسمية تُظهر النقطة، والإجابة وحدها لا', () {
-      final withText = BranchItem(id: 'a', text: '١', isCorrect: true);
-      final answerOnly = BranchItem(id: 'b', isCorrect: true);
+    test('showsInExport: النص أو الدرجة أو التسمية تُظهر النقطة، والفارغة لا', () {
+      final withText = BranchItem(id: 'a', text: '١');
       final emptyItem = BranchItem(id: 'c');
       final withMarks = BranchItem(id: 'd', marks: 1);
       final labeledOnly = BranchItem(id: 'e', labelOverride: 'أ-');
 
       // النص يكفي لعرض النقطة (في المعاينة وPDF وWord على السواء).
       expect(withText.showsInExport, isTrue);
-      // إجابة صح/خطأ بلا نص: لا تُطبع على الورقة إطلاقاً (كما في الفراغات).
-      expect(answerOnly.showsInExport, isFalse);
       // الفارغة تماماً تُحجب.
       expect(emptyItem.showsInExport, isFalse);
       // الدرجة والتسمية المخصصة محتوى مقصود.
