@@ -18,6 +18,7 @@ import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
+import 'package:writing_questions_app/views/widgets/mixed_content_editor.dart';
 import 'package:writing_questions_app/views/widgets/paper_field.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 
@@ -43,18 +44,17 @@ ExamDocument _mathDoc() {
                 BranchItem(text: r'نقطة $\times$'),
               ],
               options: <QuestionOption>[
-                QuestionOption(text: r'أول $x^{2}$', isCorrect: true),
+                QuestionOption(text: r'أول $x^{2}$'),
                 QuestionOption(text: r'ثانٍ $y_{3}$'),
               ],
             ),
             marks: 2,
           ),
-          // فرع فراغات: الإجابة النموذجية (بصيغتها) تظهر في نموذج المعلم وحده.
+          // فرع فراغات: نصه هو ما يُطبع — بلا أي إجابة.
           BranchModel(
             content: BranchContent(
               type: QuestionType.fillInTheBlank,
               text: 'أكمل الجمل التالية',
-              modelAnswer: r'لأن $\frac{5}{8}=0.625$',
             ),
             marks: 1,
           ),
@@ -104,20 +104,9 @@ void main() {
       final controller = ExamWizardController(document: _mathDoc());
       await _pumpPreview(tester, controller);
 
-      // نسخة الطالب: عنوان الترويسة + سطر الترويسة + نص السؤال + نص الفرع
-      // + النقطة + خياران = 7 معادلات مرسومة (الإجابة النموذجية مخفية).
+      // عنوان الترويسة + سطر الترويسة + نص السؤال + نص الفرع + النقطة
+      // + خياران = 7 معادلات مرسومة، ولا شيء غيرها (لا إجابة مطبوعة).
       expect(find.byType(Math), findsNWidgets(7));
-    });
-
-    testWidgets('نموذج المعلم يضيف معاينة الإجابة النموذجية فور إظهاره', (tester) async {
-      final controller = ExamWizardController(document: _mathDoc());
-      await _pumpPreview(tester, controller);
-      expect(find.byType(Math), findsNWidgets(7));
-
-      await tester.tap(find.byTooltip('عرض نموذج الإجابة'));
-      await tester.pump();
-      await tester.pump();
-      expect(find.byType(Math), findsNWidgets(8));
     });
 
     testWidgets('بلا صيغ — لا معاينة ولا Math أصلاً (العرض مشروط بالمحتوى)', (tester) async {
@@ -142,28 +131,43 @@ void main() {
       expect(find.byType(Math), findsNothing);
     });
 
-    testWidgets('المصدر الخام مخفي في العرض النهائي؛ والتركيز يكشفه للتحرير في مكانه', (tester) async {
+    testWidgets('لا كود خام على الورقة: النقر يفتح محرر النص والمعادلات المرئي',
+        (tester) async {
       final controller = ExamWizardController(document: _mathDoc());
       await _pumpPreview(tester, controller);
 
       const key = ValueKey<String>('prompt-q1');
-      // غير مركّز: العرض النهائي المُصيَّر وحده — لا سطر مصدر مكرر فوقه.
+      // غير مركّز: العرض النهائي المُصيَّر وحده — لا حقل نصي ظاهر على الورقة.
       expect(
         find.descendant(of: find.byKey(key), matching: find.byType(EditableText)),
         findsNothing,
       );
+      // المصدر المخزَّن يبقى بصيغته القابلة للتحرير (نص + $معادلة$).
       expect(tester.widget<PaperField>(find.byKey(key)).controller.text,
           r'احسب $\frac{5}{8}$');
 
-      // النقر على العرض النهائي: يكشف المصدر الخام للتحرير في مكانه
-      // (ويُصيَّر مجدداً بعد فقدان التركيز).
+      // النقر على العرض النهائي يفتح محرر المحتوى المختلط: نص حقولاً
+      // والمعادلة مرسومةً مرئية — لا كود LaTeX.
       await tester.tap(find.byKey(key));
       await tester.pump();
       await tester.pump();
-      final editable = tester.widget<EditableText>(
-        find.descendant(of: find.byKey(key), matching: find.byType(EditableText)),
+      expect(find.text('تحرير المحتوى'), findsOneWidget);
+      expect(find.text('إضافة معادلة'), findsOneWidget);
+      expect(find.text('حفظ المحتوى'), findsOneWidget);
+      // النص والمعادلة معروضان في المحرر (المعادلة مرسومة لا مكتوبة ككود).
+      expect(
+        find.descendant(
+          of: find.byType(MixedContentEditor),
+          matching: find.byType(Math),
+        ),
+        findsOneWidget,
       );
-      expect(editable.controller.text, r'احسب $\frac{5}{8}$');
+
+      // إلغاء: لا يتغير المصدر.
+      await tester.tap(find.text('إلغاء'));
+      await tester.pump();
+      await tester.pump();
+      expect(controller.questions.single.prompt, r'احسب $\frac{5}{8}$');
     });
 
     testWidgets('الحقول الاختيارية الفارغة لا تُبنى أصلاً (صفر بكسل لا إخفاء)', (tester) async {

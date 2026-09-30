@@ -12,7 +12,10 @@ import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
+import 'package:writing_questions_app/views/widgets/mixed_content_editor.dart';
+import 'package:writing_questions_app/views/widgets/rich_content_field.dart';
 import 'package:writing_questions_app/views/widgets/tex_text.dart';
+import 'package:writing_questions_app/views/wizard/branch_editor_card.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 import 'package:writing_questions_app/views/wizard/exam_wizard_screen.dart';
 
@@ -143,7 +146,31 @@ void main() {
       expect(find.text('إعداد السؤال الأول'), findsOneWidget);
 
       // كتابة محتوى ودرجة ثم [التالي] يفتح «إعداد السؤال الثاني».
-      await tester.enterText(find.widgetWithText(TextFormField, 'نص الفرع').first, 'عرّف الفاعل');
+      // نص الفرع يُكتب من الحقل الغني: النقر يفتح محرر المحتوى، فلا كود خام
+      // على الشاشة ولا في المخزون.
+      final branchText = find
+          .descendant(
+            of: find.byType(BranchEditorCard).first,
+            matching: find.byType(RichContentField),
+          )
+          .first;
+      await tester.ensureVisible(branchText);
+      await tester.tap(branchText);
+      await tester.pump();
+      await tester.pump();
+      // محرر المحتوى المرئي: قسم نصي واحد يُكتب فيه نص الفرع ثم يُحفظ.
+      await tester.enterText(
+        find
+            .descendant(
+              of: find.byType(MixedContentEditor),
+              matching: find.byType(TextField),
+            )
+            .first,
+        'عرّف الفاعل',
+      );
+      await tester.tap(find.text('حفظ المحتوى'));
+      await tester.pump();
+      await tester.pump();
       await tester.enterText(find.widgetWithText(TextFormField, 'الدرجة').first, '5');
       await tester.pumpAndSettle();
       await tester.tap(find.text('التالي: سؤال جديد'));
@@ -327,7 +354,7 @@ void main() {
                     type: QuestionType.multipleChoice,
                     text: 'اختر الإجابة الصحيحة',
                     options: <QuestionOption>[
-                      QuestionOption(text: 'الخيار الأول', isCorrect: true),
+                      QuestionOption(text: 'الخيار الأول'),
                       QuestionOption(text: 'الخيار الثاني'),
                     ],
                   ),
@@ -357,12 +384,11 @@ void main() {
           .content
           .options;
       expect(options[1].text, 'الخيار الثاني المعدّل');
-      // علامة الإجابة الصحيحة لا تتغيّر بتحرير نص الخيار.
-      expect(options[0].isCorrect, isTrue);
-      expect(options[1].isCorrect, isFalse);
+      // الخيارات نصّية فقط: لا علم إجابة في أي خيار.
+      expect(options.every((option) => !option.toMap().containsKey('isCorrect')), isTrue);
     });
 
-    testWidgets('hides teacher answers in the student sheet and edits them in the answer view',
+    testWidgets('لا يوجد أي سطح لنموذج الإجابة في المعاينة (لا زر ولا حقل)',
         (tester) async {
       tester.view.physicalSize = const Size(1000, 1400);
       tester.view.devicePixelRatio = 1;
@@ -373,26 +399,11 @@ void main() {
       await tester.pumpWidget(_preview(controller));
       await tester.pump();
 
-      const answerKey = ValueKey<String>('answer-q1a');
-      expect(find.byKey(answerKey), findsNothing, reason: 'ورقة الطالب لا تُظهر الإجابة النموذجية');
-
-      await tester.tap(find.byTooltip('عرض نموذج الإجابة'));
-      await tester.pump();
-      expect(find.byKey(answerKey), findsOneWidget);
-
-      await tester.enterText(find.byKey(answerKey), 'إجابة نموذجية مفصّلة');
-      await tester.pump();
-      expect(
-        controller.document
-            .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
-            .content
-            .modelAnswer,
-        'إجابة نموذجية مفصّلة',
-      );
-
-      await tester.tap(find.byTooltip('عرض ورقة الطالب'));
-      await tester.pump();
-      expect(find.byKey(answerKey), findsNothing);
+      expect(find.byTooltip('عرض نموذج الإجابة'), findsNothing);
+      expect(find.byTooltip('عرض ورقة الطالب'), findsNothing);
+      expect(find.byKey(const ValueKey<String>('answer-q1a')), findsNothing);
+      expect(controller.document.floatingElements, isEmpty);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('renders a Quranic verse with the Quranic font and centering', (tester) async {

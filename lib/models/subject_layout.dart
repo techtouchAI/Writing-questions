@@ -104,9 +104,6 @@ enum SubjectLayoutTemplate {
   /// وحدة الدرجة كما تُطبع بجانب الرقم.
   String get marksUnit => isLtr ? 'marks' : 'درجة';
 
-  /// عدد أسطر الإجابة المتروكة للأسئلة المقالية (مساحة أوسع للمواد العلمية).
-  int get essayAnswerLines => this == SubjectLayoutTemplate.scientific ? 6 : 4;
-
   /// معامل تباعد الأسطر (مساحة للمعادلات والموازنات في المواد العلمية).
   double get lineHeightFactor =>
       this == SubjectLayoutTemplate.scientific ? 1.8 : 1.45;

@@ -6,15 +6,16 @@ import '../../models/question_type.dart';
 import '../widgets/items_editor.dart';
 import '../widgets/ltr_numeric_field.dart';
 import '../widgets/mcq_options_editor.dart';
+import '../widgets/rich_content_field.dart';
 
 /// بطاقة تحرير فرع واحد (أ، ب، ج...) داخل خطوة «إعداد السؤال».
 ///
 /// تُغلّف أدوات الإدخال الحالية بدل إعادة برمجتها: [McqOptionsEditor]
-/// للخيارات، و[LtrNumericField] للدرجة، ونموذج صح/خطأ والفراغات بنفس منطق
-/// محرر بنك الأسئلة — مع نوع السؤال قابل للاختيار لكل فرع على حدة،
-/// ووضع «نص حر» (بلا مساحة إجابة مولّدة)، ونقاط غير محدودة (1، 2، 3...).
+/// للخيارات، و[LtrNumericField] للدرجة — مع نوع السؤال قابل للاختيار لكل
+/// فرع على حدة، ووضع «نص حر»، ونقاط غير محدودة (1، 2، 3...).
 ///
-/// **ترتيب الحقول = ترتيب الطباعة**: النص ← النقاط ← مساحة الإجابة/الخيارات
+/// **لا عنصر إجابة إطلاقاً**: التطبيق لكتابة الأسئلة وحدها، فلا حقل إجابة
+/// نموذجية ولا خيار تصحيح — والحقول هي: النص ← النقاط ← الخيارات
 /// (نفس ترتيب العرض في المعاينة والـ PDF وWord حرفياً).
 class BranchEditorCard extends StatefulWidget {
   const BranchEditorCard({
@@ -43,18 +44,13 @@ class BranchEditorCard extends StatefulWidget {
 }
 
 class _BranchEditorCardState extends State<BranchEditorCard> {
-  late final TextEditingController _textController;
   late final TextEditingController _marksController;
-  late final TextEditingController _modelAnswerController;
   late final TextEditingController _labelController;
 
   @override
   void initState() {
     super.initState();
-    _textController = TextEditingController(text: widget.branch.content.text);
     _marksController = TextEditingController(text: _formatMarks(widget.branch.marks));
-    _modelAnswerController =
-        TextEditingController(text: widget.branch.content.modelAnswer);
     _labelController =
         TextEditingController(text: widget.branch.labelOverride ?? '');
   }
@@ -63,12 +59,6 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
   void didUpdateWidget(covariant BranchEditorCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     // مزامنة الحقول عند تبديل المحتوى خارجياً (مثلاً بعد السحب والإفلات).
-    if (widget.branch.content.text != _textController.text) {
-      _textController.text = widget.branch.content.text;
-    }
-    if (widget.branch.content.modelAnswer != _modelAnswerController.text) {
-      _modelAnswerController.text = widget.branch.content.modelAnswer;
-    }
     final labelOverride = widget.branch.labelOverride ?? '';
     if (labelOverride != _labelController.text) {
       _labelController.text = labelOverride;
@@ -81,9 +71,7 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
 
   @override
   void dispose() {
-    _textController.dispose();
     _marksController.dispose();
-    _modelAnswerController.dispose();
     _labelController.dispose();
     super.dispose();
   }
@@ -228,28 +216,21 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
                   : null,
             ),
             const SizedBox(height: 4),
-            TextFormField(
-              controller: _textController,
+            RichContentField(
+              label: _content.type == QuestionType.fillInTheBlank
+                  ? 'نص الفرع (ضع _____ مكان الفراغ)'
+                  : 'نص الفرع',
+              value: _content.text,
               enabled: widget.enabled,
-              maxLines: null,
-              minLines: 2,
-              decoration: InputDecoration(
-                labelText: _content.type == QuestionType.fillInTheBlank
-                    ? 'نص الفرع (ضع _____ مكان الفراغ)'
-                    : 'نص الفرع',
-                border: const OutlineInputBorder(),
-                alignLabelWithHint: true,
-              ),
+              title: 'تحرير نص الفرع',
+              minHeight: 64,
               onChanged: (value) => _emitContent(_content.copyWith(text: value)),
             ),
             const SizedBox(height: 10),
-            // النقاط (1، 2، 3...) قبل مساحة الإجابة — نفس ترتيب الطباعة.
+            // النقاط (1، 2، 3...) بترتيب الطباعة نفسه.
             ItemsEditor(
               items: _content.items,
               enabled: widget.enabled,
-              showTrueFalseAnswers: _content.type == QuestionType.trueFalse,
-              trueFalseFormat: _content.trueFalseFormat,
-              onFormatChanged: (format) => _emitContent(_content.copyWith(trueFalseFormat: format)),
               onChanged: (items) => _emitContent(_content.copyWith(items: items)),
             ),
             const SizedBox(height: 10),
@@ -269,52 +250,14 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
           onChanged: (options) => _emitContent(_content.copyWith(options: options)),
         );
       case QuestionType.trueFalse:
-        if (_content.items.isNotEmpty) {
-          return const SizedBox.shrink();
-        }
-        return Row(
-          children: <Widget>[
-            Expanded(
-              child: RadioListTile<bool>(
-                dense: true,
-                title: Text(_content.trueFalseFormat == 'symbols' ? 'صح (✓)' : 'صح'),
-                value: true,
-                groupValue: _content.trueFalseAnswer,
-                onChanged: widget.enabled
-                    ? (value) => _emitContent(_content.withTrueFalseAnswer(value ?? true))
-                    : null,
-              ),
-            ),
-            Expanded(
-              child: RadioListTile<bool>(
-                dense: true,
-                title: Text(_content.trueFalseFormat == 'symbols' ? 'خطأ (✗)' : 'خطأ'),
-                value: false,
-                groupValue: _content.trueFalseAnswer,
-                onChanged: widget.enabled
-                    ? (value) => _emitContent(_content.withTrueFalseAnswer(value ?? false))
-                    : null,
-              ),
-            ),
-          ],
-        );
+        // «صح/خطأ» = عبارات مرقّمة فقط: تُطبع في نقاطها بالترتيب، ولا يُكتب
+        // عنها أي شيء آخر ولا يُضبط لها أي عنصر إجابة (كتابة أسئلة فقط).
+        return const SizedBox.shrink();
       case QuestionType.fillInTheBlank:
       case QuestionType.definitions:
       case QuestionType.essay:
-        return TextFormField(
-          controller: _modelAnswerController,
-          enabled: widget.enabled,
-          maxLines: _content.type == QuestionType.essay ? 3 : 1,
-          decoration: InputDecoration(
-            labelText: _content.type == QuestionType.essay
-                ? 'الإجابة النموذجية / معايير التصحيح (لنموذج المعلم)'
-                : 'الكلمة الصحيحة للفراغ (لنموذج المعلم)',
-            isDense: true,
-            border: const OutlineInputBorder(),
-            alignLabelWithHint: true,
-          ),
-          onChanged: (value) => _emitContent(_content.copyWith(modelAnswer: value)),
-        );
+        // لا حقل إجابة نموذجية: التطبيق لكتابة الأسئلة وحدها.
+        return const SizedBox.shrink();
     }
   }
 }

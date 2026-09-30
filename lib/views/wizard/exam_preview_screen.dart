@@ -14,6 +14,7 @@ import '../../models/branch_model.dart';
 import '../../models/exam_canvas_geometry.dart';
 import '../../models/exam_document.dart';
 import '../../models/exam_header_model.dart';
+import '../../models/latex_plain_text.dart';
 import '../../models/floating_element.dart';
 import '../../models/paper_divider.dart';
 import '../../models/paper_font.dart';
@@ -211,10 +212,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// هل كتبت المعادلة المرشّحة كصيغة منفردة (`$$...$$`)?
   bool _stagedFormulaIsBlock = false;
 
-  /// عرض «نموذج الإجابة» على الورقة: تُظهر الإجابات الصحيحة والنموذجية
-  /// وتحرَّر في مكانها (نفس سلوك ملف الـ PDF في وضع المعلم).
-  bool _showTeacherAnswers = false;
-
   /// قفل التحريك: يمنع السحب وتغيير الحجم (التكبير والتمرير متاحان).
   bool _locked = false;
 
@@ -280,7 +277,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   static String _branchTextKey(String branchId) => 'branch-$branchId';
   static String _branchMarksKey(String branchId) => 'marks-$branchId';
   static String _optionKey(String branchId, int index) => 'option-$branchId-$index';
-  static String _modelAnswerKey(String branchId) => 'answer-$branchId';
   static String _categoryKey(String questionId) => 'category-$questionId';
   static String _promptKey(String questionId) => 'prompt-$questionId';
   static String _itemKey(String itemId) => 'item-$itemId';
@@ -322,10 +318,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           final marksField = _fields[_branchMarksKey(branch.id)];
           if (marksField != null && _parseMarks(marksField.text) != branch.marks) {
             marksField.text = _formatMarksInput(branch.marks);
-          }
-          final answerField = _fields[_modelAnswerKey(branch.id)];
-          if (answerField != null && answerField.text != branch.content.modelAnswer) {
-            answerField.text = branch.content.modelAnswer;
           }
           for (var index = 0; index < branch.content.options.length; index++) {
             final optionField = _fields[_optionKey(branch.id, index)];
@@ -385,7 +377,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         for (final branch in question.branches) ...<String>{
           _branchTextKey(branch.id),
           _branchMarksKey(branch.id),
-          _modelAnswerKey(branch.id),
           for (var index = 0; index < branch.content.options.length; index++)
             _optionKey(branch.id, index),
           for (final item in branch.content.items) _itemKey(item.id),
@@ -820,7 +811,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       fieldKey.startsWith('branch-') ||
       fieldKey.startsWith('prompt-') ||
       fieldKey.startsWith('option-') ||
-      fieldKey.startsWith('answer-') ||
       fieldKey.startsWith('item-') ||
       fieldKey.startsWith('header-');
 
@@ -856,10 +846,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       return optionIndex >= 0 && optionIndex < options.length
           ? options[optionIndex].align
           : null;
-    }
-    if (fieldKey.startsWith('answer-')) {
-      final ref = _findBranchRef(doc, fieldKey.substring('answer-'.length));
-      return ref == null ? null : doc.branchAt(ref).content.modelAnswerAlign;
     }
     if (fieldKey.startsWith('item-')) {
       return _findItem(fieldKey.substring('item-'.length))?.align;
@@ -973,7 +959,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
     }
 
-    // 4. خيارات MCQ / الترويسة / الإجابة النموذجية: تُحفظ المحاذاة في الموديل
+    // 4. خيارات MCQ / الترويسة / النقاط: تُحفظ المحاذاة في الموديل
     //    مباشرةً على مستوى الفقرة (كما في Word) — لا في خريطة الشاشة وحدها
     //    التي كانت تضيع عند الحفظ ولا تصل إلى PDF/Word.
     if (_activeFieldKey != null) {
@@ -994,19 +980,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               content.copyWith(options: options),
             );
           }
-        }
-        return;
-      }
-      if (key.startsWith('answer-')) {
-        final ref = _findBranchRef(document, key.substring('answer-'.length));
-        if (ref != null) {
-          controller.updateBranchContent(
-            ref,
-            document
-                .branchAt(ref)
-                .content
-                .copyWith(modelAnswerAlign: () => align),
-          );
         }
         return;
       }
@@ -1155,10 +1128,39 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   ///
   /// العناصر تُرسم الآن في طبقة الصفحة بإحداثي مطلق، فلو تُرك (0،0) لظهرت في
   /// أعلى الورقة بعيداً عن السؤال — ومن هنا جاء هذا الحساب.
+  /// السؤال المحدد حالياً (مالك العناصر الجديدة) أو `null` إن لا تحديد.
+  String? _selectedOwnerQuestionId() {
+    final controller = _controller;
+    if (controller == null || controller.questions.isEmpty) {
+      return null;
+    }
+    final index = controller.selectedBranch?.questionIndex ??
+        controller.selectedQuestionIndex;
+    if (index == null || index < 0 || index >= controller.questions.length) {
+      return null;
+    }
+    return controller.questions[index].id;
+  }
+
+  /// موضع افتراضي للعنصر الجديد: داخل السؤال المحدد (مرتبطاً به) إن وُجد
+  /// تحديد — وإلا موضع حر على صفحة السؤال النشط.
   FloatingElement _withDefaultPosition(FloatingElement element) {
     final controller = _controller;
     if (controller == null) {
       return element;
+    }
+    final owner = _selectedOwnerQuestionId();
+    if (owner != null) {
+      final rect = controller.questionRect(owner);
+      if (rect != null) {
+        final maxDx = math.max(0.0, rect.width - element.width);
+        final maxDy = math.max(0.0, rect.height - element.height);
+        return element.withOwner(owner).copyWith(
+              pageIndex: rect.pageIndex,
+              dx: maxDx / 2,
+              dy: math.min(maxDy, 8),
+            );
+      }
     }
     if (controller.questions.isEmpty) {
       return element.copyWith(
@@ -1178,6 +1180,28 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       pageIndex: pageIndex,
       dx: 8,
       dy: (top ?? ExamCanvasGeometry.defaultElementDy) + 8,
+    );
+  }
+
+  /// إحداثيات العنصر **المطلقة على ورقته**: العنصر المرتبط بسؤال يُزاح
+  /// بمستطيل سؤاله (والسؤال قد ينتقل بين الصفحات)، والعنصر الحر كما هو.
+  ({int pageIndex, double dx, double dy}) _elementGeometry(
+    ExamWizardController controller,
+    FloatingElement element,
+  ) {
+    final owner = element.ownerQuestionId;
+    if (owner == null) {
+      return (pageIndex: element.pageIndex, dx: element.dx, dy: element.dy);
+    }
+    final rect = controller.questionRect(owner);
+    if (rect == null) {
+      return (pageIndex: element.pageIndex, dx: element.dx, dy: element.dy);
+    }
+    final margin = ExamCanvasGeometry.marginFor(controller.document.settings.marginMm);
+    return (
+      pageIndex: rect.pageIndex,
+      dx: margin + element.dx,
+      dy: rect.top + element.dy,
     );
   }
 
@@ -1297,7 +1321,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       width: elementWidth,
       height: elementHeight,
     );
-    final added = _controller!.addFloatingElement(element, pageIndex: pageIndex);
+    // مع سؤال محدد: المعادلة تصير جزءاً من السؤال وتُحصر داخل حدوده؛
+    // وبلا تحديد تبقى عنصراً حراً في أي نقطة من الورقة.
+    final owner = _selectedOwnerQuestionId();
+    final added = _controller!.addFloatingElement(
+      element,
+      pageIndex: pageIndex,
+      ownerQuestionId: owner,
+    );
     if (!added) {
       _showMessage('تعذر إدراج المعادلة. حاول اختيار موضع آخر على الورقة.');
       return;
@@ -1307,16 +1338,28 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       _stagedFormulaIsBlock = false;
       _selectedAttachment = _AttachmentRef.global(element.id);
     });
-    _showMessage('أُدرجت المعادلة — اسحبها بحرية بين صفحات الورقة.');
+    _showMessage(
+      owner == null
+          ? 'أُدرجت المعادلة — اسحبها بحرية بين صفحات الورقة.'
+          : 'أُدرجت المعادلة داخل السؤال المحدد — حركتها محصورة فيه.',
+    );
   }
 
-  /// يضيف عنصراً حراً إلى صفحة السؤال النشط افتراضياً، من دون منحه مالكاً.
+  /// يضيف عنصراً إلى الورقة: إن كان سؤال محدداً ارتبط به ووُضع داخله، وإلا
+  /// صار عنصراً حراً على صفحة السؤال النشط.
   void _addAttachmentToSelection(FloatingElement element) {
     element = _withDefaultPosition(element);
     final controller = _controller!;
-    final added = controller.addFloatingElement(element, pageIndex: element.pageIndex);
+    final added = controller.addFloatingElement(
+      element,
+      pageIndex: element.pageIndex,
+      ownerQuestionId: element.ownerQuestionId,
+    );
     if (added) {
       setState(() => _selectedAttachment = _AttachmentRef.global(element.id));
+      if (element.ownerQuestionId != null) {
+        _showMessage('أُضيف العنصر داخل السؤال المحدد — حرّكته محصورة فيه.');
+      }
       return;
     }
     _showMessage('تعذر إضافة العنصر إلى الورقة.');
@@ -1457,6 +1500,26 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         pageIndex: placed.pageIndex,
       );
     }
+  }
+
+  /// يربط العنصر بالسؤال المحدد أو يفصل ارتباطه عنه.
+  void _toggleElementOwner(_AttachmentRef ref, FloatingElement element) {
+    final controller = _controller;
+    if (controller == null) {
+      return;
+    }
+    if (element.isQuestionOwned) {
+      controller.setElementOwner(element.id, null);
+      _showMessage('فُصل العنصر عن السؤال — صار حراً في أي موضع على الورقة.');
+      return;
+    }
+    final owner = _selectedOwnerQuestionId();
+    if (owner == null) {
+      _showMessage('حدد سؤالاً أولاً (بنقرة عليه) ثم اربط العنصر به.');
+      return;
+    }
+    controller.setElementOwner(element.id, owner);
+    _showMessage('رُبط العنصر بالسؤال — حركته محصورة داخل حدوده.');
   }
 
   void _removeAttachmentElement(_AttachmentRef ref) {
@@ -1617,10 +1680,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
   }
 
-  Future<void> _exportPdf({
-    required bool isTeacherVersion,
-    List<List<String>>? pageAssignments,
-  }) async {
+  Future<void> _exportPdf({List<List<String>>? pageAssignments}) async {
     if (_isBusy) {
       return;
     }
@@ -1629,13 +1689,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     setState(() => _isBusy = true);
     try {
       final printAssignments = pageAssignments ??
-          await PdfExportService.resolvePageAssignments(
-            document: document,
-            isTeacherVersion: isTeacherVersion,
-          );
+          await PdfExportService.resolvePageAssignments(document: document);
       final bytes = await PdfExportService.buildDocumentPdfBytes(
         document: document,
-        isTeacherVersion: isTeacherVersion,
         // القياس من محتوى الطباعة فقط؛ ارتفاع أدوات التحرير لا يترك فراغاً.
         pageAssignments: printAssignments,
       );
@@ -1650,9 +1706,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         MaterialPageRoute<void>(
           builder: (_) => PdfPreviewScreen(
             pdfBytes: bytes,
-            title: isTeacherVersion ? 'معاينة نموذج الإجابة' : 'معاينة ورقة الأسئلة',
-            fileName: '${controller.document.name}'
-                '${isTeacherVersion ? '_نموذج_الإجابة' : '_ورقة_الامتحان'}.pdf',
+            title: 'معاينة ورقة الأسئلة',
+            fileName: '${controller.document.name}_ورقة_الامتحان.pdf',
           ),
         ),
       );
@@ -1668,10 +1723,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
   }
 
-  Future<void> _exportWord({
-    required bool isTeacherVersion,
-    List<List<String>>? pageAssignments,
-  }) async {
+  Future<void> _exportWord({List<List<String>>? pageAssignments}) async {
     if (_isBusy) {
       return;
     }
@@ -1680,14 +1732,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     setState(() => _isBusy = true);
     try {
       final printAssignments = pageAssignments ??
-          await PdfExportService.resolvePageAssignments(
-            document: document,
-            isTeacherVersion: isTeacherVersion,
-          );
+          await PdfExportService.resolvePageAssignments(document: document);
       if (!mounted) return;
       final file = await DocxDocumentExportService.exportDocumentToDocx(
         document: document,
-        isTeacherVersion: isTeacherVersion,
         shapeRasterizer: ShapeImageRenderer.asRasterizer,
         pageAssignments: printAssignments,
         // معادلات LaTeX تُرسم صوراً في Word (لا أكواد خامة) بنفس مرسّم PDF.
@@ -2007,7 +2055,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
     final controller = _controller!;
     final document = controller.document;
-    final isTeacherVersion = _showTeacherAnswers;
     var pageAssignments = <List<String>>[];
     setState(() => _isBusy = true);
     try {
@@ -2015,7 +2062,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       // تحتوي على أسئلة فارغة غير قابلة للطباعة.
       pageAssignments = await PdfExportService.resolvePageAssignments(
         document: document,
-        isTeacherVersion: isTeacherVersion,
       );
     } catch (error, stackTrace) {
       ExportFileService.logError('Preview pagination failed', error, stackTrace);
@@ -2035,14 +2081,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         document.floatingElements.map((element) => element.id).toSet();
     final exportableQuestions = document.questions
         .where((question) => question.hasExportableContent(
-              teacher: isTeacherVersion,
               ignoredAttachmentIds: globalElementIds,
             ))
         .toList(growable: false);
     final exportableBranchCount = exportableQuestions
         .expand((question) => question.branches)
-        .where((branch) => branch.hasExportableContent(
-              teacher: isTeacherVersion,
+        .where((branch) => branch.hasExportableContentIn(
               ignoredAttachmentIds: globalElementIds,
             ))
         .length;
@@ -2072,7 +2116,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 'الدرجة الكلية',
                 '${document.formatNumber(exportableMarks)} ${document.layout.marksUnit}',
               ),
-              _reviewRow('النسخة', isTeacherVersion ? 'نموذج الإجابة' : 'ورقة الطالب'),
               _reviewRow('حجم الورق', 'A4'),
               _reviewRow('الخط الافتراضي', document.settings.defaultFont.arabicLabel),
               _reviewRow('نمط التسمية', document.settings.questionLabelStyle.arabicLabel),
@@ -2095,10 +2138,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           FilledButton.icon(
             onPressed: () {
               Navigator.of(dialogContext).pop();
-              _exportPdf(
-                isTeacherVersion: isTeacherVersion,
-                pageAssignments: pageAssignments,
-              );
+              _exportPdf(pageAssignments: pageAssignments);
             },
             icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
             label: const Text('تصدير PDF'),
@@ -2106,10 +2146,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           FilledButton.tonalIcon(
             onPressed: () {
               Navigator.of(dialogContext).pop();
-              _exportWord(
-                isTeacherVersion: isTeacherVersion,
-                pageAssignments: pageAssignments,
-              );
+              _exportWord(pageAssignments: pageAssignments);
             },
             icon: const Icon(Icons.description_outlined, size: 18),
             label: const Text('تصدير Word'),
@@ -2414,15 +2451,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         ),
         actions: <Widget>[
           IconButton(
-            icon: Icon(
-              _showTeacherAnswers ? Icons.visibility : Icons.visibility_off_outlined,
-            ),
-            tooltip: _showTeacherAnswers ? 'عرض ورقة الطالب' : 'عرض نموذج الإجابة',
-            onPressed: _isBusy
-                ? null
-                : () => setState(() => _showTeacherAnswers = !_showTeacherAnswers),
-          ),
-          IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'إعدادات الورقة',
             onPressed: _isBusy ? null : _showSettings,
@@ -2699,7 +2727,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final pageAttachments = <_AttachmentRef>[];
     final globalElementIds = document.floatingElements.map((element) => element.id).toSet();
     final seenElementIds = <String>{};
-    int resolvedPageIndex(FloatingElement element) => element.pageIndex
+    int resolvedPageIndex(FloatingElement element) => _elementGeometry(controller, element)
+        .pageIndex
         .clamp(0, math.max(0, pageCount - 1))
         .toInt();
 
@@ -2972,8 +3001,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (controller == null) {
       return false;
     }
-    final placed = element.copyWith(dx: dx, dy: dy, pageIndex: pageIndex);
-    final added = controller.addFloatingElement(placed, pageIndex: pageIndex);
+    final owner = _selectedOwnerQuestionId();
+    final ownerRect = owner == null ? null : controller.questionRect(owner);
+    final placed = element.copyWith(
+      dx: ownerRect == null ? dx : math.max(0, dx - ExamCanvasGeometry.marginFor(controller.document.settings.marginMm)),
+      dy: ownerRect == null ? dy : math.max(0, dy - ownerRect.top),
+      pageIndex: ownerRect?.pageIndex ?? pageIndex,
+    );
+    final added = controller.addFloatingElement(
+      placed,
+      pageIndex: placed.pageIndex,
+      ownerQuestionId: owner,
+    );
     if (!added) {
       _showMessage('تعذر إدراج المعادلة في هذه الصفحة.');
       return false;
@@ -2983,7 +3022,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       _stagedFormulaIsBlock = false;
       _selectedAttachment = _AttachmentRef.global(placed.id);
     });
-    _showMessage('أُدرجت المعادلة — اسحبها بحرية بين صفحات الورقة.');
+    _showMessage(
+      owner == null
+          ? 'أُدرجت المعادلة — اسحبها بحرية بين صفحات الورقة.'
+          : 'أُدرجت المعادلة داخل السؤال المحدد — حركتها محصورة فيه.',
+    );
     return true;
   }
 
@@ -3406,8 +3449,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               child: Container(
                 width: 320,
                 padding: const EdgeInsets.all(8),
+                // معاينة السحب تُعرض نصاً مقروءاً: لا كود LaTeX حتى في
+                // العنصر العائم أثناء السحب.
                 child: Text(
-                  '$label) ${branch.content.text}',
+                  '$label) ${LatexPlainText.ofMixed(branch.content.text)}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: _scaled(PaperStyles.body(layout)),
@@ -3507,10 +3552,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final firstItemSpacing = paragraphSpacing ?? 1;
     final itemSpacing = paragraphSpacing ?? 0;
     final typeBodySpacing = paragraphSpacing ?? 1;
-    final showTypeBody = !(
-      (content.plainText && (!_showTeacherAnswers || content.type == QuestionType.multipleChoice)) ||
-      (!_showTeacherAnswers && content.type != QuestionType.multipleChoice)
-    );
+    // «صح/خطأ» بلا جسم مطبوع إطلاقاً (العبارات في نقاطها)، والنص الحر بلا
+    // جسم مولَّد، وبقية الأنواع تعرض خياراتها/فراغها فقط.
+    final showTypeBody = content.type != QuestionType.trueFalse && !content.plainText;
     final text = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -3599,7 +3643,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             SizedBox(height: index == 0 ? firstItemSpacing : itemSpacing),
           _branchItemRow(controller, layout, ref, index, bodyStyle),
         ],
-        if (showTypeBody)
+        // زر «إضافة نقطة» مستقل عن جسم النوع: صح/خطأ لا جسم له الآن، لكن
+        // عباراته تُضاف وتُحذف من هنا كما في بقية الأنواع (الفرع المحدد فقط).
+        if (showTypeBody || isSelected)
           Padding(
             padding: EdgeInsetsDirectional.only(
               start: 36,
@@ -3607,7 +3653,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             ),
             child: Row(
               children: <Widget>[
-                Expanded(child: _buildTypeBody(controller, ref, layout, branch)),
+                if (showTypeBody)
+                  Expanded(child: _buildTypeBody(controller, ref, layout, branch)),
                 if (isSelected)
                   IconButton(
                     tooltip: 'إضافة نقطة',
@@ -3655,103 +3702,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// مفتاحا صح/خطأ المصغّران لإجابة النقطة (نموذج المعلم فقط).
-  ///
-  /// النقر على المحدد يمسح الإجابة (غير محددة).
-  Widget _buildItemAnswerToggle(
-    ExamWizardController controller,
-    BranchRef ref,
-    int index,
-    BranchItem item, [
-    String format = 'words',
-  ]) {
-    final isSymbols = format == 'symbols';
-    Widget chip(String text, bool value) {
-      final selected = item.isCorrect == value;
-      return GestureDetector(
-        onTap: () => controller.updateBranchItemAnswer(
-          ref,
-          index,
-          selected ? null : value,
-        ),
-        child: Container(
-          margin: const EdgeInsets.only(left: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: selected ? PaperStyles.answer : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: selected ? PaperStyles.answer : Colors.grey.shade400,
-            ),
-          ),
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: 10,
-              color: selected ? Colors.white : Colors.grey.shade700,
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        chip(isSymbols ? '✓' : 'صح', true),
-        chip(isSymbols ? '✗' : 'خطأ', false),
-      ],
-    );
-  }
-
-  Widget _buildQuestionItemAnswerToggle(
-    ExamWizardController controller,
-    int questionIndex,
-    int index,
-    BranchItem item, [
-    String format = 'words',
-  ]) {
-    final isSymbols = format == 'symbols';
-    Widget chip(String text, bool value) {
-      final selected = item.isCorrect == value;
-      return GestureDetector(
-        onTap: () => controller.updateQuestionItemAnswer(
-          questionIndex,
-          index,
-          selected ? null : value,
-        ),
-        child: Container(
-          margin: const EdgeInsets.only(left: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: selected ? PaperStyles.answer : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: selected ? PaperStyles.answer : Colors.grey.shade400,
-            ),
-          ),
-          child: Text(
-            text,
-            style: TextStyle(
-              fontSize: 10,
-              color: selected ? Colors.white : Colors.grey.shade700,
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        chip(isSymbols ? '✓' : 'صح', true),
-        chip(isSymbols ? '✗' : 'خطأ', false),
-      ],
-    );
-  }
-
-  /// سطر نقطة سؤال مباشرة — يربط المعرّفات الثابتة (سؤال/نقطة) فلا
-  /// يختلط التحرير بعد إعادة الترتيب.
+  /// سطر نقطة سؤال مباشرة (1، 2، 3...) على الورقة — بلا أي عنصر إجابة.
   Widget _questionItemRow(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
@@ -3773,12 +3724,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       fieldKey: _itemKey(itemId),
       showActions: _activeItemFieldKey == _itemKey(itemId),
       label: document.displayItemLabel(item, index),
-      textAlign: _textAlignFor(_itemKey(itemId), fallback: PaperStyles.toTextAlign(question.style.align)),
+      textAlign: _textAlignFor(
+        _itemKey(itemId),
+        fallback: PaperStyles.toTextAlign(question.style.align),
+      ),
       onEditLabel: () => _editQuestionItemLabel(questionId, index),
       onTextChanged: (value) => _updateQuestionItemText(questionId, itemId, value),
-      answerToggle: _showTeacherAnswers && question.type == QuestionType.trueFalse
-          ? _buildQuestionItemAnswerToggle(controller, questionIndex, index, item, question.trueFalseFormat)
-          : null,
       onMoveUp: index == 0
           ? null
           : () => controller.moveQuestionItem(questionIndex, index, index - 1),
@@ -3789,7 +3740,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// سطر نقطة فرع — نفس مسار نقاط السؤال مع إجابة صح/خطأ في نموذج المعلم.
+  /// سطر نقطة داخل فرع — نفس مسار نقاط السؤال، وبلا أي إجابة.
   Widget _branchItemRow(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
@@ -3811,12 +3762,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       fieldKey: _itemKey(itemId),
       showActions: _activeItemFieldKey == _itemKey(itemId),
       label: document.displayItemLabel(item, index),
-      textAlign: _textAlignFor(_itemKey(itemId), fallback: PaperStyles.toTextAlign(branch.style.align)),
+      textAlign: _textAlignFor(
+        _itemKey(itemId),
+        fallback: PaperStyles.toTextAlign(branch.style.align),
+      ),
       onEditLabel: () => _editItemLabel(ref, index),
       onTextChanged: (value) => _updateBranchItemText(ref, itemId, value),
-      answerToggle: _showTeacherAnswers && content.type == QuestionType.trueFalse
-          ? _buildItemAnswerToggle(controller, ref, index, item, content.trueFalseFormat)
-          : null,
       onMoveUp: index == 0
           ? null
           : () => controller.moveBranchItem(ref, index, index - 1),
@@ -3831,8 +3782,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// خامة، والتسمية والترتيب والحذف في مكانها.
   ///
   /// يُستخدم لنقاط السؤال المباشرة ونقاط الفروع بالمسار نفسه (نفس ما
-  /// يُطبع في الـ PDF حرفياً)؛ وإجابة صح/خطأ ([answerToggle]) تظهر في
-  /// نموذج المعلم لفروع صح/خطأ وحدها.
+  /// يُطبع في الـ PDF حرفياً)؛ وإجابات صح/خطأ تُضبط من الشريط المجمّع
+  /// ولا يُضبط لها أي عنصر إجابة هنا (كتابة أسئلة فقط).
   Widget _buildItemRow({
     required SubjectLayoutTemplate layout,
     required BranchItem item,
@@ -3847,7 +3798,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     required VoidCallback onDelete,
     VoidCallback? onMoveUp,
     VoidCallback? onMoveDown,
-    Widget? answerToggle,
     TextAlign textAlign = TextAlign.start,
   }) {
     return Padding(
@@ -3870,8 +3820,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               ),
             ),
           ),
-          // إجابة النقطة لصح/خطأ — تظهر وتُحرَّر في نموذج المعلم فقط.
-          if (answerToggle != null) answerToggle,
           Expanded(
             child: _paperField(
               fieldKey: fieldKey,
@@ -4121,31 +4069,37 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   ) {
     final controller = _controller;
     final fallbackPage = element.pageIndex;
-    final ownerPage = controller != null &&
-            !ref.isGlobal &&
-            ref.questionIndex >= 0 &&
-            ref.questionIndex < controller.questions.length
-        ? controller.pagination.pageIndexOf(
-              controller.questions[ref.questionIndex].id,
-            ) ??
-            fallbackPage
-        : fallbackPage;
+    final ownerPage = controller != null && element.ownerQuestionId != null
+        ? _elementGeometry(controller, element).pageIndex
+        : controller != null &&
+                !ref.isGlobal &&
+                ref.questionIndex >= 0 &&
+                ref.questionIndex < controller.questions.length
+            ? controller.pagination.pageIndexOf(
+                  controller.questions[ref.questionIndex].id,
+                ) ??
+                fallbackPage
+            : fallbackPage;
     final pageCount = controller?.pagination.pageCount ?? 1;
     final pageIndex = ownerPage.clamp(0, math.max(0, pageCount - 1)).toInt();
+    if (controller == null) {
+      return;
+    }
     final local = _localPositionOnPage(pageIndex, position);
+    final geometry = _elementGeometry(controller, element);
     final physicalLeft = _layoutIsLtr
-        ? element.dx
-        : ExamCanvasGeometry.width - element.dx - element.width;
+        ? geometry.dx
+        : ExamCanvasGeometry.width - geometry.dx - element.width;
 
     _dragPointer = pointer;
     _dragRef = ref;
     _dragStartScreen = position;
     _dragLastScreen = position;
-    _dragLastPaper = Offset(element.dx, element.dy);
+    _dragLastPaper = Offset(geometry.dx, geometry.dy);
     _dragPageIndex = pageIndex;
     _dragAnchorWithinElement = local == null
         ? Offset(element.width / 2, element.height / 2)
-        : Offset(local.dx - physicalLeft, local.dy - element.dy);
+        : Offset(local.dx - physicalLeft, local.dy - geometry.dy);
     _dragMoved = false;
   }
 
@@ -4200,8 +4154,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _moveAttachmentTo(ref, target, pageIndex: pageIndex);
     final moved = _findAttachment(controller.document, ref);
     if (moved != null) {
-      _dragPageIndex = moved.pageIndex;
-      _dragLastPaper = Offset(moved.dx, moved.dy);
+      final geometry = _elementGeometry(controller, moved);
+      _dragPageIndex = geometry.pageIndex;
+      _dragLastPaper = Offset(geometry.dx, geometry.dy);
     }
     _dragLastScreen = position;
   }
@@ -4316,12 +4271,30 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     const anchor = 24.0;
     final maxDx = ExamCanvasGeometry.width - anchor;
     final maxDy = ExamCanvasGeometry.height - anchor;
+    final absolute = element.copyWith(
+      pageIndex: pageIndex,
+      dx: target.dx.clamp(anchor - element.width, maxDx).toDouble(),
+      dy: target.dy.clamp(anchor - element.height, maxDy).toDouble(),
+    );
+    final owner = element.ownerQuestionId;
+    if (owner == null) {
+      _updateAttachmentElement(ref, absolute, preservePageIndex: true);
+      return;
+    }
+    // عنصر مرتبط بسؤال: يُحوَّل الموضع المطلق إلى إحداثيات نسبةً للسؤال،
+    // والمراقب (المتحكم) يحصره داخل حدوده — فلا يخرج منه بالسحب أبداً.
+    final rect = controller.questionRect(owner);
+    if (rect == null) {
+      _updateAttachmentElement(ref, absolute, preservePageIndex: true);
+      return;
+    }
+    final margin = ExamCanvasGeometry.marginFor(controller.document.settings.marginMm);
     _updateAttachmentElement(
       ref,
       element.copyWith(
-        pageIndex: pageIndex,
-        dx: target.dx.clamp(anchor - element.width, maxDx).toDouble(),
-        dy: target.dy.clamp(anchor - element.height, maxDy).toDouble(),
+        pageIndex: rect.pageIndex,
+        dx: math.max(0, absolute.dx - margin),
+        dy: math.max(0, absolute.dy - rect.top),
       ),
       preservePageIndex: true,
     );
@@ -4393,9 +4366,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     FloatingElement element,
   ) {
     final selected = _selectedAttachment?.elementId == ref.elementId;
+    // العنصر المرتبط بسؤال يُرسم نسبةً إلى سؤال المالك: إن سافر السؤال بين
+    // الصفحات سافر معه العنصر، وإن تغيّر ارتفاع السؤال بقي داخله.
+    final geometry = _elementGeometry(controller, element);
     return PositionedDirectional(
-      start: element.dx,
-      top: element.dy,
+      start: geometry.dx,
+      top: geometry.dy,
       width: element.width,
       height: element.height,
       // غلاف قياس وقت اللمس فقط (لا يستهلك الإيماءة): يحتاجه كشف النقر
@@ -4434,6 +4410,24 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                     tooltip: 'حذف العنصر',
                     color: PaperStyles.danger,
                     onTap: () => _removeAttachmentElement(ref),
+                  ),
+                ),
+              // ربط/فصل العنصر بالسؤال: المرتبط يبقى داخل سؤال المالك ويسافر
+              // معه، والمفصول يبقى حراً في أي نقطة من الورقة.
+              if (selected && !_locked)
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: _elementHandle(
+                    key: ValueKey<String>('owner-element-${element.id}'),
+                    icon: element.isQuestionOwned
+                        ? Icons.link_off
+                        : Icons.link,
+                    tooltip: element.isQuestionOwned
+                        ? 'فصل العنصر عن السؤال'
+                        : 'ربط العنصر بالسؤال المحدد',
+                    color: PaperStyles.primary,
+                    onTap: () => _toggleElementOwner(ref, element),
                   ),
                 ),
               if (selected && !_locked && element.isFormula)
@@ -4522,12 +4516,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             ) ??
             element.pageIndex;
     final pageIndex = elementPage.clamp(0, math.max(0, pageCount - 1)).toInt();
-    final below = element.dy < 52;
+    // العنصر المرتبط بسؤال يتبع سؤاله: تُعرض أدوات الشريط عند موضعه الحقيقي
+    // على الصفحة، ولا يُتاح «نقل إلى صفحة أخرى» (السؤال هو الذي ينتقل).
+    final geometry = _elementGeometry(controller, element);
+    final below = geometry.dy < 52;
     return PositionedDirectional(
-      start: element.dx
+      start: geometry.dx
           .clamp(0.0, ExamCanvasGeometry.width - toolbarWidth)
           .toDouble(),
-      top: (below ? element.dy + element.height + 8 : element.dy - toolbarHeight)
+      top: (below ? geometry.dy + element.height + 8 : geometry.dy - toolbarHeight)
           .clamp(0.0, ExamCanvasGeometry.height - toolbarHeight)
           .toDouble(),
       child: Material(
@@ -4607,13 +4604,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               'محاذاة للأسفل',
               () => _alignAttachmentVertically(ref, element, 'bottom'),
             ),
-            if (pageIndex > 0)
+            if (!element.isQuestionOwned && pageIndex > 0)
               _attachTool(
                 Icons.keyboard_arrow_up,
                 'نقل إلى الصفحة السابقة',
                 () => _moveAttachmentToPage(ref, element, pageIndex - 1),
               ),
-            if (pageIndex < pageCount - 1)
+            if (!element.isQuestionOwned && pageIndex < pageCount - 1)
               _attachTool(
                 Icons.keyboard_arrow_down,
                 'نقل إلى الصفحة التالية',
@@ -4645,7 +4642,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     FloatingElement element,
     int pageIndex,
   ) {
-    _moveAttachmentTo(ref, Offset(element.dx, element.dy), pageIndex: pageIndex);
+    final controller = _controller!;
+    final geometry = _elementGeometry(controller, element);
+    _moveAttachmentTo(ref, Offset(geometry.dx, geometry.dy), pageIndex: pageIndex);
     SchedulerBinding.instance.addPostFrameCallback((_) {
       final targetContext = _pageCanvasKeys[pageIndex]?.currentContext;
       if (mounted && targetContext != null) {
@@ -4742,11 +4741,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// الخيارات في الورقة المطبوعة مع إبقائها قابلة للتحرير في مكانها.
   static const double _optionFieldWidth = 190;
 
-  /// جسم الفرع حسب نوعه: خيارات / صح-خطأ / فراغ / أسطر مقالية.
+  /// جسم الفرع حسب نوعه: خيارات «اختيار من متعدد» وحدها.
   ///
-  /// كل نصوصه قابلة للتحرير في مكانها — بما فيها نصوص الخيارات في «اختيار
-  /// من متعدد» — وتُعرض الإجابات النموذجية وتُحرَّر عند تشغيل «نموذج الإجابة».
-  /// الفرع الحر ([BranchContent.plainText]) يعرض نصه ونقاطه فقط.
+  /// كل نصوصه قابلة للتحرير في مكانها — بما فيها نصوص الخيارات.
+  /// و«صح/خطأ» و«الفراغ» و«المقالي» بلا جسم مولَّد إطلاقاً: العبارات/الفراغ
+  /// مكانه في نص الفرع ونقاطه، **ولا عنصر إجابة في أي مرحلة**.
   Widget _buildTypeBody(
     ExamWizardController controller,
     BranchRef ref,
@@ -4755,13 +4754,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   ) {
     final document = controller.document;
     final content = branch.content;
-    final answerStyle = PaperStyles.resolve(
-      PaperStyles.answerBody(layout),
-      branch.style,
-      defaultFont: document.settings.defaultFont,
-      fontScale: _fontScale,
-      heightScale: _heightScale,
-    );
     final optionStyle = PaperStyles.resolve(
       PaperStyles.option,
       branch.style,
@@ -4769,21 +4761,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       fontScale: _fontScale,
       heightScale: _heightScale,
     );
-    final optionAnswerStyle = optionStyle.copyWith(
-      color: branch.style.color == null
-          ? PaperStyles.answer
-          : Color(branch.style.color!),
-      fontWeight: FontWeight.bold,
-    );
     final paragraphSpacing = branch.style.paragraphSpacing ?? 2;
-    if (content.plainText && !_showTeacherAnswers) {
+    if (content.plainText) {
       return const SizedBox.shrink();
     }
     switch (content.type) {
       case QuestionType.multipleChoice:
-        if (_showTeacherAnswers && content.plainText) {
-          return const SizedBox.shrink();
-        }
         // عرض الخيارات بنفس منطق الورقة المطبوعة (صفوف متعددة الخيارات)،
         // لكن كل خيار حقل كتابة مباشر بعرض ثابت — والخيارات الفارغة تبقى
         // ظاهرة ليُكتب فيها (محرك الطباعة يستثني الفارغ كما في الورقة).
@@ -4826,26 +4809,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                               content.options[index].text,
                               (value) => controller.updateBranchOptionText(ref, index, value),
                             ),
-                            style: _showTeacherAnswers && content.options[index].isCorrect
-                                ? optionAnswerStyle
-                                : optionStyle,
+                            style: optionStyle,
                             textAlign: _textAlignFor(_optionKey(branch.id, index), fallback: PaperStyles.toTextAlign(branch.style.align)),
                             hint: layout.isLtr ? 'Option...' : 'نص الخيار...',
                           ),
                         ],
                       ),
                     ),
-                    if (_showTeacherAnswers && content.options[index].isCorrect)
-                      const Padding(
-                        padding: EdgeInsetsDirectional.only(start: 2),
-                        child: Text(
-                          '•',
-                          style: TextStyle(
-                            color: PaperStyles.answer,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
                     // لا حد أدنى للخيارات: يُحذف الأخير أيضاً.
                     InkWell(
                       onTap: () => controller.removeBranchOption(ref, index),
@@ -4874,79 +4844,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ],
         );
       case QuestionType.trueFalse:
-        // ورقة الطالب: الأسئلة فقط — الإجابة في دفتر الطالب، بلا مساحة
-        // إجابة مولَّدة؛ والإجابة الصحيحة تظهر في نموذج المعلم وحده.
-        if (_showTeacherAnswers) {
-          if (content.items.isNotEmpty) {
-            return const SizedBox.shrink();
-          }
-          final answer = content.trueFalseAnswer;
-          final answerStr = content.trueFalseFormat == 'symbols'
-              ? (answer ? '✓' : '✗')
-              : (answer ? 'صح' : 'خطأ');
-          return Text(
-            layout.isLtr
-                ? 'Answer: $answerStr •'
-                : 'الإجابة الصحيحة: $answerStr •',
-            style: answerStyle,
-          );
-        }
-        return const SizedBox.shrink();
       case QuestionType.fillInTheBlank:
-        if (_showTeacherAnswers) {
-          return _buildModelAnswerField(controller, ref, layout, branch, answerStyle);
-        }
-        return const SizedBox.shrink();
       case QuestionType.definitions:
       case QuestionType.essay:
-        if (_showTeacherAnswers) {
-          return _buildModelAnswerField(controller, ref, layout, branch, answerStyle);
-        }
+        // لا جسم مطبوع لهذه الأنواع: العبارات في نقاطها، والفراغ/المقالي
+        // مساحته في نص الفرع — **ولا عنصر إجابة في أي مرحلة**.
         return const SizedBox.shrink();
     }
-  }
-
-  /// الإجابة النموذجية على الورقة في وضع «نموذج الإجابة» — نص قابل للتحرير
-  /// في مكانه (فراغ/مقالي)، تماماً كما يُطبع في ملف الـ PDF.
-  Widget _buildModelAnswerField(
-    ExamWizardController controller,
-    BranchRef ref,
-    SubjectLayoutTemplate layout,
-    BranchModel branch,
-    TextStyle answerStyle,
-  ) {
-    final content = branch.content;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(
-          content.type == QuestionType.essay
-              ? (layout.isLtr ? 'Model answer: ' : 'الإجابة النموذجية وعناصر التقييم: ')
-              : (layout.isLtr ? 'Model answer: ' : 'الإجابة النموذجية: '),
-          style: answerStyle,
-        ),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              _paperField(
-                fieldKey: _modelAnswerKey(branch.id),
-                controller: _field(
-                  _modelAnswerKey(branch.id),
-                  content.modelAnswer,
-                  (value) => controller.updateBranchModelAnswer(ref, value),
-                ),
-                style: answerStyle,
-                textAlign: _textAlignFor(_modelAnswerKey(branch.id), fallback: PaperStyles.toTextAlign(branch.style.align)),
-                hint: layout.isLtr ? 'Model answer...' : 'اكتب الإجابة النموذجية...',
-              ),
-            ],
-          ),
-        ),
-        Text(' •', style: answerStyle),
-      ],
-    );
   }
 
   /// حقل النص على الورقة: **الشكل النهائي فقط** — معادلات مرسومة وآيات
@@ -4994,7 +4898,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         for (var b = 0; b < question.branches.length; b++) {
           final branch = question.branches[b];
           final isBranchItem = branch.content.items.any((item) => key == _itemKey(item.id));
-          if (key == _branchTextKey(branch.id) || key == _modelAnswerKey(branch.id) ||
+          if (key == _branchTextKey(branch.id) ||
               isBranchItem ||
               List.generate(branch.content.options.length, (i) => _optionKey(branch.id, i)).contains(key)) {
             _activeItemFieldKey = isBranchItem ? key : null;

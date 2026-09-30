@@ -23,10 +23,6 @@ abstract final class PaperStyles {
   static const Color accent = Color(0xFF2563EB);
   static const Color danger = Color(0xFFDC2626);
 
-  /// لون الإجابات النموذجية في «نموذج الإجابة» — مطابق لـ
-  /// `ExamTextStyles.successColor` في محرك الطباعة.
-  static const Color answer = Color(0xFF065F46);
-
   static TextStyle _style(
     double points, {
     bool bold = false,
@@ -137,12 +133,6 @@ abstract final class PaperStyles {
 
   /// مقطع قرآني سطري داخل نص عادي: يبقى بمقاس النص ويتغيّر خطه فقط.
   static TextStyle quranic(TextStyle base) => base.copyWith(fontFamily: quranicFamily);
-
-  /// نص الإجابة النموذجية (فراغ/مقالي) على الورقة في وضع «نموذج الإجابة».
-  static TextStyle answerBody(SubjectLayoutTemplate layout) => body(layout).copyWith(
-        color: answer,
-        fontWeight: FontWeight.bold,
-      );
 
   static TextStyle hint(TextStyle base) => base.copyWith(color: Colors.grey);
 }

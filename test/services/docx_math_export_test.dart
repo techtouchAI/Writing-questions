@@ -128,13 +128,19 @@ void main() {
     expect(_capturedSizes.every((size) => size > 0), isTrue);
   });
 
-  test('بلا مخصّص رسم يبقى نص الصيغة كما هو (توافق خلفي)', () async {
+  test('بلا مخصّص رسم تُكتب الصيغ نصاً رياضياً مقروءاً لا كوداً', () async {
     final archive = await _archive(_document());
     final xml = _xml(archive);
 
     expect(xml.contains('<w:drawing>'), isFalse);
-    expect(xml.contains('x^2 + 1'), isTrue);
     expect(archive.findFile('word/media/image1.png'), isNull);
+    // لا كود LaTeX ولا علامات دولار في أي حال، والمعنى الرياضي محفوظ.
+    expect(xml.contains('x² + 1'), isTrue);
+    expect(xml.contains('x^2 + 1'), isFalse);
+    expect(xml.contains('(a)/(b)'), isTrue);
+    expect(xml.contains(r'\frac'), isFalse);
+    expect(xml.contains(r'$'), isFalse);
+    expect(xml.contains('احسب'), isTrue);
   });
 
   test('المعادلة الحرة تُصدَّر صورة معادلة لا نصاً', () async {
@@ -166,21 +172,26 @@ void main() {
     expect(archive.findFile('word/media/image1.png'), isNotNull);
   });
 
-  test('الصيغة التي يتعذّر رسمها تُكتب نصاً بدل إسقاطها', () async {
+  test('الصيغة التي يتعذّر رسمها تُكتب نصاً رياضياً مقروءاً بلا أي كود', () async {
     final archive = await _archive(_document(), rasterizer: _fakeRasterizer);
     final xml = _xml(archive);
 
-    // الصيغة المرفوضة بقيت نصاً، وشقيقاتها رُسمت.
-    expect(xml.contains('bad_{formula}'), isTrue);
+    // الصيغة المرفوضة بقيت **نصاً مقروءاً** لا كوداً، وشقيقاتها رُسمت.
+    expect(xml.contains('bad_(formula)'), isTrue);
+    expect(xml.contains(r'bad_{formula}'), isFalse);
     expect(xml.contains('<w:drawing>'), isTrue);
   });
 
-  test('فشل المرسّم لا يُسقط التصدير', () async {
+  test('فشل المرسّم لا يُسقط التصدير ويكتب النص المقروء', () async {
     final archive = await _archive(_document(), rasterizer: _throwingRasterizer);
     final xml = _xml(archive);
 
     expect(xml.contains('<w:drawing>'), isFalse);
-    expect(xml.contains('x^2 + 1'), isTrue);
+    // x^2 صارت x² (نص رياضي مقروء) وبلا أي شرطة مائلة أو دولار.
+    expect(xml.contains('x² + 1'), isTrue);
+    expect(xml.contains('x^2 + 1'), isFalse);
+    expect(xml.contains(r'\frac'), isFalse);
+    expect(xml.contains(r'$'), isFalse);
     expect(xml.contains('احسب'), isTrue);
   });
 }

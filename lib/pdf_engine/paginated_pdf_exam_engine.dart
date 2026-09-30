@@ -7,9 +7,11 @@ import '../layout/pagination_engine.dart';
 import '../layout/paper_metrics.dart';
 import '../models/branch_item.dart';
 import '../models/branch_model.dart';
+import '../models/exam_canvas_geometry.dart';
 import '../models/exam_document.dart';
 import '../models/exam_header_model.dart';
 import '../models/floating_element.dart';
+import '../models/latex_plain_text.dart';
 import '../models/paper_divider.dart';
 import '../models/paper_text_style.dart';
 import '../models/question_model.dart';
@@ -111,8 +113,7 @@ class PaginatedPdfExamEngine {
       }
       for (final branch in question.branches) {
         final content = branch.content;
-        if (QuranText.containsQuran(content.text) ||
-            QuranText.containsQuran(content.modelAnswer)) {
+        if (QuranText.containsQuran(content.text)) {
           return true;
         }
         for (final item in content.items) {
@@ -141,7 +142,6 @@ class PaginatedPdfExamEngine {
   /// الشاشة؛ عند غيابه يُحسب التوزيع هنا بقياس عناصر pdf نفسها.
   Future<Uint8List> generate({
     required ExamDocument document,
-    bool isTeacherVersion = false,
     List<List<String>>? pageAssignments,
     ExamFonts? fonts,
   }) async {
@@ -176,8 +176,41 @@ class PaginatedPdfExamEngine {
       layout: layout,
       styles: styles,
       fonts: loadedFonts,
-      isTeacherVersion: isTeacherVersion,
     );
+
+    // أعلى كل سؤال داخل صفحته (نقاط PDF) — مرجع العناصر المرتبطة بالسؤال،
+    // فالسؤال قد يتصدّر الصفحة أو يتأخر بعد غيره أو ينتقل بين الصفحات.
+    final questionTopsByPage = <int, Map<String, double>>{};
+    for (var pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+      final tops = <String, double>{};
+      var top = margin;
+      if (pageIndex == 0) {
+        top += _measure(
+              _buildHeader(document, layout, styles, loadedFonts),
+              pdf,
+              theme,
+              direction,
+              contentWidth,
+            ) +
+            _blockSpacing;
+      }
+      for (final id in pages[pageIndex]) {
+        tops[id] = top;
+        final question = document.questionById(id);
+        if (question == null) {
+          continue;
+        }
+        top += _measure(
+              _buildQuestion(document, question, layout, styles, loadedFonts),
+              pdf,
+              theme,
+              direction,
+              contentWidth,
+            ) +
+            PaperMetrics.pt(question.spacingAfter);
+      }
+      questionTopsByPage[pageIndex] = tops;
+    }
 
     for (var pageIndex = 0; pageIndex < pages.length; pageIndex++) {
       final questionIds = pages[pageIndex];
@@ -203,7 +236,6 @@ class PaginatedPdfExamEngine {
                   layout,
                   styles,
                   loadedFonts,
-                  isTeacherVersion,
                 ),
               );
               spacingAfter.add(PaperMetrics.pt(question.spacingAfter));
@@ -259,20 +291,21 @@ class PaginatedPdfExamEngine {
                 // العناصر العائمة في الطبقة العليا بإحداثيات اللوحة نفسها:
                 // موضعها اختيار المستخدم وقد يقع أعلى الورقة أو أسفلها، فترسم
                 // مستقلةً عن كتل الأسئلة (بلا تكرار داخل الكتل).
-                for (final element in _pageAttachments(
+                for (final placement in _pageAttachmentPlacements(
                   document,
                   questionIds,
                   pageIndex: pageIndex,
                   pageCount: pages.length,
+                  questionTops: questionTopsByPage[pageIndex] ?? const <String, double>{},
                 ))
                   pw.Positioned(
-                    left: layout.isLtr ? element.dx * _canvasScale : null,
-                    right: layout.isLtr ? null : element.dx * _canvasScale,
-                    top: element.dy * _canvasScale,
+                    left: layout.isLtr ? placement.edge : null,
+                    right: layout.isLtr ? null : placement.edge,
+                    top: placement.top,
                     child: FloatingElementsPdf.build(
-                      element,
-                      widthPt: element.width * _canvasScale,
-                      heightPt: element.height * _canvasScale,
+                      placement.element,
+                      widthPt: placement.element.width * _canvasScale,
+                      heightPt: placement.element.height * _canvasScale,
                       fonts: loadedFonts,
                       defaultFont: settings.defaultFont,
                       fontScale: settings.fontScale,
@@ -294,7 +327,6 @@ class PaginatedPdfExamEngine {
   /// page-relative floating elements line up with the PDF export.
   Future<List<List<String>>> resolveQuestionPages({
     required ExamDocument document,
-    bool isTeacherVersion = false,
     ExamFonts? fonts,
   }) async {
     final loadedFonts =
@@ -324,7 +356,6 @@ class PaginatedPdfExamEngine {
       layout: layout,
       styles: styles,
       fonts: loadedFonts,
-      isTeacherVersion: isTeacherVersion,
     );
   }
 
@@ -339,13 +370,11 @@ class PaginatedPdfExamEngine {
     required SubjectLayoutTemplate layout,
     required ExamTextStyles styles,
     required ExamFonts fonts,
-    required bool isTeacherVersion,
   }) {
     final globalElementIds =
         document.floatingElements.map((element) => element.id).toSet();
     final printableQuestions = document.questions
         .where((question) => question.hasExportableContent(
-              teacher: isTeacherVersion,
               ignoredAttachmentIds: globalElementIds,
             ))
         .toList(growable: false);
@@ -367,8 +396,8 @@ class PaginatedPdfExamEngine {
         for (final question in printableQuestions)
           PageBlock(
             id: question.id,
-            height: measure(_buildQuestion(
-                document, question, layout, styles, fonts, isTeacherVersion)),
+            height:
+                measure(_buildQuestion(document, question, layout, styles, fonts)),
             spacingAfter: PaperMetrics.pt(question.spacingAfter),
           ),
       ],
@@ -384,19 +413,76 @@ class PaginatedPdfExamEngine {
   /// نسبة تحويل بكسل اللوحة إلى نقاط الـ PDF (نفس النسبة في كل المحرك).
   static double get _canvasScale => PaperMetrics.pointsPerPixel;
 
-  /// العناصر العامة على الصفحة، مع العناصر القديمة التابعة لأسئلة الصفحة.
-  /// تُتجاهل النسخ التوافقية الموجودة داخل السؤال/الفرع حتى لا تُطبع مرتين.
+  /// موضع عنصر عائم جاهز للرسم في الـ PDF: عناصر الصفحة بإحداثياتها المطلقة،
+  /// والعناصر المرتبطة بسؤال بإحداثيات نسبية لأعلى سؤالها (فتُرسم داخله
+  /// وتنتقل معه بين الصفحات).
+  ///
+  /// [`edge`] = المسافة من حافة القراءة (يمين الورقة في RTL ويسارها في LTR)،
+  /// والمستدعي يضعها في `right` أو `left` بحسب اتجاه الورقة — فلا يُحدَّد
+  /// الاتجاهان معاً فيتمدّد العنصر بعرض الورقة.
+  static List<({FloatingElement element, double edge, double top})>
+      _pageAttachmentPlacements(
+    ExamDocument document,
+    List<String> questionIds, {
+    required int pageIndex,
+    required int pageCount,
+    required Map<String, double> questionTops,
+  }) {
+    final marginPt = _marginForDocument(document);
+    final placements =
+        <({FloatingElement element, double edge, double top})>[];
+    for (final element in _pageAttachments(
+      document,
+      questionIds,
+      pageIndex: pageIndex,
+      pageCount: pageCount,
+      questionTops: questionTops,
+    )) {
+      final owner = element.ownerQuestionId;
+      final ownerTop = owner == null ? null : questionTops[owner];
+      // عنصر حر: إحداثياته مطلقة على الورقة (من حافتها). عنصر مرتبط بسؤال:
+      // إحداثياته من حافة محتوى سؤاله، وأعلى سؤال المالك مرجعه الرأسي.
+      final topPt = ownerTop == null
+          ? element.dy * _canvasScale
+          : ownerTop + element.dy * _canvasScale;
+      final edge = ownerTop == null
+          ? element.dx * _canvasScale
+          : marginPt + element.dx * _canvasScale;
+      placements.add((
+        element: element,
+        edge: edge,
+        top: topPt,
+      ));
+    }
+    return placements;
+  }
+
+  /// هامش الورقة بالنقاط لورقة [document] (نفس هامش محرك الطباعة).
+  static double _marginForDocument(ExamDocument document) =>
+      PaperMetrics.pt(ExamCanvasGeometry.marginFor(document.settings.marginMm));
+
+  /// عناصر الصفحة: الحرة بإحداثياتها على الورقة، والمرتبطة بسؤال **لصفحة
+  /// مالكها وحدها** (فلا تُرسم مرتين ولا تفوت صفحة سؤالها).
   static List<FloatingElement> _pageAttachments(
     ExamDocument document,
     List<String> questionIds, {
     required int pageIndex,
     required int pageCount,
+    required Map<String, double> questionTops,
   }) {
     final elements = <FloatingElement>[];
     final seenIds = <String>{};
     final globalIds = document.floatingElements.map((element) => element.id).toSet();
     final lastPage = pageCount - 1;
     for (final element in document.floatingElements) {
+      final owner = element.ownerQuestionId;
+      if (owner != null) {
+        // عنصر مرتبط بسؤال: يُرسم في صفحة سؤاله نفسها.
+        if (questionTops.containsKey(owner) && seenIds.add(element.id)) {
+          elements.add(element);
+        }
+        continue;
+      }
       final assignedPage = element.pageIndex.clamp(0, lastPage).toInt();
       if (assignedPage == pageIndex && seenIds.add(element.id)) {
         elements.add(element);
@@ -570,7 +656,6 @@ class PaginatedPdfExamEngine {
     SubjectLayoutTemplate layout,
     ExamTextStyles styles,
     ExamFonts fonts,
-    bool isTeacherVersion,
   ) {
     final settings = document.settings;
     final globalElementIds =
@@ -624,8 +709,7 @@ class PaginatedPdfExamEngine {
           ),
         ),
       // نقاط السؤال المباشرة (1، 2، 3...) — ترقيم تلقائي كما في نقاط الفرع.
-      if (question.items.any((item) =>
-          item.showsInExport(teacher: isTeacherVersion, trueFalse: false)))
+      if (question.items.any((item) => item.showsInExport))
         pw.Padding(
           padding: pw.EdgeInsetsDirectional.only(start: 14, top: paragraphGap),
           child: _buildItems(
@@ -634,15 +718,11 @@ class PaginatedPdfExamEngine {
             layout,
             styles,
             fonts,
-            isTeacherVersion,
             bodyOverride,
-            trueFalse: false,
-            trueFalseFormat: question.trueFalseFormat,
           ),
         ),
       for (var index = 0; index < question.branches.length; index++)
-        if (question.branches[index].hasExportableContent(
-          teacher: isTeacherVersion,
+        if (question.branches[index].hasExportableContentIn(
           ignoredAttachmentIds: globalElementIds,
         ))
           pw.Padding(
@@ -658,7 +738,6 @@ class PaginatedPdfExamEngine {
               layout,
               styles,
               fonts,
-              isTeacherVersion,
               globalElementIds,
             ),
           ),
@@ -702,16 +781,12 @@ class PaginatedPdfExamEngine {
     SubjectLayoutTemplate layout,
     ExamTextStyles styles,
     ExamFonts fonts,
-    bool isTeacherVersion,
     Set<String> globalElementIds,
   ) {
     final settings = document.settings;
     final content = branch.content;
     // الفرع الفارغ تماماً يُحذف من المطبوع كاملاً (مع فاصله) ولا يترك مسافة.
-    if (!branch.hasExportableContent(
-      teacher: isTeacherVersion,
-      ignoredAttachmentIds: globalElementIds,
-    )) {
+    if (!branch.hasExportableContentIn(ignoredAttachmentIds: globalElementIds)) {
       return pw.SizedBox();
     }
     final marksSuffix = branch.marks > 0
@@ -743,10 +818,8 @@ class PaginatedPdfExamEngine {
       defaultFont: settings.defaultFont,
     );
     final branchAlign = PaperStyleResolver.toPdfAlign(branch.style.align);
-    // مطابقة اللوحة حرفياً: النص الحر يُخفي مساحة الإجابة عن الطالب،
-    // وخيارات الاختيار تُخفى في نموذج المعلم للفرع الحر.
-    final hasVisibleTypeBody =
-        content.hasPrintableTypeBody(teacher: isTeacherVersion);
+    // مطابقة اللوحة حرفياً: النص الحر بلا جسم مولَّد.
+    final hasVisibleTypeBody = content.hasPrintableTypeBody;
     final paragraphGap = PaperMetrics.pt(branch.style.paragraphSpacing ?? 1);
 
     final children = <pw.Widget>[
@@ -757,9 +830,7 @@ class PaginatedPdfExamEngine {
         centerVerse: standaloneVerse,
         align: branchAlign,
       ),
-      if (content.items.any((item) => item.showsInExport(
-          teacher: isTeacherVersion,
-          trueFalse: content.type == QuestionType.trueFalse)))
+      if (content.items.any((item) => item.showsInExport))
         pw.Padding(
           padding: pw.EdgeInsetsDirectional.only(start: 14, top: paragraphGap),
           child: _buildItems(
@@ -768,10 +839,7 @@ class PaginatedPdfExamEngine {
             layout,
             styles,
             fonts,
-            isTeacherVersion,
             branch.style,
-            trueFalse: content.type == QuestionType.trueFalse,
-            trueFalseFormat: content.trueFalseFormat,
           ),
         ),
       if (hasVisibleTypeBody)
@@ -783,7 +851,6 @@ class PaginatedPdfExamEngine {
             layout,
             styles,
             fonts,
-            isTeacherVersion,
             branch.style,
           ),
         ),
@@ -826,11 +893,8 @@ class PaginatedPdfExamEngine {
     SubjectLayoutTemplate layout,
     ExamTextStyles styles,
     ExamFonts fonts,
-    bool isTeacherVersion,
-    PaperTextStyle? ownerStyle, {
-    required bool trueFalse,
-    String trueFalseFormat = 'words',
-  }) {
+    PaperTextStyle? ownerStyle,
+  ) {
     final settings = document.settings;
     final itemStyle = PaperStyleResolver.apply(
       styles.body.copyWith(lineSpacing: 1.5 * settings.heightScale),
@@ -843,7 +907,7 @@ class PaginatedPdfExamEngine {
     final children = <pw.Widget>[];
     var visibleItemCount = 0;
     for (var index = 0; index < items.length; index++) {
-      if (!items[index].showsInExport(teacher: isTeacherVersion, trueFalse: trueFalse)) {
+      if (!items[index].showsInExport) {
         continue;
       }
       if (visibleItemCount > 0 && paragraphGap > 0) {
@@ -857,10 +921,7 @@ class PaginatedPdfExamEngine {
           layout,
           itemStyle,
           fonts,
-          isTeacherVersion,
           PaperStyleResolver.toPdfAlign(items[index].align) ?? align,
-          trueFalse: trueFalse,
-          trueFalseFormat: trueFalseFormat,
         ),
       );
       visibleItemCount++;
@@ -879,31 +940,17 @@ class PaginatedPdfExamEngine {
     SubjectLayoutTemplate layout,
     pw.TextStyle style,
     ExamFonts fonts,
-    bool isTeacherVersion,
-    pw.TextAlign? align, {
-    required bool trueFalse,
-    String trueFalseFormat = 'words',
-  }) {
+    pw.TextAlign? align,
+  ) {
     final marksSuffix = item.marks > 0
         ? ' (${document.formatNumber(item.marks)} ${layout.marksUnit})'
         : '';
-    // إجابة النقطة لصح/خطأ — في نموذج المعلم فقط.
-    var answerSuffix = '';
-    if (isTeacherVersion && trueFalse && item.isCorrect != null) {
-      if (trueFalseFormat == 'symbols') {
-        answerSuffix = item.isCorrect! ? ' (✓)' : ' (✗)';
-      } else {
-        answerSuffix = layout.isLtr
-            ? (item.isCorrect! ? ' (True)' : ' (False)')
-            : (item.isCorrect! ? ' (صح)' : ' (خطأ)');
-      }
-    }
     final itemLabel = document.displayItemLabel(item, index);
     final chunks = <String>[
       if (itemLabel.isNotEmpty) itemLabel,
       if (item.text.trim().isNotEmpty) item.text,
     ];
-    final line = '${chunks.join(' ')}$marksSuffix$answerSuffix';
+    final line = '${chunks.join(' ')}$marksSuffix';
     if (line.trim().isEmpty) {
       return pw.SizedBox();
     }
@@ -961,35 +1008,15 @@ class PaginatedPdfExamEngine {
     SubjectLayoutTemplate layout,
     ExamTextStyles styles,
     ExamFonts fonts,
-    bool isTeacherVersion,
     PaperTextStyle? branchStyle,
   ) {
-    final bodyStyle = PaperStyleResolver.apply(
-      styles.body,
-      branchStyle,
-      fonts: fonts,
-      defaultFont: document.settings.defaultFont,
-    );
     final optionStyle = PaperStyleResolver.apply(
       styles.option,
       branchStyle,
       fonts: fonts,
       defaultFont: document.settings.defaultFont,
     );
-    final branchColor = branchStyle?.color == null
-        ? null
-        : PdfColor.fromInt(branchStyle!.color!);
-    final styledAnswer = bodyStyle.copyWith(
-      color: branchColor ?? ExamTextStyles.successColor,
-      fontWeight: pw.FontWeight.bold,
-    );
-    final styledOptionAnswer = optionStyle.copyWith(
-      color: branchColor ?? ExamTextStyles.successColor,
-      fontWeight: pw.FontWeight.bold,
-    );
     final align = PaperStyleResolver.toPdfAlign(branchStyle?.align);
-    // محاذاة الإجابة النموذجية/صح-خطأ: نظيرها في الموديل يعلو محاذاة الفرع.
-    final answerAlign = PaperStyleResolver.toPdfAlign(content.modelAnswerAlign) ?? align;
     switch (content.type) {
       case QuestionType.multipleChoice:
         // الخيارات الفارغة تُحذف، لكن التسميات تبقى بفهارسها الأصلية
@@ -1003,15 +1030,8 @@ class PaginatedPdfExamEngine {
             for (var index = 0; index < content.options.length; index++)
               if (content.options[index].text.trim().isNotEmpty)
                 _renderText(
-                  _optionLine(
-                    document,
-                    content.options[index],
-                    index,
-                    isTeacherVersion && content.options[index].isCorrect,
-                  ),
-                  isTeacherVersion && content.options[index].isCorrect
-                      ? styledOptionAnswer
-                      : optionStyle,
+                  _optionLine(document, content.options[index], index),
+                  optionStyle,
                   fonts.quranic,
                   align: PaperStyleResolver.toPdfAlign(content.options[index].align) ??
                       align,
@@ -1022,53 +1042,11 @@ class PaginatedPdfExamEngine {
           ],
         );
       case QuestionType.trueFalse:
-        // ورقة الطالب: الأسئلة فقط — الإجابة في دفتر الطالب، بلا مساحة
-        // إجابة مولَّدة على الورقة.
-        if (!isTeacherVersion || content.items.isNotEmpty) {
-          return pw.SizedBox();
-        }
-        final answer = content.trueFalseAnswer;
-        final answerStr = content.trueFalseFormat == 'symbols'
-            ? (answer ? '✓' : '✗')
-            : (layout.isLtr
-                ? (answer ? 'True' : 'False')
-                : (answer ? 'صح' : 'خطأ'));
-        return pw.Text(
-          layout.isLtr
-              ? 'Answer: $answerStr •'
-              : 'الإجابة الصحيحة: $answerStr •',
-          style: styledAnswer,
-          textAlign: answerAlign,
-        );
       case QuestionType.fillInTheBlank:
-        if (!isTeacherVersion) {
-          return pw.SizedBox();
-        }
-        final fillModel = content.modelAnswer.trim();
-        if (fillModel.isEmpty) {
-          return pw.SizedBox();
-        }
-        return _renderText(
-          '${layout.isLtr ? 'Model answer' : 'الإجابة النموذجية'}: $fillModel •',
-          styledAnswer,
-          fonts.quranic,
-          align: answerAlign,
-        );
       case QuestionType.definitions:
       case QuestionType.essay:
-        if (isTeacherVersion) {
-          final essayModel = content.modelAnswer.trim();
-          if (essayModel.isEmpty) {
-            return pw.SizedBox();
-          }
-          return _renderText(
-            '${layout.isLtr ? 'Model answer' : 'الإجابة النموذجية وعناصر التقييم'}: '
-            '$essayModel •',
-            styledAnswer,
-            fonts.quranic,
-            align: answerAlign,
-          );
-        }
+        // لا جسم مطبوع لهذه الأنواع: العبارات في نقاطها، ومساحة الفراغ/
+        // المقالي في نص الفرع — **ولا عنصر إجابة في أي مرحلة**.
         return pw.SizedBox();
     }
   }
@@ -1078,11 +1056,10 @@ class PaginatedPdfExamEngine {
     ExamDocument document,
     QuestionOption option,
     int index,
-    bool markCorrect,
   ) {
     final label = document.displayOptionLabel(option, index);
     final prefix = label.isEmpty ? '' : '$label ';
-    return '$prefix${option.text}${markCorrect ? ' •' : ''}';
+    return '$prefix${option.text}';
   }
 
   pw.Widget _buildFooter(
@@ -1160,7 +1137,11 @@ class PaginatedPdfExamEngine {
       }
       final latex = LatexSvgRenderer.tryToSvg(segment.text, fontSize: fontSize);
       if (latex == null) {
-        inline.add(pw.Text('\$${segment.text}\$', style: style));
+        // صيغة تعذّر ترسيمها (نص قديم نادر): تُكتب نصاً رياضياً مقروءاً —
+        // ممنوع ظهور كود LaTeX في أي ملف مهما كان السبب.
+        inline.add(
+          pw.Text(LatexPlainText.of(segment.text), style: style, textAlign: align),
+        );
         continue;
       }
       final image = pw.SvgImage(svg: latex.svg, width: latex.width, height: latex.height);

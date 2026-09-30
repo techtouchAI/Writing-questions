@@ -60,7 +60,7 @@ ExamDocument _document() => ExamDocument(
                 type: QuestionType.multipleChoice,
                 text: 'اختر الإجابة',
                 options: <QuestionOption>[
-                  QuestionOption(text: 'الخيار الأول', isCorrect: true),
+                  QuestionOption(text: 'الخيار الأول'),
                   QuestionOption(text: 'الخيار الثاني'),
                 ],
               ),
@@ -78,8 +78,8 @@ ExamDocument _document() => ExamDocument(
               content: BranchContent(
                 type: QuestionType.trueFalse,
                 items: <BranchItem>[
-                  BranchItem(id: 'bi1', text: 'عبارة أولى', isCorrect: true),
-                  BranchItem(id: 'bi2', text: 'عبارة ثانية', isCorrect: false),
+                  BranchItem(id: 'bi1', text: 'عبارة أولى'),
+                  BranchItem(id: 'bi2', text: 'عبارة ثانية'),
                 ],
               ),
             ),
@@ -296,8 +296,6 @@ void main() {
       'نوع السؤال':
           (null, (c) => c.updateQuestionType(0, QuestionType.definitions)),
       'قسم السؤال': (null, (c) => c.updateQuestionCategory(0, 'القسم الأول')),
-      'صيغة صح/خطأ':
-          (null, (c) => c.updateQuestionTrueFalseFormat(1, 'symbols')),
       'إطار السؤال': (null, (c) => c.toggleQuestionFrame(0)),
       'فاصل بعد السؤال':
           (null, (c) => c.setQuestionDivider(0, const PaperDivider(thickness: 2))),
@@ -322,20 +320,15 @@ void main() {
       'درجة فرع': (null, (c) => c.updateBranchMarks(essayRef, 7.5)),
       'تسمية فرع': (null, (c) => c.updateBranchLabelOverride(essayRef, 'أولاً')),
       'نوع فرع': (null, (c) => c.updateBranchType(mcqRef, QuestionType.trueFalse)),
-      'إجابة نموذجية':
-          (null, (c) => c.updateBranchModelAnswer(essayRef, 'إجابة نموذجية')),
       'إضافة خيار': (null, (c) => c.addBranchOption(mcqRef)),
       'نص خيار': (null, (c) => c.updateBranchOptionText(mcqRef, 1, 'خيار معدل')),
       'تسمية خيار': (null, (c) => c.updateBranchOptionLabel(mcqRef, 0, '-')),
-      'تغيير خيار صحيح':
-          (null, (c) => c.setBranchOptionCorrect(mcqRef, 1, true)),
       'إضافة نقطة فرع': (null, (c) => c.addBranchItem(tfRef)),
       'تعديل نقطة فرع':
           (null, (c) => c.updateBranchItemText(tfRef, 0, 'نقطة فرع معدّلة')),
       'تسمية نقطة فرع': (null, (c) => c.updateBranchItemLabel(tfRef, 0, 'أ')),
       'درجة نقطة فرع': (null, (c) => c.updateBranchItemMarks(tfRef, 1, 1.5)),
       'حذف نقطة فرع': (null, (c) => c.removeBranchItem(tfRef, 1)),
-      'إجابة نقطة فرع': (null, (c) => c.updateBranchItemAnswer(tfRef, 0, false)),
       'سطر الترويسة': (
         null,
         (c) => c.updateHeaderLine(HeaderSlot.right, 0, 'التاريخ: 2026/09/29'),
@@ -572,28 +565,6 @@ void main() {
     );
   });
 
-  testWidgets('AUD-ALIGN-ANS-01: محاذاة الإجابة النموذجية تُحفظ في الموديل',
-      (tester) async {
-    final controller = ExamWizardController(document: _document());
-    await _pump(tester, controller);
-    await _tap(tester, find.byTooltip('عرض نموذج الإجابة'));
-    await _tap(tester, _field('answer-b1'));
-    await _tap(tester, _tool('توسيط'));
-    final shown = tester.widget<TextField>(_field('answer-b1')).textAlign;
-    expect(shown, TextAlign.center, reason: 'الشاشة: الإجابة تبدو منسوّطة.');
-
-    expect(
-      controller.document
-          .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
-          .content
-          .modelAnswerAlign,
-      PaperAlign.center,
-      reason: 'AUD-ALIGN-ANS-01: محاذاة الإجابة النموذجية لا تُحفظ في الموديل '
-          '(خريطة محلية فقط)؛ تضيع عند الحفظ/إعادة الفتح وغائبة عن التصدير — '
-          'Word يحاذي فقرة الإجابة على حدة.',
-    );
-  });
-
   testWidgets(
       'AUD-ALIGN-02: المحاذاة الأربع تُوجّه تخطيط الحقل مع نص مختلط وأرقام (RTL)',
       (tester) async {
@@ -739,15 +710,16 @@ void main() {
   });
 
   testWidgets(
-      'AUD-NOFX-02: وضع المعلم والمراجعات وشريط الصيغ وإعدادات(إلغاء) بلا أثر',
+      'AUD-NOFX-02: المراجعات وشريط الصيغ وإعدادات(إلغاء) بلا أثر على المستند',
       (tester) async {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
     final before = _snapshot(controller);
     final undoBefore = controller.canUndo;
 
-    await _tap(tester, find.byTooltip('عرض نموذج الإجابة'));
-    await _tap(tester, find.byTooltip('عرض ورقة الطالب'));
+    // لا وجود لأي زر يبدّل إلى «نموذج الإجابة» — التطبيق لكتابة الأسئلة.
+    expect(find.byTooltip('عرض نموذج الإجابة'), findsNothing);
+    expect(find.byTooltip('عرض ورقة الطالب'), findsNothing);
     await _tap(tester, _tool('شريط الصيغ والوسائط'));
     await _tap(tester, _tool('شريط الصيغ والوسائط'));
     await _tap(tester, _tool('مراجعة وتصدير PDF'));
@@ -979,31 +951,6 @@ void main() {
   // ===========================================================================
   // صح/خطأ، أنواع الأسئلة، الخيارات، النقاط، الفواصل، الترويسة
   // ===========================================================================
-  testWidgets('AUD-TF-01: إجابة صح/خطأ تُضبط وتُلغى بنقرة على المحدد (teacher)',
-      (tester) async {
-    final controller = ExamWizardController(document: _document());
-    await _pump(tester, controller);
-    await _tap(tester, find.byTooltip('عرض نموذج الإجابة'));
-
-    const ref = BranchRef(questionIndex: 1, branchIndex: 0);
-    await _tap(tester, find.byKey(const ValueKey<String>('item-bi1')));
-    // bi1 محددة مسبقاً (isCorrect: true) — النقرة الأولى تُلغي التحديد (null)
-    // مثل زر Radio في Word، والنقرة الثانية تعيده إلى «صح».
-    await _tap(tester, find.text('صح').first);
-    expect(
-      controller.document.branchAt(ref).content.items[0].isCorrect,
-      isNull,
-      reason: 'AUD-TF-01: النقرة على الإجابة المختارة يجب أن تُلغي تحديدها '
-          '(غير محددة) — لا أن تُقفل الاختيار (سلوك Radio في Word forms يعيد '
-          'التحديد نفسه فقط؛ الإلغاء المتاح هنا هو المسار الموثّق في المرجع).',
-    );
-
-    await _tap(tester, find.text('صح').first);
-    expect(controller.document.branchAt(ref).content.items[0].isCorrect, isTrue,
-        reason: 'AUD-TF-01: نقرة على «صح» غير المحددة تضبط الإجابة صحيحة.');
-    expect(tester.takeException(), isNull);
-  });
-
   test('AUD-TYPE-01: تغيير نوع الفرع يعيد الخيارات لنموذج النوع الجديد (معلن)',
       () {
     final controller = ExamWizardController(document: _document());
@@ -1012,9 +959,9 @@ void main() {
 
     controller.updateBranchType(mcqRef, QuestionType.trueFalse);
     final tfOptions = controller.document.branchAt(mcqRef).content.options;
-    expect(tfOptions.map((o) => o.text).toList(), <String>['صح', 'خطأ'],
-        reason: 'AUD-TYPE-01: التحول MCQ→صح/خطأ يستبدل الخيارات بالنموذج '
-            'الافتراضي (السلوك المعلن في BranchContent.copyWith).');
+    expect(tfOptions, isEmpty,
+        reason: 'AUD-TYPE-01: صح/خطأ بلا خيارات ولا إجابة مخزَّنة (العبارات '
+            'نقاط يُكتب نصها فقط) — السلوك المعلن في BranchContent.copyWith.');
     expect(controller.document.branchAt(mcqRef).content.text, 'اختر الإجابة',
         reason: 'نص الفرع يبقى كما هو عند تغيير النوع.');
 
@@ -1023,50 +970,43 @@ void main() {
     expect(mcqOptions, hasLength(4),
         reason: 'العودة إلى MCQ تستعيد 4 خيارات MCQ الافتراضية (سلسلة تبديل '
             'المحتوى).');
-    expect(mcqOptions.first.isCorrect, isTrue,
-        reason: 'الخيار الأول هو الصحيح افتراضياً بعد إعادة الضبط.');
+    expect(mcqOptions.map((option) => option.text), everyElement(isEmpty),
+        reason: 'الخيارات تعود فارغة الأربعة بلا أي تمييز لخيار صحيح.');
   });
 
-  testWidgets('AUD-TYPE-02: أنواع الأسئلة تعرض جسماً صحيحاً في الورقة والمعلم',
+  testWidgets('AUD-TYPE-02: أنواع الأسئلة تعرض جسماً صحيحاً وبلا أي إجابة',
       (tester) async {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
 
-    // ورقة الطالب: خيارات MCQ ظاهرة، والإجابات النموذجية مخفية.
+    // خيارات MCQ ظاهرة، وبلا أي سطح إجابة (نموذجية أو صح/خطأ أو خيار صحيح).
     expect(find.byKey(const ValueKey<String>('option-b2-0')), findsOneWidget,
-        reason: 'MCQ: خانات الخيارات تظهر في ورقة الطالب.');
-    expect(find.byKey(const ValueKey<String>('answer-b1')), findsNothing,
-        reason: 'المقالي: الإجابة النموذجية مخفية في ورقة الطالب.');
-    expect(find.text('صح'), findsNothing,
-        reason: 'مفاتيح صح/خطأ تظهر في نموذج المعلم فقط.');
+        reason: 'MCQ: خانات الخيارات تظهر على الورقة.');
+    expect(find.byKey(const ValueKey<String>('answer-b1')), findsNothing);
+    expect(find.textContaining('الإجابات بترتيب العبارات'), findsNothing);
     expect(find.byKey(const ValueKey<String>('item-bi1')), findsOneWidget,
-        reason: 'نقاط صح/خطأ تظهر للطالب كنقاط عادية.');
+        reason: 'نقاط صح/خطأ تظهر كنقاط عادية.');
+    expect(find.text('صح'), findsNothing,
+        reason: 'لا تُكتب كلمة «صح» على الورقة في أي وضع.');
+    expect(find.byTooltip('عرض نموذج الإجابة'), findsNothing);
 
-    await _tap(tester, find.byTooltip('عرض نموذج الإجابة'));
-    expect(find.byKey(const ValueKey<String>('answer-b1')), findsOneWidget,
-        reason: 'المقالي: الإجابة النموذجية قابلة للتحرير في نموذج المعلم.');
-    expect(find.text('صح'), findsWidgets,
-        reason: 'نقاط صح/خطأ تحمل مفاتيح الإجابة في نموذج المعلم.');
-    expect(find.byKey(const ValueKey<String>('option-b2-0')), findsOneWidget,
-        reason: 'الخيارات تبقى ظاهرة في المعلم.');
-
-    // تعاريف وإكمال الفراغ على فرع b2: حقل إجابة نموذجية في المعلم فقط.
+    // تعاريف وإكمال الفراغ على فرع b2: بلا أي حقل إجابة، والخيارات تختفي
+    // مع النوع الجديد (المحتوى يُعاد ضبطه مع النوع).
     const mcqRef = BranchRef(questionIndex: 0, branchIndex: 1);
     controller.updateBranchType(mcqRef, QuestionType.definitions);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey<String>('answer-b2')), findsOneWidget,
-        reason: 'AUD-TYPE-02: تعاريف تعرض حقل الإجابة النموذجية في المعلم.');
+    expect(find.byKey(const ValueKey<String>('answer-b2')), findsNothing);
     expect(find.byKey(const ValueKey<String>('option-b2-0')), findsNothing,
         reason: 'بعد التحول تختفي خيارات MCQ (المحتوى يُعاد ضبطه مع النوع).');
 
     controller.updateBranchType(mcqRef, QuestionType.fillInTheBlank);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey<String>('answer-b2')), findsOneWidget,
-        reason: 'AUD-TYPE-02: إكمال الفراغ تعرض حقل الإجابة النموذجية في المعلم.');
+    expect(find.byKey(const ValueKey<String>('answer-b2')), findsNothing);
+    expect(controller.document.branchAt(mcqRef).content.options, isEmpty);
     expect(tester.takeException(), isNull);
   });
 
-  test('AUD-MCQ-01: دورة حياة الخيارات — إضافة/تعديل/إخفاء تسمية/حذف/خيار صحيح',
+  test('AUD-MCQ-01: دورة حياة الخيارات — إضافة/تعديل/إخفاء تسمية/حذف',
       () {
     final controller = ExamWizardController(document: _document());
     const ref = BranchRef(questionIndex: 0, branchIndex: 1);
@@ -1088,12 +1028,6 @@ void main() {
     controller.removeBranchOption(ref, 0);
     expect(controller.document.branchAt(ref).content.options, hasLength(2));
 
-    controller.setBranchOptionCorrect(ref, 0, false);
-    controller.setBranchOptionCorrect(ref, 1, true);
-    final options = controller.document.branchAt(ref).content.options;
-    expect(options.where((o) => o.isCorrect).length, 1,
-        reason: 'AUD-MCQ-01: يجب أن يوجد خيار صحيح واحد فقط.');
-    expect(options[1].isCorrect, isTrue);
   });
 
   test('AUD-PTS-01: النقاط تُعاد ترقيمها آلياً بعد الحذف مع بقاء التسميات المخصصة',
@@ -1316,7 +1250,6 @@ void main() {
           marksOverride: 15,
           spacingAfter: 45,
           category: 'القسم الأول',
-          trueFalseFormat: 'symbols',
           style: const PaperTextStyle(
             font: PaperFont.amiri,
             fontSize: 13,
@@ -1345,17 +1278,14 @@ void main() {
               content: BranchContent(
                 type: QuestionType.multipleChoice,
                 text: 'اختر',
-                trueFalseFormat: 'symbols',
                 options: <QuestionOption>[
-                  QuestionOption(
-                      text: 'صحيح', isCorrect: true, labelOverride: 'أ'),
+                  QuestionOption(text: 'صحيح', labelOverride: 'أ'),
                   QuestionOption(text: 'بديل', labelOverride: '-'),
                 ],
                 items: <BranchItem>[
-                  BranchItem(id: 'bi1', text: 'عبارة', isCorrect: false),
+                  BranchItem(id: 'bi1', text: 'عبارة'),
                 ],
-                modelAnswer: 'إجابة نموذجية',
-              ),
+                ),
             ),
           ],
         ),

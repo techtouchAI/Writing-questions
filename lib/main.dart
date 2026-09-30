@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
+import 'providers/backup_controller.dart';
 import 'providers/exam_document_provider.dart';
 import 'views/home_screen.dart';
 
@@ -11,11 +12,21 @@ Future<void> main() async {
   final examDocumentProvider = ExamDocumentProvider();
   await examDocumentProvider.loadDocuments();
 
+  // النسخ الاحتياطي والاستعادة يعملان فوق مكتبة الأوراق نفسها: المتحكم
+  // يقرأ منها ويستعيد إليها بحفظ ذري واحد (انظر ExamDocumentProvider).
+  final backupController = BackupController(
+    documentsProvider: examDocumentProvider,
+  );
+  await backupController.load();
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider<ExamDocumentProvider>.value(
           value: examDocumentProvider,
+        ),
+        ChangeNotifierProvider<BackupController>.value(
+          value: backupController,
         ),
       ],
       child: const WritingQuestionsApp(),

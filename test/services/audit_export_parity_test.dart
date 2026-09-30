@@ -61,7 +61,6 @@ QuestionModel _essay(
   String prompt = '',
   String text = 'نص الفرع',
   PaperTextStyle? style,
-  String modelAnswer = '',
 }) =>
     QuestionModel(
       id: id,
@@ -74,16 +73,14 @@ QuestionModel _essay(
           content: BranchContent(
             type: QuestionType.essay,
             text: text,
-            modelAnswer: modelAnswer,
           ),
         ),
       ],
     );
 
-Future<String> _docxXml(ExamDocument document, {bool teacher = false}) async {
+Future<String> _docxXml(ExamDocument document) async {
   final bytes = await DocxDocumentExportService.buildDocumentDocxBytes(
     document: document,
-    isTeacherVersion: teacher,
   );
   final archive = ZipDecoder().decodeBytes(bytes);
   final xml = archive.findFile('word/document.xml');
@@ -419,14 +416,14 @@ void main() {
   // ===========================================================================
   // PDF: نموذج المعلم/الطالب — عدم تسرّب الإجابات
   // ===========================================================================
-  test('AUD-PDF-06: إجابات المعلم غائبة تماماً عن PDF الطالب وموجودة في المعلم',
+  test('AUD-PDF-06: لا أثر لأي إجابة (نموذجية أو صح/خطأ أو خيار صحيح) في PDF',
       () async {
     ExamDocument englishDoc() => _doc(
           subject: 'English',
           questions: <QuestionModel>[
             _essay('q1',
                 text: 'Write your answer here.',
-                modelAnswer: 'The capital is Baghdad'),
+                ),
             QuestionModel(
               id: 'q2',
               questionNumber: 1,
@@ -450,7 +447,7 @@ void main() {
                     type: QuestionType.trueFalse,
                     text: 'Item based statement.',
                     items: <BranchItem>[
-                      BranchItem(id: 'i1', text: 'First statement', isCorrect: true),
+                      BranchItem(id: 'i1', text: 'First statement'),
                     ],
                   ),
                 ),
@@ -466,7 +463,7 @@ void main() {
                     type: QuestionType.multipleChoice,
                     text: 'Choose one.',
                     options: <QuestionOption>[
-                      QuestionOption(text: 'Option one', isCorrect: true),
+                      QuestionOption(text: 'Option one'),
                       QuestionOption(text: 'Option two'),
                     ],
                   ),
@@ -476,10 +473,9 @@ void main() {
           ],
         );
 
-    Future<Map<String, bool>> tokens({required bool teacher}) async {
+    Future<Map<String, bool>> tokens() async {
       final bytes = await PaginatedPdfExamEngine().generate(
         document: englishDoc(),
-        isTeacherVersion: teacher,
       );
       final probe = PdfContentProbe.fromBytes(bytes);
       final joined = probe.lines
@@ -489,34 +485,28 @@ void main() {
         'Model answer': joined.contains('Model answer'),
         'Answer:': joined.contains('Answer:'),
         '(True)': joined.contains('(True)'),
+        '(False)': joined.contains('(False)'),
         '•': joined.contains('•'),
+        'Statements': joined.contains('True or false statement') &&
+            joined.contains('First statement'),
       };
     }
 
-    final student = await tokens(teacher: false);
+    final rendered = await tokens();
     expect(
-      student,
+      rendered,
       <String, bool>{
+        // لا إجابة نموذجية ولا سطر إجابة ولا علامة صح/خطأ ولا تمييز خيار،
+        // والنص المكتوب فقط هو ما يُطبع.
         'Model answer': false,
         'Answer:': false,
         '(True)': false,
+        '(False)': false,
         '•': false,
+        'Statements': true,
       },
-      reason: 'AUD-PDF-06: ورقة الطالب في PDF تحوي إجابات المعلم — '
-          'التسرّب: $student.',
-    );
-
-    final teacher = await tokens(teacher: true);
-    expect(
-      teacher,
-      <String, bool>{
-        'Model answer': true,
-        'Answer:': true,
-        '(True)': true,
-        '•': true,
-      },
-      reason: 'AUD-PDF-06: نموذج الإجابة في PDF يجب أن يحوي كل علامات المعلم — '
-          'الناقص: $teacher.',
+      reason: 'AUD-PDF-06: ورق الأسئلة يجب أن يخلو من أي عنصر إجابة — '
+          'المخالف: $rendered.',
     );
   });
 
@@ -616,11 +606,11 @@ void main() {
   // ===========================================================================
   // DOCX: نموذج المعلم/الطالب
   // ===========================================================================
-  test('AUD-DOCX-03: إجابات المعلم غائبة عن DOCX الطالب وموجودة في المعلم',
+  test('AUD-DOCX-03: لا يُكتب أي عنصر إجابة في Word (نموذجية أو صح/خطأ أو خيار)',
       () async {
     ExamDocument examDoc() => _doc(questions: <QuestionModel>[
           _essay('q1',
-              text: 'مقالي', modelAnswer: 'إجابة نموذجية مكتوبة هنا'),
+              text: 'مقالي', ),
           QuestionModel(
             id: 'q2',
             questionNumber: 1,
@@ -644,7 +634,7 @@ void main() {
                   type: QuestionType.trueFalse,
                   text: 'عبارة صح/خطأ بنقاط',
                   items: <BranchItem>[
-                    BranchItem(id: 'i1', text: 'عبارة أولى', isCorrect: true),
+                    BranchItem(id: 'i1', text: 'عبارة أولى'),
                   ],
                 ),
               ),
@@ -660,7 +650,7 @@ void main() {
                   type: QuestionType.multipleChoice,
                   text: 'اختر',
                   options: <QuestionOption>[
-                    QuestionOption(text: 'الخيار الأول', isCorrect: true),
+                    QuestionOption(text: 'الخيار الأول'),
                     QuestionOption(text: 'الخيار الثاني'),
                   ],
                 ),
@@ -669,44 +659,39 @@ void main() {
           ),
         ]);
 
-    Future<Map<String, bool>> flags({required bool teacher}) async {
-      final xml = await _docxXml(examDoc(), teacher: teacher);
+    Future<Map<String, bool>> flags() async {
+      final xml = await _docxXml(examDoc());
       return <String, bool>{
         'الإجابة النموذجية': xml.contains('الإجابة النموذجية'),
         'الإجابة الصحيحة': xml.contains('الإجابة الصحيحة'),
         '✔': xml.contains('✔'),
         '(صح)': xml.contains('(صح)'),
+        '(خطأ)': xml.contains('(خطأ)'),
+        '(✓)': xml.contains('(✓)'),
+        'العبارات مطبوعة': xml.contains('عبارة صح/خطأ بنقاط') &&
+            xml.contains('عبارة أولى'),
       };
     }
 
-    final student = await flags(teacher: false);
+    final rendered = await flags();
     expect(
-      student,
+      rendered,
       <String, bool>{
+        // النص المكتوب فقط يُطبع؛ ولا كلمة ولا علامة ولا سطر إجابة.
         'الإجابة النموذجية': false,
         'الإجابة الصحيحة': false,
         '✔': false,
         '(صح)': false,
+        '(خطأ)': false,
+        '(✓)': false,
+        'العبارات مطبوعة': true,
       },
-      reason: 'AUD-DOCX-03: ورقة الطالب في Word تحوي إجابات المعلم — '
-          'التسرّب: $student.',
-    );
-
-    final teacher = await flags(teacher: true);
-    expect(
-      teacher,
-      <String, bool>{
-        'الإجابة النموذجية': true,
-        'الإجابة الصحيحة': true,
-        '✔': true,
-        '(صح)': true,
-      },
-      reason: 'AUD-DOCX-03: نموذج الإجابة في Word يجب أن يحوي كل علامات '
-          'المعلم — الناقص: $teacher.',
+      reason: 'AUD-DOCX-03: ملف Word يجب أن يخلو من أي عنصر إجابة — '
+          'المخالف: $rendered.',
     );
   });
 
-  test('AUD-DOCX-04: علامة الخيار الصحيح في Word تطابق المعاينة وPDF (• لا ✔)',
+  test('AUD-DOCX-04: لا علامة «خيار صحيح» في Word (لا • ولا ✔ ولا سطر إجابة)',
       () async {
     final xml = await _docxXml(
       _doc(questions: <QuestionModel>[
@@ -720,7 +705,7 @@ void main() {
                 type: QuestionType.multipleChoice,
                 text: 'اختر',
                 options: <QuestionOption>[
-                  QuestionOption(text: 'الخيار الصحيح', isCorrect: true),
+                  QuestionOption(text: 'الخيار الصحيح'),
                   QuestionOption(text: 'بديل'),
                 ],
               ),
@@ -728,16 +713,18 @@ void main() {
           ],
         ),
       ]),
-      teacher: true,
-    );
+      );
 
-    expect(
-      xml.contains('•'),
-      isTrue,
-      reason: 'AUD-DOCX-04: المعاينة تعرض «•» خضراء للخيار الصحيح وPDF يضيف '
-          '« •»، لكن Word يكتب «✔ الإجابة الصحيحة» بتمييز أصفر — تباين رموز '
-          'وألوان بين القنوات الثلاث (يقوض توحّد المظهر المطلوب).',
-    );
+    for (final marker in <String>['•', '✔', 'الإجابة الصحيحة', '✓']) {
+      expect(
+        xml.contains(marker),
+        isFalse,
+        reason: 'AUD-DOCX-04: لا يوجد خيار صحيح ولا أي علامة إجابة في الملف — '
+            'الخيارات نصّية فقط (المخالف: «$marker»).',
+      );
+    }
+    expect(xml.contains('الخيار الصحيح'), isTrue,
+        reason: 'AUD-DOCX-04: نصوص الخيارات المكتوبة هي وحدها ما يُصدَّر.');
   });
 
   test('AUD-DOCX-05: تعليمات/ملاحظات الترويسة في Word بلا مائل (كالمعاينة وMSO)',

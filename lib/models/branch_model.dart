@@ -19,11 +19,8 @@ class BranchContent {
     required this.type,
     this.text = '',
     List<QuestionOption>? options,
-    this.modelAnswer = '',
-    this.modelAnswerAlign,
     List<BranchItem>? items,
     this.plainText = false,
-    this.trueFalseFormat = 'words',
   })  : options = List<QuestionOption>.unmodifiable(
           (options ?? const <QuestionOption>[]).map((option) => option.copyWith()),
         ),
@@ -42,71 +39,46 @@ class BranchContent {
   /// خيارات (اختيار من متعدد) أو (صح/خطأ).
   final List<QuestionOption> options;
 
-  /// الإجابة النموذجية (فراغات/مقالي) لنموذج المعلم.
-  final String modelAnswer;
-
-  /// محاذاة الإجابة النموذجية وحدها (null = وراثة من محاذاة الفرع) —
-  /// النقر على زر المحاذاة داخل حقل الإجابة لا يجوز أن يُعيد توجيه نص
-  /// الفرع أو الخيارات؛ Word يحاذي كل فقرة على حدة.
-  final PaperAlign? modelAnswerAlign;
-
   /// النقاط داخل الفرع (1، 2، 3...): عبارات، فراغات، تعداد — بلا حد.
   final List<BranchItem> items;
 
-  /// نص حر خالص: يُعرض النص والنقاط فقط دون أي مساحة إجابة مولّدة.
+  /// نص حر خالص: يُعرض النص والنقاط فقط دون أي جسم مولَّد.
   ///
-  /// يبقى نوع الفرع محفوظاً (للإجابة النموذجية والتصدير) لكن العرض
-  /// يقتصر على ما كتبه المدرس حرفياً.
+  /// يبقى نوع الفرع محفوظاً (للتسمية والتصدير) لكن العرض يقتصر على ما
+  /// كتبه المدرس حرفياً.
   final bool plainText;
 
-  /// نمط علامة إجابة صح وخطأ: 'words' (صح/خطأ) أو 'symbols' (✓/✗).
-  final String trueFalseFormat;
-
-  /// الخيار الصحيح في صح/خطأ: `true` = صح.
-  bool get trueFalseAnswer {
-    final correct = options.where((option) => option.isCorrect).toList();
-    return correct.isEmpty || correct.first.text.trim() != 'خطأ';
-  }
-
-  /// هل يعرض نوع الفرع جسماً مستقلاً في نسخة [teacher]؟
-  /// يتجنب إنشاء فقرات/مساحات إجابة فارغة مع إبقاء إجابات المعلم الظاهرة.
-  bool hasPrintableTypeBody({required bool teacher}) {
-    final showTypeBody =
-        !(plainText && !teacher) &&
-        !(teacher && plainText && type == QuestionType.multipleChoice);
-    if (!showTypeBody) {
+  /// هل يعرض نوع الفرع جسماً مستقلاً في المطبوع؟
+  ///
+  /// «اختيار من متعدد» وحده يعرض خياراته؛ و«صح/خطأ» بلا جسم إطلاقاً
+  /// (العبارات في نقاطها)، و«الفراغ»/«المقالي» مساحتهما نص الفرع —
+  /// **ولا عنصر إجابة في أي مرحلة** (التطبيق لكتابة الأسئلة وحدها).
+  bool get hasPrintableTypeBody {
+    if (plainText) {
       return false;
     }
     switch (type) {
       case QuestionType.multipleChoice:
         return options.any((option) => option.text.trim().isNotEmpty);
       case QuestionType.trueFalse:
-        // «صح/خطأ» هما نموذجا إجابة ثابتان، لا محتوى سؤال بذاتهما؛ تُطبع
-        // الإجابة للمعلم فقط عندما يوجد نص/نقطة فعلية تحملها.
-        return teacher &&
-            (text.trim().isNotEmpty ||
-                items.any((item) => item.showsInExport(teacher: true, trueFalse: true)));
       case QuestionType.fillInTheBlank:
       case QuestionType.definitions:
       case QuestionType.essay:
-        return teacher && modelAnswer.trim().isNotEmpty;
+        return false;
     }
   }
 
   /// هل يحمل الفرع محتوى يستحق الظهور في المخرجات (PDF/Word/طباعة)؟
   /// الفرع الفارغ تماماً يُحذف من المطبوع كاملاً ولا يترك أي مسافة.
-  bool hasExportableContent({required bool teacher}) {
-    if (text.trim().isNotEmpty ||
-        items.any((item) =>
-            item.showsInExport(teacher: teacher, trueFalse: type == QuestionType.trueFalse))) {
+  bool get hasExportableContent {
+    if (text.trim().isNotEmpty || items.any((item) => item.showsInExport)) {
       return true;
     }
-    return hasPrintableTypeBody(teacher: teacher);
+    return hasPrintableTypeBody;
   }
 
   bool get isEmpty =>
       text.trim().isEmpty &&
-      modelAnswer.trim().isEmpty &&
       items.every((item) => item.isEmpty) &&
       options.every((option) => option.text.trim().isEmpty);
 
@@ -114,11 +86,8 @@ class BranchContent {
     QuestionType? type,
     String? text,
     List<QuestionOption>? options,
-    String? modelAnswer,
-    PaperAlign? Function()? modelAnswerAlign,
     List<BranchItem>? items,
     bool? plainText,
-    String? trueFalseFormat,
   }) {
     final nextType = type ?? this.type;
     return BranchContent(
@@ -129,13 +98,8 @@ class BranchContent {
           (type == null || type == this.type
               ? this.options
               : _defaultOptionsFor(nextType)),
-      modelAnswer: modelAnswer ?? this.modelAnswer,
-      modelAnswerAlign: modelAnswerAlign == null
-          ? this.modelAnswerAlign
-          : modelAnswerAlign(),
       items: items ?? this.items,
       plainText: plainText ?? this.plainText,
-      trueFalseFormat: trueFalseFormat ?? this.trueFalseFormat,
     );
   }
 
@@ -176,14 +140,6 @@ class BranchContent {
     return copyWith(items: updated);
   }
 
-  /// نسخة مع تثبيت إجابة النقطة [index] لصح/خطأ (`null` = غير محددة).
-  BranchContent withItemAnswer(int index, bool? answer) {
-    RangeError.checkValidIndex(index, items, 'index');
-    final updated = List<BranchItem>.of(items);
-    updated[index] = updated[index].copyWith(isCorrect: () => answer);
-    return copyWith(items: updated);
-  }
-
   /// نسخة مع نقل النقطة من [from] إلى [to].
   BranchContent withItemMoved(int from, int to) {
     RangeError.checkValidIndex(from, items, 'from');
@@ -194,28 +150,14 @@ class BranchContent {
     return copyWith(items: updated);
   }
 
-  /// يُثبّت إجابة صح/خطأ ([answer] = true تعني «صح»).
-  BranchContent withTrueFalseAnswer(bool answer) {
-    return copyWith(
-      type: QuestionType.trueFalse,
-      options: <QuestionOption>[
-        QuestionOption(text: 'صح', isCorrect: answer),
-        QuestionOption(text: 'خطأ', isCorrect: !answer),
-      ],
-    );
-  }
-
   Map<String, dynamic> toMap() {
     return <String, dynamic>{
       'type': type.name,
       'text': text,
       'options': options.map((option) => option.toMap()).toList(growable: false),
-      'modelAnswer': modelAnswer,
-      if (modelAnswerAlign != null) 'modelAnswerAlign': modelAnswerAlign!.name,
       if (items.isNotEmpty)
         'items': items.map((item) => item.toMap()).toList(growable: false),
       if (plainText) 'plainText': true,
-      if (trueFalseFormat != 'words') 'trueFalseFormat': trueFalseFormat,
     };
   }
 
@@ -245,37 +187,28 @@ class BranchContent {
       type: QuestionType.parse(rawType),
       text: rawText?.toString() ?? '',
       options: options,
-      modelAnswer: map['modelAnswer']?.toString() ?? '',
-      modelAnswerAlign: map['modelAnswerAlign'] != null
-          ? PaperAlign.parse(map['modelAnswerAlign'])
-          : null,
       items: BranchItem.listFromValue(map['items']),
       plainText: map['plainText'] == true,
-      trueFalseFormat: map['trueFalseFormat']?.toString() ?? 'words',
     );
   }
 
-  /// نسخة بهويات جديدة للنقاط (للنسخ/التكرار) — كاملة الإجابات والتسميات
-  /// اليدوية (نفس محتوى النقطة الأصلية حرفياً).
+  /// نسخة بهويات جديدة للنقاط (للنسخ/التكرار) — كاملة التسميات اليدوية
+  /// (نفس محتوى النقطة الأصلية حرفياً).
   BranchContent duplicated() {
     return BranchContent(
       type: type,
       text: text,
       options: options.map((option) => option.copyWith()).toList(growable: false),
-      modelAnswer: modelAnswer,
-      modelAnswerAlign: modelAnswerAlign,
       items: <BranchItem>[
         for (final item in items)
           BranchItem(
             text: item.text,
             marks: item.marks,
-            isCorrect: item.isCorrect,
             labelOverride: item.labelOverride,
             align: item.align,
           ),
       ],
       plainText: plainText,
-      trueFalseFormat: trueFalseFormat,
     );
   }
 
@@ -283,16 +216,12 @@ class BranchContent {
     switch (type) {
       case QuestionType.multipleChoice:
         return <QuestionOption>[
-          QuestionOption(text: '', isCorrect: true),
+          QuestionOption(text: ''),
           QuestionOption(text: ''),
           QuestionOption(text: ''),
           QuestionOption(text: ''),
         ];
       case QuestionType.trueFalse:
-        return <QuestionOption>[
-          QuestionOption(text: 'صح', isCorrect: true),
-          QuestionOption(text: 'خطأ'),
-        ];
       case QuestionType.fillInTheBlank:
       case QuestionType.definitions:
       case QuestionType.essay:
@@ -341,11 +270,10 @@ class BranchModel {
   final PaperDivider? dividerAfter;
 
   /// هل ينتج الفرع أو مرفقاته/فاصله محتوى مرئياً عند التصدير؟
-  bool hasExportableContent({
-    required bool teacher,
+  bool hasExportableContentIn({
     Set<String> ignoredAttachmentIds = const <String>{},
   }) =>
-      content.hasExportableContent(teacher: teacher) ||
+      content.hasExportableContent ||
       attachments.any((element) => !ignoredAttachmentIds.contains(element.id)) ||
       dividerAfter != null;
 

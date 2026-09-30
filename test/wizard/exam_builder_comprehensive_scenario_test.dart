@@ -70,14 +70,13 @@ void main() {
         controller.updateBranchItemText(q3, i, 'فراغ رقم ${i + 1} _____');
       }
 
-      // س4: صح وخطأ من 7 نقاط مع إجابات نموذج المعلم.
+      // س4: صح وخطأ من 7 عبارات (نصوص فقط — بلا أي إجابة).
       controller.addBranch(3);
       const q4 = BranchRef(questionIndex: 3, branchIndex: 0);
       controller.updateBranchType(q4, QuestionType.trueFalse);
       controller.setBranchItemCount(q4, 7);
       for (var i = 0; i < 7; i++) {
         controller.updateBranchItemText(q4, i, 'عبارة رقم ${i + 1}');
-        controller.updateBranchItemAnswer(q4, i, i.isEven);
       }
       controller.updateQuestionPrompt(3, 'سؤال صح وخطأ');
 
@@ -215,7 +214,8 @@ void main() {
       final restoredItems =
           restored.branchAt(const BranchRef(questionIndex: 1, branchIndex: 0)).content.items;
       expect(restoredItems, hasLength(7));
-      expect(restoredItems.first.isCorrect, isTrue);
+      expect(restoredItems.first.text, isNotEmpty);
+      expect(restoredItems.first.toMap().containsKey('isCorrect'), isFalse);
       expect(restored.header.style.align, PaperAlign.center);
 
       final loaded = await storage.loadExamDocuments();

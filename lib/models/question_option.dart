@@ -2,19 +2,17 @@ import 'package:uuid/uuid.dart';
 
 import 'paper_text_style.dart';
 
-/// خيار إجابة في سؤال الاختيار من متعدد / صح وخطأ.
+/// خيار في سؤال «اختيار من متعدد».
 class QuestionOption {
   QuestionOption({
     String? id,
     required this.text,
-    this.isCorrect = false,
     this.labelOverride,
     this.align,
   }) : id = id ?? const Uuid().v4();
 
   final String id;
   String text;
-  bool isCorrect;
 
   /// محاذاة هذا الخيار وحده (null = وراثة من محاذاة الفرع).
   ///
@@ -33,7 +31,6 @@ class QuestionOption {
     return <String, dynamic>{
       'id': id,
       'text': text,
-      'isCorrect': isCorrect,
       if (labelOverride != null) 'labelOverride': labelOverride,
       if (align != null) 'align': align!.name,
     };
@@ -47,10 +44,6 @@ class QuestionOption {
     if (rawText != null && rawText is! String && rawText is! num) {
       throw const FormatException('QuestionOption: نص الخيار يجب أن يكون نصاً.');
     }
-    final rawCorrect = map['isCorrect'];
-    if (rawCorrect != null && rawCorrect is! bool) {
-      throw const FormatException('QuestionOption: isCorrect يجب أن يكون منطقياً.');
-    }
     final rawAlign = map['align'];
 
     return QuestionOption(
@@ -58,7 +51,6 @@ class QuestionOption {
           ? map['id'] as String
           : null,
       text: rawText?.toString() ?? '',
-      isCorrect: rawCorrect == true,
       labelOverride: map['labelOverride'] is String ? map['labelOverride'] as String : null,
       align: rawAlign != null ? PaperAlign.parse(rawAlign) : null,
     );
@@ -66,14 +58,12 @@ class QuestionOption {
 
   QuestionOption copyWith({
     String? text,
-    bool? isCorrect,
     String? Function()? labelOverride,
     PaperAlign? Function()? align,
   }) {
     return QuestionOption(
       id: id,
       text: text ?? this.text,
-      isCorrect: isCorrect ?? this.isCorrect,
       labelOverride: labelOverride == null ? this.labelOverride : labelOverride(),
       align: align == null ? this.align : align(),
     );

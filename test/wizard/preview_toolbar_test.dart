@@ -32,7 +32,7 @@ ExamDocument _document() {
               type: QuestionType.multipleChoice,
               text: 'اختر الإجابة',
               options: <QuestionOption>[
-                QuestionOption(text: 'الأول', isCorrect: true),
+                QuestionOption(text: 'الأول'),
                 QuestionOption(text: 'الثاني'),
               ],
             ),

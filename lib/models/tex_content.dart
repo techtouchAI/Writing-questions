@@ -6,9 +6,18 @@ abstract final class TexContent {
   static final RegExp _blockPattern = RegExp(r'\$\$(.+?)\$\$', dotAll: true);
   static final RegExp _inlinePattern = RegExp(r'(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)', dotAll: true);
 
+  /// يهرّب علامات الدولار الحرفية في نص عادي (`$` ← `\$`) كي لا يبدأ
+  /// محتواه صيغةً عند التخزين. العرض يعيدها دولاراً عادياً بلا أي شرطة مائلة.
+  static String escapeLiteral(String text) => text.replaceAll(r'$', r'\$');
+
   /// هل يحتوي النص صيغ LaTeX قابلة للعرض كمعادلات؟
+  ///
+  /// تُطبَّع أولاً علامات الدولار الحرفية (`\$`) كي لا تُحسب صيغةً — تماماً
+  /// كما في [split]، فيتطابق الفحص مع القطع دائماً.
   static bool containsMath(String source) {
-    return _blockPattern.hasMatch(source) || _inlinePattern.hasMatch(source);
+    final normalized = source.replaceAll(r'\$', '\u0000');
+    return _blockPattern.hasMatch(normalized) ||
+        _inlinePattern.hasMatch(normalized);
   }
 
   /// يقسم [source] إلى مقاطع نص/معادلات بالترتيب نفسه تظهر في الورقة.
@@ -23,7 +32,12 @@ abstract final class TexContent {
       if (match.start > cursor) {
         segments.addAll(_splitInline(normalized.substring(cursor, match.start)));
       }
-      segments.add(TexSegment.math(match.group(1) ?? '', isBlock: true));
+      segments.add(
+        TexSegment.math(
+          (match.group(1) ?? '').replaceAll('\u0000', r'\$'),
+          isBlock: true,
+        ),
+      );
       cursor = match.end;
     }
     if (cursor < normalized.length) {
@@ -32,8 +46,13 @@ abstract final class TexContent {
 
     return segments
         .map((segment) => segment.isMath
-            ? TexSegment.math(segment.text, isBlock: segment.isBlock)
-            : TexSegment.plain(segment.text.replaceAll('\u0000', r'\$')))
+            // داخل الصيغة يعود الدولار الحرفي `\$` (صيغته في LaTeX)،
+            // وفي النص العادي يعود دولاراً عادياً بلا أي شرطة مائلة.
+            ? TexSegment.math(
+                segment.text.replaceAll('\u0000', r'\$'),
+                isBlock: segment.isBlock,
+              )
+            : TexSegment.plain(segment.text.replaceAll('\u0000', r'$')))
         .toList(growable: false);
   }
 

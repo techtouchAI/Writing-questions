@@ -2,14 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../../models/quran_text.dart';
 import '../../models/tex_content.dart';
+import 'mixed_content_editor.dart';
 
 /// حقل النص على ورقة الورقة: **الشكل النهائي فقط** — لا رموز LaTeX خاماً
 /// (`$...$`) تظهر على الورقة إطلاقاً.
 ///
 /// - نص عادي (بلا صيغ/آيات): [TextField] للتحرير المباشر كما كان.
 /// - نص يحوي صيغة أو آية موسومة: يُعرض **المنسّق النهائي** ([renderBuilder]
-///   — نفس ما يطبعه محرك الـ PDF حرفياً)؛ النقر عليه يفتح التحرير:
-///   محرر المعادلات المرئي للصيغ الخالصة، وإلا تحرير المصدر في مكانه.
+///   — نفس ما يطبعه محرك الـ PDF حرفياً)؛ والنقر عليه يفتح محرر المحتوى
+///   المختلط ([MixedContentEditor]): النص حقولاً والمعادلات مرسومةً مرئية —
+///   فالمستخدم يضيف أي عدد من المعادلات ولا يرى كود LaTeX في أي مرحلة.
 /// - عند فقدان التركيز يعود العرض النهائي فوراً؛ وبعد «إدراج معادلة» من
 ///   الشريط يُغلق التركيز فيُضاف **الشكل النهائي** لا رموزه.
 ///
@@ -57,6 +59,9 @@ class _PaperFieldState extends State<PaperField> {
   /// طلب تحرير صريح (نقر على العرض النهائي) — يبقى سارياً حتى فقدان التركيز.
   bool _editing = false;
 
+  /// حماية من فتح محرر المحتوى أكثر من مرة في اللحظة نفسها.
+  bool _openingRichEditor = false;
+
   @override
   void initState() {
     super.initState();
@@ -94,8 +99,37 @@ class _PaperFieldState extends State<PaperField> {
   void _onTextChanged() {
     // إعادة بناء عند تغيير النص خارجياً (إدراج صيغة/تراجع/مزامنة) ليعكس
     // العرض النهائي الجديد فوراً.
-    if (mounted) {
-      setState(() {});
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
+    // صار النص يحوي صيغة أثناء الكتابة (إدراج من شريط الصيغ مثلاً): يُفتح
+    // المحرر المرئي فوراً فلا يظهر أي كود LaTeX في حقل التحرير إطلاقاً.
+    if (_editing && !_openingRichEditor && TexContent.containsMath(widget.controller.text)) {
+      setState(() => _editing = false);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openRichEditor());
+    }
+  }
+
+  /// يفتح محرر المحتوى المختلط (نص + معادلات) على النص الحالي ويكتب نتيجته
+  /// في المتحكم نفسه — فيبقى الحقل قابلاً للتحرير لاحقاً بالطريقة ذاتها.
+  Future<void> _openRichEditor() async {
+    if (_openingRichEditor) {
+      return;
+    }
+    _openingRichEditor = true;
+    try {
+      final result = await MixedContentEditor.show(
+        context,
+        source: widget.controller.text,
+      );
+      if (!mounted || result == null) {
+        return;
+      }
+      widget.controller.text = result;
+      widget.controller.selection = TextSelection.collapsed(offset: result.length);
+    } finally {
+      _openingRichEditor = false;
     }
   }
 
@@ -126,6 +160,11 @@ class _PaperFieldState extends State<PaperField> {
     widget.onActivate?.call();
     if (_isPureFormula && widget.onEditFormula != null) {
       widget.onEditFormula!();
+      return;
+    }
+    // أي نص يحوي معادلة يُفتح في محرر المحتوى المختلط (نص + معادلات مرئية).
+    if (TexContent.containsMath(widget.controller.text)) {
+      _openRichEditor();
       return;
     }
     setState(() => _editing = true);

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
@@ -6,6 +7,7 @@ import '../layout/pagination_engine.dart';
 import '../layout/paper_metrics.dart';
 import '../models/branch_item.dart';
 import '../models/branch_model.dart';
+import '../models/exam_canvas_geometry.dart';
 import '../models/exam_document.dart';
 import '../models/exam_header_model.dart';
 import '../models/floating_element.dart';
@@ -498,28 +500,6 @@ class ExamWizardController extends ChangeNotifier {
     ));
   }
 
-  void updateQuestionTrueFalseFormat(int index, String format) {
-    RangeError.checkValidIndex(index, questions, 'index');
-    if (questions[index].trueFalseFormat == format) {
-      return;
-    }
-    _commit(_document.withQuestionAt(
-      index,
-      questions[index].copyWith(trueFalseFormat: format),
-    ));
-  }
-
-  void updateBranchTrueFalseFormat(BranchRef ref, String format) {
-    if (!_document.containsRef(ref)) {
-      return;
-    }
-    final branch = _document.branchAt(ref);
-    if (branch.content.trueFalseFormat == format) {
-      return;
-    }
-    updateBranchContent(ref, branch.content.copyWith(trueFalseFormat: format));
-  }
-
   void toggleQuestionFrame(int index) {
     RangeError.checkValidIndex(index, questions, 'index');
     final question = questions[index];
@@ -626,24 +606,6 @@ class ExamWizardController extends ChangeNotifier {
     );
   }
 
-  void updateQuestionItemAnswer(int index, int itemIndex, bool? answer) {
-    RangeError.checkValidIndex(index, questions, 'index');
-    final question = questions[index];
-    RangeError.checkValidIndex(itemIndex, question.items, 'itemIndex');
-    if (question.items[itemIndex].isCorrect == answer) {
-      return;
-    }
-    updateQuestionItems(
-      index,
-      <BranchItem>[
-        for (var i = 0; i < question.items.length; i++)
-          i == itemIndex
-              ? question.items[i].copyWith(isCorrect: () => answer)
-              : question.items[i],
-      ],
-    );
-  }
-
   void removeQuestionItem(int index, int itemIndex) {
     RangeError.checkValidIndex(index, questions, 'index');
     final question = questions[index];
@@ -667,7 +629,6 @@ class ExamWizardController extends ChangeNotifier {
       if (first[i].id != second[i].id ||
           first[i].text != second[i].text ||
           first[i].marks != second[i].marks ||
-          first[i].isCorrect != second[i].isCorrect ||
           first[i].labelOverride != second[i].labelOverride) {
         return false;
       }
@@ -866,7 +827,7 @@ class ExamWizardController extends ChangeNotifier {
   }
 
   /// يحدّث نص خيار واحد داخل فرع (خيارات الاختيار من متعدد قابلة للتحرير
-  /// مباشرة على الورقة، وتبقى علامة الإجابة الصحيحة كما هي).
+  /// مباشرة على الورقة).
   void updateBranchOptionText(BranchRef ref, int optionIndex, String text) {
     if (!_document.containsRef(ref)) {
       return;
@@ -915,38 +876,6 @@ class ExamWizardController extends ChangeNotifier {
     updateBranchContent(ref, content.copyWith(options: options));
   }
 
-  /// يحدّد الخيار الصحيح (لاختيار من متعدد).
-  void setBranchOptionCorrect(BranchRef ref, int optionIndex, bool isCorrect) {
-    if (!_document.containsRef(ref)) {
-      return;
-    }
-    final content = _document.branchAt(ref).content;
-    if (optionIndex < 0 || optionIndex >= content.options.length) {
-      return;
-    }
-    final options = List<QuestionOption>.of(content.options);
-    options[optionIndex] = options[optionIndex].copyWith(isCorrect: isCorrect);
-    updateBranchContent(ref, content.copyWith(options: options));
-  }
-
-  /// يحدّث الإجابة النموذجية لفرع (فراغ/مقالي) — تُعرض وتُحرَّر في «نموذج
-  /// الإجابة» على الورقة.
-  void updateBranchModelAnswer(BranchRef ref, String modelAnswer) {
-    if (!_document.containsRef(ref)) {
-      return;
-    }
-    final content = _document.branchAt(ref).content;
-    if (content.modelAnswer == modelAnswer) {
-      return;
-    }
-    _commit(
-      _document.withBranchAt(
-        ref,
-        _document.branchAt(ref).copyWith(content: content.copyWith(modelAnswer: modelAnswer)),
-      ),
-      coalesceKey: 'answer-${_document.branchAt(ref).id}',
-    );
-  }
 
   // ============================ النقاط داخل الفرع ============================
 
@@ -967,27 +896,6 @@ class ExamWizardController extends ChangeNotifier {
     updateBranchContent(ref, branch.content.withItemCount(count));
   }
 
-  /// يثبّت إجابة نقطة لصح/خطأ (نموذج المعلم فقط).
-  void updateBranchItemAnswer(BranchRef ref, int itemIndex, bool? answer) {
-    if (!_document.containsRef(ref)) {
-      return;
-    }
-    final branch = _document.branchAt(ref);
-    final content = branch.content;
-    if (itemIndex < 0 || itemIndex >= content.items.length) {
-      return;
-    }
-    if (content.items[itemIndex].isCorrect == answer) {
-      return;
-    }
-    _commit(
-      _document.withBranchAt(
-        ref,
-        branch.copyWith(content: content.withItemAnswer(itemIndex, answer)),
-      ),
-      coalesceKey: 'item-answer-${ref.questionIndex}-${ref.branchIndex}-$itemIndex',
-    );
-  }
 
   void updateBranchItemText(BranchRef ref, int itemIndex, String text) {
     if (!_document.containsRef(ref)) {
@@ -1096,11 +1004,19 @@ class ExamWizardController extends ChangeNotifier {
     int? pageIndex,
     int? mirrorQuestionIndex,
     int? mirrorBranchIndex,
+    String? ownerQuestionId,
   }) {
     if (_document.floatingElementById(element.id) != null) {
       return false;
     }
-    final placed = element.copyWith(pageIndex: pageIndex ?? element.pageIndex);
+    final owner = ownerQuestionId ?? element.ownerQuestionId;
+    final owned = owner == null
+        ? element
+        : _clampElementToQuestion(element.withOwner(owner));
+    final placed = owned.copyWith(
+      pageIndex: pageIndex ??
+          (owner == null ? element.pageIndex : _ownerPageIndex(owner)),
+    );
     final nextQuestions = List<QuestionModel>.of(questions);
     if (mirrorQuestionIndex != null &&
         mirrorQuestionIndex >= 0 &&
@@ -1134,11 +1050,14 @@ class ExamWizardController extends ChangeNotifier {
     if (index == -1) {
       return;
     }
-    final elements = List<FloatingElement>.of(_document.floatingElements)..[index] = element;
+    // أي كتابة لعنصر مرتبط بسؤال تمرّ من الحصر: لا يخرج عن سؤال المالك أبداً.
+    final placed = element.isQuestionOwned ? _clampElementToQuestion(element) : element;
+    final elements = List<FloatingElement>.of(_document.floatingElements)
+      ..[index] = placed;
     _commit(
       _document.copyWith(
         floatingElements: elements,
-        questions: _replaceLegacyMirrors(questions, element.id, element),
+        questions: _replaceLegacyMirrors(questions, element.id, placed),
       ),
       coalesceKey: 'floating-${element.id}',
     );
@@ -1333,6 +1252,138 @@ class ExamWizardController extends ChangeNotifier {
       }
     }
     return true;
+  }
+
+  // ==================== ارتباط العناصر بالسؤال ====================
+
+  /// هل يملك السؤال [questionId] عناصر حرة؟
+  bool hasOwnedElements(String questionId) => _document.floatingElements
+      .any((element) => element.ownerQuestionId == questionId);
+
+  /// مستطيل سؤال على ورقته بإحداثيات اللوحة (بكسل منطقي)، أو `null` قبل قياس
+  /// الكتل. هو المرجع الوحيد لقيد العناصر المرتبطة بالسؤال في كل المسارات.
+  QuestionRect? questionRect(String questionId) {
+    final pageIndex = pagination.pageIndexOf(questionId);
+    if (pageIndex == null) {
+      return null;
+    }
+    final page = pagination.pages[pageIndex];
+    final position = page.blockIds.indexOf(questionId);
+    if (position < 0) {
+      return null;
+    }
+    final margin = ExamCanvasGeometry.marginFor(_document.settings.marginMm);
+    final contentWidth = ExamCanvasGeometry.contentWidthFor(_document.settings.marginMm);
+    var top = margin;
+    for (final id in page.blockIds.take(position)) {
+      if (id == PaperMetrics.headerBlockId) {
+        top += (_blockHeights[id] ?? 0) + PaperMetrics.blockSpacingPx;
+        continue;
+      }
+      final previous = _document.questionById(id);
+      top += (_blockHeights[id] ?? 0) +
+          (previous?.spacingAfter ?? PaperMetrics.blockSpacingPx);
+    }
+    return QuestionRect(
+      pageIndex: pageIndex,
+      left: margin,
+      top: top,
+      width: contentWidth,
+      height: math.max(
+        _blockHeights[questionId] ?? 0,
+        ExamCanvasGeometry.defaultElementSize,
+      ),
+    );
+  }
+
+  int _ownerPageIndex(String questionId) => pagination.pageIndexOf(questionId) ?? 0;
+
+  /// يحصر عنصراً مملوكاً داخل مستطيل سؤاله: `dx`/`dy` نسبيان لأعلى-يمين
+  /// محتوى السؤال، ولا يخرج منه أبداً حتى لو صار السؤال أصغر أو انتقل.
+  FloatingElement clampElementToQuestion(FloatingElement element) {
+    final owner = element.ownerQuestionId;
+    if (owner == null) {
+      return element;
+    }
+    return _clampElementToQuestion(element);
+  }
+
+  // المقياس الأدنى لعنصر مرتبط بسؤال — فلا يتحول لمربع غير قابل للاستعمال
+  // إذا صغر سؤالُه (تُحصر الأبعاد كما الموضع داخل السؤال).
+  static const double _minOwnedElementSize = 32.0;
+
+  FloatingElement _clampElementToQuestion(FloatingElement element) {
+    final owner = element.ownerQuestionId;
+    if (owner == null) {
+      return element;
+    }
+    final rect = questionRect(owner);
+    if (rect == null) {
+      return element.copyWith(
+        dx: math.max(0, element.dx),
+        dy: math.max(0, element.dy),
+      );
+    }
+    final maxWidth = math.max(rect.width, _minOwnedElementSize);
+    final maxHeight = math.max(rect.height, _minOwnedElementSize);
+    final width = element.width.clamp(
+      math.min(_minOwnedElementSize, maxWidth),
+      maxWidth,
+    ).toDouble();
+    final height = element.height.clamp(
+      math.min(_minOwnedElementSize, maxHeight),
+      maxHeight,
+    ).toDouble();
+    return element.copyWith(
+      pageIndex: rect.pageIndex,
+      width: width,
+      height: height,
+      dx: element.dx.clamp(0.0, math.max(0.0, maxWidth - width)).toDouble(),
+      dy: element.dy.clamp(0.0, math.max(0.0, maxHeight - height)).toDouble(),
+    );
+  }
+
+  /// يربط عنصراً حراً بسؤال ([questionId]) أو يفكّ ارتباطه (`null`) مع
+  /// إعادة حساب إحداثياته نسبةً إلى المرجع الجديد.
+  ///
+  /// - الربط: يُحوَّل الموضع من إحداثيات الورقة إلى إحداثيات محتوى السؤال ثم
+  ///   يُحصر داخله.
+  /// - الفك: يعود إلى إحداثيات الورقة المطلقة فيبقى في مكانه المرئي نفسه
+  ///   ويصير حراً في أي نقطة على الورقة.
+  void setElementOwner(String elementId, String? questionId) {
+    final element = _document.floatingElementById(elementId);
+    if (element == null) {
+      return;
+    }
+    final margin = ExamCanvasGeometry.marginFor(_document.settings.marginMm);
+    if (questionId == null) {
+      final ownerRect = element.ownerQuestionId == null
+          ? null
+          : questionRect(element.ownerQuestionId!);
+      if (ownerRect == null) {
+        updateFloatingElement(element.withOwner(null));
+        return;
+      }
+      updateFloatingElement(
+        element.withOwner(null).copyWith(
+              dx: margin + element.dx,
+              dy: ownerRect.top + element.dy,
+            ),
+      );
+      return;
+    }
+    if (_document.questionById(questionId) == null) {
+      return;
+    }
+    if (element.ownerQuestionId == questionId) {
+      updateFloatingElement(element);
+      return;
+    }
+    final relativeDx = math.max(0.0, element.dx - margin);
+    final relativeDy = math.max(0.0, element.dy - (questionRect(questionId)?.top ?? 0));
+    updateFloatingElement(
+      element.withOwner(questionId).copyWith(dx: relativeDx, dy: relativeDy),
+    );
   }
 
   // ============================ التقسيم الورقي ============================

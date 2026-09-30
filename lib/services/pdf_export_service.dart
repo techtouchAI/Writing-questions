@@ -14,12 +14,8 @@ abstract final class PdfExportService {
   /// يمكن تمريره إلى Word لتتوافق فواصل الصفحات والعناصر الحرة مع PDF.
   static Future<List<List<String>>> resolvePageAssignments({
     required ExamDocument document,
-    bool isTeacherVersion = false,
   }) {
-    return PaginatedPdfExamEngine().resolveQuestionPages(
-      document: document,
-      isTeacherVersion: isTeacherVersion,
-    );
+    return PaginatedPdfExamEngine().resolveQuestionPages(document: document);
   }
 
   /// يبني بايتات PDF متعدد الصفحات للنموذج الوزاري [document].
@@ -28,12 +24,10 @@ abstract final class PdfExportService {
   /// المعاينة، فيُطبع الملف بنفس التقسيم المعروض تماماً.
   static Future<Uint8List> buildDocumentPdfBytes({
     required ExamDocument document,
-    bool isTeacherVersion = false,
     List<List<String>>? pageAssignments,
   }) {
     return PaginatedPdfExamEngine().generate(
       document: document,
-      isTeacherVersion: isTeacherVersion,
       pageAssignments: pageAssignments,
     );
   }
@@ -41,19 +35,16 @@ abstract final class PdfExportService {
   /// يكتب ورقة [document] كملف PDF على القرص ويعيد الملف.
   static Future<File> exportDocumentToPdf({
     required ExamDocument document,
-    bool isTeacherVersion = false,
     List<List<String>>? pageAssignments,
     String? fileName,
     Directory? outputDirectory,
   }) async {
     final bytes = await buildDocumentPdfBytes(
       document: document,
-      isTeacherVersion: isTeacherVersion,
       pageAssignments: pageAssignments,
     );
-    final suffix = isTeacherVersion ? 'نموذج_الإجابة' : 'ورقة_الامتحان';
     return ExportFileService.writeExportFile(
-      baseName: fileName ?? '${document.name}_$suffix',
+      baseName: fileName ?? '${document.name}_ورقة_الامتحان',
       extension: 'pdf',
       bytes: bytes,
       destination: outputDirectory,

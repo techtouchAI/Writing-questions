@@ -79,6 +79,39 @@ class ExamDocumentProvider extends ChangeNotifier {
     }
   }
 
+  /// يستبدل المكتبة كاملة (استعادة نسخة احتياطية) بحفظ ذري واحد وتراجع
+  /// كامل عند فشل الكتابة — فلا تضيع مكتبة المدرس إن تعذّر الحفظ.
+  ///
+  /// [lastOpenDocumentId] جلسة الاستعادة (تُحفظ بصمت: تحسين لا يمنع العمل).
+  Future<void> replaceDocuments(
+    List<ExamDocument> documents, {
+    String? lastOpenDocumentId,
+  }) async {
+    final previousDocuments = List<ExamDocument>.of(_documents);
+    final previousLastOpen = _lastOpenDocumentId;
+    _documents = List<ExamDocument>.of(documents);
+    _lastOpenDocumentId = lastOpenDocumentId;
+    _errorMessage = null;
+    _recoveryMessage = null;
+    notifyListeners();
+
+    try {
+      await _storageService.saveExamDocuments(_documents);
+    } catch (_) {
+      _documents = previousDocuments;
+      _lastOpenDocumentId = previousLastOpen;
+      _errorMessage = 'تعذر حفظ البيانات المستعادة. حاول مرة أخرى.';
+      notifyListeners();
+      rethrow;
+    }
+
+    try {
+      await _storageService.saveLastOpenDocumentId(_lastOpenDocumentId);
+    } catch (_) {
+      // تجاهل صامت — استعادة الجلسة تحسين اختياري لا يمنع العمل.
+    }
+  }
+
   /// ينسخ ورقة كاملة بهوية جديدة (لـ«نسخ» في المكتبة) ويعيد النسخة.
   Future<ExamDocument> duplicateDocument(String id) async {
     final index = _documents.indexWhere((item) => item.id == id);

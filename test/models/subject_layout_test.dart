@@ -63,10 +63,9 @@ void main() {
   });
 
   group('Scientific layout', () {
-    test('keeps Latin numerals and grants more answer space', () {
+    test('keeps Latin numerals and grants generous line spacing', () {
       const scientific = SubjectLayoutTemplate.scientific;
       expect(scientific.formatNumber(7), '7');
-      expect(scientific.essayAnswerLines, greaterThan(SubjectLayoutTemplate.generic.essayAnswerLines));
       expect(scientific.lineHeightFactor, greaterThan(SubjectLayoutTemplate.generic.lineHeightFactor));
       expect(scientific.textDirection, TextDirection.rtl);
     });

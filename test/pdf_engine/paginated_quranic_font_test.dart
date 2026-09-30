@@ -36,8 +36,7 @@ ExamDocument _islamicDocument({required String verse, String subject = 'التر
             content: BranchContent(
               type: QuestionType.essay,
               text: verse,
-              modelAnswer: 'تلاوة صحيحة مع مراعاة أحكام التجويد',
-            ),
+              ),
             marks: 5,
           ),
         ],

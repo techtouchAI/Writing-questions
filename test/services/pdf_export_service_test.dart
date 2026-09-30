@@ -52,7 +52,6 @@ void main() {
   test('exportDocumentToPdf writes a .pdf file into the destination', () async {
     final file = await PdfExportService.exportDocumentToPdf(
       document: buildDocument(),
-      isTeacherVersion: true,
       outputDirectory: tempDir,
     );
 

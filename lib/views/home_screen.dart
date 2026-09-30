@@ -8,6 +8,7 @@ import '../services/export_file_service.dart';
 import '../services/math_image_renderer.dart';
 import '../services/pdf_export_service.dart';
 import '../services/shape_image_renderer.dart';
+import 'settings_screen.dart';
 import 'widgets/pdf_preview_screen.dart';
 import 'wizard/exam_wizard_screen.dart';
 
@@ -243,6 +244,15 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('صانع ومحرر الأسئلة'),
         centerTitle: true,
+        actions: <Widget>[
+          IconButton(
+            tooltip: 'الإعدادات',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openExamWizard(context),

@@ -34,7 +34,11 @@ void main() {
 
       expect(segments, hasLength(1));
       expect(segments.first.isMath, isFalse);
-      expect(segments.first.text, r'السعر 5\$ فقط');
+      // الدولار الحرفي يُعرض دولاراً عادياً بلا شرطة مائلة (النص ليس كوداً)،
+      // وإعادة الحفظ تُهرّبه من جديد فيبقى النص قابلاً للتحرير بلا تحوّل.
+      expect(segments.first.text, r'السعر 5$ فقط');
+      expect(TexContent.containsMath(r'السعر 5\$ فقط'), isFalse);
+      expect(TexContent.escapeLiteral(segments.first.text), r'السعر 5\$ فقط');
     });
 
     test('findSpans locates inline and block spans with source offsets', () {

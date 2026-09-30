@@ -37,13 +37,12 @@ ExamDocument _document({
                       'لاختبار الالتفاف داخل عرض الورقة المتاح بالكامل.',
                   options: type == QuestionType.multipleChoice
                       ? <QuestionOption>[
-                          QuestionOption(text: 'خيار أول', isCorrect: true),
+                          QuestionOption(text: 'خيار أول'),
                           QuestionOption(text: 'خيار ثانٍ'),
                           QuestionOption(text: 'خيار ثالث'),
                         ]
                       : const <QuestionOption>[],
-                  modelAnswer: 'إجابة نموذجية',
-                ),
+                  ),
                 marks: 2,
               ),
           ],
@@ -76,7 +75,7 @@ void main() {
       expect(_countPages(bytes), greaterThan(1));
     });
 
-    test('excludes non-printable placeholders from student and teacher pagination', () async {
+    test('excludes non-printable placeholders from pagination', () async {
       final document = ExamDocument(
         name: 'ترقيم الطباعة',
         header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
@@ -84,36 +83,32 @@ void main() {
           QuestionModel(id: 'blank', questionNumber: 1),
           QuestionModel(id: 'student', questionNumber: 2, prompt: 'سؤال ظاهر للطالب'),
           QuestionModel(
-            id: 'teacher-answer',
+            id: 'empty-branch',
             questionNumber: 3,
             branches: <BranchModel>[
               BranchModel(
                 content: BranchContent(
                   type: QuestionType.essay,
-                  modelAnswer: 'إجابة تظهر للمعلم فقط',
-                ),
+                  ),
               ),
             ],
           ),
         ],
       );
       final engine = PaginatedPdfExamEngine();
-      final studentPages = await engine.resolveQuestionPages(document: document);
-      final teacherPages = await engine.resolveQuestionPages(
-        document: document,
-        isTeacherVersion: true,
-      );
+      final pages = await engine.resolveQuestionPages(document: document);
 
-      expect(studentPages.expand((page) => page), <String>['student']);
+      // الأسئلة الفارغة (بلا نص أو فرع مطبوع) لا تُطبع ولا تحجز صفحة.
+      expect(pages.expand((page) => page), <String>['student']);
       expect(
-        teacherPages.expand((page) => page),
-        <String>['student', 'teacher-answer'],
+        document.questions.map((question) => question.id),
+        contains('empty-branch'),
       );
       // توزيع قديم يتضمن السؤال الفارغ يُعاد حسابه، لا يُطبع كصفحة أو فراغ.
       final bytes = await engine.generate(
         document: document,
         pageAssignments: const <List<String>>[
-          <String>['blank', 'student', 'teacher-answer'],
+          <String>['blank', 'student', 'empty-branch'],
         ],
       );
       expect(_countPages(bytes), 1);
@@ -185,8 +180,7 @@ void main() {
       final student = await PaginatedPdfExamEngine().generate(document: english);
       final teacher = await PaginatedPdfExamEngine().generate(
         document: english,
-        isTeacherVersion: true,
-      );
+        );
 
       expect(String.fromCharCodes(student), startsWith('%PDF-'));
       expect(_countPages(student), greaterThanOrEqualTo(1));
