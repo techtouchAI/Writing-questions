@@ -185,7 +185,7 @@ void main() {
 
       final controller = controllerWith();
       expect(await controller.pickBackup(), isNull);
-      expect(controller.errorMessage, contains('ليست ملف نسخة احتياطية صالحاً'));
+      expect(controller.errorMessage, contains('ليس ملف نسخة احتياطية صالحاً'));
       expect(provider.documents, isEmpty);
     });
 

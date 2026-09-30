@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:writing_questions_app/models/app_backup.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/question_model.dart';
@@ -15,6 +15,44 @@ import 'package:writing_questions_app/services/backup_file_gateway.dart';
 import 'package:writing_questions_app/services/backup_service.dart';
 import 'package:writing_questions_app/services/storage_service.dart';
 import 'package:writing_questions_app/views/settings_screen.dart';
+
+/// تخزين في الذاكرة للاختبارات: يقطع الاعتماد على قناة المنصة نهائياً،
+/// فتبقى شاشة الإعدادات معزولة وسريعة (طبقة التخزين نفسها مُختبَرة في
+/// `test/services/storage_service_test.dart`).
+class _MemoryStorage extends StorageService {
+  List<ExamDocument> _documents = <ExamDocument>[];
+  String? _lastOpenDocumentId;
+  BackupMetadata? _lastBackup;
+
+  @override
+  Future<StorageLoadResult<ExamDocument>> loadExamDocuments() async {
+    return StorageLoadResult<ExamDocument>(
+      items: List<ExamDocument>.unmodifiable(_documents),
+      hadStoredValue: true,
+    );
+  }
+
+  @override
+  Future<void> saveExamDocuments(List<ExamDocument> documents) async {
+    _documents = List<ExamDocument>.of(documents);
+  }
+
+  @override
+  Future<String?> loadLastOpenDocumentId() async => _lastOpenDocumentId;
+
+  @override
+  Future<void> saveLastOpenDocumentId(String? id) async {
+    _lastOpenDocumentId = id;
+  }
+
+  @override
+  Future<BackupMetadata?> loadLastBackupMetadata() async => _lastBackup;
+
+  @override
+  Future<void> saveLastBackupMetadata(BackupMetadata? metadata) async {
+    _lastBackup = metadata;
+  }
+}
 
 class _FakeGateway implements BackupFileGateway {
   PickedBackupFile? picked;
@@ -63,6 +101,17 @@ void main() {
   late _FakeGateway gateway;
   late BackupController controller;
 
+  /// ينهي العملية غير المتزامنة وحركة النافذة/الشريحة بخطوات زمنية محددة.
+  ///
+  /// `pumpAndSettle` لا يصلح بعد بدء عملية يشغل فيها المتحكم مؤشر تقدم
+  /// لانهائياً؛ فالخطوات المحددة تُكمل المهام الدقيقة (fakes) وحركات العناصر
+  /// بلا انتظار غير محدود.
+  Future<void> finishAction(WidgetTester tester) async {
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 350));
+  }
+
   Future<void> pumpSettings(WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -76,15 +125,15 @@ void main() {
   }
 
   setUp(() async {
-    SharedPreferences.setMockInitialValues(<String, Object>{});
-    provider = ExamDocumentProvider(storageService: StorageService());
+    final storage = _MemoryStorage();
+    provider = ExamDocumentProvider(storageService: storage);
     await provider.loadDocuments();
     gateway = _FakeGateway();
     controller = BackupController(
       documentsProvider: provider,
       fileGateway: gateway,
       appInfoService: _FakeAppInfo(),
-      storageService: StorageService(),
+      storageService: storage,
     );
   });
 
@@ -107,7 +156,7 @@ void main() {
     await tester.tap(find.text('إنشاء نسخة احتياطية'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('حفظ في ملف على الجهاز'));
-    await tester.pumpAndSettle();
+    await finishAction(tester);
 
     expect(gateway.savedName, endsWith('.json'));
     expect(find.text('تم حفظ النسخة الاحتياطية كاملة.'), findsOneWidget);
@@ -121,7 +170,7 @@ void main() {
     await tester.tap(find.text('إنشاء نسخة احتياطية'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('حفظ في ملف على الجهاز'));
-    await tester.pumpAndSettle();
+    await finishAction(tester);
 
     expect(find.text('تعذر حفظ ملف النسخة الاحتياطية على الجهاز.'), findsOneWidget);
   });
@@ -148,7 +197,7 @@ void main() {
     expect(provider.documents, isEmpty, reason: 'لا تعديل قبل التأكيد.');
 
     await tester.tap(find.widgetWithText(FilledButton, 'استعادة'));
-    await tester.pumpAndSettle();
+    await finishAction(tester);
 
     expect(provider.documents.single.name, 'ورقة مستعادة');
     expect(find.textContaining('تمت الاستعادة'), findsOneWidget);
@@ -166,7 +215,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('استعادة نسخة احتياطية'), findsNothing);
-    expect(find.textContaining('ليست ملف نسخة احتياطية صالحاً'), findsOneWidget);
+    expect(find.textContaining('ليس ملف نسخة احتياطية صالحاً'), findsOneWidget);
     expect(provider.documents.single.id, 'keep');
   });
 

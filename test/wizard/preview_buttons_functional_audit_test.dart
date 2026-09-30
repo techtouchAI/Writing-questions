@@ -297,7 +297,7 @@ void main() {
           (null, (c) => c.updateQuestionType(0, QuestionType.definitions)),
       'قسم السؤال': (null, (c) => c.updateQuestionCategory(0, 'القسم الأول')),
       'إجابة نقطة صح/خطأ':
-          (null, (c) => c.updateQuestionItemAnswer(1, 0, true)),
+          (null, (c) => c.updateQuestionItemAnswer(0, 0, true)),
       'إطار السؤال': (null, (c) => c.toggleQuestionFrame(0)),
       'فاصل بعد السؤال':
           (null, (c) => c.setQuestionDivider(0, const PaperDivider(thickness: 2))),

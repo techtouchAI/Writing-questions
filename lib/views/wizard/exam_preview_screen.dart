@@ -3666,7 +3666,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                     style: answerStyle,
                   ),
           ),
-        if (showTypeBody)
+        // زر «إضافة نقطة» مستقل عن جسم النوع: صح/خطأ لا جسم له الآن، لكن
+        // عباراته تُضاف وتُحذف من هنا كما في بقية الأنواع (الفرع المحدد فقط).
+        if (showTypeBody || isSelected)
           Padding(
             padding: EdgeInsetsDirectional.only(
               start: 36,
@@ -3674,7 +3676,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             ),
             child: Row(
               children: <Widget>[
-                Expanded(child: _buildTypeBody(controller, ref, layout, branch)),
+                if (showTypeBody)
+                  Expanded(child: _buildTypeBody(controller, ref, layout, branch)),
                 if (isSelected)
                   IconButton(
                     tooltip: 'إضافة نقطة',
