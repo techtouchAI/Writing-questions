@@ -1,32 +1,40 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
+import 'package:writing_questions_app/models/exam_catalog.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
+import 'package:writing_questions_app/models/exam_footer_model.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/floating_element.dart';
-import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
+import 'package:writing_questions_app/models/point_kind.dart';
+import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
-import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/models/subject_layout.dart';
 
 ExamDocument _twoQuestionDocument() {
   return ExamDocument(
     name: 'نموذج',
-    header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+    header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
     questions: <QuestionModel>[
       QuestionModel(
         id: 'q1',
         questionNumber: 1,
+        statement: 'أجب عما يأتي',
         branches: <BranchModel>[
           BranchModel(
             id: 'q1a',
-            content: BranchContent(type: QuestionType.essay, text: 'أعرب ما تحته خط'),
+            content: BranchContent(statement: 'أعرب ما تحته خط'),
             marks: 5,
           ),
           BranchModel(
             id: 'q1b',
-            content: BranchContent(type: QuestionType.fillInTheBlank, text: 'أكمل: _____'),
+            content: BranchContent(
+              statement: 'أكمل',
+              items: <BranchItem>[
+                BranchItem(kind: PointKind.fillBlank, text: 'عاصمة العراق ___'),
+              ],
+            ),
             marks: 3,
           ),
         ],
@@ -38,18 +46,24 @@ ExamDocument _twoQuestionDocument() {
           BranchModel(
             id: 'q2a',
             content: BranchContent(
-              type: QuestionType.multipleChoice,
-              text: 'اختر الصحيح',
-              options: <QuestionOption>[
-                QuestionOption(text: 'بغداد'),
-                QuestionOption(text: 'البصرة'),
+              statement: 'اختر الصحيح',
+              items: <BranchItem>[
+                BranchItem(
+                  id: 'mc',
+                  kind: PointKind.multipleChoice,
+                  text: 'عاصمة العراق',
+                  options: <QuestionOption>[
+                    QuestionOption(text: 'بغداد'),
+                    QuestionOption(text: 'البصرة'),
+                  ],
+                ),
               ],
             ),
             marks: 2,
           ),
           BranchModel(
             id: 'q2b',
-            content: BranchContent(type: QuestionType.trueFalse, text: 'الأرض كروية'),
+            content: BranchContent(statement: 'الأرض كروية'),
             marks: 1,
             attachments: <FloatingElement>[
               FloatingElement(
@@ -71,26 +85,38 @@ ExamDocument _twoQuestionDocument() {
 
 void main() {
   group('ExamHeaderModel', () {
-    test('holds exactly three lines per column and round-trips through JSON', () {
-      final header = ExamHeaderModel(
+    test('initial uses the current academic year and round-trips through JSON', () {
+      final header = ExamHeaderModel.initial(
         subject: 'الرياضيات',
-        right: HeaderColumn(<String>['التاريخ', 'المادة']),
-        center: HeaderColumn(<String>['وزارة التربية', 'المدرسة', 'الدور الأول', 'زائد']),
-        left: HeaderColumn(<String>['الوقت', 'الاسم', 'الرقم الامتحاني']),
+        schoolName: 'متوسطة حليف القرآن',
+        now: DateTime(2026, 10, 1),
       );
 
-      expect(header.right.lines, <String>['التاريخ', 'المادة', '']);
-      expect(header.center.lines, hasLength(HeaderColumn.lineCount));
+      expect(header.academicYear, '2026/2027');
+      expect(header.examType, 'نصف السنة');
+      expect(header.session, ExamSession.first);
+      expect(header.schoolGender, SchoolGender.boys);
+      expect(header.showBismillah, isTrue);
       expect(header.layoutTemplate, SubjectLayoutTemplate.scientific);
 
       final restored = ExamHeaderModel.fromMap(header.toMap());
-      expect(restored.left.lines, header.left.lines);
-      expect(restored.center.lines.last, 'الدور الأول');
-      expect(restored.layoutTemplate, SubjectLayoutTemplate.scientific);
+      expect(restored.schoolName, 'متوسطة حليف القرآن');
+      expect(restored.academicYear, '2026/2027');
+      expect(restored.session, ExamSession.first);
+      expect(restored.subject, 'الرياضيات');
+    });
+
+    test('the academic year starts in September', () {
+      expect(AcademicYear.current(DateTime(2026, 8, 31)), '2025/2026');
+      expect(AcademicYear.current(DateTime(2026, 9, 1)), '2026/2027');
+      expect(
+        AcademicYear.suggestions(DateTime(2026, 10, 1)),
+        <String>['2025/2026', '2026/2027', '2027/2028'],
+      );
     });
 
     test('changing the subject re-selects the layout template', () {
-      final header = ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية');
+      final header = ExamHeaderModel.initial(subject: 'اللغة العربية');
       expect(header.layoutTemplate, SubjectLayoutTemplate.arabic);
 
       final english = header.copyWith(subject: 'اللغة الإنجليزية');
@@ -98,19 +124,84 @@ void main() {
       expect(english.layoutTemplate.isLtr, isTrue);
     });
 
-    test('withLine edits a single header cell in place', () {
-      final header = ExamHeaderModel.ministerialDefault();
-      final edited = header.withLine(HeaderSlot.left, 1, 'الاسم: علي');
+    test('every field is optional: a blank subject is allowed and fromMap is tolerant', () {
+      final blank = ExamHeaderModel.fromMap(const <String, dynamic>{});
+      expect(blank.subject, isEmpty);
+      expect(blank.layoutTemplate, SubjectLayoutTemplate.generic);
+      expect(blank.session, ExamSession.first);
+      expect(blank.schoolGender, SchoolGender.boys);
+      expect(blank.showBismillah, isTrue);
 
-      expect(edited.left.lines[1], 'الاسم: علي');
-      expect(edited.left.lines[0], header.left.lines[0]);
-      expect(edited.right, header.right);
+      final partial = ExamHeaderModel.fromMap(const <String, dynamic>{
+        'schoolName': 'مدرسة',
+        'showBismillah': false,
+        'session': 'third',
+        'schoolGender': 'none',
+        'unknownKey': 1,
+      });
+      expect(partial.schoolName, 'مدرسة');
+      expect(partial.showBismillah, isFalse);
+      expect(partial.session, ExamSession.third);
+      expect(partial.schoolGender, SchoolGender.none);
     });
 
-    test('rejects a header without a subject', () {
+    test('catalog labels are the verbatim printed texts', () {
+      expect(ExamCatalog.administrationLabel, 'ادارة');
+      expect(ExamCatalog.examTitlePrefix, 'اسئلة امتحان');
+      expect(ExamCatalog.academicYearPrefix, 'للعام الدراسي');
+      expect(ExamCatalog.bismillah, 'بسم الله الرحمن الرحيم');
       expect(
-        () => ExamHeaderModel.fromMap(const <String, dynamic>{'right': <String>[]}),
-        throwsFormatException,
+        ExamSession.values.map((session) => session.label),
+        <String>['', 'الدور الأول', 'الدور الثاني', 'الدور الثالث'],
+      );
+      expect(SchoolGender.boys.label, 'للبنين');
+      expect(
+        SignatureTitle.values.map((title) => title.label),
+        <String>['مدرس المادة', 'معلم المادة', 'مدرسة المادة', 'معلمة المادة'],
+      );
+      expect(ExamCatalog.closingPhrases, hasLength(10));
+      expect(ExamCatalog.closingPhrases.toSet(), hasLength(10));
+    });
+  });
+
+  group('ExamFooterModel', () {
+    test('has a default phrase and a single primary signature', () {
+      const footer = ExamFooterModel();
+      expect(footer.closingPhrase, ExamCatalog.defaultClosingPhrase);
+      expect(footer.primary.title, SignatureTitle.lecturer);
+      expect(footer.hasSecondary, isFalse);
+    });
+
+    test('the second signature exists only when explicitly added', () {
+      const footer = ExamFooterModel(
+        primary: SignatureModel(title: SignatureTitle.educatorFemale, name: 'سارة'),
+      );
+      final added = footer.withSecondaryAdded();
+
+      expect(added.hasSecondary, isTrue);
+      // التوقيع الثاني مطابق للأول في اللقب ويبدأ بلا اسم.
+      expect(added.secondary!.title, SignatureTitle.educatorFemale);
+      expect(added.secondary!.name, isEmpty);
+      expect(identical(added.withSecondaryAdded(), added), isTrue);
+      expect(added.withSecondaryRemoved().hasSecondary, isFalse);
+    });
+
+    test('round-trips through JSON and tolerates a missing or corrupt value', () {
+      const footer = ExamFooterModel(
+        closingPhrase: 'انتهت الأسئلة',
+        primary: SignatureModel(name: 'أحمد'),
+        secondary: SignatureModel(title: SignatureTitle.educator, name: 'علي'),
+      );
+      final restored = ExamFooterModel.fromValue(footer.toMap());
+
+      expect(restored, footer);
+      expect(restored.secondary!.name, 'علي');
+      expect(ExamFooterModel.fromValue(null), const ExamFooterModel());
+      expect(ExamFooterModel.fromValue('تالف'), const ExamFooterModel());
+      expect(
+        ExamFooterModel.fromValue(const <String, dynamic>{'closingPhrase': ''})
+            .closingPhrase,
+        isEmpty,
       );
     });
   });
@@ -213,7 +304,8 @@ void main() {
 
     test('shows custom item and option labels literally (no renumbering)', () {
       final document = _twoQuestionDocument();
-      final option = document.questions[1].branches[0].content.options[0];
+      final point = document.questions[1].branches[0].content.items.single;
+      final option = point.options[0];
       expect(document.displayOptionLabel(option, 0), '( أ )');
 
       final customOption = option.copyWith(labelOverride: () => 'A.');
@@ -230,70 +322,108 @@ void main() {
     });
 
     test('detects branches with no exportable content', () {
-      expect(
-        BranchContent(type: QuestionType.essay, text: '  ')
-            .hasExportableContent,
-        isFalse,
+      expect(BranchContent(statement: '  ').hasExportableContent, isFalse);
+      expect(BranchContent(statement: 'منطوق').hasExportableContent, isTrue);
+      expect(BranchContent(body: 'نص').hasExportableContent, isTrue);
+      // فرع فارغ تماماً لا يُظهر شيئاً.
+      expect(BranchContent.empty().hasExportableContent, isFalse);
+      // نقطة صح/خطأ بلا نص لا تُظهر شيئاً.
+      final blankTrueFalse = BranchContent(
+        items: <BranchItem>[BranchItem(kind: PointKind.trueFalse)],
       );
-      expect(
-        BranchContent(type: QuestionType.essay, text: 'نص')
-            .hasExportableContent,
-        isTrue,
-      );
-      // عبارة صح/خطأ بلا نص لا تُظهر نقطة على الورقة (لا يوجد عنصر إجابة).
-      final trueFalseOnly = BranchContent(
-        type: QuestionType.trueFalse,
-        items: <BranchItem>[BranchItem()],
-      );
-      expect(trueFalseOnly.hasExportableContent, isFalse);
+      expect(blankTrueFalse.hasExportableContent, isFalse);
       // العبارة المكتوبة وحدها هي ما يُطبع.
       final trueFalseWithText = BranchContent(
-        type: QuestionType.trueFalse,
-        items: <BranchItem>[BranchItem(text: 'الأرض كروية')],
+        items: <BranchItem>[BranchItem(kind: PointKind.trueFalse, text: 'الأرض كروية')],
       );
       expect(trueFalseWithText.hasExportableContent, isTrue);
-      final emptyTrueFalse = BranchContent.empty(QuestionType.trueFalse);
-      expect(emptyTrueFalse.hasExportableContent, isFalse);
-      // خيارات الاختيار المخفية في النص الحر لا تُبقي فرعاً فارغاً بالطباعة.
+      // خيار مكتوب في نقطة اختيار من متعدد يكفي لإظهارها.
+      final choicesOnly = BranchContent(
+        items: <BranchItem>[
+          BranchItem(
+            kind: PointKind.multipleChoice,
+            options: <QuestionOption>[QuestionOption(text: 'بغداد')],
+          ),
+        ],
+      );
+      expect(choicesOnly.hasExportableContent, isTrue);
+      // الخيارات لا تُطبع لغير نوع «اختيار من متعدد».
       final hiddenChoices = BranchContent(
-        type: QuestionType.multipleChoice,
-        plainText: true,
-        options: <QuestionOption>[QuestionOption(text: 'خيار لا يظهر')],
+        items: <BranchItem>[
+          BranchItem(options: <QuestionOption>[QuestionOption(text: 'لا يظهر')]),
+        ],
       );
-      expect(hiddenChoices.hasExportableContent, isFalse);
-      expect(hiddenChoices.hasExportableContent, isFalse);
-      // فرع المقالي الفارغ لا يُظهر شيئاً.
-      expect(
-        BranchContent(type: QuestionType.essay).hasExportableContent,
-        isFalse,
-      );
+      expect(hiddenChoices.items.single.hasVisibleOptions, isFalse);
     });
 
-    test('changing the content type resets options to the type defaults', () {
-      final essay = BranchContent.empty();
-      final mcq = essay.copyWith(type: QuestionType.multipleChoice);
-      expect(mcq.options, hasLength(4));
+    test('a multiple-choice point starts with four blank options; other kinds none', () {
+      final plain = BranchItem(text: 'نص');
+      expect(plain.options, isEmpty);
+
+      final mcq = plain.copyWith(kind: PointKind.multipleChoice);
+      expect(mcq.options, hasLength(BranchItem.defaultOptionCount));
       // لا تمييز لخيار صحيح: الخيارات نصّية فقط.
       expect(mcq.options.map((option) => option.text), everyElement(isEmpty));
-      // صح/خطأ بلا خيارات: لا إجابة مخزَّنة أصلاً.
-      final trueFalse = mcq.copyWith(type: QuestionType.trueFalse);
-      expect(trueFalse.type, QuestionType.trueFalse);
+      expect(mcq.isEmpty, isFalse); // النص موجود
+      expect(BranchItem(kind: PointKind.multipleChoice).isEmpty, isTrue);
+
+      final trueFalse = BranchItem(kind: PointKind.trueFalse, text: 'عبارة');
       expect(trueFalse.options, isEmpty);
     });
 
-    test('rejects negative marks and unknown types strictly', () {
+    test('kinds mix freely in one group and survive a JSON round trip', () {
+      final content = BranchContent(
+        statement: 'ضع علامة',
+        items: <BranchItem>[
+          BranchItem(kind: PointKind.trueFalse, text: 'الأرض كروية'),
+          BranchItem(kind: PointKind.fillBlank, text: 'عاصمة العراق ____'),
+          BranchItem(
+            kind: PointKind.multipleChoice,
+            text: 'أكبر محافظة',
+            options: <QuestionOption>[
+              QuestionOption(text: 'نينوى'),
+              QuestionOption(text: 'الأنبار'),
+            ],
+          ),
+          BranchItem(text: 'عرّف الفقه'),
+        ],
+      );
+      final restored = BranchContent.fromMap(content.toMap());
+
+      expect(
+        restored.items.map((item) => item.kind),
+        <PointKind>[
+          PointKind.trueFalse,
+          PointKind.fillBlank,
+          PointKind.multipleChoice,
+          PointKind.plain,
+        ],
+      );
+      expect(restored.items[2].options.map((option) => option.text), <String>['نينوى', 'الأنبار']);
+      // النقطة النصية الحرة لا تحمل مفتاح نوع ولا خيارات في JSON.
+      expect(content.items[3].toMap().containsKey('kind'), isFalse);
+      expect(content.items[3].toMap().containsKey('options'), isFalse);
+    });
+
+    test('rejects negative marks strictly and tolerates corrupt points', () {
       expect(() => BranchModel(marks: -1), throwsArgumentError);
       expect(
-        () => BranchContent.fromMap(const <String, dynamic>{'type': 'riddle'}),
-        throwsFormatException,
-      );
-      expect(
         () => BranchModel.fromMap(const <String, dynamic>{
-          'content': <String, dynamic>{'type': 'essay'},
+          'content': <String, dynamic>{'statement': 'س'},
           'marks': 'abc',
         }),
         throwsFormatException,
       );
+      final tolerant = BranchContent.fromMap(const <String, dynamic>{
+        'statement': 'س',
+        'items': <Object?>[
+          'ليست خريطة',
+          <String, dynamic>{'text': 'سليمة', 'kind': 'unknown-kind', 'marks': -3},
+        ],
+      });
+      expect(tolerant.items, hasLength(1));
+      expect(tolerant.items.single.kind, PointKind.plain);
+      expect(tolerant.items.single.marks, 0);
     });
   });
 
@@ -321,11 +451,9 @@ void main() {
       expect(swapped.questions[1].branches[1].id, 'q2b');
 
       // المحتوى والدرجة تبدّلا.
-      expect(swapped.branchAt(from).content.text, 'الأرض كروية');
-      expect(swapped.branchAt(from).content.type, QuestionType.trueFalse);
+      expect(swapped.branchAt(from).content.statement, 'الأرض كروية');
       expect(swapped.branchAt(from).marks, 1);
-      expect(swapped.branchAt(to).content.text, 'أعرب ما تحته خط');
-      expect(swapped.branchAt(to).content.type, QuestionType.essay);
+      expect(swapped.branchAt(to).content.statement, 'أعرب ما تحته خط');
       expect(swapped.branchAt(to).marks, 5);
 
       // المرفقات مثبّتة على الخانة لا على المحتوى.
@@ -353,7 +481,7 @@ void main() {
     test('question duplication preserves the custom spacing after a question', () {
       final document = ExamDocument(
         name: 'مسافات مخصصة',
-        header: ExamHeaderModel.ministerialDefault(),
+        header: ExamHeaderModel.initial(),
         questions: <QuestionModel>[
           QuestionModel(questionNumber: 1, spacingAfter: 37.5),
         ],
@@ -376,7 +504,7 @@ void main() {
       );
       final document = ExamDocument(
         name: 'ورقة بلا أسئلة',
-        header: ExamHeaderModel.ministerialDefault(),
+        header: ExamHeaderModel.initial(),
         floatingElements: <FloatingElement>[element],
       );
 
@@ -400,7 +528,7 @@ void main() {
       );
       final document = ExamDocument(
         name: 'عنصر حر',
-        header: ExamHeaderModel.ministerialDefault(),
+        header: ExamHeaderModel.initial(),
         questions: <QuestionModel>[
           QuestionModel(
             questionNumber: 1,
@@ -428,7 +556,7 @@ void main() {
       );
       final document = ExamDocument(
         name: 'أصل',
-        header: ExamHeaderModel.ministerialDefault(),
+        header: ExamHeaderModel.initial(),
         questions: <QuestionModel>[
           QuestionModel(
             questionNumber: 1,
@@ -460,7 +588,7 @@ void main() {
       );
       final document = ExamDocument(
         name: 'مستند',
-        header: ExamHeaderModel.ministerialDefault(),
+        header: ExamHeaderModel.initial(),
         floatingElements: <FloatingElement>[element],
         questions: <QuestionModel>[
           QuestionModel(
@@ -468,7 +596,7 @@ void main() {
             attachments: <FloatingElement>[element],
             branches: <BranchModel>[
               BranchModel(
-                content: BranchContent.empty(QuestionType.essay),
+                content: BranchContent.empty(),
                 attachments: <FloatingElement>[element],
               ),
             ],
@@ -495,7 +623,9 @@ void main() {
       expect(restored.id, document.id);
       expect(restored.header.subject, 'اللغة العربية');
       expect(restored.questions, hasLength(2));
-      expect(restored.questions[1].branches[0].content.options, hasLength(2));
+      expect(restored.questions[1].branches[0].content.items.single.options, hasLength(2));
+      expect(restored.footer, document.footer);
+      expect(restored.header.academicYear, document.header.academicYear);
       expect(restored.questions[1].branches[1].attachments.single.shape, FloatingShapeType.circle);
       expect(restored.totalMarks, 11);
     });
