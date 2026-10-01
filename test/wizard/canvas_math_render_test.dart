@@ -158,6 +158,7 @@ void main() {
       await tester.pump();
       expect(find.text('تحرير المحتوى'), findsOneWidget);
       expect(find.text('إضافة معادلة'), findsOneWidget);
+      expect(find.text('نص بعدها'), findsNothing);
       expect(find.text('حفظ المحتوى'), findsOneWidget);
       // النص والمعادلة معروضان في المحرر (المعادلة مرسومة لا مكتوبة ككود).
       expect(

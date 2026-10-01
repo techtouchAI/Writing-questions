@@ -3,19 +3,19 @@ import 'package:flutter/material.dart';
 import '../../models/branch_item.dart';
 import '../../models/point_kind.dart';
 import '../../models/question_option.dart';
-import 'labeled_dropdown.dart';
 import 'ltr_numeric_field.dart';
 import 'rich_content_field.dart';
 
-/// محرر النقاط المرقّمة بأنواعها المختلطة — **المكوّن المشترك** بين «نقاط
+/// محرر النقاط المرقّمة ذات النص الحر — **المكوّن المشترك** بين «نقاط
 /// السؤال» و«نقاط الفرع».
 ///
-/// لكل نقطة نوعها (نص حر / صح أو خطأ / إكمال الفراغ / اختيار من متعدد)
-/// وتختلط الأنواع في المجموعة نفسها بحرية؛ والترقيم تسلسل واحد متصل يُشتق من
-/// الفهرس ([labelOf]). نقطة «اختيار من متعدد» تُحرَّر خياراتها هنا مباشرةً
-/// (٤ خيارات فارغة افتراضياً، والعدد حر).
+/// النقاط التي ينشئها هذا المحرر نص حر دائماً؛ لذلك لا يعرض واجهة لاختيار
+/// نوع النقطة أو أي خيارات خاصة بنوع جديد. تبقى بيانات الأنواع القديمة قابلة
+/// للقراءة والتحرير النصي، وتُعرض خياراتها الحالية فقط عند تحميل مستند قديم
+/// يحتوي نقطة «اختيار من متعدد»، من دون إتاحة إنشاء هذا النوع من الواجهة.
 ///
-/// التطبيق لكتابة الأسئلة وحدها: لا اختيار «إجابة صحيحة» لأي نوع.
+/// الترقيم تسلسل واحد متصل يُشتق من الفهرس ([labelOf]). ولا توجد في هذا
+/// المحرر أي حالة إجابة صحيحة أو أدوات تصحيح.
 class PointsEditor extends StatefulWidget {
   const PointsEditor({
     super.key,
@@ -33,10 +33,14 @@ class PointsEditor extends StatefulWidget {
   /// الرقم المعروض للنقطة (تلقائي بالفهرس أو مخصص) — «١-».
   final String Function(int index, BranchItem point) labelOf;
 
-  /// تسمية الخيار المعروضة (تلقائية بالفهرس «( أ )» أو مخصصة).
+  /// تسمية خيار قديم من «اختيار من متعدد» (تلقائية بالفهرس «( أ )» أو مخصصة).
+  /// لا تُستخدم عند إنشاء النقاط النصية الجديدة.
   final String Function(int index, QuestionOption option) optionLabelOf;
 
-  /// يستقبل القائمة بعد كل تعديل (نص/نوع/خيارات/درجة/حذف/إضافة/عدد).
+  /// يستقبل القائمة بعد كل تعديل (نص/درجة/حذف/إضافة/عدد).
+  ///
+  /// النقطة الجديدة تُنشأ دائماً بالنوع [PointKind.plain]؛ لا يغيّر هذا
+  /// المحرر نوع النقاط الموجودة مسبقاً حفاظاً على توافق المستندات القديمة.
   final ValueChanged<List<BranchItem>> onChanged;
 
   /// تلميح إرشادي لدرجة النقطة كما ستُطبع («تُطبع بصيغة (٢ درجة)»).
@@ -204,7 +208,7 @@ class _PointsEditorState extends State<PointsEditor> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              // الرقم التلقائي المتصل (١-، ٢-، ٣-...) مهما كان نوع النقطة.
+              // الرقم التلقائي المتصل (١-، ٢-، ٣-...) لكل نقطة.
               Container(
                 width: 44,
                 height: 36,
@@ -220,18 +224,15 @@ class _PointsEditorState extends State<PointsEditor> {
                 ),
               ),
               const SizedBox(width: 8),
-              Expanded(
-                child: LabeledDropdown<PointKind>(
-                  label: 'نوع النقطة',
-                  hint: 'اختر نوع النقطة',
-                  value: point.kind,
-                  values: PointKind.values,
-                  labelOf: (kind) => kind.arabicLabel,
-                  onChanged: (kind) {
-                    if (widget.enabled && kind != point.kind) {
-                      _replaceAt(index, point.copyWith(kind: kind));
-                    }
-                  },
+              // النقاط المضافة من شاشة كتابة السؤال نص حر فقط؛ لا حاجة إلى
+              // قائمة منسدلة لنوع النقطة أو خيار قابل للتغيير هنا.
+              const Expanded(
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Chip(
+                    label: Text('نص حر'),
+                    visualDensity: VisualDensity.compact,
+                  ),
                 ),
               ),
               IconButton(
@@ -253,7 +254,9 @@ class _PointsEditorState extends State<PointsEditor> {
           RichContentField(
             value: point.text,
             enabled: widget.enabled,
-            hint: point.kind.textHint,
+            // هذا المحرر يكتب نصاً حراً؛ حتى النقاط القديمة تُحرَّر بالنص
+            // نفسه من دون عرض خيارات نوع جديدة.
+            hint: 'اكتب نص النقطة هنا',
             title: 'تحرير نص النقطة',
             minHeight: 40,
             onChanged: (value) => _replaceAt(index, point.copyWith(text: value)),
@@ -281,6 +284,9 @@ class _PointsEditorState extends State<PointsEditor> {
               }
             },
           ),
+          // توافق رجعي فقط: لا تظهر هذه المنطقة للنقاط الجديدة النصية، لكنها
+          // تحافظ على خيارات مستند قديم من نوع «اختيار من متعدد» دون إتاحة
+          // اختيار النوع أو إنشائه من شاشة الكتابة.
           if (point.kind == PointKind.multipleChoice) _buildOptions(index, point),
         ],
       ),
@@ -327,7 +333,7 @@ class _PointsEditorState extends State<PointsEditor> {
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 6),
               child: Text(
-                'بلا نقاط — حدد عدد النقاط أو أضف نقطة (صح/خطأ، إكمال فراغ، اختيار من متعدد).',
+                'بلا نقاط — حدد العدد أو أضف نقطة نص حر.',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ),

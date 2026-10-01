@@ -108,14 +108,9 @@ class _MixedContentEditorState extends State<MixedContentEditor> {
     return buffer.toString();
   }
 
-  void _addText({int? afterIndex}) {
+  void _addText() {
     setState(() {
-      final block = _MixedBlock.text(id: _nextBlockId++, initialText: '');
-      if (afterIndex == null) {
-        _blocks.add(block);
-      } else {
-        _blocks.insert(afterIndex + 1, block);
-      }
+      _blocks.add(_MixedBlock.text(id: _nextBlockId++, initialText: ''));
     });
   }
 
@@ -330,11 +325,8 @@ class _MixedContentEditorState extends State<MixedContentEditor> {
             child: Wrap(
               spacing: 6,
               children: <Widget>[
-                TextButton.icon(
-                  onPressed: () => _addText(afterIndex: index),
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('نص بعدها', style: TextStyle(fontSize: 12)),
-                ),
+                // المعادلة هي العنصر الوحيد الذي يُدرج مباشرة بعد هذا القسم.
+                // النص يُكتب داخل القسم النصي الحالي أو يُضاف من شريط المحرر.
                 TextButton.icon(
                   onPressed: () => _addMath(afterIndex: index),
                   icon: const Icon(Icons.add, size: 16),
