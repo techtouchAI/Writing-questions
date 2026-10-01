@@ -70,8 +70,11 @@ class WritingQuestionsApp extends StatelessWidget {
             backgroundColor: colorScheme.surface,
             foregroundColor: colorScheme.onSurface,
           ),
+          // التسمية تبقى طافية فوق الحقل دائماً ليظهر التلميح الإرشادي (hint)
+          // داخل كل حقل فارغ فور فتح الشاشة، لا بعد التركيز عليه فقط.
           inputDecorationTheme: InputDecorationTheme(
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            floatingLabelBehavior: FloatingLabelBehavior.always,
           ),
         ),
         home: const HomeScreen(),

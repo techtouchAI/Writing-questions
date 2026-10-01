@@ -4,10 +4,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:writing_questions_app/layout/pagination_engine.dart';
 import 'package:writing_questions_app/layout/paper_metrics.dart';
+import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_font.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
+import 'package:writing_questions_app/models/paper_settings.dart';
+import 'package:writing_questions_app/models/point_kind.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
@@ -18,6 +21,9 @@ import 'package:writing_questions_app/views/wizard/branch_editor_card.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 import 'package:writing_questions_app/views/wizard/exam_wizard_screen.dart';
 import 'package:writing_questions_app/views/wizard/question_step_screen.dart';
+
+/// ارتفاع صندوق المحتوى للهامش الافتراضي على لوحة المعاينة.
+double get _pageHeight => PaperMetrics.pageContentHeightFor(PaperSettings.defaultMarginMm);
 
 Widget _app(Widget home) {
   return Directionality(
@@ -40,8 +46,7 @@ ExamDocument _previewDocument({int questionCount = 2, List<int>? branchesPerQues
               BranchModel(
                 id: 'q${q + 1}${b == 0 ? 'a' : b == 1 ? 'b' : 'x$b'}',
                 content: BranchContent(
-                  type: QuestionType.essay,
-                  text: 'محتوى س${q + 1} ${b == 0 ? 'أ' : b == 1 ? 'ب' : 'فرع ${b + 1}'}',
+                  statement: 'محتوى س${q + 1} ${b == 0 ? 'أ' : b == 1 ? 'ب' : 'فرع ${b + 1}'}',
                 ),
                 marks: b == 0 ? q + 1.0 : 1,
               ),
@@ -83,7 +88,7 @@ void _expectQuestionsUnsplit(ExamWizardController controller) {
     expect(page, findsOneWidget);
     for (final branch in question.branches) {
       expect(
-        find.descendant(of: page, matching: find.text(branch.content.text)),
+        find.descendant(of: page, matching: find.text(branch.content.statement)),
         findsOneWidget,
         reason: 'فرع ${branch.id} يجب أن يكون على صفحة سؤاله ($pageIndex)',
       );
@@ -92,7 +97,7 @@ void _expectQuestionsUnsplit(ExamWizardController controller) {
   // لا صفحة تتجاوز الارتفاع المتاح إلا إذا كانت كتلة منفردة أطول من الصفحة.
   for (final page in pages) {
     if (!page.overflows) {
-      expect(page.usedHeight, lessThanOrEqualTo(PaperMetrics.pageContentHeightPx + 0.01));
+      expect(page.usedHeight, lessThanOrEqualTo(_pageHeight + 0.01));
     }
   }
 }
@@ -116,11 +121,14 @@ void main() {
 
       await tester.pumpWidget(_app(const ExamWizardScreen()));
 
-      // الخطوة 1: الترويسة بأعمدتها الثلاثة.
-      expect(find.text('الخطوة 1: ترويسة النموذج الوزاري'), findsOneWidget);
-      expect(find.text('العمود الأيمن'), findsOneWidget);
-      expect(find.text('العمود الأوسط'), findsOneWidget);
-      expect(find.text('العمود الأيسر'), findsOneWidget);
+      // الخطوة 1: بيانات الترويسة والتذييل بتلميحات إرشادية لكل حقل.
+      expect(find.text('الخطوة 1: ترويسة الورقة وتذييلها'), findsOneWidget);
+      expect(find.text('أدخل اسم المدرسة هنا'), findsOneWidget);
+      expect(find.text('مثال: نصف السنة أو نهاية السنة'), findsOneWidget);
+      expect(find.text('مثال: 2026/2027'), findsOneWidget);
+      expect(find.text('مثال: الثالث المتوسط'), findsOneWidget);
+      expect(find.text('مثال: ساعتان'), findsOneWidget);
+      expect(find.text('إضافة مدرس ثانٍ (يمين الورقة)'), findsOneWidget);
 
       await tester.ensureVisible(find.text('التالي: إعداد السؤال الأول'));
       await tester.tap(find.text('التالي: إعداد السؤال الأول'));
@@ -145,20 +153,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('إعداد السؤال الأول'), findsOneWidget);
 
-      // كتابة محتوى ودرجة ثم [التالي] يفتح «إعداد السؤال الثاني».
-      // نص الفرع يُكتب من الحقل الغني: النقر يفتح محرر المحتوى، فلا كود خام
-      // على الشاشة ولا في المخزون.
-      final branchText = find
-          .descendant(
-            of: find.byType(BranchEditorCard).first,
-            matching: find.byType(RichContentField),
-          )
-          .first;
-      await tester.ensureVisible(branchText);
-      await tester.tap(branchText);
+      // منطوق السؤال يُكتب من الحقل الغني: النقر يفتح محرر المحتوى، فلا كود
+      // خام على الشاشة ولا في المخزون.
+      final statementField = find.byType(RichContentField).first;
+      await tester.ensureVisible(statementField);
+      await tester.tap(statementField);
       await tester.pump();
       await tester.pump();
-      // محرر المحتوى المرئي: قسم نصي واحد يُكتب فيه نص الفرع ثم يُحفظ.
       await tester.enterText(
         find
             .descendant(
@@ -171,7 +172,10 @@ void main() {
       await tester.tap(find.text('حفظ المحتوى'));
       await tester.pump();
       await tester.pump();
-      await tester.enterText(find.widgetWithText(TextFormField, 'الدرجة').first, '5');
+      // الدرجة: الرقم الخام فقط، يطبعه النظام «(٢٠ درجة)».
+      final marksField = find.widgetWithText(TextFormField, 'درجة السؤال').first;
+      await tester.ensureVisible(marksField);
+      await tester.enterText(marksField, '20');
       await tester.pumpAndSettle();
       await tester.tap(find.text('التالي: سؤال جديد'));
       await tester.pumpAndSettle();
@@ -187,15 +191,17 @@ void main() {
 
       expect(find.textContaining('الخطوة 3: معاينة A4'), findsOneWidget);
       expect(find.byKey(const ValueKey<String>('a4-page-0')), findsOneWidget);
-      expect(find.text('السؤال الأول: [٥ درجة]'), findsOneWidget);
+      // سطر العنوان: الرقم التلقائي + المنطوق + الدرجة بصيغة (٢٠ درجة).
+      expect(find.text('السؤال الأول/'), findsOneWidget);
+      expect(find.text('(٢٠ درجة)'), findsOneWidget);
+      expect(find.text('عرّف الفاعل'), findsOneWidget);
     });
 
-    // خيارات «اختيار من متعدد» ليس لها محرر في بطاقة الفرع (حُذف عمداً):
-    // مكانها خانة الخيار على ورقة المعاينة، حيث تُعرض كما تُطبع حرفياً وتُحرَّر
-    // في مكانها. الحذف من الواجهة وحدها — نموذج الخيارات لا يُمسّ.
-    testWidgets('بطاقة الفرع بلا محرر خيارات — والخيارات تبقى على ورقة المعاينة',
+    // بطاقة الفرع بنفس بنية السؤال: الرقم ← المنطوق ← الدرجة ← النص ← النقاط،
+    // وخيارات «اختيار من متعدد» تُحرَّر داخل نقطتها في محرر النقاط.
+    testWidgets('بطاقة الفرع: حقول بنية السؤال وخيارات النقطة داخل محرر النقاط',
         (tester) async {
-      tester.view.physicalSize = const Size(1200, 2000);
+      tester.view.physicalSize = const Size(1200, 2400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -212,11 +218,17 @@ void main() {
                 BranchModel(
                   id: 'q1a',
                   content: BranchContent(
-                    type: QuestionType.multipleChoice,
-                    text: 'اختر الإجابة الصحيحة',
-                    options: <QuestionOption>[
-                      QuestionOption(text: 'الأولى'),
-                      QuestionOption(text: 'الثانية'),
+                    statement: 'اختر الإجابة الصحيحة',
+                    items: <BranchItem>[
+                      BranchItem(
+                        id: 'mc',
+                        kind: PointKind.multipleChoice,
+                        text: 'عاصمة العراق',
+                        options: <QuestionOption>[
+                          QuestionOption(text: 'بغداد'),
+                          QuestionOption(text: 'البصرة'),
+                        ],
+                      ),
                     ],
                   ),
                   marks: 2,
@@ -226,7 +238,6 @@ void main() {
           ],
         ),
       );
-      const ref = BranchRef(questionIndex: 0, branchIndex: 0);
 
       await tester.pumpWidget(
         _app(
@@ -239,30 +250,36 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(BranchEditorCard), findsOneWidget);
-      // لا عنوان «الخيارات:» ولا زر إضافة خيار في بطاقة الفرع.
-      expect(find.text('الخيارات:'), findsNothing);
-      expect(find.text('إضافة خيار'), findsNothing);
-      // بدلها سطر توجيه واحد نحو ورقة المعاينة.
-      expect(
-        find.textContaining('خيارات هذا الفرع تُكتب على ورقة المعاينة'),
-        findsOneWidget,
-      );
-      // خيارات النموذج محفوظة كما هي (الحذف من الواجهة لا يمسّ البيانات).
-      expect(
-        controller.document.branchAt(ref).content.options.map((o) => o.text),
-        <String>['الأولى', 'الثانية'],
-      );
+      // لا نوع للمجموعة ولا مفتاح «نص حر فقط»: النوع لكل نقطة.
+      expect(find.text('نوع السؤال'), findsNothing);
+      expect(find.text('نص حر فقط'), findsNothing);
+      expect(find.text('نوع النقطة'), findsWidgets);
+      // حقول الفرع بتلميحاتها: الرقم والمنطوق والدرجة والنص.
+      expect(find.text('رقم الفرع (فارغ = تلقائي)'), findsOneWidget);
+      expect(find.text('منطوق الفرع'), findsOneWidget);
+      expect(find.text('درجة الفرع'), findsOneWidget);
+      expect(find.text('نص الفرع (اختياري)'), findsOneWidget);
+      // خيارات النقطة تُكتب في محرر النقاط نفسه.
+      expect(find.text('بغداد'), findsOneWidget);
+      expect(find.text('البصرة'), findsOneWidget);
+
+      await tester.enterText(find.widgetWithText(TextFormField, 'بغداد'), 'بغداد الحبيبة');
+      await tester.pump();
+      final options = controller.pointsOf(
+        PointsOwner.branch(const BranchRef(questionIndex: 0, branchIndex: 0)),
+      ).single.options;
+      expect(options.map((option) => option.text), <String>['بغداد الحبيبة', 'البصرة']);
 
       // وعلى الورقة (الخطوة 3) خانات الخيارات تُعرض وتُحرَّر في مكانها.
       await tester.pumpWidget(_preview(controller));
       await tester.pump();
       await tester.pump();
       expect(
-        find.byKey(const ValueKey<String>('option-q1a-0')),
+        find.byKey(const ValueKey<String>('option-mc-0')),
         findsOneWidget,
         reason: 'خانات الخيارات تظهر على الورقة وتُكتب فيها مباشرة.',
       );
-      expect(find.byKey(const ValueKey<String>('option-q1a-1')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('option-mc-1')), findsOneWidget);
     });
   });
 
@@ -293,13 +310,17 @@ void main() {
           for (final question in controller.questions)
             PageBlock(id: question.id, height: controller.blockHeight(question.id)!),
         ],
-        pageHeight: PaperMetrics.pageContentHeightPx,
+        pageHeight: _pageHeight,
         spacing: PaperMetrics.blockSpacingPx,
+        lastPageReserve: controller.footerReserve,
       );
       expect(controller.pagination.pageCount, expected.pageCount);
       expect(find.byKey(const ValueKey<String>('a4-page-0')), findsOneWidget);
-      expect(find.text('السؤال الأول: [٢ درجة]'), findsOneWidget);
-      expect(find.text('السؤال الثالث: [٤ درجة]'), findsOneWidget);
+      expect(find.text('السؤال الأول/'), findsOneWidget);
+      expect(find.text('السؤال الثالث/'), findsOneWidget);
+      // الدرجة تُطبع «(٢ درجة)» في سطر عنوان السؤال الأول (مجموع فرعيه).
+      expect(controller.blueprint.questions.first.title.marks, '(٢ درجة)');
+      expect(controller.blueprint.questions.last.title.marks, '(٤ درجة)');
       _expectQuestionsUnsplit(controller);
     });
 
@@ -333,7 +354,7 @@ void main() {
         final movedHeight = controller.blockHeight(movedId)!;
         expect(
           previous.usedHeight + PaperMetrics.blockSpacingPx + movedHeight,
-          greaterThan(PaperMetrics.pageContentHeightPx),
+          greaterThan(_pageHeight - (index == pagination.pageCount - 1 ? controller.footerReserve : 0)),
           reason: 'الكتلة $movedId نُقلت رغم أنها كانت تتسع في الصفحة ${index - 1}',
         );
       }
@@ -354,7 +375,7 @@ void main() {
       await tester.pump();
 
       expect(
-        controller.document.branchAt(const BranchRef(questionIndex: 0, branchIndex: 0)).content.text,
+        controller.document.branchAt(const BranchRef(questionIndex: 0, branchIndex: 0)).content.statement,
         'نص معدّل مباشرة',
       );
     });
@@ -391,23 +412,23 @@ void main() {
 
       const q1a = BranchRef(questionIndex: 0, branchIndex: 0);
       const q2b = BranchRef(questionIndex: 1, branchIndex: 1);
-      expect(controller.document.branchAt(q1a).content.text, 'محتوى س2 ب');
+      expect(controller.document.branchAt(q1a).content.statement, 'محتوى س2 ب');
       expect(controller.document.branchAt(q1a).marks, 1);
-      expect(controller.document.branchAt(q2b).content.text, 'محتوى س1 أ');
+      expect(controller.document.branchAt(q2b).content.statement, 'محتوى س1 أ');
       expect(controller.document.branchAt(q2b).marks, 1);
       expect(controller.document.branchAt(q1a).id, 'q1a');
       expect(controller.document.branchAt(q2b).id, 'q2b');
 
       // العناوين لم تتحرك، والحقول على الورقة تعكس المحتوى الجديد.
-      expect(find.text('السؤال الأول: [٢ درجة]'), findsOneWidget);
-      expect(find.text('السؤال الثاني: [٣ درجة]'), findsOneWidget);
+      expect(find.text('السؤال الأول/'), findsOneWidget);
+      expect(find.text('السؤال الثاني/'), findsOneWidget);
       final firstField = tester.widget<TextField>(
         find.descendant(of: source, matching: find.byType(TextField)).first,
       );
       expect(firstField.controller!.text, 'محتوى س2 ب');
     });
 
-    testWidgets('edits multiple-choice options and the ministry category in place', (tester) async {
+    testWidgets('edits multiple-choice options and the section heading in place', (tester) async {
       tester.view.physicalSize = const Size(1000, 1400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -426,11 +447,17 @@ void main() {
                 BranchModel(
                   id: 'q1a',
                   content: BranchContent(
-                    type: QuestionType.multipleChoice,
-                    text: 'اختر الإجابة الصحيحة',
-                    options: <QuestionOption>[
-                      QuestionOption(text: 'الخيار الأول'),
-                      QuestionOption(text: 'الخيار الثاني'),
+                    statement: 'اختر الإجابة الصحيحة',
+                    items: <BranchItem>[
+                      BranchItem(
+                        id: 'mc',
+                        kind: PointKind.multipleChoice,
+                        text: 'سؤال',
+                        options: <QuestionOption>[
+                          QuestionOption(text: 'الخيار الأول'),
+                          QuestionOption(text: 'الخيار الثاني'),
+                        ],
+                      ),
                     ],
                   ),
                   marks: 2,
@@ -443,20 +470,20 @@ void main() {
       await tester.pumpWidget(_preview(controller));
       await tester.pump();
 
-      // عنوان القسم الوزاري ونصوص الخيارات: نصوص قابلة للتحرير في مكانها.
+      // عنوان القسم ونصوص الخيارات: نصوص قابلة للتحرير في مكانها.
       await tester.enterText(find.byKey(const ValueKey<String>('category-q1')), 'الحفظ');
       await tester.pump();
       expect(controller.document.questions.single.category, 'الحفظ');
 
       await tester.enterText(
-        find.byKey(const ValueKey<String>('option-q1a-1')),
+        find.byKey(const ValueKey<String>('option-mc-1')),
         'الخيار الثاني المعدّل',
       );
       await tester.pump();
 
-      final options = controller.document
-          .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
-          .content
+      final options = controller
+          .pointsOf(PointsOwner.branch(const BranchRef(questionIndex: 0, branchIndex: 0)))
+          .single
           .options;
       expect(options[1].text, 'الخيار الثاني المعدّل');
       // الخيارات نصّية فقط: لا علم إجابة في أي خيار.
@@ -499,8 +526,7 @@ void main() {
                 BranchModel(
                   id: 'q1a',
                   content: BranchContent(
-                    type: QuestionType.essay,
-                    text: '\uFD3F إنا أعطيناك الكوثر \uFD3E',
+                    statement: '\uFD3F إنا أعطيناك الكوثر \uFD3E',
                   ),
                   marks: 3,
                 ),
@@ -553,8 +579,7 @@ void main() {
                 BranchModel(
                   id: 'q1a',
                   content: BranchContent(
-                    type: QuestionType.essay,
-                    text: '\uFD3F إنا أعطيناك الكوثر \uFD3E',
+                    statement: '\uFD3F إنا أعطيناك الكوثر \uFD3E',
                   ),
                   marks: 3,
                 ),

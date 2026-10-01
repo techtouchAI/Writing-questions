@@ -127,7 +127,7 @@ class _HeaderFormState extends State<HeaderForm> {
       value: subject.isEmpty
           ? _noSubject
           : (known.contains(subject) ? subject : null),
-      values: <String>[...known, _customSubject, _noSubject],
+      values: const <String>[...known, _customSubject, _noSubject],
       labelOf: (value) {
         if (value == _customSubject) {
           return 'مادة أخرى (إدخال يدوي)';
