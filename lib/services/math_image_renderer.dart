@@ -195,46 +195,4 @@ abstract final class MathImageRenderer {
     }
     return math.max(0.5, fontSizePt * 0.07);
   }
-
-  /// يحوّل بيانات مسار SVG (M/L مطلقة أو نسبية، وZ) إلى [ui.Path].
-  static ui.Path _parsePathData(String data) {
-    final path = ui.Path();
-    final tokens = _tokenPattern
-        .allMatches(data)
-        .map((match) => match.group(0) ?? '')
-        .toList(growable: false);
-    var index = 0;
-    var command = 'M';
-    var currentX = 0.0;
-    var currentY = 0.0;
-    while (index < tokens.length) {
-      final token = tokens[index];
-      if (token.length == 1 && 'MLZmlz'.contains(token)) {
-        if (token == 'Z' || token == 'z') {
-          path.close();
-        } else {
-          command = token;
-        }
-        index += 1;
-        continue;
-      }
-      if (index + 1 >= tokens.length) {
-        break;
-      }
-      final isRelative = command == 'm' || command == 'l';
-      final x = double.parse(tokens[index]) + (isRelative ? currentX : 0.0);
-      final y = double.parse(tokens[index + 1]) + (isRelative ? currentY : 0.0);
-      if (command == 'M' || command == 'm') {
-        path.moveTo(x, y);
-        // النقاط التالية بلا حرف أمر تُقرأ خطوطاً (قواعد SVG).
-        command = isRelative ? 'l' : 'L';
-      } else {
-        path.lineTo(x, y);
-      }
-      currentX = x;
-      currentY = y;
-      index += 2;
-    }
-    return path;
-  }
 }

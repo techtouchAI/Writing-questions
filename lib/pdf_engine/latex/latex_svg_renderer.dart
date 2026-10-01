@@ -646,7 +646,6 @@ class _FencedNode extends _Node {
     final unit = ctx.unit * scale;
     final inner = body.measure(unit);
     final leftWidth = _delimiterWidth(left, unit);
-    final rightWidth = _delimiterWidth(right, unit);
     final top = baselineY - inner.ascent - 1.2 * unit;
     final bottom = baselineY + inner.descent + 1.2 * unit;
     if (left != '.') {
@@ -823,12 +822,13 @@ class _BigOpNode extends _Node {
 }
 
 class _OpNameNode extends _Node {
-  _OpNameNode(this.name, {this.sup, this.sub});
+  _OpNameNode(this.name);
 
   /// اسم العملية (lim أو sin مثلاً) — يُرسم كمحارف لاتينية صغيرة.
+  ///
+  /// الأسس العلوية/السفلية (`\lim_{x\to 0}`) يتولاها الغلاف العام للسكريبت
+  /// في المحلّل — لا حاجة لحملها هنا.
   final String name;
-  final _Node? sup;
-  final _Node? sub;
 
   @override
   _AtomClass get atomClass => _AtomClass.op;
@@ -842,15 +842,7 @@ class _OpNameNode extends _Node {
           ? 1.5 * unit * 0.85
           : _GlyphNode(char).measure(unit * 0.85).width;
     }
-    final scriptUnit = unit * 0.68;
-    final supMetrics = sup?.measure(scriptUnit);
-    final subMetrics = sub?.measure(scriptUnit);
-    return _Metrics(
-      math.max(nameWidth, math.max(supMetrics?.width ?? 0, subMetrics?.width ?? 0)) +
-          3 * unit,
-      math.max(5.5 * unit, (supMetrics?.ascent ?? 0) + 4.2 * unit),
-      math.max(1.2 * unit, (subMetrics?.ascent ?? 0) + (subMetrics?.descent ?? 0) + 1.5 * unit),
-    );
+    return _Metrics(nameWidth + 3 * unit, 5.5 * unit, 1.5 * unit);
   }
 
   @override
@@ -865,21 +857,6 @@ class _OpNameNode extends _Node {
       final glyph = _GlyphNode(char);
       glyph.emit(pen, baselineY, ctx, scale * 0.85);
       pen += glyph.measure(unit * 0.85).width;
-    }
-    final metrics = measure(unit);
-    final center = x + metrics.width / 2;
-    if (sup != null) {
-      final supWidth = sup!.measure(unit * 0.68).width;
-      sup!.emit(center - supWidth / 2, baselineY - 4.2 * unit, ctx, scale * 0.68);
-    }
-    if (sub != null) {
-      final subMetrics = sub!.measure(unit * 0.68);
-      sub!.emit(
-        center - subMetrics.width / 2,
-        baselineY + 1.5 * unit + subMetrics.ascent,
-        ctx,
-        scale * 0.68,
-      );
     }
   }
 }

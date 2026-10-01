@@ -138,7 +138,7 @@ class _MixedContentEditorState extends State<MixedContentEditor> {
       if (latex.isEmpty) {
         continue;
       }
-      buffer.write(block.isBlock ? '\$\$${latex}\$\$' : '\$${latex}\$');
+      buffer.write(block.isBlock ? '\$\$$latex\$\$' : '\$$latex\$');
     }
     return buffer.toString();
   }

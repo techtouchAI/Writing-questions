@@ -561,6 +561,16 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
                 style: TextStyle(color: Colors.orange, fontSize: 11),
               ),
             ),
+          // تحذير حيّ: رموز لن يرسمها محرك PDF — تُستبدل قبل الحفظ لا بعده.
+          if (unsupported.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'رموز غير مدعومة في التصدير: ${unsupported.join(' ، ')}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.deepOrange, fontSize: 11),
+              ),
+            ),
         ],
       ),
     );
