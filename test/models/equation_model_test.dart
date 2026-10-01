@@ -68,9 +68,10 @@ void main() {
         expect(() => EquationModel.parse(broken), returnsNormally,
             reason: 'parse($broken) must not throw');
       }
-      // الشارد يُحفَظ حرفياً ولا يُسقِط ما بعده.
-      expect(EquationModel.parse('}').toLatex(), '}');
-      expect(EquationModel.parse('a}b').toLatex(), 'a}b');
+      // الشارد لا يُسقِط ما بعده، ويُهرَّب عند الحفظ فلا يُفسد بنية الصيغة
+      // في محركات العرض (`}` عارية كانت تكسر الرسم كله سابقاً).
+      expect(EquationModel.parse('}').toLatex(), r'\}');
+      expect(EquationModel.parse('a}b').toLatex(), r'a\}b');
       expect(EquationModel.parse('').isEmpty, isTrue);
     });
   });
@@ -103,6 +104,39 @@ void main() {
     test('escapes dollar signs inside math text', () {
       expect(sanitizeMathText(r'a$b'), r'a\$b');
       expect(EqText(r'5$').toLatex(), r'5\$');
+    });
+  });
+
+  group('EquationModel: العرض المرئي بلا كود LaTeX', () {
+    test('loads stored commands as visible glyphs in the editing slots', () {
+      // المدرس يفتح معادلة قديمة: يرى α و× لا أوامر LaTeX خاماً.
+      final model = EquationModel.parse(r'\alpha \times 2');
+      final texts = model.nodes.whereType<EqText>().map((node) => node.text);
+      expect(texts.join(), 'α×2');
+      // والحفظ يعيد الأوامر القياسية نفسها (اتفاق كل المحركات).
+      expect(model.toLatex(), r'\alpha \times 2');
+    });
+
+    test('keeps the visible glyph for symbols without a safe command', () {
+      // الدرجة ° لا أمر آمناً لها في كل المحركات: تبقى محرفاً في الطرفين.
+      expect(EquationModel.parse('90°').toLatex(), '90°');
+      expect(EqText('°').toLatex(), '°');
+    });
+
+    test('normalizes equivalent unicode input on save', () {
+      // ناقص يونيكود من زر المحرر ← ناقص قياسي في المخزون.
+      expect(EqText('5−3').toLatex(), '5-3');
+    });
+
+    test('parses accents (\\vec, \\hat, \\bar) as editable structures', () {
+      final vector = EquationModel.parse(r'\vec{F}');
+      expect(vector.nodes.single, isA<EqAccent>());
+      expect((vector.nodes.single as EqAccent).kind, EqAccentKind.vector);
+      expect(vector.toLatex(), r'\vec{F}');
+
+      final bar = EquationModel.parse(r'\overline{AB}');
+      expect((bar.nodes.single as EqAccent).kind, EqAccentKind.bar);
+      expect(bar.toLatex(), r'\bar{AB}');
     });
   });
 }
