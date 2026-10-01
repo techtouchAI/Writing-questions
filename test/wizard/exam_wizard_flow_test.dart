@@ -280,10 +280,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(BranchEditorCard), findsOneWidget);
-      // لا نوع للمجموعة ولا مفتاح «نص حر فقط»: النوع لكل نقطة.
+      // نقاط الكتابة نص حر فقط؛ لا توجد قائمة لاختيار نوع النقطة.
       expect(find.text('نوع السؤال'), findsNothing);
       expect(find.text('نص حر فقط'), findsNothing);
-      expect(find.text('نوع النقطة'), findsWidgets);
+      expect(find.text('نوع النقطة'), findsNothing);
+      expect(find.text('نص حر'), findsOneWidget);
       // حقول الفرع بتلميحاتها: الرقم والمنطوق والدرجة والنص.
       expect(find.text('رقم الفرع (فارغ = تلقائي)'), findsOneWidget);
       expect(find.text('منطوق الفرع'), findsOneWidget);

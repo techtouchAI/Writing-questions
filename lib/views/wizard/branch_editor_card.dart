@@ -11,7 +11,7 @@ import '../widgets/rich_content_field.dart';
 ///
 /// الحقول بترتيب الطباعة نفسه (وهو ترتيب السؤال): الرقم ← المنطوق ← الدرجة
 /// (رقم خام يطبعه النظام «(٥ درجة)») ← النص (يُحذف من الورقة عند فراغه) ←
-/// النقاط المرقّمة بأنواعها المختلطة ([PointsEditor]).
+/// النقاط المرقّمة ذات النص الحر ([PointsEditor]).
 class BranchEditorCard extends StatefulWidget {
   const BranchEditorCard({
     super.key,
