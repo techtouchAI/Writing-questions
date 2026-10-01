@@ -3,6 +3,7 @@ import 'package:flutter_math_fork/flutter_math.dart';
 
 import '../../models/equation_model.dart';
 import '../../models/tex_content.dart';
+import '../../pdf_engine/latex/latex_svg_renderer.dart';
 import 'safe_math_tex.dart';
 
 /// يفتح محرر المعادلات المرئي (بأسلوب Word) ويعيد المقطع الجاهز للإدراج.
@@ -208,6 +209,9 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
     if (node is EqFence) {
       return <List<EqNode>>[node.body];
     }
+    if (node is EqAccent) {
+      return <List<EqNode>>[node.body];
+    }
     if (node is EqGroup) {
       return <List<EqNode>>[node.children];
     }
@@ -373,6 +377,11 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
     _insertStructure(EqFence(left: left, right: right, body: <EqNode>[body]), body);
   }
 
+  void _addAccent(EqAccentKind kind) {
+    final body = EqText('');
+    _insertStructure(EqAccent(kind: kind, body: <EqNode>[body]), body);
+  }
+
   void _removeNode(List<EqNode> parent, int index) {
     setState(() {
       _disposeSubtree(parent[index]);
@@ -511,6 +520,7 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
     final latex = _latex;
     final openBraces = '{'.allMatches(latex).length;
     final closeBraces = '}'.allMatches(latex).length;
+    final unsupported = LatexSvgRenderer.unsupportedCharacters(latex);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -549,6 +559,16 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
                 'تحقق من تطابق الأقواس { } — المعاينة قد لا تكتمل.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.orange, fontSize: 11),
+              ),
+            ),
+          // تحذير حيّ: رموز لن يرسمها محرك PDF — تُستبدل قبل الحفظ لا بعده.
+          if (unsupported.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'رموز غير مدعومة في التصدير: ${unsupported.join(' ، ')}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.deepOrange, fontSize: 11),
               ),
             ),
         ],
@@ -696,6 +716,19 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
         ),
       );
     }
+    if (node is EqAccent) {
+      return _deletable(
+        parent,
+        index,
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            _accentMark(node.kind),
+            _buildSlotBox(node.body),
+          ],
+        ),
+      );
+    }
     if (node is EqGroup) {
       return _deletable(
         parent,
@@ -711,6 +744,23 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
       );
     }
     return const SizedBox.shrink();
+  }
+
+  /// علامة بصرية فوق خانة المتغير: سهم/قبعة/خط — نفس معنى الأمر المخزَّن.
+  Widget _accentMark(EqAccentKind kind) {
+    switch (kind) {
+      case EqAccentKind.vector:
+        return const Icon(Icons.arrow_forward, size: 16);
+      case EqAccentKind.hat:
+        return const Icon(Icons.expand_less, size: 16);
+      case EqAccentKind.bar:
+        return Container(
+          height: 2,
+          width: 26,
+          margin: const EdgeInsets.only(bottom: 2),
+          color: Colors.black87,
+        );
+    }
   }
 
   /// خانة تحرير نصية داخل بنية: انقر واكتب، والعرض يتحدث حياً.
@@ -740,6 +790,12 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
           focusNode: _focusFor(node),
           textDirection: TextDirection.ltr,
           textAlign: TextAlign.center,
+          // كتابة رياضية خالصة: بلا تصحيح تلقائي ولا اقتراحات لوحة المفاتيح
+          // (كانا يحوّلان «x2» إلى كلمات ويقطعان الأرقام المتعددة).
+          autocorrect: false,
+          enableSuggestions: false,
+          keyboardType: TextInputType.text,
+          textInputAction: TextInputAction.done,
           style: const TextStyle(fontSize: 16),
           decoration: const InputDecoration.collapsed(hintText: '?'),
         ),
@@ -829,9 +885,14 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
           _Tool('ⁿ√', () => _addSqrt(withRoot: true)),
           _Tool('x²', () => _insertScript(superscript: true)),
           _Tool('x₁', () => _insertScript(superscript: false)),
-          _Tool('( )', () => _addFence('(', ')')),
-          _Tool('[ ]', () => _addFence('[', ']')),
-          _Tool('{ }', () => _addFence(r'\{', r'\}')),
+          // أقواس متكيفة: تُحفظ بـ\left...\right فيرسمها محرك الـ PDF
+          // بارتفاع محتواها (كسر داخل قوسين يبقى داخلهما).
+          _Tool('( )', () => _addFence(r'\left(', r'\right)')),
+          _Tool('[ ]', () => _addFence(r'\left[', r'\right]')),
+          _Tool('{ }', () => _addFence(r'\left\{', r'\right\}')),
+          _Tool('→فوق', () => _addAccent(EqAccentKind.vector)),
+          _Tool('ˆفوق', () => _addAccent(EqAccentKind.hat)),
+          _Tool('―فوق', () => _addAccent(EqAccentKind.bar)),
         ]),
         // الرموز تُدرَج بمحارفها المرئية (×، α...) لا بأوامر LaTeX:
         // المستخدم لا يرى أي كود في أي مرحلة، والمحارف ترسمها كل المحركات

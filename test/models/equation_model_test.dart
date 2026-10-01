@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/models/equation_model.dart';
+import 'package:writing_questions_app/models/math_symbols.dart';
 
 void main() {
   group('EquationModel.parse', () {
@@ -68,9 +69,10 @@ void main() {
         expect(() => EquationModel.parse(broken), returnsNormally,
             reason: 'parse($broken) must not throw');
       }
-      // الشارد يُحفَظ حرفياً ولا يُسقِط ما بعده.
-      expect(EquationModel.parse('}').toLatex(), '}');
-      expect(EquationModel.parse('a}b').toLatex(), 'a}b');
+      // الشارد لا يُسقِط ما بعده، ويُهرَّب عند الحفظ فلا يُفسد بنية الصيغة
+      // في محركات العرض (`}` عارية كانت تكسر الرسم كله سابقاً).
+      expect(EquationModel.parse('}').toLatex(), r'\}');
+      expect(EquationModel.parse('a}b').toLatex(), r'a\}b');
       expect(EquationModel.parse('').isEmpty, isTrue);
     });
   });
@@ -103,6 +105,54 @@ void main() {
     test('escapes dollar signs inside math text', () {
       expect(sanitizeMathText(r'a$b'), r'a\$b');
       expect(EqText(r'5$').toLatex(), r'5\$');
+    });
+  });
+
+  group('EquationModel: العرض المرئي بلا كود LaTeX', () {
+    test('loads stored commands as visible glyphs in the editing slots', () {
+      // المدرس يفتح معادلة قديمة: يرى α و× لا أوامر LaTeX خاماً، والفراغات
+      // تبقى كما كتبها (عرض أمين للمصدر — لا ابتلاع ولا إضافة).
+      final model = EquationModel.parse(r'\alpha \times 2');
+      final texts = model.nodes.whereType<EqText>().map((node) => node.text);
+      expect(texts.join(), 'α × 2');
+      // والحفظ يعيد الأوامر القياسية نفسها بايت-ببايت (اتفاق كل المحركات،
+      // والاستبدال في المخزون يتم بالفهارس فيتطلب مصدراً مستقراً).
+      expect(model.toLatex(), r'\alpha \times 2');
+    });
+
+    test('a letter after a symbol command stays a separate token on save', () {
+      // `\alphax` أمر آخر غير معروف يفسد الصيغة كلها — الفاصل اللاتيني
+      // يفرض فراغ الإنهاء: «αx» تُحفظ `\alpha x`.
+      expect(MathSymbols.toLatex('αx'), r'\alpha x');
+      expect(EqText('αx').toLatex(), r'\alpha x');
+      // الرقم والرمز ينهيان اسم الأمر وحدهما — بلا فراغ زائد.
+      expect(MathSymbols.toLatex('α2'), r'\alpha2');
+      expect(MathSymbols.toLatex('α×2'), r'\alpha\times2');
+      // الأس اليونيكود ليس حرفاً لاتينياً: يبقى كما كُتب (يوسّعه
+      // `MathSymbols.canonicalize` في محرك الرسم إلى `^{2}` عند اللزوم).
+      expect(MathSymbols.toLatex('α²'), r'\alpha²');
+    });
+
+    test('keeps the visible glyph for symbols without a safe command', () {
+      // الدرجة ° لا أمر آمناً لها في كل المحركات: تبقى محرفاً في الطرفين.
+      expect(EquationModel.parse('90°').toLatex(), '90°');
+      expect(EqText('°').toLatex(), '°');
+    });
+
+    test('normalizes equivalent unicode input on save', () {
+      // ناقص يونيكود من زر المحرر ← ناقص قياسي في المخزون.
+      expect(EqText('5−3').toLatex(), '5-3');
+    });
+
+    test('parses accents (\\vec, \\hat, \\bar) as editable structures', () {
+      final vector = EquationModel.parse(r'\vec{F}');
+      expect(vector.nodes.single, isA<EqAccent>());
+      expect((vector.nodes.single as EqAccent).kind, EqAccentKind.vector);
+      expect(vector.toLatex(), r'\vec{F}');
+
+      final bar = EquationModel.parse(r'\overline{AB}');
+      expect((bar.nodes.single as EqAccent).kind, EqAccentKind.bar);
+      expect(bar.toLatex(), r'\bar{AB}');
     });
   });
 }

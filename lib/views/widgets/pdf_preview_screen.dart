@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
 
+/// دقة raster معاينة الـ PDF (بكسل/بوصة) — عرضٌ فقط، لا يمسّ الملف.
+const double _pdfPreviewDpi = 150;
+
 /// حدود التكبير في المعاينة (1.0 = الحجم الأصلي).
 const double _pdfPreviewMinZoom = 0.6;
 const double _pdfPreviewMaxZoom = 4.0;
@@ -113,6 +116,10 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
       ),
       body: PdfPreview.builder(
         build: (pageFormat) async => widget.pdfBytes,
+        // raster عالي الدقة للمعاينة: القيمة الافتراضية تُحسب على عرض
+        // الشاشة فتبدو الصفحات مشوّشة عند التكبير؛ ‏150dpi توازن بين
+        // الحدّة (A4 = 1240×1754 بكسل) والذاكرة على أجهزة Android.
+        dpi: _pdfPreviewDpi,
         initialPageFormat: PdfPageFormat.a4,
         allowPrinting: true,
         allowSharing: true,
