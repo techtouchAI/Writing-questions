@@ -8,7 +8,7 @@ import 'package:writing_questions_app/services/storage_service.dart';
 ExamDocument _sampleDocument() {
   return ExamDocument(
     name: 'نموذج محفوظ',
-    header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+    header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
     questions: <QuestionModel>[QuestionModel(questionNumber: 1)],
   );
 }

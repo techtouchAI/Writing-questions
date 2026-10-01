@@ -15,12 +15,12 @@ import 'pdf_content_probe.dart';
 /// تُرسم رسماً — فالفرق بينهما دليل على المسارين معاً).
 ExamDocument _document() => ExamDocument(
       name: 'مربع نص',
-      header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
+      header: ExamHeaderModel.initial(subject: 'الرياضيات'),
       questions: <QuestionModel>[
         QuestionModel(
           id: 'q1',
           questionNumber: 1,
-          prompt: 'سؤال',
+          statement: 'سؤال',
           attachments: <FloatingElement>[
             FloatingElement(
               type: FloatingElementType.shape,
@@ -39,12 +39,12 @@ ExamDocument _document() => ExamDocument(
 /// مستند فيه معادلة **حرة** (عنصر عائم) في موضع مطلق بعيد عن نص السؤال.
 ExamDocument _formulaDocument() => ExamDocument(
       name: 'معادلة حرة',
-      header: ExamHeaderModel.ministerialDefault(subject: 'الفيزياء'),
+      header: ExamHeaderModel.initial(subject: 'الفيزياء'),
       questions: <QuestionModel>[
         QuestionModel(
           id: 'q1',
           questionNumber: 1,
-          prompt: 'سؤال',
+          statement: 'سؤال',
           attachments: <FloatingElement>[
             FloatingElement(
               type: FloatingElementType.formula,

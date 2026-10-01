@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 
 import 'branch_item.dart';
 import 'branch_model.dart';
+import 'exam_footer_model.dart';
 import 'exam_header_model.dart';
 import 'floating_element.dart';
 import 'paper_settings.dart';
@@ -34,11 +35,46 @@ class BranchRef {
   String toString() => 'BranchRef(q=$questionIndex, b=$branchIndex)';
 }
 
+/// عنوان مجموعة نقاط: نقاط سؤال مباشرة (بلا فروع) أو نقاط فرع.
+///
+/// المجموعتان بنية واحدة ([BranchItem])، فيُحرَّران بالمسار الواحد نفسه في
+/// المتحكم والواجهة بدل تكرار كل عملية مرتين.
+class PointsOwner {
+  const PointsOwner._(this.questionIndex, this.branchIndex);
+
+  /// نقاط السؤال المباشرة للسؤال [questionIndex].
+  const PointsOwner.question(int questionIndex) : this._(questionIndex, null);
+
+  /// نقاط الفرع [ref].
+  factory PointsOwner.branch(BranchRef ref) =>
+      PointsOwner._(ref.questionIndex, ref.branchIndex);
+
+  final int questionIndex;
+
+  /// فهرس الفرع (`null` = نقاط السؤال المباشرة).
+  final int? branchIndex;
+
+  bool get isBranch => branchIndex != null;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PointsOwner &&
+      other.questionIndex == questionIndex &&
+      other.branchIndex == branchIndex;
+
+  @override
+  int get hashCode => Object.hash(questionIndex, branchIndex);
+
+  @override
+  String toString() => 'PointsOwner(q=$questionIndex, b=$branchIndex)';
+}
+
 /// نموذج الامتحان الكامل (جذر شجرة منشئ ورقة الأسئلة).
 ///
-/// - [header]: الترويسة (3 أعمدة × 3 أسطر + عنوان + ملاحظات + تنسيق).
+/// - [header]: بيانات الترويسة ذات الأعمدة الثلاثة (مدخلات منظّمة).
 /// - [questions]: الأسئلة بترتيبها؛ [QuestionModel.questionNumber] يُعاد
 ///   ضبطه من الفهرس (1..n) عبر [normalized] عند تفعيل الترقيم التلقائي.
+/// - [footer]: التذييل (عبارة ختامية + توقيع أو توقيعان) في آخر صفحة.
 /// - [settings]: إعدادات الورقة (ترقيم/أرقام/هوامش/خط افتراضي/إطارات).
 /// - قالب التنسيق يُشتق من مادة الترويسة ([layout]).
 ///
@@ -49,12 +85,14 @@ class ExamDocument {
     String? id,
     required this.name,
     required this.header,
+    ExamFooterModel? footer,
     List<QuestionModel>? questions,
     List<FloatingElement>? floatingElements,
     DateTime? createdAt,
     DateTime? updatedAt,
     PaperSettings? settings,
   })  : id = id ?? const Uuid().v4(),
+        footer = footer ?? const ExamFooterModel(),
         settings = settings ?? const PaperSettings(),
         questions = List<QuestionModel>.unmodifiable(
           _renumber(
@@ -71,6 +109,9 @@ class ExamDocument {
   final String id;
   final String name;
   final ExamHeaderModel header;
+
+  /// تذييل الورقة (يُطبع في أسفل آخر صفحة فقط).
+  final ExamFooterModel footer;
   final List<QuestionModel> questions;
 
   /// عناصر حرة على مستوى المستند (لا يملكها سؤال أو فرع).
@@ -101,8 +142,8 @@ class ExamDocument {
   /// تفعيل الترقيم التلقائي، وإلا تُحفظ الأرقام اليدوية كما هي.
   ExamDocument get normalized => copyWith(questions: questions);
 
-  /// التسمية المعروضة للسؤال: اليدوية إن ثُبّتت، وإلا من نمط التسمية
-  /// العام (وزاري «السؤال الأول» أو مختصر «س1») — بنسق أرقام الورقة.
+  /// التسمية المعروضة للسؤال: ما كتبه المدرس إن وُجد، وإلا من نمط التسمية
+  /// العام (رسمي «السؤال الأول» أو مختصر «س1») — بنسق أرقام الورقة.
   String displayQuestionLabel(QuestionModel question) {
     final manual = question.numberOverride?.trim();
     if (manual != null && manual.isNotEmpty) {
@@ -168,7 +209,17 @@ class ExamDocument {
     final text = value == value.truncateToDouble()
         ? value.toInt().toString()
         : value.toString();
-    return usesArabicIndicNumerals ? SubjectLayoutTemplate.toArabicIndic(text) : text;
+    return localizeDigits(text);
+  }
+
+  /// يحوّل كل الأرقام داخل [text] (لاتينية أو مشرقية) إلى نسق أرقام الورقة.
+  ///
+  /// تُطبَّق على قيم الترويسة والتذييل فيطبع العام «٢٠٢٦/٢٠٢٧» أو «2026/2027»
+  /// بحسب إعداد «نسق الأرقام» أياً كانت طريقة كتابة المدرس له.
+  String localizeDigits(String text) {
+    return usesArabicIndicNumerals
+        ? SubjectLayoutTemplate.toArabicIndic(SubjectLayoutTemplate.toLatinDigits(text))
+        : SubjectLayoutTemplate.toLatinDigits(text);
   }
 
   QuestionModel? questionById(String id) {
@@ -202,9 +253,49 @@ class ExamDocument {
     return ref.branchIndex >= 0 && ref.branchIndex < branches.length;
   }
 
+  /// هل عنوان المجموعة [owner] موجود في النموذج الحالي؟
+  bool containsOwner(PointsOwner owner) {
+    if (owner.questionIndex < 0 || owner.questionIndex >= questions.length) {
+      return false;
+    }
+    final branchIndex = owner.branchIndex;
+    if (branchIndex == null) {
+      return true;
+    }
+    return branchIndex >= 0 &&
+        branchIndex < questions[owner.questionIndex].branches.length;
+  }
+
+  /// نقاط المجموعة [owner] (يجب أن يكون موجوداً: انظر [containsOwner]).
+  List<BranchItem> pointsOf(PointsOwner owner) {
+    final question = questions[owner.questionIndex];
+    final branchIndex = owner.branchIndex;
+    return branchIndex == null
+        ? question.items
+        : question.branches[branchIndex].content.items;
+  }
+
+  /// نسخة باستبدال نقاط المجموعة [owner] بـ[points].
+  ExamDocument withPoints(PointsOwner owner, List<BranchItem> points) {
+    final question = questions[owner.questionIndex];
+    final branchIndex = owner.branchIndex;
+    if (branchIndex == null) {
+      return withQuestionAt(owner.questionIndex, question.copyWith(items: points));
+    }
+    final branch = question.branches[branchIndex];
+    return withQuestionAt(
+      owner.questionIndex,
+      question.withBranchAt(
+        branchIndex,
+        branch.copyWith(content: branch.content.copyWith(items: points)),
+      ),
+    );
+  }
+
   ExamDocument copyWith({
     String? name,
     ExamHeaderModel? header,
+    ExamFooterModel? footer,
     List<QuestionModel>? questions,
     List<FloatingElement>? floatingElements,
     DateTime? updatedAt,
@@ -214,6 +305,7 @@ class ExamDocument {
       id: id,
       name: name ?? this.name,
       header: header ?? this.header,
+      footer: footer ?? this.footer,
       questions: questions ?? this.questions,
       floatingElements: floatingElements ?? this.floatingElements,
       createdAt: createdAt,
@@ -403,16 +495,9 @@ class ExamDocument {
     }
     return ExamDocument(
       name: (name == null || name.trim().isEmpty) ? '${this.name} (نسخة)' : name.trim(),
-      header: ExamHeaderModel(
-        subject: header.subject,
-        right: HeaderColumn(header.right.toList()),
-        center: HeaderColumn(header.center.toList()),
-        left: HeaderColumn(header.left.toList()),
-        instructions: header.instructions,
-        title: header.title,
-        notes: header.notes,
-        style: header.style,
-      ),
+      // الترويسة والتذييل كائنان غير قابلين للتغيير فيُشارَكان بلا نسخ.
+      header: header,
+      footer: footer,
       questions: duplicateQuestions,
       floatingElements: floatingCopies.values.toList(growable: false),
       settings: settings,
@@ -427,6 +512,7 @@ class ExamDocument {
       'id': id,
       'name': name,
       'header': header.toMap(),
+      'footer': footer.toMap(),
       'questions': questions.map((question) => question.toMap()).toList(growable: false),
       if (floatingElements.isNotEmpty)
         'floatingElements':
@@ -437,9 +523,9 @@ class ExamDocument {
     };
   }
 
-  /// يقرأ نموذجاً **بشكل صارم**؛ أي سؤال تالف يرمي [FormatException] ليُعزل
-  /// السجل كاملاً بواسطة `StorageService`. الحقول الجديدة (الإعدادات/
-  /// الطابع الزمني) متسامحة لتبقى النماذج القديمة صالحة.
+  /// يقرأ نموذجاً **بشكل صارم** في بنيته؛ أي سؤال تالف يرمي [FormatException]
+  /// ليُعزل السجل كاملاً بواسطة `StorageService`. الحقول الاختيارية (التذييل/
+  /// الإعدادات/الطابع الزمني) متسامحة وتأخذ قيمها الافتراضية عند غيابها.
   factory ExamDocument.fromMap(Map<String, dynamic> map) {
     final rawHeader = map['header'];
     if (rawHeader is! Map) {
@@ -480,6 +566,7 @@ class ExamDocument {
           : null,
       name: rawName == null || rawName.isEmpty ? 'نموذج غير معنون' : rawName,
       header: ExamHeaderModel.fromMap(Map<String, dynamic>.from(rawHeader)),
+      footer: ExamFooterModel.fromValue(map['footer']),
       questions: questions,
       floatingElements: floatingElements,
       createdAt: rawCreated is String ? DateTime.tryParse(rawCreated) : null,

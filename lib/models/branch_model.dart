@@ -4,102 +4,53 @@ import 'branch_item.dart';
 import 'floating_element.dart';
 import 'paper_divider.dart';
 import 'paper_text_style.dart';
-import 'question_option.dart';
-import 'question_type.dart';
 
-/// المحتوى الفعلي لفرع السؤال (questionContent): نوع السؤال ونصه وخياراته.
+/// المحتوى الفعلي لفرع السؤال: منطوق الفرع ونصه ونقاطه.
 ///
 /// كائن **غير قابل للتغيير** يُنقل ككتلة واحدة عند السحب والإفلات بين
 /// الفروع — الهيكل (رقم السؤال، تسمية الفرع) يبقى ثابتاً والمحتوى يتبدّل.
 ///
-/// كل فرع مستقل تماماً بنوعه: نص حر، تعداد، فراغات، صح/خطأ، اختيار من
-/// متعدد — ولا يُفرض نوع واحد على السؤال كاملاً.
+/// بنية الفرع مطابقة لبنية السؤال: الرقم ← [statement] (المنطوق) ← الدرجة ←
+/// [body] (النص، يُحذف كلياً عند فراغه) ← [items] (النقاط المرقّمة بأنواعها).
 class BranchContent {
   BranchContent({
-    required this.type,
-    this.text = '',
-    List<QuestionOption>? options,
+    this.statement = '',
+    this.body = '',
     List<BranchItem>? items,
-    this.plainText = false,
-  })  : options = List<QuestionOption>.unmodifiable(
-          (options ?? const <QuestionOption>[]).map((option) => option.copyWith()),
-        ),
-        items = List<BranchItem>.unmodifiable(items ?? const <BranchItem>[]);
+  }) : items = List<BranchItem>.unmodifiable(items ?? const <BranchItem>[]);
 
-  /// محتوى مقالي فارغ (الافتراضي للفرع الجديد).
-  factory BranchContent.empty([QuestionType type = QuestionType.essay]) {
-    return BranchContent(type: type, options: _defaultOptionsFor(type));
-  }
+  /// محتوى فارغ (الافتراضي للفرع الجديد).
+  factory BranchContent.empty() => BranchContent();
 
-  final QuestionType type;
+  /// منطوق الفرع: يُطبع في سطر العنوان بعد الرقم وقبل الدرجة (يدعم LaTeX).
+  final String statement;
 
-  /// نص الفرع (يدعم LaTeX داخل $...$ أو $$...$$).
-  final String text;
+  /// نص الفرع: يُطبع تحت سطر العنوان، ويُحذف من الواجهة والطباعة عند فراغه.
+  final String body;
 
-  /// خيارات (اختيار من متعدد) أو (صح/خطأ).
-  final List<QuestionOption> options;
-
-  /// النقاط داخل الفرع (1، 2، 3...): عبارات، فراغات، تعداد — بلا حد.
+  /// النقاط المرقّمة داخل الفرع (١-، ٢-، ٣-...) بأنواعها المختلطة — بلا حد.
   final List<BranchItem> items;
 
-  /// نص حر خالص: يُعرض النص والنقاط فقط دون أي جسم مولَّد.
-  ///
-  /// يبقى نوع الفرع محفوظاً (للتسمية والتصدير) لكن العرض يقتصر على ما
-  /// كتبه المدرس حرفياً.
-  final bool plainText;
-
-  /// هل يعرض نوع الفرع جسماً مستقلاً في المطبوع؟
-  ///
-  /// «اختيار من متعدد» وحده يعرض خياراته؛ و«صح/خطأ» بلا جسم إطلاقاً
-  /// (العبارات في نقاطها)، و«الفراغ»/«المقالي» مساحتهما نص الفرع
-  /// (التطبيق لكتابة الأسئلة وحدها).
-  bool get hasPrintableTypeBody {
-    if (plainText) {
-      return false;
-    }
-    switch (type) {
-      case QuestionType.multipleChoice:
-        return options.any((option) => option.text.trim().isNotEmpty);
-      case QuestionType.trueFalse:
-      case QuestionType.fillInTheBlank:
-      case QuestionType.definitions:
-      case QuestionType.essay:
-        return false;
-    }
-  }
+  bool get hasStatement => statement.trim().isNotEmpty;
+  bool get hasBody => body.trim().isNotEmpty;
 
   /// هل يحمل الفرع محتوى يستحق الظهور في المخرجات (PDF/Word/طباعة)؟
   /// الفرع الفارغ تماماً يُحذف من المطبوع كاملاً ولا يترك أي مسافة.
-  bool get hasExportableContent {
-    if (text.trim().isNotEmpty || items.any((item) => item.showsInExport)) {
-      return true;
-    }
-    return hasPrintableTypeBody;
-  }
+  bool get hasExportableContent =>
+      hasStatement || hasBody || items.any((item) => item.showsInExport);
 
   bool get isEmpty =>
-      text.trim().isEmpty &&
-      items.every((item) => item.isEmpty) &&
-      options.every((option) => option.text.trim().isEmpty);
+      !hasStatement && !hasBody && items.every((item) => item.isEmpty);
 
   BranchContent copyWith({
-    QuestionType? type,
-    String? text,
-    List<QuestionOption>? options,
+    String? statement,
+    String? body,
     List<BranchItem>? items,
-    bool? plainText,
   }) {
-    final nextType = type ?? this.type;
     return BranchContent(
-      type: nextType,
-      text: text ?? this.text,
-      // تغيير النوع يعيد ضبط الخيارات على النموذج الافتراضي للنوع الجديد.
-      options: options ??
-          (type == null || type == this.type
-              ? this.options
-              : _defaultOptionsFor(nextType)),
+      statement: statement ?? this.statement,
+      body: body ?? this.body,
       items: items ?? this.items,
-      plainText: plainText ?? this.plainText,
     );
   }
 
@@ -152,48 +103,26 @@ class BranchContent {
 
   Map<String, dynamic> toMap() {
     return <String, dynamic>{
-      'type': type.name,
-      'text': text,
-      'options': options.map((option) => option.toMap()).toList(growable: false),
+      'statement': statement,
+      if (hasBody) 'body': body,
       if (items.isNotEmpty)
         'items': items.map((item) => item.toMap()).toList(growable: false),
-      if (plainText) 'plainText': true,
     };
   }
 
-  /// يقرأ المحتوى **بشكل صارم** في الحقول الجوهرية؛ الحقول الجديدة
-  /// (النقاط/النص الحر) متسامحة لتبقى الفروع القديمة صالحة.
+  /// يقرأ المحتوى؛ الحقول الناقصة تأخذ الفراغ، وغير الخريطة يُرفض من المستدعي.
   factory BranchContent.fromMap(Map<String, dynamic> map) {
-    final rawType = map['type'];
-    if (rawType is! String) {
-      throw const FormatException('BranchContent: حقل النوع (type) مفقود أو ليس نصاً.');
-    }
-    final rawText = map['text'];
-    if (rawText != null && rawText is! String && rawText is! num) {
-      throw const FormatException('BranchContent: نص الفرع يجب أن يكون نصاً.');
-    }
-    final rawOptions = map['options'];
-    if (rawOptions != null && rawOptions is! List) {
-      throw const FormatException('BranchContent: الخيارات يجب أن تكون قائمة.');
-    }
-    final options = <QuestionOption>[];
-    for (final entry in (rawOptions as List?) ?? const <Object?>[]) {
-      if (entry is! Map) {
-        throw const FormatException('BranchContent: عنصر الخيار يجب أن يكون خريطة.');
+    final rawStatement = map['statement'];
+    final rawBody = map['body'];
+    for (final raw in <Object?>[rawStatement, rawBody]) {
+      if (raw != null && raw is! String && raw is! num) {
+        throw const FormatException('BranchContent: النص يجب أن يكون نصاً.');
       }
-      options.add(QuestionOption.fromMap(Map<String, dynamic>.from(entry)));
     }
-    final type = QuestionType.parse(rawType);
     return BranchContent(
-      type: type,
-      text: rawText?.toString() ?? '',
-      // الخيارات لا معنى لها إلا في «اختيار من متعدد»؛ ملفات قديمة كانت تخزّن
-      // لغيره (مثل صح/خطأ) خيارات إجابة، فتُتجاهل ولا تنتقل إلى النموذج الجديد.
-      options: type == QuestionType.multipleChoice
-          ? options
-          : const <QuestionOption>[],
+      statement: rawStatement?.toString() ?? '',
+      body: rawBody?.toString() ?? '',
       items: BranchItem.listFromValue(map['items']),
-      plainText: map['plainText'] == true,
     );
   }
 
@@ -201,37 +130,10 @@ class BranchContent {
   /// (نفس محتوى النقطة الأصلية حرفياً).
   BranchContent duplicated() {
     return BranchContent(
-      type: type,
-      text: text,
-      options: options.map((option) => option.copyWith()).toList(growable: false),
-      items: <BranchItem>[
-        for (final item in items)
-          BranchItem(
-            text: item.text,
-            marks: item.marks,
-            labelOverride: item.labelOverride,
-            align: item.align,
-          ),
-      ],
-      plainText: plainText,
+      statement: statement,
+      body: body,
+      items: items.map((item) => item.duplicated()).toList(growable: false),
     );
-  }
-
-  static List<QuestionOption> _defaultOptionsFor(QuestionType type) {
-    switch (type) {
-      case QuestionType.multipleChoice:
-        return <QuestionOption>[
-          QuestionOption(text: ''),
-          QuestionOption(text: ''),
-          QuestionOption(text: ''),
-          QuestionOption(text: ''),
-        ];
-      case QuestionType.trueFalse:
-      case QuestionType.fillInTheBlank:
-      case QuestionType.definitions:
-      case QuestionType.essay:
-        return const <QuestionOption>[];
-    }
   }
 }
 
@@ -242,6 +144,7 @@ class BranchContent {
 ///   التبديل — ما لم يثبّت المدرس [labelOverride] يدوياً.
 /// - [content] و[marks] هما ما يتبدّل عند السحب والإفلات؛ الهوية ([id])
 ///   والموضع يبقيان ثابتين.
+/// - [marks] رقم خام يكتبه المدرس؛ يُطبع «(٥ درجة)» تلقائياً في سطر العنوان.
 /// - [attachments] صور وأشكال ومربعات نص مثبّتة فوق مساحة الفرع.
 /// - [style] تنسيق خاص بالفرع، و[showFrame] إطار حوله، و[dividerAfter]
 ///   فاصل بعده — كلها اختيارية.

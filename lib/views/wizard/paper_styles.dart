@@ -18,6 +18,10 @@ abstract final class PaperStyles {
   /// الخط القرآني لآيات القرآن (Amiri) — نفس عائلة خط الـ PDF.
   static const String quranicFamily = ExamFont.quranicFamily;
 
+  /// لون حبر الورقة لكل ما يُطبع (إطارات، فواصل، حدود): أسود دائماً.
+  static const Color ink = Colors.black;
+
+  /// لون أدوات التحرير على الشاشة فقط (تحديد/إبراز) — لا يُطبع أبداً.
   static const Color primary = Color(0xFF1E3A8A);
   static const Color muted = Color(0xFF4B5563);
   static const Color accent = Color(0xFF2563EB);
@@ -40,8 +44,10 @@ abstract final class PaperStyles {
 
   static TextStyle get headerLine => _style(10, height: 1.6);
   static TextStyle get headerCenter => _style(10, bold: true, height: 1.6);
-  static TextStyle get headerTitle => _style(14, bold: true, color: primary, height: 1.6);
-  static TextStyle get category => _style(12.5, bold: true, color: primary);
+
+  /// البسملة: أكبر من نص الترويسة (الخط الخطّي يُفرض عبر [resolve]).
+  static TextStyle get bismillah => _style(17, height: 1.5);
+  static TextStyle get category => _style(12.5, bold: true);
   static TextStyle get question => _style(11, bold: true, height: 1.7);
   static TextStyle get prompt => _style(11, height: 1.7);
   static TextStyle get small => _style(9, color: muted);

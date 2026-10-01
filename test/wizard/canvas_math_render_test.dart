@@ -14,9 +14,9 @@ import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
+import 'package:writing_questions_app/models/point_kind.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
-import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/views/widgets/mixed_content_editor.dart';
 import 'package:writing_questions_app/views/widgets/paper_field.dart';
@@ -27,34 +27,38 @@ ExamDocument _mathDoc() {
     name: 'لوحة',
     header: ExamHeaderModel(
       subject: 'الرياضيات',
-      title: r'عنوان $\frac{5}{8}$',
-      right: HeaderColumn(<String>[r'سطر $\sqrt{4}$', '', '']),
+      schoolName: r'مدرسة $\sqrt{4}$',
+      examType: r'نصف السنة $\frac{5}{8}$',
     ),
     questions: <QuestionModel>[
       QuestionModel(
         id: 'q1',
         questionNumber: 1,
-        prompt: r'احسب $\frac{5}{8}$',
+        statement: r'احسب $\frac{5}{8}$',
         branches: <BranchModel>[
           BranchModel(
             content: BranchContent(
-              type: QuestionType.multipleChoice,
-              text: r'اختر الأنسب $\frac{1}{2}$',
+              statement: r'اختر الأنسب $\frac{1}{2}$',
               items: <BranchItem>[
-                BranchItem(text: r'نقطة $\times$'),
-              ],
-              options: <QuestionOption>[
-                QuestionOption(text: r'أول $x^{2}$'),
-                QuestionOption(text: r'ثانٍ $y_{3}$'),
+                BranchItem(
+                  kind: PointKind.multipleChoice,
+                  text: r'نقطة $\times$',
+                  options: <QuestionOption>[
+                    QuestionOption(text: r'أول $x^{2}$'),
+                    QuestionOption(text: r'ثانٍ $y_{3}$'),
+                  ],
+                ),
               ],
             ),
             marks: 2,
           ),
-          // فرع فراغات: نصه هو ما يُطبع — بلا أي إجابة.
+          // فرع فراغات: نقاطه هي ما يُطبع — بلا أي إجابة.
           BranchModel(
             content: BranchContent(
-              type: QuestionType.fillInTheBlank,
-              text: 'أكمل الجمل التالية',
+              statement: 'أكمل الجمل التالية',
+              items: <BranchItem>[
+                BranchItem(kind: PointKind.fillBlank, text: 'عاصمة العراق _____'),
+              ],
             ),
             marks: 1,
           ),
@@ -104,8 +108,9 @@ void main() {
       final controller = ExamWizardController(document: _mathDoc());
       await _pumpPreview(tester, controller);
 
-      // عنوان الترويسة + سطر الترويسة + نص السؤال + نص الفرع + النقطة
-      // + خياران = 7 معادلات مرسومة، ولا شيء غيرها (لا إجابة مطبوعة).
+      // اسم المدرسة + نوع الامتحان (ترويسة) + منطوق السؤال + منطوق الفرع
+      // + نقطة الاختيار + خياراها = 7 معادلات مرسومة، ولا شيء غيرها.
+      // سطور الترويسة تُعرض مرسومة في اللوحة وفي PDF معاً (كما في Word).
       expect(find.byType(Math), findsNWidgets(7));
     });
 
@@ -113,14 +118,14 @@ void main() {
       final controller = ExamWizardController(
         document: ExamDocument(
           name: 'عادي',
-          header: ExamHeaderModel(subject: 'الرياضيات', title: 'عنوان عادي'),
+          header: ExamHeaderModel(subject: 'الرياضيات', schoolName: 'مدرسة عادية'),
           questions: <QuestionModel>[
             QuestionModel(
               questionNumber: 1,
-              prompt: 'سؤال بلا رياضيات',
+              statement: 'سؤال بلا رياضيات',
               branches: <BranchModel>[
                 BranchModel(
-                  content: BranchContent(type: QuestionType.essay, text: 'فرع عادي'),
+                  content: BranchContent(statement: 'فرع عادي'),
                 ),
               ],
             ),
@@ -136,7 +141,7 @@ void main() {
       final controller = ExamWizardController(document: _mathDoc());
       await _pumpPreview(tester, controller);
 
-      const key = ValueKey<String>('prompt-q1');
+      const key = ValueKey<String>('statement-q1');
       // غير مركّز: العرض النهائي المُصيَّر وحده — لا حقل نصي ظاهر على الورقة.
       expect(
         find.descendant(of: find.byKey(key), matching: find.byType(EditableText)),
@@ -167,7 +172,7 @@ void main() {
       await tester.tap(find.text('إلغاء'));
       await tester.pump();
       await tester.pump();
-      expect(controller.questions.single.prompt, r'احسب $\frac{5}{8}$');
+      expect(controller.questions.single.statement, r'احسب $\frac{5}{8}$');
     });
 
     testWidgets('الحقول الاختيارية الفارغة لا تُبنى أصلاً (صفر بكسل لا إخفاء)', (tester) async {
@@ -180,13 +185,12 @@ void main() {
       );
       await _pumpPreview(tester, controller);
 
-      // عنوان فارغ وغير محدد → لا TextField ولا تلميح ولا عمود فراغ:
-      // الحقل غير موجود في الشجرة إطلاقاً (ليس opacity:0 ولا visibility).
-      expect(find.text('عنوان الامتحان...'), findsNothing);
-      expect(find.text('ملاحظات إضافية (وقت/درجة/...)...'), findsNothing);
-      // وفرع مفقود لا يترك شيئاً: السؤال الجديد starts بلا فروع.
+      // الحقول الفارغة لا تُطبع ولا تُنشئ محتوى وهمياً؛ تلميح واحد إرشادي
+      // للفرع المفقود، والسؤال يبقى بلا فروع وبلا أي معادلة.
+      expect(find.text('لا فروع بعد — انقر + لإضافة فرع.'), findsOneWidget);
       expect(controller.questions.single.branches, isEmpty);
       expect(find.text('أ)'), findsNothing);
+      expect(find.byType(Math), findsNothing);
     });
 
     testWidgets('توسيط اللوحة عند 144% يحفظ الزوم ويعيد التمرير فقط', (tester) async {

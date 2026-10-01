@@ -13,11 +13,12 @@ import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
+import 'package:writing_questions_app/models/point_kind.dart';
 import 'package:writing_questions_app/models/question_model.dart';
-import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/views/widgets/smart_exam_toolbar.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
+import 'package:writing_questions_app/views/wizard/paper_header_footer_view.dart';
 import 'package:writing_questions_app/views/wizard/preview_toolbar.dart';
 
 class _TestImagePicker extends ImagePickerPlatform {
@@ -37,12 +38,12 @@ class _TestImagePicker extends ImagePickerPlatform {
 
 ExamDocument _document() => ExamDocument(
       name: 'تدقيق الأزرار',
-      header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+      header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
       questions: [
-        QuestionModel(id: 'q1', questionNumber: 1, prompt: 'السؤال الأول', branches: [
-          BranchModel(id: 'b1', content: BranchContent(type: QuestionType.essay, text: 'الفرع الأول')),
+        QuestionModel(id: 'q1', questionNumber: 1, statement: 'السؤال الأول', branches: [
+          BranchModel(id: 'b1', content: BranchContent(statement: 'الفرع الأول')),
         ]),
-        QuestionModel(id: 'q2', questionNumber: 2, prompt: 'السؤال الثاني'),
+        QuestionModel(id: 'q2', questionNumber: 2, statement: 'السؤال الثاني'),
       ],
     );
 
@@ -100,7 +101,7 @@ void main() {
   testWidgets('typing focus selects branch, question and header for formatting', (tester) async {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
-    await _tap(tester, _field('branch-b1'));
+    await _tap(tester, _field('branch-statement-b1'));
     await _tap(tester, _tool('عريض'));
     await _tap(tester, _tool('مائل'));
     await _tap(tester, _tool('تحته خط'));
@@ -112,7 +113,7 @@ void main() {
     expect(branch.showFrame, isTrue);
     expect(controller.questions.first.style.isEmpty, isTrue);
 
-    await _tap(tester, _field('prompt-q2'));
+    await _tap(tester, _field('statement-q2'));
     for (final entry in {
       'محاذاة لليمين': PaperAlign.right,
       'توسيط': PaperAlign.center,
@@ -120,9 +121,12 @@ void main() {
       'ضبط': PaperAlign.justify,
     }.entries) {
       await _tap(tester, _tool(entry.key));
-      expect(controller.questions[1].style.align, entry.value);
+      // محاذاة منطوق السؤال تُكتب في محاذاة سطره (titleAlign) — النص يحمل
+      // محاذاته المستقلة (bodyAlign) منذ فصل الاثنين في الموديل.
+      expect(controller.questions[1].titleAlign, entry.value);
+      expect(controller.questions[1].bodyAlign, isNull);
     }
-    await _tap(tester, _field('header-right-0'));
+    await _tap(tester, find.byType(PaperHeaderView));
     expect(tester.widget<PreviewToolbar>(find.byType(PreviewToolbar)).selectionLabel, 'الترويسة');
     await _tap(tester, _tool('تحته خط'));
     expect(controller.document.header.style.underline, isTrue);
@@ -133,14 +137,14 @@ void main() {
   testWidgets('undo/redo text does not feed synchronization back into history', (tester) async {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
-    await tester.enterText(_field('branch-b1'), 'نص جديد');
+    await tester.enterText(_field('branch-statement-b1'), 'نص جديد');
     await tester.pumpAndSettle();
     await _tap(tester, _tool('تراجع'));
-    expect(controller.questions.first.branches.single.content.text, 'الفرع الأول');
+    expect(controller.questions.first.branches.single.content.statement, 'الفرع الأول');
     expect(controller.canRedo, isTrue);
-    expect(tester.widget<TextField>(_field('branch-b1')).controller!.text, 'الفرع الأول');
+    expect(tester.widget<TextField>(_field('branch-statement-b1')).controller!.text, 'الفرع الأول');
     await _tap(tester, _tool('إعادة'));
-    expect(controller.questions.first.branches.single.content.text, 'نص جديد');
+    expect(controller.questions.first.branches.single.content.statement, 'نص جديد');
     expect(tester.takeException(), isNull);
   });
 
@@ -149,10 +153,10 @@ void main() {
     await _pump(tester, controller);
     controller.moveQuestion(0, 1);
     await tester.pumpAndSettle();
-    await tester.enterText(_field('prompt-q1'), 'تم تحرير الأول بعد نقله');
+    await tester.enterText(_field('statement-q1'), 'تم تحرير الأول بعد نقله');
     await tester.pumpAndSettle();
-    expect(controller.document.questionById('q1')!.prompt, 'تم تحرير الأول بعد نقله');
-    expect(controller.document.questionById('q2')!.prompt, 'السؤال الثاني');
+    expect(controller.document.questionById('q1')!.statement, 'تم تحرير الأول بعد نقله');
+    expect(controller.document.questionById('q2')!.statement, 'السؤال الثاني');
     expect(tester.takeException(), isNull);
   });
 
@@ -192,7 +196,7 @@ void main() {
     final controller = ExamWizardController(
       document: ExamDocument(
         name: 'ورقة فارغة',
-        header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
+        header: ExamHeaderModel.initial(subject: 'الرياضيات'),
       ),
     );
     await _pump(tester, controller);
@@ -209,12 +213,12 @@ void main() {
   testWidgets('selected free elements can move to another preview page', (tester) async {
     final document = ExamDocument(
       name: 'تعدد الصفحات',
-      header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+      header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
       questions: <QuestionModel>[
         QuestionModel(
           id: 'q1',
           questionNumber: 1,
-          prompt: List<String>.filled(100, 'سطر طويل لاختبار تعدد الصفحات').join('\n'),
+          body: List<String>.filled(100, 'سطر طويل لاختبار تعدد الصفحات').join('\n'),
           attachments: <FloatingElement>[
             FloatingElement(
               id: 'legacy-page-nav-element',
@@ -227,7 +231,7 @@ void main() {
             ),
           ],
         ),
-        QuestionModel(id: 'q2', questionNumber: 2, prompt: 'السؤال الثاني'),
+        QuestionModel(id: 'q2', questionNumber: 2, body: 'السؤال الثاني'),
       ],
     );
     final controller = ExamWizardController(document: document);
@@ -322,9 +326,9 @@ void main() {
     await _pump(tester, controller);
     await _tap(tester, find.text('سطر جديد'));
     expect(find.text('انقر داخل حقل نصي على الورقة أولاً.'), findsOneWidget);
-    await _tap(tester, _field('branch-b1'));
+    await _tap(tester, _field('branch-statement-b1'));
     await _tap(tester, find.text('ملاحظة للمعلم'));
-    expect(controller.questions.first.branches.single.content.text, contains('ملاحظة: '));
+    expect(controller.questions.first.branches.single.content.statement, contains('ملاحظة: '));
     await _tap(tester, find.byTooltip('حذف الفرع'));
     await _tap(tester, find.text('سطر جديد'));
     expect(tester.takeException(), isNull);
@@ -333,7 +337,7 @@ void main() {
   testWidgets('all shape menu entries and media chips insert as free document elements', (tester) async {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
-    await _tap(tester, _field('prompt-q1'));
+    await _tap(tester, _field('statement-q1'));
     final shapes = {
       'مستطيل': FloatingShapeType.rectangle, 'مربع': FloatingShapeType.square,
       'دائرة': FloatingShapeType.circle, 'مثلث': FloatingShapeType.triangle,
@@ -360,7 +364,7 @@ void main() {
   testWidgets('add divider, thickness, width and delete have visible model effects', (tester) async {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
-    await _tap(tester, _field('prompt-q1'));
+    await _tap(tester, _field('statement-q1'));
     await _tap(tester, _tool('إضافة فاصل'));
     expect(controller.questions.first.dividerAfter, isNotNull);
     await _tap(tester, find.byKey(const ValueKey('divider-q:q1')));
@@ -379,13 +383,13 @@ void main() {
   testWidgets('question and branch add, copy, label and delete buttons', (tester) async {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
-    await _tap(tester, _field('prompt-q1'));
+    await _tap(tester, _field('statement-q1'));
     await _tap(tester, find.text('فرع جديد'));
     expect(controller.questions.first.branches, hasLength(2));
     expect(controller.questions[1].branches, isEmpty);
     await _tap(tester, find.byTooltip('نسخ الفرع').first);
     expect(controller.questions.first.branches, hasLength(3));
-    await _tap(tester, find.byTooltip('تثبيت تسمية الفرع').first);
+    await _tap(tester, find.byTooltip('انقر لتعديل رقم الفرع').first);
     await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), 'أولاً');
     await _tap(tester, find.text('حفظ'));
     expect(controller.questions.first.branches.first.labelOverride, 'أولاً');
@@ -393,7 +397,7 @@ void main() {
     expect(controller.questions.first.branches, hasLength(2));
     await _tap(tester, find.byTooltip('نسخ السؤال').first);
     expect(controller.questions, hasLength(3));
-    await _tap(tester, find.byTooltip('تثبيت تسمية السؤال').first);
+    await _tap(tester, find.byTooltip('انقر لتعديل رقم السؤال').first);
     await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), 'تمرين');
     await _tap(tester, find.text('حفظ'));
     expect(controller.questions.first.numberOverride, 'تمرين');
@@ -409,12 +413,12 @@ void main() {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
     await _tap(tester, _tool('تحديد متعدد'));
-    await _tap(tester, _field('prompt-q1'));
-    await _tap(tester, _field('prompt-q2'));
+    await _tap(tester, _field('statement-q1'));
+    await _tap(tester, _field('statement-q2'));
     await _tap(tester, _tool('مائل'));
     expect(controller.questions.every((q) => q.style.italic == true), isTrue);
     await _tap(tester, _tool('تحديد متعدد'));
-    await _tap(tester, _field('prompt-q1'));
+    await _tap(tester, _field('statement-q1'));
     await _tap(tester, _tool('مائل'));
     expect(controller.questions.first.style.italic, isFalse);
     expect(controller.questions.last.style.italic, isTrue);
@@ -437,7 +441,7 @@ void main() {
     await _tap(tester, find.text('تطبيق'));
     expect(controller.questions.first.spacingAfter, 120);
 
-    await _tap(tester, _field('prompt-q2'));
+    await _tap(tester, _field('statement-q2'));
     await _tap(tester, _tool('المسافة بين الأسئلة'));
     await _tap(tester, find.text('0 بكسل — بلا فراغ'));
     expect(controller.questions[1].spacingAfter, 0);
@@ -490,13 +494,13 @@ void main() {
     await _pump(tester, controller, library: library);
     await _tap(tester, find.byTooltip('حفظ الورقة'));
     expect(library.documents.single.id, controller.document.id);
-    await tester.enterText(_field('prompt-q1'), 'نص محفوظ');
+    await tester.enterText(_field('statement-q1'), 'نص محفوظ');
     await tester.pumpAndSettle();
     await _tap(tester, _tool('حفظ'));
-    expect(library.documents.single.questions.first.prompt, 'نص محفوظ');
+    expect(library.documents.single.questions.first.statement, 'نص محفوظ');
     final reloaded = ExamDocumentProvider();
     await reloaded.loadDocuments();
-    expect(reloaded.documents.single.questions.first.prompt, 'نص محفوظ');
+    expect(reloaded.documents.single.questions.first.statement, 'نص محفوظ');
   });
 
   testWidgets('every formula template opens an editor, cancel does not insert', (tester) async {
@@ -567,10 +571,16 @@ void main() {
   testWidgets('branch point add, label, answer and delete without reorder controls', (tester) async {
     final controller = ExamWizardController(document: _document());
     const ref = BranchRef(questionIndex: 0, branchIndex: 0);
-    controller.updateBranchType(ref, QuestionType.trueFalse);
-    controller.setBranchItemCount(ref, 2);
-    controller.updateBranchItemText(ref, 0, 'الأولى');
-    controller.updateBranchItemText(ref, 1, 'الثانية');
+    final owner = PointsOwner.branch(ref);
+    controller.setPointCount(owner, 2);
+    final pointIds = <String>[
+      for (final point in controller.pointsOf(owner)) point.id,
+    ];
+    for (final id in pointIds) {
+      controller.updatePointKind(owner, id, PointKind.trueFalse);
+    }
+    controller.updatePointText(owner, pointIds[0], 'الأولى');
+    controller.updatePointText(owner, pointIds[1], 'الثانية');
     await _pump(tester, controller);
     expect(find.byTooltip('نقل النقطة لأعلى'), findsNothing);
     expect(find.byTooltip('نقل النقطة لأسفل'), findsNothing);
@@ -595,9 +605,9 @@ void main() {
   testWidgets('Quran insertion and staged formula cancellation give real effects', (tester) async {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
-    await _tap(tester, _field('branch-b1'));
+    await _tap(tester, _field('branch-statement-b1'));
     await _tap(tester, find.text('آية قرآنية'));
-    expect(controller.questions.first.branches.single.content.text, contains('﴿'));
+    expect(controller.questions.first.branches.single.content.statement, contains('﴿'));
     await _tap(tester, find.text('رياضيات'));
     await _tap(tester, find.text('كسر'));
     await _tap(tester, find.text('إدراج'));

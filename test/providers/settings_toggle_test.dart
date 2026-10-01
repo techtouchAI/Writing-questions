@@ -4,16 +4,15 @@ import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/paper_settings.dart';
 import 'package:writing_questions_app/models/question_model.dart';
-import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 
 ExamDocument _document() {
   BranchModel branch(String text) => BranchModel(
-        content: BranchContent(type: QuestionType.essay, text: text),
+        content: BranchContent(statement: text),
       );
   return ExamDocument(
     name: 'ورقة',
-    header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+    header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
     questions: <QuestionModel>[
       QuestionModel(
         questionNumber: 1,
@@ -60,7 +59,7 @@ void main() {
       // التسمية المثبتة تنتقل مع فرعها (كالأرقام المكتوبة يدوياً).
       expect(controller.document.displayBranchLabel(0, 0), 'ب');
       expect(
-        controller.document.branchAt(const BranchRef(questionIndex: 0, branchIndex: 0)).content.text,
+        controller.document.branchAt(const BranchRef(questionIndex: 0, branchIndex: 0)).content.statement,
         'ثانٍ',
       );
       expect(controller.document.displayBranchLabel(0, 1), 'أ');

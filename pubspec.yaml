@@ -1,5 +1,5 @@
 name: writing_questions_app
-description: تطبيق Flutter لتحرير أوراق الأسئلة الوزارية وتصديرها كملفات PDF وWord.
+description: تطبيق Flutter لتحرير أوراق الأسئلة وتصديرها كملفات PDF وWord.
 publish_to: none
 version: 1.0.0+1
 

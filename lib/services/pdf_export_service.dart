@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import '../models/exam_document.dart';
 import '../pdf_engine/pdf_engine.dart';
 import 'export_file_service.dart';
+import 'page_frame_store.dart';
 
 /// توليد وحفظ ومشاركة ورقة الاختبار بصيغة PDF.
 ///
@@ -18,17 +19,22 @@ abstract final class PdfExportService {
     return PaginatedPdfExamEngine().resolveQuestionPages(document: document);
   }
 
-  /// يبني بايتات PDF متعدد الصفحات للنموذج الوزاري [document].
+  /// يبني بايتات PDF متعدد الصفحات لورقة الأسئلة [document].
   ///
   /// [pageAssignments] هو توزيع الأسئلة على الصفحات كما حُسب على لوحة
-  /// المعاينة، فيُطبع الملف بنفس التقسيم المعروض تماماً.
+  /// المعاينة، فيُطبع الملف بنفس التقسيم المعروض تماماً. وصورة الإطار
+  /// (إن اختارها المدرس) تُقرأ من مسارها هنا وتُسلَّم للمحرك.
   static Future<Uint8List> buildDocumentPdfBytes({
     required ExamDocument document,
     List<List<String>>? pageAssignments,
-  }) {
+  }) async {
+    final frameImage = document.settings.pageBorder
+        ? await PageFrameStore.read(document.settings.frameImagePath)
+        : null;
     return PaginatedPdfExamEngine().generate(
       document: document,
       pageAssignments: pageAssignments,
+      frameImage: frameImage,
     );
   }
 

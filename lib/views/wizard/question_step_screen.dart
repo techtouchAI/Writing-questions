@@ -1,26 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../models/branch_item.dart';
 import '../../models/exam_document.dart';
 import '../../models/question_model.dart';
-import '../../models/question_type.dart';
 import '../../providers/exam_wizard_controller.dart';
-import '../widgets/items_editor.dart';
 import '../widgets/ltr_numeric_field.dart';
+import '../widgets/points_editor.dart';
 import '../widgets/rich_content_field.dart';
 import 'branch_editor_card.dart';
 
-/// الخطوة 2 من المعالج: إعداد سؤال واحد بنصه ونقاطه وفروعه (أ، ب، ج...).
+/// الخطوة 2 من المعالج: إعداد سؤال واحد بمنطوقه ونقاطه وفروعه (أ، ب، ج...).
+///
+/// الحقول بترتيب الطباعة نفسه:
+/// الرقم ← المنطوق ← الدرجة (رقم خام يطبعه النظام «(٢٠ درجة)») ← النص (يُحذف
+/// من الورقة عند فراغه) ← النقاط المرقّمة بأنواعها المختلطة ← الفروع.
 ///
 /// - العنوان ديناميكي: «إعداد السؤال الأول» ثم «الثاني»...
-/// - حقل حر لنص السؤال/تعليماته («أجب عن فرعين فقط:»...) بلا صيغة مفروضة.
-/// - **نقاط السؤال المباشرة** (1، 2، 3...) لكل سؤال — خصوصاً السؤال بلا
-///   فروع: نفس محرر «النقاط داخل الفرع» تماماً، والترقيم تلقائي يظهر على
-///   الورقة؛ يكتب المدرس محتوى كل سطر (عبارات/فراغات/اختيارات) بنفسه.
-/// - يبدأ بلا فروع؛ [إضافة فرع جديد] يضيف (أ) ثم (ب) بنفس الأدوات،
-///   وتظهر بطاقات الفروع فقط بعد إنشائها صراحة.
-/// - الدرجة تلقائية (مجموع الفروع والنقاط) ما لم يثبّت المدرس درجة يدوية.
+/// - الدرجة تلقائية (مجموع الفروع والنقاط) ما لم يكتب المدرس رقماً.
 /// - [التالي] يحفظ السؤال ويفتح سؤالاً جديداً فارغاً، و[إنهاء وعرض النموذج]
 ///   ينتقل إلى محرك المعاينة A4.
 class QuestionStepScreen extends StatefulWidget {
@@ -49,12 +45,12 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
 
   bool _validate(BuildContext context, ExamWizardController controller) {
     final question = controller.currentQuestion;
-    // الشرط الوحيد: محتوى مكتوب (نص سؤال أو فرع) حتى لا تُنشأ صفحات فارغة.
+    // الشرط الوحيد: محتوى مكتوب (منطوق أو نقطة أو فرع) حتى لا تُنشأ صفحات فارغة.
     // الدرجة اختيارية تماماً — المدرس حر في تثبيتها الآن أو لاحقاً من المعاينة.
     if (!question.hasContent) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('اكتب نص السؤال أو نقطة واحدة أو محتوى فرع على الأقل قبل المتابعة.')),
+            content: Text('اكتب منطوق السؤال أو نقطة واحدة أو محتوى فرع على الأقل قبل المتابعة.')),
       );
       return false;
     }
@@ -74,6 +70,15 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
       return '';
     }
     return marks == marks.truncateToDouble() ? marks.toInt().toString() : marks.toString();
+  }
+
+  /// تلميح درجة النقطة: يري المدرس نص الطباعة النهائي «(٢ درجة)» قبل كتابته.
+  static String _pointMarksHelper(ExamDocument document, double marks) {
+    if (marks <= 0) {
+      return 'اكتب رقماً أكبر من صفر لتُطبع الدرجة بجانب النقطة.';
+    }
+    return 'تُطبع بصيغة (${document.formatNumber(marks)} ${document.layout.marksUnit}) '
+        'عند تفعيل «إظهار درجات الأسئلة».';
   }
 
   @override
@@ -140,52 +145,34 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
                   textDirection: TextDirection.rtl,
                 ),
               ),
-            // نص السؤال: عرض نهائي + تحرير في محرر المحتوى المختلط (نص
+            _buildQuestionNumberField(controller, questionIndex, question),
+            const SizedBox(height: 12),
+            // منطوق السؤال: عرض نهائي + تحرير في محرر المحتوى المختلط (نص
             // ومعادلات مرئية) — فلا يظهر كود LaTeX في أي مرحلة.
             RichContentField(
-              label: layout.isLtr
-                  ? 'Question text / instructions (optional)'
-                  : 'نص السؤال / التعليمات (اختياري)',
+              label: layout.isLtr ? 'Question statement' : 'منطوق السؤال',
               hint: layout.isLtr
-                  ? 'e.g. Answer two branches only:'
-                  : 'مثال: أجب عن فرعين فقط:',
-              title: 'تحرير نص السؤال',
-              value: question.prompt,
-              minHeight: 64,
+                  ? 'e.g. Choose the correct answer'
+                  : 'اكتب منطوق السؤال هنا (مثال: اختر الإجابة الصحيحة لما يأتي)',
+              title: 'تحرير منطوق السؤال',
+              value: question.statement,
+              minHeight: 56,
               onChanged: (value) =>
-                  controller.updateQuestionPrompt(questionIndex, value),
+                  controller.updateQuestionStatement(questionIndex, value),
             ),
             const SizedBox(height: 12),
-            _buildQuestionLabelField(controller, questionIndex, question),
-            const SizedBox(height: 12),
-            if (question.branches.isEmpty) ...<Widget>[
-              DropdownButtonFormField<QuestionType>(
-                value: question.type,
-                decoration: const InputDecoration(
-                  labelText: 'نوع السؤال',
-                  border: OutlineInputBorder(),
-                ),
-                items: QuestionType.values.map((type) => DropdownMenuItem<QuestionType>(
-                  value: type,
-                  child: Text(type.arabicLabel),
-                )).toList(growable: false),
-                onChanged: (type) {
-                  if (type != null) {
-                    controller.updateQuestionType(questionIndex, type);
-                    if (type == QuestionType.trueFalse && question.items.isEmpty) {
-                      controller.updateQuestionItems(questionIndex, <BranchItem>[BranchItem()]);
-                    }
-                  }
-                },
-              ),
-              const SizedBox(height: 12),
-            ],
             Row(
               children: <Widget>[
                 Expanded(
                   child: LtrNumericField(
                     controller: _manualMarksController,
-                    hintText: 'درجة يدوية (فارغ = تلقائي)',
+                    decoration: const InputDecoration(
+                      labelText: 'درجة السؤال',
+                      hintText: 'اكتب الرقم فقط، مثال: 20 (فارغ = تلقائي)',
+                      suffixText: 'درجة',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
                     onChanged: (value) {
                       final normalized = value.trim();
                       if (normalized.isEmpty) {
@@ -204,8 +191,8 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
                 const SizedBox(width: 8),
                 Tooltip(
                   message: question.hasAutoMarks
-                      ? 'الدرجة محسوبة تلقائياً من الفروع'
-                      : 'درجة يدوية ثابتة — امسح الحقل للعودة للتلقائي',
+                      ? 'الدرجة محسوبة تلقائياً من الفروع والنقاط'
+                      : 'درجة ثابتة كتبتها بنفسك — امسح الحقل للعودة للتلقائي',
                   child: Chip(
                     label: Text(
                       question.hasAutoMarks ? 'تلقائي' : 'يدوي',
@@ -216,11 +203,25 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
               ],
             ),
             const SizedBox(height: 12),
+            RichContentField(
+              label: layout.isLtr
+                  ? 'Question text (optional)'
+                  : 'نص السؤال (اختياري)',
+              hint: 'يُحذف من الورقة تلقائياً إذا تُرك فارغاً',
+              title: 'تحرير نص السؤال',
+              value: question.body,
+              minHeight: 56,
+              onChanged: (value) =>
+                  controller.updateQuestionBody(questionIndex, value),
+            ),
+            const SizedBox(height: 12),
             TextFormField(
               initialValue: question.spacingAfter.toString(),
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(
                 labelText: 'المسافة بعد السؤال (بكسل)',
+                hintText: 'مثال: 10',
+                isDense: true,
                 border: OutlineInputBorder(),
               ),
               onChanged: (value) {
@@ -233,7 +234,9 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
               DropdownButtonFormField<String>(
                 value: sections.contains(question.category) ? question.category : '',
                 decoration: const InputDecoration(
-                  labelText: 'القسم الوزاري (اختياري)',
+                  labelText: 'القسم (اختياري)',
+                  hintText: 'اختر «بدون قسم» لعدم طباعة عنوان قسم قبل السؤال',
+                  helperText: 'يُطبع عنوان القسم قبل السؤال في الورقة.',
                   isDense: true,
                   border: OutlineInputBorder(),
                 ),
@@ -251,13 +254,17 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
               ),
               const SizedBox(height: 12),
             ],
-            // نقاط السؤال المباشرة (1، 2، 3...) — تظهر دائماً وهي محتوى
-            // السؤال كاملاً عند كتابة سؤال بلا فروع؛ والترقيم تلقائي على الورقة.
-            if (question.type != QuestionType.essay && question.type != QuestionType.definitions)
-              ItemsEditor(
-                items: question.items,
-                onChanged: (items) => controller.updateQuestionItems(questionIndex, items),
-              ),
+            // نقاط السؤال المباشرة (١-، ٢-، ٣-...) بأنواعها المختلطة — تظهر
+            // دائماً وهي محتوى السؤال كاملاً عند كتابة سؤال بلا فروع.
+            PointsEditor(
+              points: question.items,
+              labelOf: (index, point) => controller.document.displayItemLabel(point, index),
+              optionLabelOf: (index, option) =>
+                  controller.document.displayOptionLabel(option, index),
+              marksHelperOf: (marks) => _pointMarksHelper(controller.document, marks),
+              onChanged: (points) =>
+                  controller.setPoints(PointsOwner.question(questionIndex), points),
+            ),
             const SizedBox(height: 12),
             for (var index = 0; index < question.branches.length; index++)
               BranchEditorCard(
@@ -265,6 +272,12 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
                 label: controller.document.displayBranchLabel(questionIndex, index),
                 autoLabel: layout.branchLabel(index),
                 branch: question.branches[index],
+                pointLabelOf: (pointIndex, point) =>
+                    controller.document.displayItemLabel(point, pointIndex),
+                optionLabelOf: (optionIndex, option) =>
+                    controller.document.displayOptionLabel(option, optionIndex),
+                pointMarksHelperOf: (marks) =>
+                    _pointMarksHelper(controller.document, marks),
                 onChanged: (branch) {
                   final ref = BranchRef(questionIndex: questionIndex, branchIndex: index);
                   controller.updateBranchContent(ref, branch.content);
@@ -302,8 +315,8 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                'درجة $questionLabel: ${layout.formatNumber(question.marks)} ${layout.marksUnit}'
-                '  |  مجموع النموذج: ${layout.formatNumber(controller.document.totalMarks)} '
+                'درجة $questionLabel: ${controller.document.formatNumber(question.marks)} ${layout.marksUnit}'
+                '  |  مجموع النموذج: ${controller.document.formatNumber(controller.document.totalMarks)} '
                 '${layout.marksUnit}',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
@@ -352,19 +365,21 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
     );
   }
 
-  /// تثبيت تسمية مخصصة للسؤال (فارغ = الترقيم التلقائي من النمط العام).
-  Widget _buildQuestionLabelField(
+  /// رقم السؤال: ما يكتبه المدرس يُطبع حرفياً («س١/»، «السؤال الاول/»)،
+  /// والفارغ يعني ترقيماً تلقائياً من نمط التسمية العام.
+  Widget _buildQuestionNumberField(
     ExamWizardController controller,
     int questionIndex,
     QuestionModel question,
   ) {
+    final document = controller.document;
     return TextFormField(
       key: ValueKey<String>('question-label-${question.id}'),
       initialValue: question.numberOverride ?? '',
       decoration: InputDecoration(
-        labelText: 'تسمية السؤال (فارغ = تلقائي)',
-        hintText:
-            'تلقائي: ${controller.document.autoQuestionLabel(question)}',
+        labelText: 'رقم السؤال (فارغ = تلقائي)',
+        hintText: 'مثال: س١/ أو السؤال الاول/ — تلقائي: '
+            '${document.autoQuestionLabel(question)}${document.layout.questionSeparator}',
         isDense: true,
         border: const OutlineInputBorder(),
       ),

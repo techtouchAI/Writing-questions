@@ -3,12 +3,12 @@ import 'dart:ui' show TextDirection;
 import 'label_alphabet.dart';
 import 'subject_catalog.dart';
 
-/// قوالب التنسيق الوزارية (وزارة التربية العراقية 2026/2027) حسب المادة.
+/// قوالب تنسيق منطقة الأسئلة حسب المادة.
 ///
-/// القالب هو **مصدر الحقيقة الوحيد** لكل ما يختلف بين المواد في الورقة:
-/// اتجاه الكتابة، صيغة ترقيم الأسئلة والفروع، نسق الأرقام، الأقسام
-/// المعتمدة، وتباعد الأسطر — تستهلكه لوحة المعاينة ومحرك الـ PDF معاً
-/// حتى تبقى الشاشة والطباعة متطابقتين.
+/// القالب هو **مصدر الحقيقة الوحيد** لكل ما يختلف بين المواد في منطقة
+/// الأسئلة: اتجاه الكتابة، صيغة ترقيم الأسئلة والفروع، نسق الأرقام، الأقسام
+/// المعتمدة، وتباعد الأسطر — تستهلكه لوحة المعاينة ومحرك الـ PDF وملف Word
+/// معاً حتى تبقى الشاشة والطباعة متطابقتين. (الترويسة والتذييل عربيان دائماً.)
 enum SubjectLayoutTemplate {
   /// التربية الإسلامية: أحكام التلاوة، الحفظ، الفهم والتفسير، التربية الإسلامية.
   islamic,
@@ -93,10 +93,11 @@ enum SubjectLayoutTemplate {
 
   /// هل تُعرض الأرقام بالنسق العربي المشرقي (٠١٢٣)؟
   ///
-  /// اللغتان العربية والتربية الإسلامية تعتمدان الأرقام المشرقية في النماذج
-  /// الوزارية؛ الإنجليزية والمواد العلمية تعتمد الأرقام اللاتينية (لغة المنهج).
-  bool get usesArabicIndicNumerals =>
-      this == SubjectLayoutTemplate.islamic || this == SubjectLayoutTemplate.arabic;
+  /// كل القوالب العربية (RTL) تعتمد الأرقام المشرقية افتراضياً — فتُطبع
+  /// الدرجة «(٢٠ درجة)» والترقيم «١-» والعام «٢٠٢٦/٢٠٢٧» مهما كانت المادة —
+  /// أما قالب الإنجليزية فيعتمد اللاتينية. وإعداد «نسق الأرقام» في الورقة
+  /// يتقدم على هذا الافتراض.
+  bool get usesArabicIndicNumerals => !isLtr;
 
   /// هل يُفضَّل الخط القرآني (إن توفّر في أصول التطبيق)؟
   bool get prefersQuranicFont => this == SubjectLayoutTemplate.islamic;
@@ -108,7 +109,7 @@ enum SubjectLayoutTemplate {
   double get lineHeightFactor =>
       this == SubjectLayoutTemplate.scientific ? 1.8 : 1.45;
 
-  /// الأقسام الوزارية المعتمدة للقالب (فارغة = بلا أقسام مسبقة).
+  /// أقسام السؤال المقترحة للقالب (فارغة = بلا أقسام مسبقة).
   List<String> get sections {
     switch (this) {
       case SubjectLayoutTemplate.islamic:
@@ -126,6 +127,13 @@ enum SubjectLayoutTemplate {
         return const <String>[];
     }
   }
+
+  /// الفاصل المطبوع بعد رقم السؤال المولَّد تلقائياً («السؤال الأول/»).
+  /// الرقم الذي يكتبه المدرس يُطبع حرفياً دون إضافة فاصل.
+  String get questionSeparator => isLtr ? '.' : '/';
+
+  /// الفاصل المطبوع بعد تسمية الفرع («أ)»).
+  String get branchSeparator => ')';
 
   /// تسمية السؤال الكاملة: «السؤال الأول» أو «Q1».
   String questionLabel(int number) {
@@ -155,6 +163,19 @@ enum SubjectLayoutTemplate {
         ? value.toInt().toString()
         : value.toString();
     return usesArabicIndicNumerals ? toArabicIndic(text) : text;
+  }
+
+  /// يحوّل الأرقام العربية المشرقية داخل [text] إلى أرقام لاتينية.
+  static String toLatinDigits(String text) {
+    final buffer = StringBuffer();
+    for (final rune in text.runes) {
+      if (rune >= 0x660 && rune <= 0x669) {
+        buffer.write(rune - 0x660);
+      } else {
+        buffer.writeCharCode(rune);
+      }
+    }
+    return buffer.toString();
   }
 
   /// يحوّل الأرقام اللاتينية داخل [text] إلى أرقام عربية مشرقية.

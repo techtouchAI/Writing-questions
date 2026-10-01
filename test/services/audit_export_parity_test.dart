@@ -24,9 +24,9 @@ import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/models/paper_divider.dart';
 import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
+import 'package:writing_questions_app/models/point_kind.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
-import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/models/subject_layout.dart';
 import 'package:writing_questions_app/pdf_engine/exam_fonts.dart';
 import 'package:writing_questions_app/pdf_engine/paginated_pdf_exam_engine.dart';
@@ -51,32 +51,36 @@ ExamDocument _doc({
 }) =>
     ExamDocument(
       name: 'audit-export',
-      header: header ?? ExamHeaderModel.ministerialDefault(subject: subject),
+      header: header ?? ExamHeaderModel.initial(subject: subject),
       questions: questions,
       floatingElements: floatingElements,
     );
 
+/// سؤال بفرع واحد يحمل [text] في **نص الفرع** (الفقرة العريضة تحت سطر العنوان).
 QuestionModel _essay(
   String id, {
-  String prompt = '',
+  String statement = '',
   String text = 'نص الفرع',
   PaperTextStyle? style,
 }) =>
     QuestionModel(
       id: id,
       questionNumber: 1,
-      prompt: prompt,
+      statement: statement,
       branches: <BranchModel>[
         BranchModel(
           id: '${id}b',
           style: style,
-          content: BranchContent(
-            type: QuestionType.essay,
-            text: text,
-          ),
+          content: BranchContent(body: text),
         ),
       ],
     );
+
+/// أسطر المتن (10.5pt) بلا سطر الرقم المنفرد «أ)» الذي يسبق نص الفرع.
+List<ProbedLine> _bodyLines(PdfContentProbe probe) => probe.lines
+    .where((line) =>
+        line.fontSize == 10.5 && line.words.any((word) => word.text.length > 3))
+    .toList();
 
 Future<String> _docxXml(ExamDocument document) async {
   final bytes = await DocxDocumentExportService.buildDocumentDocxBytes(
@@ -111,8 +115,7 @@ void main() {
         await PaginatedPdfExamEngine().generate(document: document);
     final probe = PdfContentProbe.fromBytes(bytes);
 
-    final bodyLines =
-        probe.lines.where((line) => line.fontSize == 10.5).toList();
+    final bodyLines = _bodyLines(probe);
     expect(bodyLines, isNotEmpty,
         reason: 'AUD-PDF-01: لا يوجد نص متن في PDF بحجم 10.5 المعياري.');
 
@@ -183,8 +186,7 @@ void main() {
     const branchWidth = branchRightEdge - leftEdge;
     const branchCenterLine = (leftEdge + branchRightEdge) / 2;
 
-    final body =
-        probe.lines.where((line) => line.fontSize == 10.5).toList();
+    final body = _bodyLines(probe);
     expect(body.length, greaterThanOrEqualTo(7),
         reason: 'AUD-PDF-02: ترتيب سطور المتن غير متوقع (${body.length} سطراً) '
             '— يجب أن يضم: 3 أسطر قصيرة + ≥3 أسطر الضبط + سطر أخير.');
@@ -314,8 +316,7 @@ void main() {
       final bytes =
           await PaginatedPdfExamEngine().generate(document: document);
       final probe = PdfContentProbe.fromBytes(bytes);
-      final body =
-          probe.lines.where((line) => line.fontSize == 10.5).toList();
+      final body = _bodyLines(probe);
       expect(body.length, greaterThanOrEqualTo(3),
           reason: 'PDF يجب أن يلتف ≥3 أسطر متن (lineHeight=$lineHeight).');
       final pdfDeltas = <double>[
@@ -348,7 +349,7 @@ void main() {
         QuestionModel(
           id: 'q1',
           questionNumber: 1,
-          prompt: 'سؤال أول بلا فروع',
+          statement: 'سؤال أول بلا فروع',
           spacingAfter: spacing,
           branches: const <BranchModel>[],
         ),
@@ -357,8 +358,7 @@ void main() {
       final bytes =
           await PaginatedPdfExamEngine().generate(document: document);
       final probe = PdfContentProbe.fromBytes(bytes);
-      final body =
-          probe.lines.where((line) => line.fontSize == 10.5).toList();
+      final body = _bodyLines(probe);
       expect(body, isNotEmpty,
           reason: 'لا يوجد متن للسؤال الثاني (spacing=$spacing).');
       return body.first.words.first.y;
@@ -382,7 +382,6 @@ void main() {
         QuestionModel(
           id: 'q1',
           questionNumber: 1,
-          prompt: '',
           style: PaperTextStyle(paragraphSpacing: paragraphSpacing),
           items: <BranchItem>[
             BranchItem(id: 'i1', text: 'البند الأول قصير'),
@@ -394,8 +393,7 @@ void main() {
       final bytes =
           await PaginatedPdfExamEngine().generate(document: document);
       final probe = PdfContentProbe.fromBytes(bytes);
-      final body =
-          probe.lines.where((line) => line.fontSize == 10.5).toList();
+      final body = _bodyLines(probe);
       expect(body, hasLength(2),
           reason: 'النقاط يجب أن تُرسم سطراً لكل نقطة (spacing=$paragraphSpacing، '
               'أسطر=${body.length}).');
@@ -421,19 +419,14 @@ void main() {
     ExamDocument englishDoc() => _doc(
           subject: 'English',
           questions: <QuestionModel>[
-            _essay('q1',
-                text: 'Write your answer here.',
-                ),
+            _essay('q1', text: 'Write your answer here.'),
             QuestionModel(
               id: 'q2',
               questionNumber: 1,
               branches: <BranchModel>[
                 BranchModel(
                   id: 'q2b',
-                  content: BranchContent(
-                    type: QuestionType.trueFalse,
-                    text: 'True or false statement.',
-                  ),
+                  content: BranchContent(statement: 'True or false statement.'),
                 ),
               ],
             ),
@@ -444,10 +437,13 @@ void main() {
                 BranchModel(
                   id: 'q3b',
                   content: BranchContent(
-                    type: QuestionType.trueFalse,
-                    text: 'Item based statement.',
+                    statement: 'Item based statement.',
                     items: <BranchItem>[
-                      BranchItem(id: 'i1', text: 'First statement'),
+                      BranchItem(
+                        id: 'i1',
+                        kind: PointKind.trueFalse,
+                        text: 'First statement',
+                      ),
                     ],
                   ),
                 ),
@@ -460,11 +456,16 @@ void main() {
                 BranchModel(
                   id: 'q4b',
                   content: BranchContent(
-                    type: QuestionType.multipleChoice,
-                    text: 'Choose one.',
-                    options: <QuestionOption>[
-                      QuestionOption(text: 'Option one'),
-                      QuestionOption(text: 'Option two'),
+                    statement: 'Choose one.',
+                    items: <BranchItem>[
+                      BranchItem(
+                        kind: PointKind.multipleChoice,
+                        text: 'Pick',
+                        options: <QuestionOption>[
+                          QuestionOption(text: 'Option one'),
+                          QuestionOption(text: 'Option two'),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -530,15 +531,13 @@ void main() {
         QuestionModel(
           id: 'q1',
           questionNumber: 1,
-          prompt: 'متن السؤال المنسق',
+          statement: 'متن السؤال المنسق',
           style: style,
           branches: <BranchModel>[
             BranchModel(
               id: 'b1',
               style: style,
-              content:
-                  BranchContent(
-                      type: QuestionType.essay, text: 'نص الفرع'),
+              content: BranchContent(statement: 'نص الفرع'),
             ),
           ],
         ),
@@ -576,7 +575,7 @@ void main() {
   // ===========================================================================
   // DOCX: اتجاه المستند (RTL/LTR)
   // ===========================================================================
-  test('AUD-DOCX-02: مستند LTR لا يحمل وسوم RTL (bidi/rtl) — تطابق MSO وWord',
+  test('AUD-DOCX-02: منطقة أسئلة LTR بلا وسوم RTL (الترويسة والتذييل جدولان عربيان)',
       () async {
     final xml = await _docxXml(
       _doc(
@@ -586,21 +585,24 @@ void main() {
         ],
       ),
     );
+    // الترويسة والتذييل عربيان دائماً (RTL) بحسب المواصفة: يُستثنى جدولاهما.
+    final questionArea = xml.replaceAll(RegExp(r'<w:tbl>.*?</w:tbl>', dotAll: true), '');
 
     expect(
       <String, bool>{
-        '<w:bidi/>': xml.contains('<w:bidi/>'),
-        '<w:rtl/>': xml.contains('<w:rtl/>'),
+        '<w:bidi/>': questionArea.contains('<w:bidi/>'),
+        '<w:rtl/>': questionArea.contains('<w:rtl/>'),
       },
       <String, bool>{
         '<w:bidi/>': false,
         '<w:rtl/>': false,
       },
-      reason: 'AUD-DOCX-02: مستند إنجليزي (LTR) كُتب بوسوم اتجاه RTL على كل '
-          'فقرة/تشغيل. Microsoft Word يكتب فقرات LTR بلا <w:bidi/> وباتجاه '
-          'اتجاه افتراضي لاتيني؛ الناتج الحالي يجبر Word على قراءة كل شيء RTL '
-          '(محاذاة يمين + ترتيب منطق معكوس للمixed).',
+      reason: 'AUD-DOCX-02: منطقة الأسئلة الإنجليزية (LTR) كُتبت بوسوم اتجاه '
+          'RTL. Word يكتب فقرات LTR بلا <w:bidi/>؛ وإلا قرأ المحتوى RTL.',
     );
+    // الترويسة نفسها تبقى عربية RTL.
+    expect(xml.contains('<w:bidiVisual/>'), isTrue);
+    expect(xml.contains('ادارة'), isTrue);
   });
 
   // ===========================================================================
@@ -609,18 +611,14 @@ void main() {
   test('AUD-DOCX-03: لا يُكتب أي عنصر إجابة في Word (نموذجية أو صح/خطأ أو خيار)',
       () async {
     ExamDocument examDoc() => _doc(questions: <QuestionModel>[
-          _essay('q1',
-              text: 'مقالي', ),
+          _essay('q1', text: 'مقالي'),
           QuestionModel(
             id: 'q2',
             questionNumber: 1,
             branches: <BranchModel>[
               BranchModel(
                 id: 'q2b',
-                content: BranchContent(
-                  type: QuestionType.trueFalse,
-                  text: 'عبارة صح/خطأ بلا نقاط',
-                ),
+                content: BranchContent(statement: 'عبارة صح/خطأ بلا نقاط'),
               ),
             ],
           ),
@@ -631,10 +629,9 @@ void main() {
               BranchModel(
                 id: 'q3b',
                 content: BranchContent(
-                  type: QuestionType.trueFalse,
-                  text: 'عبارة صح/خطأ بنقاط',
+                  statement: 'عبارة صح/خطأ بنقاط',
                   items: <BranchItem>[
-                    BranchItem(id: 'i1', text: 'عبارة أولى'),
+                    BranchItem(id: 'i1', kind: PointKind.trueFalse, text: 'عبارة أولى'),
                   ],
                 ),
               ),
@@ -647,11 +644,16 @@ void main() {
               BranchModel(
                 id: 'q4b',
                 content: BranchContent(
-                  type: QuestionType.multipleChoice,
-                  text: 'اختر',
-                  options: <QuestionOption>[
-                    QuestionOption(text: 'الخيار الأول'),
-                    QuestionOption(text: 'الخيار الثاني'),
+                  statement: 'اختر',
+                  items: <BranchItem>[
+                    BranchItem(
+                      kind: PointKind.multipleChoice,
+                      text: 'سؤال',
+                      options: <QuestionOption>[
+                        QuestionOption(text: 'الخيار الأول'),
+                        QuestionOption(text: 'الخيار الثاني'),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -702,11 +704,16 @@ void main() {
             BranchModel(
               id: 'b1',
               content: BranchContent(
-                type: QuestionType.multipleChoice,
-                text: 'اختر',
-                options: <QuestionOption>[
-                  QuestionOption(text: 'الخيار الصحيح'),
-                  QuestionOption(text: 'بديل'),
+                statement: 'اختر',
+                items: <BranchItem>[
+                  BranchItem(
+                    kind: PointKind.multipleChoice,
+                    text: 'سؤال',
+                    options: <QuestionOption>[
+                      QuestionOption(text: 'الخيار الصحيح'),
+                      QuestionOption(text: 'بديل'),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -727,25 +734,23 @@ void main() {
         reason: 'AUD-DOCX-04: نصوص الخيارات المكتوبة هي وحدها ما يُصدَّر.');
   });
 
-  test('AUD-DOCX-05: تعليمات/ملاحظات الترويسة في Word بلا مائل (كالمعاينة وMSO)',
+  test('AUD-DOCX-05: نصوص الترويسة في Word بلا مائل افتراضياً (كالمعاينة وMSO)',
       () async {
     final document = _doc(
       questions: <QuestionModel>[_essay('q1', text: 'متن')],
-      header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية')
-          .copyWith(instructions: 'تعليمات الاختبار العامة.'),
+      header: ExamHeaderModel.initial(subject: 'اللغة العربية')
+          .copyWith(schoolName: 'متوسطة الأمل'),
     );
     final xml = await _docxXml(document);
 
-    final index = xml.indexOf('تعليمات الاختبار العامة.');
-    expect(index, greaterThan(0),
-        reason: 'تعليمات الترويسة مفقودة من DOCX.');
+    final index = xml.indexOf('متوسطة الأمل');
+    expect(index, greaterThan(0), reason: 'اسم المدرسة مفقود من DOCX.');
     final run = xml.substring(index < 600 ? 0 : index - 600, index);
     expect(
       run.contains('<w:i/>'),
       isFalse,
-      reason: 'AUD-DOCX-05: التعليمات مكتوبة مائلة (italic:true) في DOCX بينما '
-          'المعاينة تعرضها عادية والنص المكتوب في Word يُطلب من المستخدم بلا '
-          'مائل — تطابق MSO يتطلب عدم فرض المائل.',
+      reason: 'AUD-DOCX-05: نص الترويسة مكتوب مائلاً بلا طلب من المدرس — '
+          'تطابق MSO يتطلب عدم فرض المائل.',
     );
   });
 
@@ -760,10 +765,7 @@ void main() {
     ExamDocument imageDoc(String subject) => _doc(
           subject: subject,
           questions: <QuestionModel>[_essay('q1', text: 'نص')],
-          header:
-              ExamHeaderModel.ministerialDefault(subject: subject).copyWith(
-            instructions: '',
-          ),
+          header: ExamHeaderModel.initial(subject: subject),
           floatingElements: <FloatingElement>[
             FloatingElement(
               id: 'img',
@@ -814,31 +816,30 @@ void main() {
   // ===========================================================================
   // DOCX: فاصل بين الأسئلة + محتوى الترويسة
   // ===========================================================================
-  test('AUD-DOCX-07: الفاصل والترويسة يصلان إلى Word (pBdr بالسماكة + العنوان)',
+  test('AUD-DOCX-07: الفاصل والترويسة يصلان إلى Word (pBdr بالسماكة + اسم المدرسة)',
       () async {
     final document = _doc(
       questions: <QuestionModel>[
         QuestionModel(
           id: 'q1',
           questionNumber: 1,
-          prompt: 'سؤال قبل الفاصل',
+          statement: 'سؤال قبل الفاصل',
           dividerAfter: const PaperDivider(thickness: 2),
           branches: <BranchModel>[
             BranchModel(
               id: 'b1',
-              content:
-                  BranchContent(type: QuestionType.essay, text: 'متن'),
+              content: BranchContent(statement: 'متن'),
             ),
           ],
         ),
       ],
-      header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية')
-          .copyWith(title: 'عنوان مخصص للترويسة'),
+      header: ExamHeaderModel.initial(subject: 'اللغة العربية')
+          .copyWith(schoolName: 'مدرسة التميز'),
     );
     final xml = await _docxXml(document);
 
-    expect(xml.contains('عنوان مخصص للترويسة'), isTrue,
-        reason: 'AUD-DOCX-07: عنوان الترويسة مفقود من DOCX.');
+    expect(xml.contains('مدرسة التميز'), isTrue,
+        reason: 'AUD-DOCX-07: اسم المدرسة في الترويسة مفقود من DOCX.');
     expect(
       xml.contains('w:sz="16"'),
       isTrue,

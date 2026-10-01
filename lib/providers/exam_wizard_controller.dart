@@ -3,20 +3,22 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
+import '../layout/blueprint/exam_blueprint.dart';
 import '../layout/pagination_engine.dart';
 import '../layout/paper_metrics.dart';
 import '../models/branch_item.dart';
 import '../models/branch_model.dart';
 import '../models/exam_canvas_geometry.dart';
 import '../models/exam_document.dart';
+import '../models/exam_footer_model.dart';
 import '../models/exam_header_model.dart';
 import '../models/floating_element.dart';
 import '../models/paper_divider.dart';
 import '../models/paper_settings.dart';
 import '../models/paper_text_style.dart';
+import '../models/point_kind.dart';
 import '../models/question_model.dart';
 import '../models/question_option.dart';
-import '../models/question_type.dart';
 import '../models/subject_layout.dart';
 
 /// حالة منشئ ورقة الأسئلة ومعاينة A4.
@@ -37,7 +39,7 @@ class ExamWizardController extends ChangeNotifier {
       : _document = document ??
             ExamDocument(
               name: 'ورقة أسئلة جديدة',
-              header: ExamHeaderModel.ministerialDefault(),
+              header: ExamHeaderModel.initial(),
               questions: <QuestionModel>[QuestionModel(questionNumber: 1)],
             ),
         _currentQuestionIndex = 0;
@@ -48,6 +50,7 @@ class ExamWizardController extends ChangeNotifier {
   int? _selectedQuestionIndex;
   final Map<String, double> _blockHeights = <String, double>{};
   PaginationResult? _paginationCache;
+  ExamBlueprint? _blueprintCache;
 
   // ============================ سجل التراجع ============================
 
@@ -73,6 +76,7 @@ class ExamWizardController extends ChangeNotifier {
     _document = _history.removeLast().normalized;
     _lastCoalesceKey = null;
     _paginationCache = null;
+    _blueprintCache = null;
     _clampCurrentQuestion();
     _scheduleAutoSave();
     notifyListeners();
@@ -90,6 +94,7 @@ class ExamWizardController extends ChangeNotifier {
     _document = _future.removeLast().normalized;
     _lastCoalesceKey = null;
     _paginationCache = null;
+    _blueprintCache = null;
     _clampCurrentQuestion();
     _scheduleAutoSave();
     notifyListeners();
@@ -157,6 +162,9 @@ class ExamWizardController extends ChangeNotifier {
   // ============================ الوصول ============================
 
   ExamDocument get document => _document;
+
+  /// مخطط الورقة المحلَّل للمستند الحالي (مخزَّن حتى التعديل التالي).
+  ExamBlueprint get blueprint => _blueprintCache ??= ExamBlueprint.from(_document);
   SubjectLayoutTemplate get layout => _document.layout;
   List<QuestionModel> get questions => _document.questions;
 
@@ -179,38 +187,13 @@ class ExamWizardController extends ChangeNotifier {
     return _selectedQuestionIndex;
   }
 
-  // ============================ الترويسة ============================
+  // ============================ الترويسة والتذييل ============================
 
-  void updateHeader(ExamHeaderModel header) {
-    _commit(_document.copyWith(header: header));
-  }
-
-  void updateHeaderLine(HeaderSlot slot, int lineIndex, String value) {
-    _commit(
-      _document.copyWith(header: _document.header.withLine(slot, lineIndex, value)),
-      coalesceKey: 'header-${slot.name}-$lineIndex',
-    );
-  }
-
-  void updateInstructions(String value) {
-    _commit(
-      _document.copyWith(header: _document.header.copyWith(instructions: value)),
-      coalesceKey: 'header-instructions',
-    );
-  }
-
-  void updateHeaderTitle(String value) {
-    _commit(
-      _document.copyWith(header: _document.header.copyWith(title: value)),
-      coalesceKey: 'header-title',
-    );
-  }
-
-  void updateHeaderNotes(String value) {
-    _commit(
-      _document.copyWith(header: _document.header.copyWith(notes: value)),
-      coalesceKey: 'header-notes',
-    );
+  /// يستبدل بيانات الترويسة كاملةً (من نموذج الخطوة 1 أو ورقة التحرير).
+  ///
+  /// [coalesceKey] يدمج الكتابة المتتالية في نقطة تراجع واحدة.
+  void updateHeader(ExamHeaderModel header, {String? coalesceKey}) {
+    _commit(_document.copyWith(header: header), coalesceKey: coalesceKey);
   }
 
   void updateHeaderStyle(PaperTextStyle style) {
@@ -221,6 +204,11 @@ class ExamWizardController extends ChangeNotifier {
     _commit(_document.copyWith(header: _document.header.copyWith(subject: subject)));
   }
 
+  /// يستبدل التذييل كاملاً (العبارة الختامية والتوقيعان).
+  void updateFooter(ExamFooterModel footer, {String? coalesceKey}) {
+    _commit(_document.copyWith(footer: footer), coalesceKey: coalesceKey);
+  }
+
   void updateName(String name) {
     final trimmed = name.trim();
     if (trimmed.isEmpty || trimmed == _document.name) {
@@ -228,6 +216,7 @@ class ExamWizardController extends ChangeNotifier {
     }
     _commit(_document.copyWith(name: trimmed));
   }
+
 
   // ============================ إعدادات الورقة ============================
 
@@ -346,25 +335,31 @@ class ExamWizardController extends ChangeNotifier {
     _commit(_document.withQuestionDuplicated(index));
   }
 
-  void updateQuestionType(int index, QuestionType type) {
-    RangeError.checkValidIndex(index, questions, 'index');
-    if (questions[index].type == type) return;
-    _commit(_document.withQuestionAt(index, questions[index].copyWith(type: type)));
-  }
-
   void updateQuestionCategory(int index, String category) {
     _commit(_document.withQuestionAt(index, questions[index].copyWith(category: category)));
   }
 
-  /// نص السؤال/تعليماته («أجب عن فرعين فقط:»...) — يُحفظ حرفياً.
-  void updateQuestionPrompt(int index, String prompt) {
+  /// منطوق السؤال (يُطبع في سطر العنوان بعد الرقم) — يُحفظ حرفياً.
+  void updateQuestionStatement(int index, String statement) {
     RangeError.checkValidIndex(index, questions, 'index');
-    if (questions[index].prompt == prompt) {
+    if (questions[index].statement == statement) {
       return;
     }
     _commit(
-      _document.withQuestionAt(index, questions[index].copyWith(prompt: prompt)),
-      coalesceKey: 'prompt-$index-${questions[index].id}',
+      _document.withQuestionAt(index, questions[index].copyWith(statement: statement)),
+      coalesceKey: 'statement-${questions[index].id}',
+    );
+  }
+
+  /// نص السؤال (تحت سطر العنوان، يُحذف كلياً عند فراغه) — يُحفظ حرفياً.
+  void updateQuestionBody(int index, String body) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    if (questions[index].body == body) {
+      return;
+    }
+    _commit(
+      _document.withQuestionAt(index, questions[index].copyWith(body: body)),
+      coalesceKey: 'body-${questions[index].id}',
     );
   }
 
@@ -471,19 +466,19 @@ class ExamWizardController extends ChangeNotifier {
     );
   }
 
-  void updateQuestionPromptAlign(int index, PaperAlign? align) {
+  void updateQuestionBodyAlign(int index, PaperAlign? align) {
     RangeError.checkValidIndex(index, questions, 'index');
     final question = questions[index];
-    if (question.promptAlign == align && question.style.align == align) {
+    if (question.bodyAlign == align && question.style.align == align) {
       return;
     }
-    // نقرة محاذاة واحدة = خطوة تراجع واحدة (سلوك Word): تُكتب محاذاة المتن
-    // ومحاذاة نمط السؤال (الذي يشترك في عرض العنوان/المتن) في commit واحد،
+    // نقرة محاذاة واحدة = خطوة تراجع واحدة (سلوك Word): تُكتب محاذاة النص
+    // ومحاذاة نمط السؤال (الذي يشترك في عرض العنوان/النص) في commit واحد،
     // وإلا بقي أحد الاثنين بعد التراجع وظهر الشكل متحيزاً.
     _commit(_document.withQuestionAt(
       index,
       question.copyWith(
-        promptAlign: () => align,
+        bodyAlign: () => align,
         style: question.style.copyWith(align: () => align),
       ),
     ));
@@ -517,139 +512,240 @@ class ExamWizardController extends ChangeNotifier {
     );
   }
 
-  // ======================== النقاط داخل السؤال (بلا فروع) ========================
+  // ============================ النقاط (سؤال أو فرع) ============================
+  //
+  // نقاط السؤال المباشرة ونقاط الفرع بنية واحدة؛ كل عملية هنا تعمل على
+  // مجموعة يحدّدها [PointsOwner] وعلى نقطة بمعرفها الثابت (لا فهرس مأسور
+  // وقت البناء)، فيبقى التعديل صحيحاً بعد النقل والترتيب.
 
-  /// يحدّث نقاط السؤال المباشرة دفعة واحدة (محرر النقاط المشترك).
-  void updateQuestionItems(int index, List<BranchItem> items) {
-    RangeError.checkValidIndex(index, questions, 'index');
-    final question = questions[index];
-    if (question.items.length == items.length &&
-        _sameItemList(question.items, items)) {
+  /// نقاط المجموعة [owner] (فارغة إن لم يعد العنوان موجوداً).
+  List<BranchItem> pointsOf(PointsOwner owner) =>
+      _document.containsOwner(owner) ? _document.pointsOf(owner) : const <BranchItem>[];
+
+  /// يستبدل نقاط المجموعة دفعة واحدة (محرر النقاط المشترك).
+  void setPoints(
+    PointsOwner owner,
+    List<BranchItem> points, {
+    String? coalesceKey,
+  }) {
+    if (!_document.containsOwner(owner)) {
       return;
     }
-    _commit(_document.withQuestionAt(index, question.copyWith(items: items)));
-  }
-
-  void addQuestionItem(int index, [BranchItem? item]) {
-    RangeError.checkValidIndex(index, questions, 'index');
-    updateQuestionItems(index, <BranchItem>[...questions[index].items, item ?? BranchItem()]);
-  }
-
-  /// يضبط عدد نقاط السؤال دفعة واحدة (تُضاف فارغة أو تُقصّ الزائدة من النهاية).
-  void setQuestionItemCount(int index, int count) {
-    RangeError.checkValidIndex(index, questions, 'index');
-    final question = questions[index];
-    final safe = count.clamp(0, 200);
-    if (question.items.length == safe) {
+    final current = _document.pointsOf(owner);
+    if (current.length == points.length && _samePoints(current, points)) {
       return;
     }
-    if (question.items.length > safe) {
-      updateQuestionItems(index, question.items.sublist(0, safe));
-      return;
-    }
-    updateQuestionItems(index, <BranchItem>[
-      ...question.items,
-      for (var i = question.items.length; i < safe; i++) BranchItem(),
-    ]);
+    _commit(_document.withPoints(owner, points), coalesceKey: coalesceKey);
   }
 
-  void updateQuestionItemText(int index, int itemIndex, String text) {
-    RangeError.checkValidIndex(index, questions, 'index');
-    final question = questions[index];
-    RangeError.checkValidIndex(itemIndex, question.items, 'itemIndex');
-    if (question.items[itemIndex].text == text) {
-      return;
-    }
-    _commit(
-      _document.withQuestionAt(
-        index,
-        question.withItemAt(itemIndex, question.items[itemIndex].copyWith(text: text)),
-      ),
-      coalesceKey: 'question-item-${question.items[itemIndex].id}',
-    );
-  }
-
-  /// تسمية يدوية للنقطة: فارغ = تلقائي (`null`)، `-` = إخفاء (`''`).
-  void updateQuestionItemLabel(int index, int itemIndex, String label) {
-    RangeError.checkValidIndex(index, questions, 'index');
-    final question = questions[index];
-    RangeError.checkValidIndex(itemIndex, question.items, 'itemIndex');
-    updateQuestionItems(
-      index,
-      <BranchItem>[
-        for (var i = 0; i < question.items.length; i++)
-          i == itemIndex
-              ? question.items[i].copyWith(
-                  labelOverride: () => _normalizeLabelOverride(label),
-                )
-              : question.items[i],
-      ],
-    );
-  }
-
-  void updateQuestionItemMarks(int index, int itemIndex, double marks) {
-    if (!marks.isFinite || marks < 0) {
-      return;
-    }
-    RangeError.checkValidIndex(index, questions, 'index');
-    final question = questions[index];
-    RangeError.checkValidIndex(itemIndex, question.items, 'itemIndex');
-    if (question.items[itemIndex].marks == marks) {
-      return;
-    }
-    updateQuestionItems(
-      index,
-      <BranchItem>[
-        for (var i = 0; i < question.items.length; i++)
-          i == itemIndex ? question.items[i].copyWith(marks: marks) : question.items[i],
-      ],
-    );
-  }
-
-  void removeQuestionItem(int index, int itemIndex) {
-    RangeError.checkValidIndex(index, questions, 'index');
-    final question = questions[index];
-    RangeError.checkValidIndex(itemIndex, question.items, 'itemIndex');
-    updateQuestionItems(index, question.withItemRemoved(itemIndex).items);
-  }
-
-  void moveQuestionItem(int index, int from, int to) {
-    RangeError.checkValidIndex(index, questions, 'index');
-    if (from == to) {
-      return;
-    }
-    final question = questions[index];
-    RangeError.checkValidIndex(from, question.items, 'from');
-    updateQuestionItems(index, question.withItemMoved(from, to).items);
-  }
-
-  /// هل القائمتان محتوانهما متطابقان (مقارنة مرجعية سريعة للنقاط)؟
-  static bool _sameItemList(List<BranchItem> first, List<BranchItem> second) {
+  /// هل القائمتان بالمحتوى نفسه تماماً (مقارنة سريعة لتفادي نقاط تراجع فارغة)؟
+  static bool _samePoints(List<BranchItem> first, List<BranchItem> second) {
     for (var i = 0; i < first.length; i++) {
-      if (first[i].id != second[i].id ||
-          first[i].text != second[i].text ||
-          first[i].marks != second[i].marks ||
-          first[i].labelOverride != second[i].labelOverride) {
+      if (!first[i].sameContentAs(second[i])) {
         return false;
       }
     }
     return true;
   }
 
+  void addPoint(PointsOwner owner, [BranchItem? point]) {
+    setPoints(owner, <BranchItem>[...pointsOf(owner), point ?? BranchItem()]);
+  }
+
+  /// يضبط عدد النقاط دفعة واحدة (تُضاف فارغة أو تُقصّ الزائدة من النهاية).
+  void setPointCount(PointsOwner owner, int count) {
+    final points = pointsOf(owner);
+    final safe = count.clamp(0, 200);
+    if (points.length == safe) {
+      return;
+    }
+    if (points.length > safe) {
+      setPoints(owner, points.sublist(0, safe));
+      return;
+    }
+    setPoints(owner, <BranchItem>[
+      ...points,
+      for (var i = points.length; i < safe; i++) BranchItem(),
+    ]);
+  }
+
+  /// يعدّل نقطة واحدة بمعرفها عبر [update]؛ لا شيء إن لم توجد.
+  void updatePoint(
+    PointsOwner owner,
+    String pointId,
+    BranchItem Function(BranchItem point) update, {
+    String? coalesceKey,
+  }) {
+    final points = pointsOf(owner);
+    final index = points.indexWhere((point) => point.id == pointId);
+    if (index < 0) {
+      return;
+    }
+    final updated = List<BranchItem>.of(points);
+    updated[index] = update(points[index]);
+    setPoints(owner, updated, coalesceKey: coalesceKey);
+  }
+
+  void updatePointText(PointsOwner owner, String pointId, String text) {
+    updatePoint(
+      owner,
+      pointId,
+      (point) => point.copyWith(text: text),
+      coalesceKey: 'item-$pointId',
+    );
+  }
+
+  /// يغيّر نوع النقطة (نص حر/صح وخطأ/إكمال فراغ/اختيار من متعدد).
+  void updatePointKind(PointsOwner owner, String pointId, PointKind kind) {
+    updatePoint(owner, pointId, (point) => point.copyWith(kind: kind));
+  }
+
+  /// تسمية مخصصة للنقطة: فارغ = تلقائي، `-` = بلا تسمية.
+  void updatePointLabel(PointsOwner owner, String pointId, String label) {
+    updatePoint(
+      owner,
+      pointId,
+      (point) => point.copyWith(labelOverride: () => _normalizeLabelOverride(label)),
+    );
+  }
+
+  void updatePointMarks(PointsOwner owner, String pointId, double marks) {
+    if (!marks.isFinite || marks < 0) {
+      return;
+    }
+    updatePoint(owner, pointId, (point) => point.copyWith(marks: marks));
+  }
+
+  void updatePointAlign(PointsOwner owner, String pointId, PaperAlign? align) {
+    updatePoint(owner, pointId, (point) => point.copyWith(align: () => align));
+  }
+
+  void removePoint(PointsOwner owner, String pointId) {
+    setPoints(
+      owner,
+      <BranchItem>[
+        for (final point in pointsOf(owner))
+          if (point.id != pointId) point,
+      ],
+    );
+  }
+
+  void movePoint(PointsOwner owner, int from, int to) {
+    final points = pointsOf(owner);
+    if (from == to || from < 0 || from >= points.length) {
+      return;
+    }
+    final updated = List<BranchItem>.of(points);
+    final point = updated.removeAt(from);
+    updated.insert(to.clamp(0, updated.length), point);
+    setPoints(owner, updated);
+  }
+
+  /// فارغ = تلقائي (`null`)، `-` = إخفاء (`''`)، وإلا النص المخصص.
+  static String? _normalizeLabelOverride(String label) {
+    final trimmed = label.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    return trimmed == '-' ? '' : trimmed;
+  }
+
+  // ----------------------- خيارات «اختيار من متعدد» -----------------------
+
+  void _updateOptions(
+    PointsOwner owner,
+    String pointId,
+    List<QuestionOption> Function(List<QuestionOption> options) update, {
+    String? coalesceKey,
+  }) {
+    updatePoint(
+      owner,
+      pointId,
+      (point) => point.copyWith(options: update(List<QuestionOption>.of(point.options))),
+      coalesceKey: coalesceKey,
+    );
+  }
+
+  /// نص خيار واحد (يُحرَّر مباشرة على الورقة).
+  void updatePointOptionText(
+    PointsOwner owner,
+    String pointId,
+    int optionIndex,
+    String text,
+  ) {
+    _updateOptions(
+      owner,
+      pointId,
+      (options) {
+        if (optionIndex < 0 || optionIndex >= options.length) {
+          return options;
+        }
+        options[optionIndex] = options[optionIndex].copyWith(text: text);
+        return options;
+      },
+      coalesceKey: 'option-$pointId-$optionIndex',
+    );
+  }
+
+  /// تسمية مخصصة للخيار: فارغ = تلقائي، `-` = بلا تسمية.
+  void updatePointOptionLabel(
+    PointsOwner owner,
+    String pointId,
+    int optionIndex,
+    String label,
+  ) {
+    _updateOptions(owner, pointId, (options) {
+      if (optionIndex < 0 || optionIndex >= options.length) {
+        return options;
+      }
+      options[optionIndex] = options[optionIndex].copyWith(
+        labelOverride: () => _normalizeLabelOverride(label),
+      );
+      return options;
+    });
+  }
+
+  void updatePointOptionAlign(
+    PointsOwner owner,
+    String pointId,
+    int optionIndex,
+    PaperAlign? align,
+  ) {
+    _updateOptions(owner, pointId, (options) {
+      if (optionIndex < 0 || optionIndex >= options.length) {
+        return options;
+      }
+      options[optionIndex] = options[optionIndex].copyWith(align: () => align);
+      return options;
+    });
+  }
+
+  /// يضيف خياراً جديداً (عدد الخيارات حر).
+  void addPointOption(PointsOwner owner, String pointId) {
+    _updateOptions(
+      owner,
+      pointId,
+      (options) => <QuestionOption>[...options, QuestionOption(text: '')],
+    );
+  }
+
+  /// يحذف خياراً (لا حد أدنى: تُحذف كلها إن أراد المدرس).
+  void removePointOption(PointsOwner owner, String pointId, int optionIndex) {
+    _updateOptions(owner, pointId, (options) {
+      if (optionIndex < 0 || optionIndex >= options.length) {
+        return options;
+      }
+      return options..removeAt(optionIndex);
+    });
+  }
+
   // ============================ الفروع ============================
 
-  void addBranch(int questionIndex, {QuestionType? type}) {
+  void addBranch(int questionIndex) {
     RangeError.checkValidIndex(questionIndex, questions, 'questionIndex');
-    // «إضافة فرع جديد بنفس خيارات الفرع السابق»: يبدأ الفرع الجديد بنوع
-    // الفرع الأخير (وبنموذج خياراته الافتراضي) بدل نوع ثابت، فيبقى (ب) و(ج)
-    // على الأدوات نفسها التي اختارها المعلم للفرع (أ) — والفرع الأول في
-    // سؤال بلا فروع يبدأ مقالياً.
-    final branches = questions[questionIndex].branches;
-    final resolvedType =
-        type ?? (branches.isEmpty ? QuestionType.essay : branches.last.content.type);
     _commit(_document.withQuestionAt(
       questionIndex,
-      questions[questionIndex].withBranchAdded(BranchModel(content: BranchContent.empty(resolvedType))),
+      questions[questionIndex].withBranchAdded(BranchModel()),
     ));
   }
 
@@ -689,40 +785,39 @@ class ExamWizardController extends ChangeNotifier {
     _commit(_document.withBranchAt(ref, _document.branchAt(ref).copyWith(content: content)));
   }
 
-  void updateBranchType(BranchRef ref, QuestionType type) {
+  /// منطوق الفرع (يُطبع في سطر العنوان بعد الرقم).
+  void updateBranchStatement(BranchRef ref, String statement) {
     if (!_document.containsRef(ref)) {
       return;
     }
     final branch = _document.branchAt(ref);
-    if (branch.content.type == type) {
-      return;
-    }
-    updateBranchContent(ref, branch.content.copyWith(type: type));
-  }
-
-  /// وضع النص الحر: عرض النص والنقاط فقط دون أي جسم مولَّد.
-  void setBranchPlainText(BranchRef ref, bool plainText) {
-    if (!_document.containsRef(ref)) {
-      return;
-    }
-    final branch = _document.branchAt(ref);
-    if (branch.content.plainText == plainText) {
-      return;
-    }
-    updateBranchContent(ref, branch.content.copyWith(plainText: plainText));
-  }
-
-  void updateBranchText(BranchRef ref, String text) {
-    if (!_document.containsRef(ref)) {
-      return;
-    }
-    final branch = _document.branchAt(ref);
-    if (branch.content.text == text) {
+    if (branch.content.statement == statement) {
       return;
     }
     _commit(
-      _document.withBranchAt(ref, branch.copyWith(content: branch.content.copyWith(text: text))),
-      coalesceKey: 'branch-text-${branch.id}',
+      _document.withBranchAt(
+        ref,
+        branch.copyWith(content: branch.content.copyWith(statement: statement)),
+      ),
+      coalesceKey: 'branch-statement-${branch.id}',
+    );
+  }
+
+  /// نص الفرع (تحت سطر العنوان، يُحذف كلياً عند فراغه).
+  void updateBranchBody(BranchRef ref, String body) {
+    if (!_document.containsRef(ref)) {
+      return;
+    }
+    final branch = _document.branchAt(ref);
+    if (branch.content.body == body) {
+      return;
+    }
+    _commit(
+      _document.withBranchAt(
+        ref,
+        branch.copyWith(content: branch.content.copyWith(body: body)),
+      ),
+      coalesceKey: 'branch-body-${branch.id}',
     );
   }
 
@@ -785,181 +880,6 @@ class ExamWizardController extends ChangeNotifier {
     );
   }
 
-  /// تسمية مخصصة للخيار: فارغ = تلقائي، `-` = بلا تسمية.
-  void updateBranchOptionLabel(BranchRef ref, int optionIndex, String label) {
-    if (!_document.containsRef(ref)) {
-      return;
-    }
-    final content = _document.branchAt(ref).content;
-    if (optionIndex < 0 || optionIndex >= content.options.length) {
-      return;
-    }
-    final options = List<QuestionOption>.of(content.options);
-    options[optionIndex] = options[optionIndex].copyWith(
-      labelOverride: () => _normalizeLabelOverride(label),
-    );
-    updateBranchContent(ref, content.copyWith(options: options));
-  }
-
-  /// تسمية مخصصة للنقطة: فارغ = تلقائي، `-` = بلا تسمية.
-  void updateBranchItemLabel(BranchRef ref, int itemIndex, String label) {
-    if (!_document.containsRef(ref)) {
-      return;
-    }
-    final content = _document.branchAt(ref).content;
-    if (itemIndex < 0 || itemIndex >= content.items.length) {
-      return;
-    }
-    final items = List<BranchItem>.of(content.items);
-    items[itemIndex] = items[itemIndex].copyWith(
-      labelOverride: () => _normalizeLabelOverride(label),
-    );
-    updateBranchContent(ref, content.copyWith(items: items));
-  }
-
-  /// فارغ = تلقائي (`null`)، `-` = إخفاء (`''`)، وإلا النص المخصص.
-  static String? _normalizeLabelOverride(String label) {
-    final trimmed = label.trim();
-    if (trimmed.isEmpty) {
-      return null;
-    }
-    return trimmed == '-' ? '' : trimmed;
-  }
-
-  /// يحدّث نص خيار واحد داخل فرع (خيارات الاختيار من متعدد قابلة للتحرير
-  /// مباشرة على الورقة).
-  void updateBranchOptionText(BranchRef ref, int optionIndex, String text) {
-    if (!_document.containsRef(ref)) {
-      return;
-    }
-    final content = _document.branchAt(ref).content;
-    if (optionIndex < 0 || optionIndex >= content.options.length) {
-      return;
-    }
-    if (content.options[optionIndex].text == text) {
-      return;
-    }
-    final options = List<QuestionOption>.of(content.options);
-    options[optionIndex] = options[optionIndex].copyWith(text: text);
-    _commit(
-      _document.withBranchAt(
-        ref,
-        _document.branchAt(ref).copyWith(content: content.copyWith(options: options)),
-      ),
-      coalesceKey: 'option-${_document.branchAt(ref).id}-$optionIndex',
-    );
-  }
-
-  /// يضيف خياراً جديداً لفرع اختيار من متعدد (عدد الخيارات حر).
-  void addBranchOption(BranchRef ref) {
-    if (!_document.containsRef(ref)) {
-      return;
-    }
-    final content = _document.branchAt(ref).content;
-    updateBranchContent(
-      ref,
-      content.copyWith(options: <QuestionOption>[...content.options, QuestionOption(text: '')]),
-    );
-  }
-
-  /// يحذف خياراً (يبقى خيار واحد على الأقل).
-  void removeBranchOption(BranchRef ref, int optionIndex) {
-    if (!_document.containsRef(ref)) {
-      return;
-    }
-    final content = _document.branchAt(ref).content;
-    // لا حد أدنى للخيارات: تُحذف كلها إن أراد المدرس.
-    if (optionIndex < 0 || optionIndex >= content.options.length) {
-      return;
-    }
-    final options = List<QuestionOption>.of(content.options)..removeAt(optionIndex);
-    updateBranchContent(ref, content.copyWith(options: options));
-  }
-
-
-  // ============================ النقاط داخل الفرع ============================
-
-  void addBranchItem(BranchRef ref, [BranchItem? item]) {
-    if (!_document.containsRef(ref)) {
-      return;
-    }
-    final branch = _document.branchAt(ref);
-    updateBranchContent(ref, branch.content.withItemAdded(item));
-  }
-
-  /// يضبط عدد النقاط دفعة واحدة (تُضاف فارغة أو تُقصّ الزائدة من النهاية).
-  void setBranchItemCount(BranchRef ref, int count) {
-    if (!_document.containsRef(ref)) {
-      return;
-    }
-    final branch = _document.branchAt(ref);
-    updateBranchContent(ref, branch.content.withItemCount(count));
-  }
-
-
-  void updateBranchItemText(BranchRef ref, int itemIndex, String text) {
-    if (!_document.containsRef(ref)) {
-      return;
-    }
-    final branch = _document.branchAt(ref);
-    final content = branch.content;
-    if (itemIndex < 0 || itemIndex >= content.items.length) {
-      return;
-    }
-    if (content.items[itemIndex].text == text) {
-      return;
-    }
-    _commit(
-      _document.withBranchAt(
-        ref,
-        branch.copyWith(
-          content: content.withItemAt(itemIndex, content.items[itemIndex].copyWith(text: text)),
-        ),
-      ),
-      coalesceKey: 'item-${content.items[itemIndex].id}',
-    );
-  }
-
-  void updateBranchItemMarks(BranchRef ref, int itemIndex, double marks) {
-    if (!_document.containsRef(ref) || !marks.isFinite || marks < 0) {
-      return;
-    }
-    final branch = _document.branchAt(ref);
-    final content = branch.content;
-    if (itemIndex < 0 || itemIndex >= content.items.length) {
-      return;
-    }
-    if (content.items[itemIndex].marks == marks) {
-      return;
-    }
-    updateBranchContent(
-      ref,
-      content.withItemAt(itemIndex, content.items[itemIndex].copyWith(marks: marks)),
-    );
-  }
-
-  void removeBranchItem(BranchRef ref, int itemIndex) {
-    if (!_document.containsRef(ref)) {
-      return;
-    }
-    final branch = _document.branchAt(ref);
-    if (itemIndex < 0 || itemIndex >= branch.content.items.length) {
-      return;
-    }
-    updateBranchContent(ref, branch.content.withItemRemoved(itemIndex));
-  }
-
-  void moveBranchItem(BranchRef ref, int from, int to) {
-    if (!_document.containsRef(ref) || from == to) {
-      return;
-    }
-    final branch = _document.branchAt(ref);
-    if (from < 0 || from >= branch.content.items.length) {
-      return;
-    }
-    updateBranchContent(ref, branch.content.withItemMoved(from, to));
-  }
-
   /// **القاعدة الذهبية**: يبدّل المحتوى والدرجة فقط بين خانتين؛ العناوين
   /// (السؤال الأول، الفرع أ) تبقى في مكانها.
   void swapBranchContent(BranchRef from, BranchRef to) {
@@ -991,6 +911,7 @@ class ExamWizardController extends ChangeNotifier {
     _selectedQuestionIndex = index;
     notifyListeners();
   }
+
 
   // ============================ العناصر الحرة على الورقة ============================
 
@@ -1409,10 +1330,18 @@ class ExamWizardController extends ChangeNotifier {
       _blockHeights.containsKey(PaperMetrics.headerBlockId) &&
       questions.every((question) => _blockHeights.containsKey(question.id));
 
+  /// ارتفاع التذييل المحجوز أسفل آخر كتلة (مقاسه + المسافة التي تفصله عنها)؛
+  /// صفر قبل أن يُقاس التذييل في أول إطار.
+  double get footerReserve {
+    final height = _blockHeights[PaperMetrics.footerBlockId];
+    return height == null ? 0 : height + PaperMetrics.blockSpacingPx;
+  }
+
   /// نتيجة التقسيم الورقي الحالية على لوحة A4 (بكسل منطقي).
   ///
-  /// الترويسة كتلة ثابتة في الصفحة الأولى؛ كل سؤال كتلة لا تتجزأ.
-  /// الكتل غير المقاسة بعد تُعامل بارتفاع صفر حتى تُقاس في الإطار التالي.
+  /// الترويسة كتلة ثابتة في الصفحة الأولى؛ كل سؤال كتلة لا تتجزأ؛ والتذييل
+  /// يحجز مكانه تحت آخر كتلة في آخر صفحة. الكتل غير المقاسة بعد تُعامل
+  /// بارتفاع صفر حتى تُقاس في الإطار التالي.
   PaginationResult get pagination {
     return _paginationCache ??= PaginationEngine.paginate(
       blocks: <PageBlock>[
@@ -1429,6 +1358,7 @@ class ExamWizardController extends ChangeNotifier {
       ],
       pageHeight: PaperMetrics.pageContentHeightFor(_document.settings.marginMm),
       spacing: PaperMetrics.blockSpacingPx,
+      lastPageReserve: footerReserve,
     );
   }
 
@@ -1474,6 +1404,7 @@ class ExamWizardController extends ChangeNotifier {
     _lastCoalesceKey = coalesceKey;
     _document = next.normalized;
     _paginationCache = null;
+    _blueprintCache = null;
     _scheduleAutoSave();
     notifyListeners();
   }

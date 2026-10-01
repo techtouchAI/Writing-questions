@@ -21,10 +21,10 @@ void main() {
   test('exports free images and text boxes at page-relative positions', () async {
     final document = ExamDocument(
       name: 'عناصر حرة',
-      header: ExamHeaderModel.ministerialDefault(subject: 'اللغة الإنجليزية'),
+      header: ExamHeaderModel.initial(subject: 'اللغة الإنجليزية'),
       questions: <QuestionModel>[
-        QuestionModel(id: 'q1', questionNumber: 1, prompt: 'Question one'),
-        QuestionModel(id: 'q2', questionNumber: 2, prompt: 'Question two'),
+        QuestionModel(id: 'q1', questionNumber: 1, statement: 'Question one'),
+        QuestionModel(id: 'q2', questionNumber: 2, statement: 'Question two'),
       ],
       floatingElements: <FloatingElement>[
         FloatingElement(
@@ -83,14 +83,14 @@ void main() {
   test('uses PDF pagination when Word export has no preview assignments', () async {
     final document = ExamDocument(
       name: 'توافق التصدير',
-      header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
+      header: ExamHeaderModel.initial(subject: 'الرياضيات'),
       questions: <QuestionModel>[
         QuestionModel(
           id: 'q1',
           questionNumber: 1,
-          prompt: List<String>.filled(100, 'سطر طويل لاختبار ترقيم الصفحات').join('\n'),
+          body: List<String>.filled(100, 'سطر طويل لاختبار ترقيم الصفحات').join('\n'),
         ),
-        QuestionModel(id: 'q2', questionNumber: 2, prompt: 'السؤال الثاني'),
+        QuestionModel(id: 'q2', questionNumber: 2, statement: 'السؤال الثاني'),
       ],
       floatingElements: <FloatingElement>[
         FloatingElement(
@@ -133,7 +133,7 @@ void main() {
     );
     final document = ExamDocument(
       name: 'مرآة عنصر حر',
-      header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
+      header: ExamHeaderModel.initial(subject: 'الرياضيات'),
       questions: <QuestionModel>[
         QuestionModel(
           id: 'mirror-owner',

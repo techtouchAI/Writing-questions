@@ -4,6 +4,9 @@ import '../models/exam_canvas_geometry.dart';
 
 /// المقاسات المشتركة بين لوحة المعاينة (بكسل منطقي عند 96dpi) وملف الـ PDF
 /// (نقاط 72dpi) — نسبة تحويل واحدة تضمن أن ما يُرى هو ما يُطبع.
+///
+/// صندوق المحتوى في كل الصفحات يُشتق من هامش واحد هو `PaperSettings.marginMm`
+/// (انظر [pageContentHeightFor]/[contentWidthFor])، وهو نفسه حشوة الإطار.
 abstract final class PaperMetrics {
   /// نقطة PDF لكل بكسل منطقي على اللوحة (A4: 595.28pt ↔ 794px).
   static double get pointsPerPixel => PdfPageFormat.a4.width / ExamCanvasGeometry.width;
@@ -12,21 +15,17 @@ abstract final class PaperMetrics {
 
   static double pt(double pixels) => pixels * pointsPerPixel;
 
-  /// ارتفاع تذييل الصفحة (رقم الصفحة) على اللوحة.
-  static const double footerHeightPx = 18;
-
-  /// المسافة الرأسية بين كتلتين متتاليتين (سؤالين أو الترويسة وأول سؤال).
+  /// المسافة الرأسية بين كتلتين متتاليتين (سؤالين أو الترويسة وأول سؤال)،
+  /// وبين آخر سؤال والتذييل.
   static const double blockSpacingPx = 10;
 
-  /// الارتفاع المتاح للكتل داخل صفحة واحدة (بعد الهوامش والتذييل).
-  static double get pageContentHeightPx =>
-      ExamCanvasGeometry.contentHeight - footerHeightPx;
-
+  /// عرض المحتوى على لوحة بالهامش الافتراضي.
   static double get contentWidthPx => ExamCanvasGeometry.contentWidth;
 
-  /// الارتفاع المتاح للكتل لهامش طباعة [marginMm] بالمليمتر.
+  /// الارتفاع المتاح للكتل داخل صفحة واحدة لهامش طباعة [marginMm] بالمليمتر
+  /// (الصندوق كاملاً؛ التذييل يُحجز من آخر كتلة فقط عبر `lastPageReserve`).
   static double pageContentHeightFor(double marginMm) =>
-      ExamCanvasGeometry.contentHeightFor(marginMm) - footerHeightPx;
+      ExamCanvasGeometry.contentHeightFor(marginMm);
 
   /// عرض المحتوى لهامش طباعة [marginMm] بالمليمتر.
   static double contentWidthFor(double marginMm) =>
@@ -34,4 +33,7 @@ abstract final class PaperMetrics {
 
   /// معرّف كتلة الترويسة في محرك التقسيم.
   static const String headerBlockId = '__header__';
+
+  /// معرّف قياس التذييل (لا يدخل التقسيم كتلةً؛ ارتفاعه يُحجز من آخر كتلة).
+  static const String footerBlockId = '__footer__';
 }

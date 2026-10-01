@@ -8,8 +8,8 @@ import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/models/paper_divider.dart';
 import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
+import 'package:writing_questions_app/models/point_kind.dart';
 import 'package:writing_questions_app/models/question_model.dart';
-import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/services/docx_document_export_service.dart';
 import 'package:writing_questions_app/services/pdf_export_service.dart';
@@ -22,7 +22,7 @@ const String _tinyPngBase64 =
 ExamDocument _seedDocument() {
   return ExamDocument(
     name: 'امتحان نصف السنة — اللغة العربية',
-    header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+    header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
     questions: <QuestionModel>[QuestionModel(questionNumber: 1)],
   );
 }
@@ -36,7 +36,11 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       final controller = ExamWizardController(document: _seedDocument());
 
-      // ─── 1) بناء ورقة كاملة: ترويسة وزارية + 6 أسئلة ───
+      /// يعيد معرّفات نقاط مالك النقاط بالترتيب.
+      List<String> pointIds(PointsOwner owner) =>
+          <String>[for (final point in controller.pointsOf(owner)) point.id];
+
+      // ─── 1) بناء ورقة كاملة: ترويسة رسمية + 6 أسئلة ───
       for (var i = 0; i < 5; i++) {
         controller.addQuestion();
       }
@@ -48,10 +52,7 @@ void main() {
       }
       for (var b = 0; b < 4; b++) {
         final ref = BranchRef(questionIndex: 0, branchIndex: b);
-        controller.updateBranchContent(
-          ref,
-          controller.document.branchAt(ref).content.copyWith(text: 'نص الفرع ${b + 1}'),
-        );
+        controller.updateBranchStatement(ref, 'نص الفرع ${b + 1}');
         controller.updateBranchMarks(ref, 5);
       }
 
@@ -61,27 +62,31 @@ void main() {
       controller.addBranch(1);
       expect(controller.questions[1].branches, hasLength(3));
 
-      // س3: فراغات من 10 نقاط.
+      // س3: فراغات من 10 نقاط (نوع النقطة هو الذي يحدد طريقة الطباعة).
       controller.addBranch(2);
       const q3 = BranchRef(questionIndex: 2, branchIndex: 0);
-      controller.updateBranchType(q3, QuestionType.fillInTheBlank);
-      controller.setBranchItemCount(q3, 10);
-      for (var i = 0; i < 10; i++) {
-        controller.updateBranchItemText(q3, i, 'فراغ رقم ${i + 1} _____');
+      final q3Owner = PointsOwner.branch(q3);
+      controller.setPointCount(q3Owner, 10);
+      final q3Ids = pointIds(q3Owner);
+      for (var i = 0; i < q3Ids.length; i++) {
+        controller.updatePointKind(q3Owner, q3Ids[i], PointKind.fillBlank);
+        controller.updatePointText(q3Owner, q3Ids[i], 'فراغ رقم ${i + 1} _____');
       }
 
       // س4: صح وخطأ من 7 عبارات (نصوص فقط — بلا أي إجابة).
       controller.addBranch(3);
       const q4 = BranchRef(questionIndex: 3, branchIndex: 0);
-      controller.updateBranchType(q4, QuestionType.trueFalse);
-      controller.setBranchItemCount(q4, 7);
-      for (var i = 0; i < 7; i++) {
-        controller.updateBranchItemText(q4, i, 'عبارة رقم ${i + 1}');
+      final q4Owner = PointsOwner.branch(q4);
+      controller.setPointCount(q4Owner, 7);
+      final q4Ids = pointIds(q4Owner);
+      for (var i = 0; i < q4Ids.length; i++) {
+        controller.updatePointKind(q4Owner, q4Ids[i], PointKind.trueFalse);
+        controller.updatePointText(q4Owner, q4Ids[i], 'عبارة رقم ${i + 1}');
       }
-      controller.updateQuestionPrompt(3, 'سؤال صح وخطأ');
+      controller.updateQuestionStatement(3, 'سؤال صح وخطأ');
 
       // س5: «أجب عن فرعين فقط» من 4 فروع.
-      controller.updateQuestionPrompt(4, 'أجب عن فرعين فقط:');
+      controller.updateQuestionStatement(4, 'أجب عن فرعين فقط:');
       for (var i = 0; i < 4; i++) {
         controller.addBranch(4);
       }
@@ -102,15 +107,15 @@ void main() {
       expect(controller.questions[5].attachments, hasLength(1));
 
       // ─── 2) تعديل نص س1 ───
-      controller.updateBranchContent(
+      controller.updateBranchStatement(
         const BranchRef(questionIndex: 0, branchIndex: 0),
+        'نص الفرع الأول بعد التعديل',
+      );
+      expect(
         controller.document
             .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
             .content
-            .copyWith(text: 'نص الفرع الأول بعد التعديل'),
-      );
-      expect(
-        controller.document.branchAt(const BranchRef(questionIndex: 0, branchIndex: 0)).content.text,
+            .statement,
         'نص الفرع الأول بعد التعديل',
       );
 
@@ -124,13 +129,16 @@ void main() {
 
       // ─── 5) نقل س4 إلى مكان س2 ───
       controller.moveQuestion(3, 1);
-      expect(controller.questions[1].prompt, 'سؤال صح وخطأ');
+      expect(controller.questions[1].statement, 'سؤال صح وخطأ');
       expect(controller.questions, hasLength(6));
 
       // ─── 6) نقل فرع داخل س1 ───
       controller.moveBranch(0, 0, 1);
       expect(
-        controller.document.branchAt(const BranchRef(questionIndex: 0, branchIndex: 1)).content.text,
+        controller.document
+            .branchAt(const BranchRef(questionIndex: 0, branchIndex: 1))
+            .content
+            .statement,
         'نص الفرع الأول بعد التعديل',
       );
 
@@ -167,8 +175,8 @@ void main() {
       // (س3 الآن في الفهرس 3 بعد نقل س4 أمامه).
       const q3Now = BranchRef(questionIndex: 3, branchIndex: 0);
       expect(
-        controller.document.branchAt(q3Now).content.type,
-        QuestionType.fillInTheBlank,
+        controller.document.branchAt(q3Now).content.items.first.kind,
+        PointKind.fillBlank,
       );
       controller.updateBranchStyle(q3Now, const PaperTextStyle(font: PaperFont.tajawal));
       expect(
@@ -210,11 +218,12 @@ void main() {
       expect(restored.questions, hasLength(6));
       expect(restored.questions[0].branches, hasLength(4));
       expect(restored.questions[0].dividerAfter?.thickness, 2);
-      expect(restored.questions[4].prompt, 'أجب عن فرعين فقط:');
+      expect(restored.questions[4].statement, 'أجب عن فرعين فقط:');
       final restoredItems =
           restored.branchAt(const BranchRef(questionIndex: 1, branchIndex: 0)).content.items;
       expect(restoredItems, hasLength(7));
       expect(restoredItems.first.text, isNotEmpty);
+      expect(restoredItems.first.kind, PointKind.trueFalse);
       expect(restoredItems.first.toMap().containsKey('isCorrect'), isFalse);
       expect(restored.header.style.align, PaperAlign.center);
 

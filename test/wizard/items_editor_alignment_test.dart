@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
-import 'package:writing_questions_app/views/widgets/items_editor.dart';
+import 'package:writing_questions_app/views/widgets/points_editor.dart';
 import 'package:writing_questions_app/views/widgets/rich_content_field.dart';
 
-/// محرر النقاط: تسلسل تلقائي، وبلا أزرار ترتيب، وبلا أي عنصر إجابة —
-/// والحقول غنية (نص + معادلات مرئية) وتحفظ النص المكتوب.
+/// محرر النقاط ([PointsEditor]): تسلسل تلقائي متصل مهما اختلفت الأنواع،
+/// وبلا أزرار ترتيب، وبلا أي عنصر إجابة — والحقول غنية (نص + معادلات
+/// مرئية) وتحفظ النص المكتوب، ولكل نقطة درجة برقم خام يلفّه النظام عند
+/// الطباعة «(٢ درجة)».
 void main() {
   /// يبني المحرر مع حالة محيطة تُعيد البناء بعد كل تعديل (كما في الشاشات).
   Future<List<BranchItem> Function()> pumpEditor(
@@ -19,9 +21,14 @@ void main() {
           body: StatefulBuilder(
             builder: (context, setState) => Directionality(
               textDirection: TextDirection.rtl,
-              child: ItemsEditor(
-                items: items,
-                onChanged: (updated) => setState(() => items = updated),
+              child: SingleChildScrollView(
+                child: PointsEditor(
+                  points: items,
+                  labelOf: (index, point) => '${index + 1}-',
+                  optionLabelOf: (index, option) => '( ${index + 1} )',
+                  marksHelperOf: (marks) => 'تُطبع بصيغة (٢٤ درجة) عند الإظهار.',
+                  onChanged: (updated) => setState(() => items = updated),
+                ),
               ),
             ),
           ),
@@ -39,13 +46,17 @@ void main() {
 
     await pumpEditor(tester, initialItems: items);
 
-    // الترقيم التلقائي ظاهر.
+    // الترقيم التلقائي ظاهر (تسلسل واحد متصل بالفهرس).
     expect(find.text('1-'), findsOneWidget);
     expect(find.text('2-'), findsOneWidget);
 
-    // لا أزرار تقديم أو تأخير.
-    expect(find.byIcon(Icons.arrow_drop_up), findsNothing);
-    expect(find.byIcon(Icons.arrow_drop_down), findsNothing);
+    // لا أزرار تقديم أو تأخير: لا قائمة إعادة ترتيب ولا أيقونات نقل. سهم
+    // القائمة المنسدلة لنوع النقطة (DropdownButton) ليس زر ترتيب.
+    expect(find.byType(ReorderableListView), findsNothing);
+    expect(find.byIcon(Icons.arrow_upward), findsNothing);
+    expect(find.byIcon(Icons.arrow_downward), findsNothing);
+    expect(find.byTooltip('نقل النقطة لأعلى'), findsNothing);
+    expect(find.byTooltip('نقل النقطة لأسفل'), findsNothing);
 
     // لا عنصر إجابة إطلاقاً: لا علامات ✓/✗ ولا كلمات صح/خطأ ولا مفتاح نمط.
     expect(find.text('✓'), findsNothing);
@@ -91,6 +102,30 @@ void main() {
     expect(read().single.text, 'الأرض كروية');
   });
 
+  testWidgets('writes a point marks as a raw number (the system wraps it)', (tester) async {
+    final read = await pumpEditor(
+      tester,
+      initialItems: <BranchItem>[BranchItem(id: 'i1', text: 'نقطة')],
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('point-marks-i1')),
+      '2',
+    );
+    await tester.pump();
+
+    // الرقم الخام محفوظ كما هو؛ اللفّ «(٢ درجة)» يتم عند بناء الورقة.
+    expect(read().single.marks, 2);
+
+    // مسح الرقم يعيد الدرجة صفراً (بلا درجة معلنة).
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('point-marks-i1')),
+      '',
+    );
+    await tester.pump();
+    expect(read().single.marks, 0);
+  });
+
   testWidgets('لا حقل كود خام في المحرر: الحقول غنية وتُفتح على معادلات مرئية',
       (tester) async {
     final read = await pumpEditor(
@@ -99,7 +134,7 @@ void main() {
     );
 
     // لا حقل نصي مكشوف على المصدر: الصيغة تُعرض مرئية لا كوداً، ولا يوجد أي
-    // حقل يحمل علامات الدولار الخام (حقل العدد وحده حقل رقمي).
+    // حقل يحمل علامات الدولار الخام (حقل العدد ودرجة النقطة حقول رقمية).
     expect(find.text(r'$1+1$'), findsNothing);
     expect(
       find.byWidgetPredicate(

@@ -26,7 +26,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// هوية الورقة الجاري تصديرها حالياً (لمنع التصدير المزدوج).
   String? _busyDocumentId;
 
-  /// المعالج المتسلسل للنموذج الوزاري (ترويسة ← أسئلة ← معاينة A4).
+  /// المعالج المتسلسل لورقة الأسئلة (ترويسة ← أسئلة ← معاينة A4).
   Future<void> _openExamWizard(BuildContext context, [ExamDocument? document]) async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -51,7 +51,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('حذف النموذج الوزاري'),
+        title: const Text('حذف ورقة الأسئلة'),
         content: Text('هل تريد حذف النموذج "${document.name}"؟'),
         actions: <Widget>[
           TextButton(
@@ -98,6 +98,7 @@ class _HomeScreenState extends State<HomeScreen> {
           autofocus: true,
           decoration: const InputDecoration(
             labelText: 'اسم الورقة',
+            hintText: 'مثال: امتحان نصف السنة - الثالث المتوسط',
             border: OutlineInputBorder(),
           ),
         ),
@@ -303,7 +304,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     _buildEmptyDocumentsCard(context)
                   else ...<Widget>[
                     const Text(
-                      'النماذج الوزارية المحفوظة',
+                      'أوراق الأسئلة المحفوظة',
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
@@ -350,7 +351,7 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           const Text(
-            'محرر أوراق الأسئلة الوزارية',
+            'محرر أوراق الأسئلة',
             style: TextStyle(
               color: Colors.white,
               fontSize: 18,
@@ -406,7 +407,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// بطاقة الدخول إلى المعالج المتسلسل للنموذج الوزاري.
+  /// بطاقة الدخول إلى المعالج المتسلسل لورقة الأسئلة.
   Widget _buildWizardBanner(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Card(
@@ -422,7 +423,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: const Icon(Icons.auto_awesome_motion, color: Colors.white),
         ),
         title: const Text(
-          'نموذج وزاري جديد (معالج متسلسل)',
+          'ورقة أسئلة جديدة (معالج متسلسل)',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: const Text(
@@ -448,12 +449,12 @@ class _HomeScreenState extends State<HomeScreen> {
           Icon(Icons.article_outlined, size: 40, color: Colors.grey),
           SizedBox(height: 8),
           Text(
-            'لم تنشئ أي نموذج وزاري بعد.',
+            'لم تنشئ أي ورقة أسئلة بعد.',
             style: TextStyle(color: Colors.grey),
           ),
           SizedBox(height: 4),
           Text(
-            'انقر على "نموذج وزاري جديد" لبدء تصميم ورقتك.',
+            'انقر على "ورقة أسئلة جديدة" لبدء تصميم ورقتك.',
             style: TextStyle(fontSize: 12, color: Colors.grey),
             textAlign: TextAlign.center,
           ),
