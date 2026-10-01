@@ -87,9 +87,9 @@ ExamDocument _document({required String id, String name = 'ورقة الاختب
   return ExamDocument(
     id: id,
     name: name,
-    header: ExamHeaderModel.ministerialDefault(subject: 'التربية الإسلامية'),
+    header: ExamHeaderModel.initial(subject: 'التربية الإسلامية'),
     questions: <QuestionModel>[
-      QuestionModel(questionNumber: 1, prompt: 'سؤال أول'),
+      QuestionModel(questionNumber: 1, statement: 'سؤال أول'),
     ],
     createdAt: DateTime(2026, 1, 1),
     updatedAt: DateTime(2026, 6, 1),

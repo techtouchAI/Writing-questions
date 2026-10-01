@@ -127,6 +127,83 @@ void main() {
       expect(result.pages.single.isEmpty, isTrue);
     });
 
+    group('last-page footer reserve', () {
+      test('is taken from the last block only', () {
+        // 100 + 10 + 200 + 10 + 200 = 520 ≤ 600 بلا حجز.
+        final withoutReserve = PaginationEngine.paginate(
+          blocks: const <PageBlock>[
+            PageBlock(id: 'header', height: 100),
+            PageBlock(id: 'q1', height: 200),
+            PageBlock(id: 'q2', height: 200),
+          ],
+          pageHeight: 600,
+          spacing: 10,
+        );
+        expect(withoutReserve.pageCount, 1);
+
+        // حجز 100 ⇒ المتاح لآخر كتلة 500 (< 520) ⇒ q2 كاملاً لصفحة جديدة،
+        // بينما بقية الكتل (قبل الأخيرة) لا تتأثر بالحجز.
+        final withReserve = PaginationEngine.paginate(
+          blocks: const <PageBlock>[
+            PageBlock(id: 'header', height: 100),
+            PageBlock(id: 'q1', height: 200),
+            PageBlock(id: 'q2', height: 200),
+          ],
+          pageHeight: 600,
+          spacing: 10,
+          lastPageReserve: 100,
+        );
+        expect(withReserve.pageCount, 2);
+        expect(withReserve.pages[0].blockIds, <String>['header', 'q1']);
+        expect(withReserve.pages[1].blockIds, <String>['q2']);
+      });
+
+      test('a small reserve changes nothing when the last block still fits', () {
+        final result = PaginationEngine.paginate(
+          blocks: const <PageBlock>[
+            PageBlock(id: 'header', height: 100),
+            PageBlock(id: 'q1', height: 200),
+          ],
+          pageHeight: 600,
+          spacing: 10,
+          lastPageReserve: 80,
+        );
+        expect(result.pageCount, 1);
+        expect(result.pages.single.overflows, isFalse);
+      });
+
+      test('a last block taller than page minus reserve is scaled instead of cut', () {
+        final result = PaginationEngine.paginate(
+          blocks: const <PageBlock>[PageBlock(id: 'huge', height: 580)],
+          pageHeight: 600,
+          lastPageReserve: 50,
+        );
+        expect(result.pageCount, 1);
+        expect(result.pages.single.overflows, isTrue);
+      });
+
+      test('the header alone still leaves room for the footer on its page', () {
+        final result = PaginationEngine.paginate(
+          blocks: const <PageBlock>[PageBlock(id: 'header', height: 560)],
+          pageHeight: 600,
+          lastPageReserve: 80,
+        );
+        expect(result.pageCount, 1);
+        expect(result.pages.single.overflows, isTrue);
+      });
+
+      test('rejects a negative reserve', () {
+        expect(
+          () => PaginationEngine.paginate(
+            blocks: const <PageBlock>[],
+            pageHeight: 600,
+            lastPageReserve: -1,
+          ),
+          throwsArgumentError,
+        );
+      });
+    });
+
     test('rejects a non-positive page height', () {
       expect(
         () => PaginationEngine.paginate(blocks: const <PageBlock>[], pageHeight: 0),

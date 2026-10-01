@@ -13,10 +13,10 @@ ExamDocument _document({
   return ExamDocument(
     id: id,
     name: name,
-    header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
+    header: ExamHeaderModel.initial(subject: 'الرياضيات'),
     questions: <QuestionModel>[
       for (var index = 1; index <= questions; index++)
-        QuestionModel(questionNumber: index, prompt: 'سؤال $index'),
+        QuestionModel(questionNumber: index, statement: 'سؤال $index'),
     ],
     createdAt: DateTime(2026, 1, 1),
     updatedAt: updatedAt,

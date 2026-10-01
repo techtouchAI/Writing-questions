@@ -14,7 +14,6 @@ import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/question_model.dart';
-import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/views/widgets/smart_exam_toolbar.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
@@ -37,7 +36,7 @@ class _TestImagePicker extends ImagePickerPlatform {
 
 ExamDocument _document() => ExamDocument(
       name: 'تدقيق الأزرار',
-      header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+      header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
       questions: [
         QuestionModel(id: 'q1', questionNumber: 1, prompt: 'السؤال الأول', branches: [
           BranchModel(id: 'b1', content: BranchContent(type: QuestionType.essay, text: 'الفرع الأول')),
@@ -192,7 +191,7 @@ void main() {
     final controller = ExamWizardController(
       document: ExamDocument(
         name: 'ورقة فارغة',
-        header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
+        header: ExamHeaderModel.initial(subject: 'الرياضيات'),
       ),
     );
     await _pump(tester, controller);
@@ -209,7 +208,7 @@ void main() {
   testWidgets('selected free elements can move to another preview page', (tester) async {
     final document = ExamDocument(
       name: 'تعدد الصفحات',
-      header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+      header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
       questions: <QuestionModel>[
         QuestionModel(
           id: 'q1',

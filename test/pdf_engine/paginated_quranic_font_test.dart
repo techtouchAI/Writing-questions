@@ -4,7 +4,6 @@ import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/question_model.dart';
-import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/pdf_engine/exam_fonts.dart';
 import 'package:writing_questions_app/pdf_engine/paginated_pdf_exam_engine.dart';
 
@@ -24,7 +23,8 @@ class _BundleWithoutQuranic extends CachingAssetBundle {
 ExamDocument _islamicDocument({required String verse, String subject = 'التربية الإسلامية'}) {
   return ExamDocument(
     name: subject,
-    header: ExamHeaderModel.ministerialDefault(subject: subject),
+    // البسملة (خط Amiri) معطّلة هنا كي يقتصر الخط القرآني على الآية وحدها.
+    header: ExamHeaderModel.initial(subject: subject).copyWith(showBismillah: false),
     questions: <QuestionModel>[
       QuestionModel(
         id: 'q1',
@@ -33,10 +33,7 @@ ExamDocument _islamicDocument({required String verse, String subject = 'التر
         branches: <BranchModel>[
           BranchModel(
             id: 'q1a',
-            content: BranchContent(
-              type: QuestionType.essay,
-              text: verse,
-              ),
+            content: BranchContent(statement: verse),
             marks: 5,
           ),
         ],
@@ -138,6 +135,24 @@ void main() {
         fonts: fonts,
       );
       expect(PdfContentProbe.fromBytes(bytes).lines, isNotEmpty);
+    });
+
+    test('the Bismillah needs the Amiri face even on a sheet with no verse', () async {
+      final base = _islamicDocument(verse: 'اشرح مفهوم التلاوة الصحيحة');
+      expect(PaginatedPdfExamEngine.needsQuranicFont(base), isFalse);
+
+      final withBismillah = base.copyWith(
+        header: base.header.copyWith(showBismillah: true),
+      );
+      expect(PaginatedPdfExamEngine.needsQuranicFont(withBismillah), isTrue);
+
+      final bytes = await PaginatedPdfExamEngine().generate(document: withBismillah);
+      final words = PdfContentProbe.fromBytes(bytes).words;
+      expect(
+        words.any((word) => word.baseFont.toLowerCase().contains('amiri')),
+        isTrue,
+        reason: 'البسملة تُرسم بخط Amiri الخطّي',
+      );
     });
 
     test('still renders the verse when no Quranic font is available', () async {

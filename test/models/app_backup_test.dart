@@ -8,10 +8,10 @@ ExamDocument _document({String id = 'd1', String name = 'ورقة', int question
   return ExamDocument(
     id: id,
     name: name,
-    header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+    header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
     questions: <QuestionModel>[
       for (var index = 1; index <= questions; index++)
-        QuestionModel(questionNumber: index, prompt: 'سؤال $index'),
+        QuestionModel(questionNumber: index, statement: 'سؤال $index'),
     ],
     createdAt: DateTime(2026, 1, 1),
     updatedAt: DateTime(2026, 1, 2),

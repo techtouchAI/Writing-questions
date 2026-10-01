@@ -455,7 +455,7 @@ class PdfPaperBuilder {
       children: <pw.Widget>[
         line,
         pw.Padding(
-          padding: pw.EdgeInsetsDirectional.only(start: pointsIndent, top: 1),
+          padding: const pw.EdgeInsetsDirectional.only(start: pointsIndent, top: 1),
           child: pw.Wrap(
             spacing: 14,
             runSpacing: 2,

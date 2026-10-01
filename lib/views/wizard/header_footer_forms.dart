@@ -119,7 +119,7 @@ class _HeaderFormState extends State<HeaderForm> {
         onChanged: (value) => _update(_header.copyWith(subject: value.trim())),
       );
     }
-    final known = SubjectCatalog.knownSubjects;
+    const known = SubjectCatalog.knownSubjects;
     final subject = _header.subject;
     return LabeledDropdown<String>(
       label: 'المادة',

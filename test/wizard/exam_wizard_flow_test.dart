@@ -10,7 +10,6 @@ import 'package:writing_questions_app/models/exam_font.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
-import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/views/widgets/mixed_content_editor.dart';
 import 'package:writing_questions_app/views/widgets/rich_content_field.dart';
@@ -30,7 +29,7 @@ Widget _app(Widget home) {
 ExamDocument _previewDocument({int questionCount = 2, List<int>? branchesPerQuestion}) {
   return ExamDocument(
     name: 'معاينة',
-    header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+    header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
     questions: <QuestionModel>[
       for (var q = 0; q < questionCount; q++)
         QuestionModel(
@@ -204,7 +203,7 @@ void main() {
       final controller = ExamWizardController(
         document: ExamDocument(
           name: 'خيارات',
-          header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+          header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
           questions: <QuestionModel>[
             QuestionModel(
               id: 'q1',
@@ -417,7 +416,7 @@ void main() {
       final controller = ExamWizardController(
         document: ExamDocument(
           name: 'خيارات',
-          header: ExamHeaderModel.ministerialDefault(subject: 'التربية الإسلامية'),
+          header: ExamHeaderModel.initial(subject: 'التربية الإسلامية'),
           questions: <QuestionModel>[
             QuestionModel(
               id: 'q1',
@@ -491,7 +490,7 @@ void main() {
       final controller = ExamWizardController(
         document: ExamDocument(
           name: 'تربية إسلامية',
-          header: ExamHeaderModel.ministerialDefault(subject: 'التربية الإسلامية'),
+          header: ExamHeaderModel.initial(subject: 'التربية الإسلامية'),
           questions: <QuestionModel>[
             QuestionModel(
               id: 'q1',
@@ -545,7 +544,7 @@ void main() {
       final controller = ExamWizardController(
         document: ExamDocument(
           name: 'لغة عربية',
-          header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+          header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
           questions: <QuestionModel>[
             QuestionModel(
               id: 'q1',

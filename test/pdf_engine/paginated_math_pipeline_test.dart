@@ -6,8 +6,7 @@
 // هندسية: طبقة النص في الـ PDF تُخزَّن بالعربية مشكّلة (أشكال عرض + قلب
 // بصري)، لذلك المطابقة تتم على **مراسي ASCII** لا تتأثر بالتشكيل.
 //  1) سلباً: لا رمز خام (frac/sqrt/{/}/\/$) يظهر كـ **نص مرسوم** في أي حقل:
-//     الترويسة عنواناً وأسسطراً وتعليقات وملاحظات، نص السؤال، نص الفرع،
-//     النقاط، والخيارات.
+//     منطوق السؤال ونصه، منطوق الفرع، النقاط، والخيارات.
 //  2) عددياً: كل معادلة تُلغي كلمة مطبوعة واحدة — الفرق بين عدد كلمات
 //     المستند الضابط (بلا صيغ) ومستند الصيغ يساوي عدد المقاطع بالضبط؛ لو
 //     طُبعت صيغة خاماً لَظهرت كلماتها الزائدة عن العدد، ولو حُذفت لصمتاً
@@ -21,25 +20,26 @@ import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/paper_settings.dart';
+import 'package:writing_questions_app/models/point_kind.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
-import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/pdf_engine/pdf_engine.dart';
 
 import 'pdf_content_probe.dart';
 
-/// عدد مقاطع الصيغ في الورقة — كل مقطع يُلغي كلمة ضابطة واحدة من طبقة النص.
-const int _documentFormulaCount = 8;
+/// عدد مقاطع الصيغ التي تُلغي كلمة ضابطة واحدة من طبقة النص (صيغة المِرساتين
+/// لا تُلغي كلمة: الضابط يترك F5A وF5B متجاورتين).
+const int _documentFormulaCount = 7;
 
 /// يحقن الصيغ في كل الحقول، أو يبني المستند الضابط المطابق بكلمة
-/// (بلا كلمة في نص السؤال — مِرساتا F5A/F5B بقيتا لقياس الفجوة).
+/// (بلا كلمة في منطوق السؤال — مِرساتا F5A/F5B بقيتا لقياس الفجوة).
 ExamDocument _document({required bool withMath}) {
   // يبني `$latex$` و`$$latex$$` حرفياً مع إدخال جسم الصيغة.
   String formula(String latex, String control) =>
       withMath ? '\$' '$latex' '\$' : control;
   String blockFormula(String latex, String control) =>
       withMath ? r'$$' '$latex' r'$$' : control;
-  // صيغة نص السؤال محشورة بين مِرساة ASCII: الضابط يترك المِرساتين
+  // صيغة المنطوق محشورة بين مِرساة ASCII: الضابط يترك المِرساتين
   // متجاورتين بمسافة واحدة، والمرسوم يضع بينهن صورة متجهة أعرض.
   String anchored(String latex, String controlWord) => withMath
       ? 'F5A \$' '$latex' '\$ F5B'
@@ -47,49 +47,44 @@ ExamDocument _document({required bool withMath}) {
 
   return ExamDocument(
     name: 'ورقة المعادلات',
-    header: ExamHeaderModel(
-      subject: 'الرياضيات',
-      title: 'امتحان ${formula(r'\frac{5}{8}', 'الكسور')} الدور الأول',
-      right: HeaderColumn(<String>[
-        'الصف ${formula(r'\sqrt{9}', 'الثالث')}',
-        '',
-        '',
-      ]),
-      center: HeaderColumn(<String>['مدة الامتحان 60 دقيقة', '', '']),
-      instructions: 'اقرأ السؤال جيداً ثم أجب',
-      notes: 'بالتوفيق ${formula(r'\times', 'وثم')} النجاح',
-    ),
-    settings: const PaperSettings(
-      showPageNumbers: false,
-      showQuestionMarks: false,
-    ),
+    header: ExamHeaderModel(subject: 'الرياضيات', time: '60'),
+    settings: const PaperSettings(showQuestionMarks: false),
     questions: <QuestionModel>[
       QuestionModel(
         questionNumber: 1,
-        prompt: anchored(r'\frac{5}{8}', ''),
+        statement: anchored(r'\frac{5}{8}', ''),
+        body: 'اشرح ${formula(r'\sqrt{9}', 'الجذر')} ثم أجب',
         branches: <BranchModel>[
           BranchModel(
             content: BranchContent(
-              type: QuestionType.multipleChoice,
-              text: 'اختر الأنسب ${blockFormula(r'\sqrt{16}', 'للجذر')}',
+              statement: 'اختر الأنسب ${blockFormula(r'\sqrt{16}', 'للجذر')}',
               items: <BranchItem>[
                 BranchItem(
                   text: 'انتبه ${formula(r'\geq', 'لكل')} الحدود',
                   marks: 1,
                 ),
-              ],
-              options: <QuestionOption>[
-                QuestionOption(text: 'أول ${formula(r'x^{2}', 'التربيعي')}'),
-                QuestionOption(text: 'ثانٍ ${formula(r'y_{3}', 'التالين')}'),
+                BranchItem(
+                  kind: PointKind.multipleChoice,
+                  text: 'اختر',
+                  options: <QuestionOption>[
+                    QuestionOption(text: 'أول ${formula(r'x^{2}', 'التربيعي')}'),
+                    QuestionOption(text: 'ثانٍ ${formula(r'y_{3}', 'التالين')}'),
+                  ],
+                ),
               ],
             ),
             marks: 1,
           ),
-          // فرع فراغات — نصه يحمل صيغة تُرسم معادلةً لا نصاً خاماً.
+          // فرع فراغات — منطوقه ونقطته يحملان صيغة تُرسم معادلةً لا نصاً خاماً.
           BranchModel(
             content: BranchContent(
-              type: QuestionType.fillInTheBlank,
-              text: 'أكمل الناقص ${formula(r'\frac{5}{8}=0.625', 'مباشر')}',
+              statement: 'أكمل الناقص ${formula(r'\frac{5}{8}=0.625', 'مباشر')}',
+              items: <BranchItem>[
+                BranchItem(
+                  kind: PointKind.fillBlank,
+                  text: 'جملة ${formula(r'\times', 'وثم')} فراغ',
+                ),
+              ],
             ),
             marks: 1,
           ),
@@ -157,10 +152,10 @@ void main() {
 
       expectNoRawLatex(probe, surface: 'ورقة الأسئلة');
 
-      // المِرساة الرقمية الوحيدة في الترويسة (60 دقيقة) حية — طبقة النص
-      // تعمل ولم تُبتلع الصفحة كلها.
+      // المِرساة الرقمية الوحيدة في الترويسة (الوقت 60) حية — طبقة النص
+      // تعمل ولم تُبتلع الصفحة كلها. (الأرقام تُطبع مشرقية: ٦٠)
       final words = _drawnWords(probe);
-      expect(words, contains('60'));
+      expect(words, contains('٦٠'));
       expect(words, contains('F5A'));
       expect(words, contains('F5B'));
       // ولا وجود لأي أثر إجابة (لا نص مكتوب ولا علامة).
@@ -205,24 +200,16 @@ void main() {
     test('الحقول الفارغة لا تترك أي أثر مرسوم ولا مسافة محجوزة', () async {
       final empty = ExamDocument(
         name: 'فارغ',
-        header: ExamHeaderModel(
-          subject: 'الرياضيات',
-          title: '',
-          notes: '',
-          instructions: '',
-        ),
-        settings: const PaperSettings(
-          showPageNumbers: false,
-          showQuestionMarks: false,
-        ),
+        header: ExamHeaderModel(subject: 'الرياضيات'),
+        settings: const PaperSettings(showQuestionMarks: false),
         questions: <QuestionModel>[QuestionModel(questionNumber: 1)],
       );
       final bytes = await PaginatedPdfExamEngine().generate(document: empty);
       final probe = PdfContentProbe.fromBytes(bytes);
       final words = _drawnWords(probe);
 
-      // عنوان/ملاحظات/تعليمات فارغة → لا يُبنى لها widget أصلاً (شرط
-      // isNotEmpty في المحرك) — فليس هناك Text بارتفاع صفري ولا opacity.
+      // حقول المنطوق/النص الفارغة → لا يُبنى لها widget أصلاً — فليس هناك Text
+      // بارتفاع صفري ولا opacity.
       for (final forbidden in <String>['F5A', 'F5B', 'M7']) {
         expect(
           words.where((word) => word == forbidden),

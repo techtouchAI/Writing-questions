@@ -29,7 +29,6 @@ import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
-import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_document_provider.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
@@ -37,7 +36,7 @@ import 'package:writing_questions_app/views/wizard/preview_toolbar.dart';
 
 ExamDocument _document() => ExamDocument(
       name: 'تدقيق وظيفي',
-      header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+      header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
       questions: <QuestionModel>[
         QuestionModel(
           id: 'q1',
@@ -774,7 +773,7 @@ void main() {
     for (final angle in <double>[45, 90, 135, 180, 225, 270, 315, -45, -90]) {
       final document = ExamDocument(
         name: 'تدوير',
-        header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+        header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
         floatingElements: <FloatingElement>[
           FloatingElement(
             id: 'r',
@@ -1224,7 +1223,7 @@ void main() {
     final document = ExamDocument(
       name: 'حفظ شامل',
       header:
-          ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية').copyWith(
+          ExamHeaderModel.initial(subject: 'اللغة العربية').copyWith(
         title: 'عنوان الامتحان',
         notes: 'ملاحظات',
         instructions: 'تعليمات',
@@ -1342,7 +1341,7 @@ void main() {
       (tester) async {
     final document = ExamDocument(
       name: 'فارغة',
-      header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+      header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
       questions: <QuestionModel>[
         QuestionModel(
           id: 'q1',

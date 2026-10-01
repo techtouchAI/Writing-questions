@@ -5,7 +5,7 @@ import 'package:writing_questions_app/models/subject_layout.dart';
 
 void main() {
   group('SubjectLayoutTemplate.fromSubject', () {
-    test('maps ministerial subjects to their templates', () {
+    test('maps subjects to their templates', () {
       expect(SubjectLayoutTemplate.fromSubject('التربية الإسلامية'), SubjectLayoutTemplate.islamic);
       expect(SubjectLayoutTemplate.fromSubject('اللغة العربية'), SubjectLayoutTemplate.arabic);
       expect(SubjectLayoutTemplate.fromSubject('اللغة الإنجليزية'), SubjectLayoutTemplate.english);
@@ -52,7 +52,7 @@ void main() {
       expect(arabic.sections, <String>['القواعد', 'الأدب والنصوص', 'الإملاء', 'الإنشاء']);
     });
 
-    test('islamic template exposes the ministerial sections and quranic font hint', () {
+    test('islamic template exposes its sections and quranic font hint', () {
       const islamic = SubjectLayoutTemplate.islamic;
       expect(islamic.prefersQuranicFont, isTrue);
       expect(
@@ -63,9 +63,10 @@ void main() {
   });
 
   group('Scientific layout', () {
-    test('keeps Latin numerals and grants generous line spacing', () {
+    test('uses Arabic-Indic numerals like every RTL layout and grants generous spacing', () {
       const scientific = SubjectLayoutTemplate.scientific;
-      expect(scientific.formatNumber(7), '7');
+      expect(scientific.formatNumber(7), '٧');
+      expect(SubjectLayoutTemplate.generic.usesArabicIndicNumerals, isTrue);
       expect(scientific.lineHeightFactor, greaterThan(SubjectLayoutTemplate.generic.lineHeightFactor));
       expect(scientific.textDirection, TextDirection.rtl);
     });
@@ -73,5 +74,16 @@ void main() {
 
   test('toArabicIndic converts only ASCII digits', () {
     expect(SubjectLayoutTemplate.toArabicIndic('س2026/2027 A'), 'س٢٠٢٦/٢٠٢٧ A');
+  });
+
+  test('toLatinDigits converts only Arabic-Indic digits', () {
+    expect(SubjectLayoutTemplate.toLatinDigits('س٢٠٢٦/٢٠٢٧ A'), 'س2026/2027 A');
+  });
+
+  test('question numbers end with "/" in Arabic layouts and "." in LTR ones', () {
+    expect(SubjectLayoutTemplate.arabic.questionSeparator, '/');
+    expect(SubjectLayoutTemplate.generic.questionSeparator, '/');
+    expect(SubjectLayoutTemplate.english.questionSeparator, '.');
+    expect(SubjectLayoutTemplate.arabic.branchSeparator, ')');
   });
 }

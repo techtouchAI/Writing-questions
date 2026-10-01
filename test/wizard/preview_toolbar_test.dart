@@ -10,7 +10,6 @@ import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
-import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/views/widgets/floating_element_view.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
@@ -19,7 +18,7 @@ import 'package:writing_questions_app/views/wizard/preview_toolbar.dart';
 ExamDocument _document() {
   return ExamDocument(
     name: 'شريط',
-    header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+    header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
     questions: <QuestionModel>[
       QuestionModel(
         id: 'q1',

@@ -110,6 +110,12 @@ class PdfContentProbe {
   /// كل سطور النص بالترتيب الذي رُسمت به.
   final List<ProbedLine> lines;
 
+  /// عدد صفحات ملف PDF [bytes] (من شجرة الصفحات).
+  static int pageCountOf(Uint8List bytes) => _PdfObjects.parse(bytes).pageCount;
+
+  /// كل كلمات الصفحة بالترتيب الذي رُسمت به.
+  List<ProbedWord> get words => <ProbedWord>[for (final line in lines) ...line.words];
+
   /// أول سطر يحتوي كلمة نصّها [wordText] بالضبط (بعد التشكيل)، أو null.
   ProbedLine? lineWithWord(String wordText) {
     for (final line in lines) {
@@ -120,9 +126,11 @@ class PdfContentProbe {
     return null;
   }
 
-  factory PdfContentProbe.fromBytes(Uint8List bytes) {
+  /// يقرأ صفحة واحدة من الملف: الأولى النصية افتراضياً، أو الصفحة [pageIndex]
+  /// (بترتيب الورقة الرسمي من `/Kids`).
+  factory PdfContentProbe.fromBytes(Uint8List bytes, {int? pageIndex}) {
     final objects = _PdfObjects.parse(bytes);
-    final page = objects.pageDict;
+    final page = pageIndex == null ? objects.pageDict : objects.pageDictAt(pageIndex);
 
     final fontsResource =
         RegExp(r'/Font\s*<<(.*?)>>', dotAll: true).firstMatch(page)?.group(1);
@@ -449,6 +457,39 @@ class _PdfObjects {
     }
     throw const FormatException('لم يُعثر على كائن الصفحة (/Type /Page).');
   }
+
+  /// صفحات الملف بترتيبها الرسمي (من `/Kids` في شجرة الصفحات).
+  List<String> get pageDicts {
+    final pages = <int, String>{
+      for (final entry in _dicts.entries)
+        if (RegExp(r'/Type\s*/Page(?![s\w])').hasMatch(entry.value)) entry.key: entry.value,
+    };
+    for (final entry in _dicts.entries) {
+      if (!RegExp(r'/Type\s*/Pages\b').hasMatch(entry.value)) {
+        continue;
+      }
+      final kids = RegExp(r'/Kids\s*\[(.*?)\]', dotAll: true).firstMatch(entry.value)?.group(1);
+      if (kids == null) {
+        continue;
+      }
+      return <String>[
+        for (final match in RegExp(r'(\d+)\s+0\s+R').allMatches(kids))
+          if (pages.containsKey(int.parse(match.group(1)!))) pages[int.parse(match.group(1)!)]!,
+      ];
+    }
+    return pages.values.toList(growable: false);
+  }
+
+  String pageDictAt(int index) {
+    final all = pageDicts;
+    if (index < 0 || index >= all.length) {
+      throw RangeError.index(index, all, 'index', 'لا توجد صفحة بهذا الفهرس');
+    }
+    return all[index];
+  }
+
+  /// عدد صفحات الملف.
+  int get pageCount => pageDicts.length;
 
   _FontData fontData(int serial) {
     final dict = _dicts[serial];

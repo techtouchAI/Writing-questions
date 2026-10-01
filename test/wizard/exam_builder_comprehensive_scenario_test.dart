@@ -9,7 +9,6 @@ import 'package:writing_questions_app/models/paper_divider.dart';
 import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/question_model.dart';
-import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/services/docx_document_export_service.dart';
 import 'package:writing_questions_app/services/pdf_export_service.dart';
@@ -22,7 +21,7 @@ const String _tinyPngBase64 =
 ExamDocument _seedDocument() {
   return ExamDocument(
     name: 'امتحان نصف السنة — اللغة العربية',
-    header: ExamHeaderModel.ministerialDefault(subject: 'اللغة العربية'),
+    header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
     questions: <QuestionModel>[QuestionModel(questionNumber: 1)],
   );
 }

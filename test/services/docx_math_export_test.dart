@@ -9,7 +9,6 @@ import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/models/question_model.dart';
-import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/services/docx_document_export_service.dart';
 
 /// صورة PNG حقيقية صغيرة (1×1) تُستعمل بدل رسم المعادلة في الاختبارات،
@@ -37,12 +36,12 @@ Future<MathRaster?> _throwingRasterizer(String latex, double fontSizePt) {
 
 ExamDocument _document() => ExamDocument(
       name: 'معادلات',
-      header: ExamHeaderModel.ministerialDefault(subject: 'الرياضيات'),
+      header: ExamHeaderModel.initial(subject: 'الرياضيات'),
       questions: <QuestionModel>[
         QuestionModel(
           id: 'q1',
           questionNumber: 1,
-          prompt: r'احسب $x^2 + 1$ ثم اكتب الناتج',
+          statement: r'احسب $x^2 + 1$ ثم اكتب الناتج',
           marksOverride: 10,
           items: <BranchItem>[
             BranchItem(id: 'qi1', text: r'النقطة الأولى $\frac{a}{b}$'),
@@ -52,8 +51,7 @@ ExamDocument _document() => ExamDocument(
               id: 'b1',
               marks: 5,
               content: BranchContent(
-                type: QuestionType.essay,
-                text: r'برهن أن $bad_{formula}$ صحيحة',
+                statement: r'برهن أن $bad_{formula}$ صحيحة',
               ),
             ),
           ],

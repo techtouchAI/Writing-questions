@@ -8,7 +8,6 @@ import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/question_model.dart';
-import 'package:writing_questions_app/models/question_type.dart';
 import 'package:writing_questions_app/providers/backup_controller.dart';
 import 'package:writing_questions_app/providers/exam_document_provider.dart';
 import 'package:writing_questions_app/services/app_info_service.dart';
@@ -66,13 +65,13 @@ ExamDocument _document({
   return ExamDocument(
     id: id,
     name: name,
-    header: ExamHeaderModel.ministerialDefault(subject: 'العلوم'),
+    header: ExamHeaderModel.initial(subject: 'العلوم'),
     questions: <QuestionModel>[
       QuestionModel(
         questionNumber: 1,
-        prompt: 'سؤال',
+        statement: 'سؤال',
         branches: <BranchModel>[
-          BranchModel(content: BranchContent(type: QuestionType.essay, text: 'فرع')),
+          BranchModel(content: BranchContent(statement: 'فرع')),
         ],
       ),
     ],
