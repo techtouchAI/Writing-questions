@@ -2,17 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart' show MathStyle;
 
 import '../../models/tex_content.dart';
+import '../../pdf_engine/latex/latex_svg_renderer.dart';
 import 'safe_math_tex.dart';
 import 'visual_equation_editor.dart';
 
 /// محرر المحتوى المختلط: **نص + معادلات متعددة في الحقل نفسه**.
 ///
 /// التخزين يبقى كما هو (`نص $معادلة$ نص $$معادلة منفردة$$`) فلا يتغير أي ملف
-/// قديم ولا التصدير؛ وواجهة التحرير فقط هي الجديدة:
-/// - النص يُكتب في حقول نصية عادية.
-/// - كل معادلة تُعرض **مرئية** (لا كود) وتُحرَّر بمحرر المعادلات المرئي
-///   نفسه المستخدم في بقية التطبيق ([VisualEquationEditor]).
-/// - يمكن إضافة أي عدد من المعادلات وحذفها والتنقل بين أقسام المتن.
+/// قديم ولا التصدير؛ وواجهة التحرير تتبع طبيعة المحتوى:
+/// - **النص الرئيسي واحد لا يتجزأ**: يُكتب في حقوله بالترتيب، ولا يوجد زر
+///   «إضافة نص» — فالمدرس يكتب منطوقاً واحداً والمعادلات تُغرَس داخله، فلا
+///   تتكدس فقرات نصية متفرقة ولا يُحذف نصه سهواً (أقسام النص غير قابلة
+///   للحذف، وحذف معادلة بين قسمين يعيد دمجهما نصاً واحداً متصلاً).
+/// - **المعادلة تُدرج عند مؤشر الكتابة**: «إضافة معادلة» تقسم النص عند
+///   المؤشر وتضع المعادلة هناك تماماً (كإدراج Word)، فإن كان المؤشر في آخر
+///   النص أُضيفت بعده.
+/// - كل معادلة تُعرض **مرئية** (لا كود) وتُحرَّر بمحرر المعادلات المرئي نفسه
+///   ([VisualEquationEditor])، وتُنقل وتحذف وتُبدَّل بين سطرية ومنفردة.
 ///
 /// الحفظ يعيد بناء المصدر من الأقسام، فيبقى الحقل قابلاً للتحرير لاحقاً
 /// بالطريقة نفسها (إعادة التحليل ← تحرير ← حفظ).
@@ -52,6 +58,10 @@ class _MixedContentEditorState extends State<MixedContentEditor> {
   late List<_MixedBlock> _blocks;
   int _nextBlockId = 0;
 
+  /// آخر خانة نصية نشطة وموضع المؤشر فيها — مرجع إدراج المعادلات.
+  _MixedBlock? _activeText;
+  int _activeCaret = 0;
+
   @override
   void initState() {
     super.initState();
@@ -61,12 +71,15 @@ class _MixedContentEditorState extends State<MixedContentEditor> {
   @override
   void dispose() {
     for (final block in _blocks) {
-      block.controller?.dispose();
+      block.dispose();
     }
     super.dispose();
   }
 
   /// يقسم المصدر إلى أقسام نص/معادلات بالترتيب نفسه (بلا أي كود ظاهر).
+  ///
+  /// الضمان: قسم نصي واحد على الأقل دائماً — فالمصدر الخالص معادلاتٍ يُفتح
+  /// بخانة نص فارغة تتيح إضافة المنطوق حولها، والنص لا يُفقد أبداً.
   List<_MixedBlock> _parse(String source) {
     final blocks = <_MixedBlock>[];
     for (final segment in TexContent.split(source)) {
@@ -79,16 +92,38 @@ class _MixedContentEditorState extends State<MixedContentEditor> {
           ),
         );
       } else {
-        blocks.add(
-          _MixedBlock.text(id: _nextBlockId++, initialText: segment.text),
-        );
+        blocks.add(_newTextBlock(segment.text));
       }
     }
-    if (blocks.isEmpty) {
-      blocks.add(_MixedBlock.text(id: _nextBlockId++, initialText: ''));
+    if (!blocks.any((block) => block.isText)) {
+      blocks.add(_newTextBlock(''));
     }
     return blocks;
   }
+
+  _MixedBlock _newTextBlock(String text) {
+    final block = _MixedBlock.text(id: _nextBlockId++, initialText: text);
+    block.controller!.addListener(() => _trackCaret(block));
+    return block;
+  }
+
+  /// يسجّل الخانة النصية نشطةً بموضع مؤشّرها الحالي (يتغيّر مع الكتابة
+  /// والتحريك) — فلا تحتاج الواجهة أزرار «نص جديد» ولا مواضع يدوية.
+  void _trackCaret(_MixedBlock block) {
+    final controller = block.controller!;
+    block.text = controller.text;
+    final selection = controller.selection;
+    final caret = selection.isValid &&
+            selection.baseOffset >= 0 &&
+            selection.baseOffset <= controller.text.length
+        ? selection.baseOffset
+        : controller.text.length;
+    _activeText = block;
+    _activeCaret = caret;
+  }
+
+  _MixedBlock? get _lastTextBlock =>
+      _blocks.isEmpty ? null : _blocks.lastWhere((block) => block.isText);
 
   /// يبني المصدر المخزَّن: النص كما هو (مع تهريب الدولار الحرفي)، وكل معادلة
   /// داخل `$...$` أو `$$...$$`.
@@ -103,43 +138,105 @@ class _MixedContentEditorState extends State<MixedContentEditor> {
       if (latex.isEmpty) {
         continue;
       }
-      buffer.write(block.isBlock ? '\$\$$latex\$\$' : '\$$latex\$');
+      buffer.write(block.isBlock ? '\$\$${latex}\$\$' : '\$${latex}\$');
     }
     return buffer.toString();
   }
 
-  void _addText() {
+  /// يدرج معادلة **عند مؤشر الكتابة** في الخانة النصية النشطة: النص يُقسم
+  /// حول المؤشر وتستقر المعادلة في الفجوة — فإن كان المؤشر في نهاية نص
+  /// فارغ أُضيفت بعده مباشرة.
+  void _insertMathAtCaret() {
     setState(() {
-      _blocks.add(_MixedBlock.text(id: _nextBlockId++, initialText: ''));
-    });
-  }
-
-  void _addMath({int? afterIndex}) {
-    setState(() {
-      final block = _MixedBlock.math(id: _nextBlockId++, latex: '', isBlock: false);
-      if (afterIndex == null) {
-        _blocks.add(block);
-      } else {
-        _blocks.insert(afterIndex + 1, block);
+      final target = _activeText ?? _lastTextBlock;
+      if (target == null) {
+        _blocks.add(_newTextBlock(''));
+        _blocks.add(_MixedBlock.math(id: _nextBlockId++, latex: '', isBlock: false));
+        return;
       }
+      final index = _blocks.indexOf(target);
+      final caret = _activeCaret.clamp(0, target.text.length);
+      final pre = target.text.substring(0, caret);
+      final post = target.text.substring(caret);
+      final math = _MixedBlock.math(id: _nextBlockId++, latex: '', isBlock: false);
+      // الخانة النشطة تحتفظ بما قبل المؤشر (وتبقى قابلة للكتابة وإن فرغت)،
+      // وما بعده يصبح خانة تكملة — فلا يُفقد حرف ولا يُتلف متحكم حيّ.
+      _setText(target, pre);
+      _blocks.insertAll(index + 1, <_MixedBlock>[
+        math,
+        if (post.isNotEmpty) _newTextBlock(post),
+      ]);
+      _activeText = null;
+      _activeCaret = 0;
     });
   }
 
-  void _removeBlock(int index) {
-    if (index < 0 || index >= _blocks.length) {
+  /// يكتب قيمة جديدة في خانة نصية بمؤشر في آخرها (المستمع يتبع المؤشر
+  /// وحده فيحدّث موضع الإدراج التالي تلقائياً).
+  void _setText(_MixedBlock block, String value) {
+    block.text = value;
+    final controller = block.controller!;
+    controller.text = value;
+    controller.selection = TextSelection.collapsed(offset: value.length);
+  }
+
+  /// متحكمات الأقسام المدموجة تُحرَّر بعد اكتمال الإطار (كانت مربوطة بحقل
+  /// ما زال في الشجرة لحظة الدمج) — تفريغ آمن بلا استخدام بعد التحرير.
+  final List<_MixedBlock> _pendingDisposal = <_MixedBlock>[];
+  bool _disposalScheduled = false;
+
+  void _scheduleDisposal(_MixedBlock block) {
+    _pendingDisposal.add(block);
+    if (_disposalScheduled || !mounted) {
+      return;
+    }
+    _disposalScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _disposalScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      for (final pending in _pendingDisposal) {
+        pending.dispose();
+      }
+      _pendingDisposal.clear();
+    });
+  }
+
+  /// حذف معادلة: إن حُصرت بين قسمَي نص دُمجا قسماً واحداً — فالنص الرئيسي
+  /// يبقى متصلاً كما كُتب، ولا تتكدس خانات فارغة.
+  void _removeMath(int index) {
+    if (index < 0 || index >= _blocks.length || _blocks[index].isText) {
       return;
     }
     setState(() {
-      _blocks.removeAt(index).controller?.dispose();
-      if (_blocks.isEmpty) {
-        _blocks.add(_MixedBlock.text(id: _nextBlockId++, initialText: ''));
+      _blocks.removeAt(index);
+      if (index > 0 &&
+          index < _blocks.length &&
+          _blocks[index - 1].isText &&
+          _blocks[index].isText) {
+        final first = _blocks[index - 1];
+        final second = _blocks[index];
+        _setText(first, first.text + second.text);
+        _blocks.removeAt(index);
+        _scheduleDisposal(second);
+        if (identical(_activeText, second)) {
+          _activeText = first;
+        }
+      }
+      if (!_blocks.any((block) => block.isText)) {
+        _blocks.add(_newTextBlock(''));
       }
     });
   }
 
   void _moveBlock(int index, int delta) {
     final target = index + delta;
-    if (index < 0 || index >= _blocks.length || target < 0 || target >= _blocks.length) {
+    if (index < 0 ||
+        index >= _blocks.length ||
+        target < 0 ||
+        target >= _blocks.length ||
+        _blocks[index].isText) {
       return;
     }
     setState(() {
@@ -149,11 +246,13 @@ class _MixedContentEditorState extends State<MixedContentEditor> {
   }
 
   void _save() {
-    final hasEquation = _blocks.any((block) => !block.isText && block.latex.trim().isNotEmpty);
-    final text = _blocks.where((block) => block.isText).map((b) => b.text).join().trim();
+    final hasEquation =
+        _blocks.any((block) => !block.isText && block.latex.trim().isNotEmpty);
+    final text =
+        _blocks.where((block) => block.isText).map((b) => b.text).join().trim();
     if (!hasEquation && text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('المحتوى فارغ — أضف نصاً أو معادلة أولاً.')),
+        const SnackBar(content: Text('المحتوى فارغ — اكتب النص أو أضف معادلة أولاً.')),
       );
       return;
     }
@@ -198,19 +297,19 @@ class _MixedContentEditorState extends State<MixedContentEditor> {
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 6,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               OutlinedButton.icon(
-                onPressed: () => _addText(),
-                icon: const Icon(Icons.text_fields, size: 18),
-                label: const Text('إضافة نص'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _addMath(),
+                onPressed: _insertMathAtCaret,
                 icon: const Icon(Icons.functions, size: 18),
                 label: const Text('إضافة معادلة'),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'تُدرج المعادلة عند مؤشر الكتابة داخل النص — انقر داخل النص '
+                'حدّد موضعها ثم أضفها.',
+                style: TextStyle(fontSize: 11, color: Colors.grey),
               ),
             ],
           ),
@@ -242,6 +341,7 @@ class _MixedContentEditorState extends State<MixedContentEditor> {
 
   Widget _buildBlock(BuildContext context, int index, ColorScheme colorScheme) {
     final block = _blocks[index];
+    final isFirstText = block.isText && _blocks.take(index + 1).where((b) => b.isText).length == 1;
     return Container(
       key: ValueKey<int>(block.id),
       padding: const EdgeInsets.all(10),
@@ -265,7 +365,7 @@ class _MixedContentEditorState extends State<MixedContentEditor> {
               const SizedBox(width: 6),
               Text(
                 block.isText
-                    ? 'نص'
+                    ? (isFirstText ? 'النص الرئيسي' : 'تكملة النص')
                     : (block.isBlock ? 'معادلة منفردة' : 'معادلة سطرية'),
                 style: TextStyle(
                   fontSize: 12,
@@ -274,25 +374,27 @@ class _MixedContentEditorState extends State<MixedContentEditor> {
                 ),
               ),
               const Spacer(),
-              IconButton(
-                tooltip: 'نقل للأعلى',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.arrow_upward, size: 16),
-                onPressed: index == 0 ? null : () => _moveBlock(index, -1),
-              ),
-              IconButton(
-                tooltip: 'نقل للأسفل',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.arrow_downward, size: 16),
-                onPressed:
-                    index == _blocks.length - 1 ? null : () => _moveBlock(index, 1),
-              ),
-              IconButton(
-                tooltip: 'حذف هذا القسم',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
-                onPressed: () => _removeBlock(index),
-              ),
+              if (!block.isText) ...<Widget>[
+                IconButton(
+                  tooltip: 'نقل للأعلى',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.arrow_upward, size: 16),
+                  onPressed: index == 0 ? null : () => _moveBlock(index, -1),
+                ),
+                IconButton(
+                  tooltip: 'نقل للأسفل',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.arrow_downward, size: 16),
+                  onPressed:
+                      index == _blocks.length - 1 ? null : () => _moveBlock(index, 1),
+                ),
+                IconButton(
+                  tooltip: 'حذف المعادلة',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                  onPressed: () => _removeMath(index),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 4),
@@ -307,7 +409,6 @@ class _MixedContentEditorState extends State<MixedContentEditor> {
                 border: OutlineInputBorder(),
                 isDense: true,
               ),
-              onChanged: (value) => block.text = value,
             )
           else
             _MathBlockEditor(
@@ -319,22 +420,6 @@ class _MixedContentEditorState extends State<MixedContentEditor> {
                 });
               },
             ),
-          const SizedBox(height: 4),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: Wrap(
-              spacing: 6,
-              children: <Widget>[
-                // المعادلة هي العنصر الوحيد الذي يُدرج مباشرة بعد هذا القسم.
-                // النص يُكتب داخل القسم النصي الحالي أو يُضاف من شريط المحرر.
-                TextButton.icon(
-                  onPressed: () => _addMath(afterIndex: index),
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('معادلة بعدها', style: TextStyle(fontSize: 12)),
-                ),
-              ],
-            ),
-          ),
         ],
       ),
     );
@@ -350,6 +435,7 @@ class _MathBlockEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final unsupported = LatexSvgRenderer.unsupportedCharacters(block.latex);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -362,7 +448,7 @@ class _MathBlockEditor extends StatelessWidget {
           ),
           child: block.latex.trim().isEmpty
               ? const Text(
-                  'معادلة فارغة — اكتبها من الشريط أدناه.',
+                  'معادلة فارغة — ابنِها من الشريط أدناه.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey, fontSize: 12),
                 )
@@ -378,6 +464,14 @@ class _MathBlockEditor extends StatelessWidget {
                   ),
                 ),
         ),
+        if (unsupported.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'لا يرسم خط الرياضيات: ${unsupported.join('، ')} — ستُطبع نصاً بديلاً.',
+              style: const TextStyle(color: Colors.orange, fontSize: 11),
+            ),
+          ),
         const SizedBox(height: 6),
         VisualEquationEditor(
           key: ValueKey<String>('eq-${block.id}'),
@@ -422,4 +516,6 @@ class _MixedBlock {
 
   /// متحكم حقل النص ([isText] فقط).
   final TextEditingController? controller;
+
+  void dispose() => controller?.dispose();
 }
