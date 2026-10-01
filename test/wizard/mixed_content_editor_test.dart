@@ -48,7 +48,20 @@ Future<void> _pumpHost(WidgetTester tester, String source) async {
 
 Finder _editorFields() => find.descendant(
       of: find.byType(MixedContentEditor),
-      matching: find.byType(TextField),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.hintText == 'اكتب النص هنا...',
+      ),
+    );
+
+/// خانات المعادلات في المحرر المرئي المضمَّن (تلميحها «؟») — لا تُخلط
+/// بخانات النص الرئيسي عند العدّ أو الكتابة.
+Finder _mathSlotFields() => find.descendant(
+      of: find.byType(MixedContentEditor),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is TextField && widget.decoration?.hintText == '?',
+      ),
     );
 
 Future<void> _save(WidgetTester tester) async {
@@ -93,10 +106,14 @@ void main() {
       expect(tester.widget<TextField>(_editorFields().at(0)).controller!.text, 'ab');
       expect(tester.widget<TextField>(_editorFields().at(1)).controller!.text, 'cd');
 
-      // ملء المعادلة في محررها المرئي المضمَّن.
-      await tester.tap(find.text('انقر هنا للكتابة، أو ابنِ المعادلة من الشريط أدناه.'));
+      // ملء المعادلة في محررها المرئي المضمَّن: خانة المعادلة (تلميح «؟»)
+      // لا خانات النص الرئيسي.
+      final startTyping = find.text('انقر هنا للكتابة، أو ابنِ المعادلة من الشريط أدناه.');
+      await tester.ensureVisible(startTyping);
+      await tester.tap(startTyping);
       await tester.pumpAndSettle();
-      await tester.enterText(_editorFields().last, 'x');
+      expect(_mathSlotFields(), findsOneWidget);
+      await tester.enterText(_mathSlotFields().first, 'x');
       await tester.pumpAndSettle();
 
       await _save(tester);
@@ -110,7 +127,9 @@ void main() {
       expect(find.text('النص الرئيسي'), findsOneWidget);
       expect(find.text('تكملة النص'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('حذف المعادلة'));
+      final deleteButton = find.byTooltip('حذف المعادلة');
+      await tester.ensureVisible(deleteButton);
+      await tester.tap(deleteButton);
       await tester.pumpAndSettle();
 
       expect(find.text('تكملة النص'), findsNothing);

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/models/equation_model.dart';
+import 'package:writing_questions_app/models/math_symbols.dart';
 
 void main() {
   group('EquationModel.parse', () {
@@ -109,12 +110,27 @@ void main() {
 
   group('EquationModel: العرض المرئي بلا كود LaTeX', () {
     test('loads stored commands as visible glyphs in the editing slots', () {
-      // المدرس يفتح معادلة قديمة: يرى α و× لا أوامر LaTeX خاماً.
+      // المدرس يفتح معادلة قديمة: يرى α و× لا أوامر LaTeX خاماً، والفراغات
+      // تبقى كما كتبها (عرض أمين للمصدر — لا ابتلاع ولا إضافة).
       final model = EquationModel.parse(r'\alpha \times 2');
       final texts = model.nodes.whereType<EqText>().map((node) => node.text);
-      expect(texts.join(), 'α×2');
-      // والحفظ يعيد الأوامر القياسية نفسها (اتفاق كل المحركات).
+      expect(texts.join(), 'α × 2');
+      // والحفظ يعيد الأوامر القياسية نفسها بايت-ببايت (اتفاق كل المحركات،
+      // والاستبدال في المخزون يتم بالفهارس فيتطلب مصدراً مستقراً).
       expect(model.toLatex(), r'\alpha \times 2');
+    });
+
+    test('a letter after a symbol command stays a separate token on save', () {
+      // `\alphax` أمر آخر غير معروف يفسد الصيغة كلها — الفاصل اللاتيني
+      // يفرض فراغ الإنهاء: «αx» تُحفظ `\alpha x`.
+      expect(MathSymbols.toLatex('αx'), r'\alpha x');
+      expect(EqText('αx').toLatex(), r'\alpha x');
+      // الرقم والرمز ينهيان اسم الأمر وحدهما — بلا فراغ زائد.
+      expect(MathSymbols.toLatex('α2'), r'\alpha2');
+      expect(MathSymbols.toLatex('α×2'), r'\alpha\times2');
+      // الأس اليونيكود ليس حرفاً لاتينياً: يبقى كما كُتب (يوسّعه
+      // `MathSymbols.canonicalize` في محرك الرسم إلى `^{2}` عند اللزوم).
+      expect(MathSymbols.toLatex('α²'), r'\alpha²');
     });
 
     test('keeps the visible glyph for symbols without a safe command', () {

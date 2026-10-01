@@ -152,18 +152,22 @@ void main() {
     });
 
     test('relations and binary operators get TeX spacing', () {
-      final plain = LatexSvgRenderer.toSvg('ab', fontSize: 12).width;
-      // الفراغ حول العملية الثنائية (~0.22em لكل جهة) وحول العلاقة (~0.28em).
-      final binaryGap = LatexSvgRenderer.toSvg('a+b', fontSize: 12).width - plain;
-      final relationGap = LatexSvgRenderer.toSvg('a=b', fontSize: 12).width - plain;
-      expect(binaryGap, greaterThan(3.0));
-      expect(binaryGap, lessThan(6.0));
-      expect(relationGap, greaterThan(binaryGap));
+      double w(String latex) => LatexSvgRenderer.toSvg(latex, fontSize: 12).width;
+      // العرض الكلي يضمّ عرض رمز العملية نفسه وهامش حافة ثابتاً في كل صيغة؛
+      // الفروق أدناه تلغي الاثنين فتعزل **الفراغ وحده** بين الذرات:
+      // (a-x − ax) تحمل رمز الناقص + فراغه الثنائي، و(-x − x) تحمل الرمز
+      // وحده (أحادي بلا فراغ) — والفرق هو مجموع فراغَي الجهتين الثنائيتين.
+      final binarySpacing = (w('a-x') - w('ax')) - (w('-x') - w('x'));
+      expect(binarySpacing, greaterThan(3.0)); // 0.22em لكل جهة ≈ 5.28
+      expect(binarySpacing, lessThan(6.0));
+      // العلاقة (~0.28em) أوسع من العملية الثنائية (~0.22em): الفرق يطرح
+      // هوامش القياس وعرضي الرمزين معاً فيبقى فرق الفراغين خالصاً.
+      final relationExtra =
+          (w('a=b') - w('ab') - w('=')) - (w('a+b') - w('ab') - w('+'));
+      expect(relationExtra, greaterThan(0.9)); // ≈ 2×(0.28−0.22)×12 = 1.44
       // الناقص الأحادي (أول الصيغة) لا يأخذ فراغاً ثنائياً.
-      final unary = LatexSvgRenderer.toSvg('-x', fontSize: 12).width -
-          LatexSvgRenderer.toSvg('x', fontSize: 12).width;
-      final binary = LatexSvgRenderer.toSvg('a-x', fontSize: 12).width -
-          LatexSvgRenderer.toSvg('ax', fontSize: 12).width;
+      final unary = w('-x') - w('x') - w('-');
+      final binary = w('a-x') - w('ax') - w('-');
       expect(unary, lessThan(binary));
     });
 

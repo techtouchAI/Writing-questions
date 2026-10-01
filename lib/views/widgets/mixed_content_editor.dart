@@ -287,12 +287,20 @@ class _MixedContentEditorState extends State<MixedContentEditor> {
           ),
         ),
         Expanded(
-          child: ListView.separated(
+          // كل الأقسام مبنية دائماً (لا بناءً كسولاً): أقسام المنطوق محدودة
+          // العدد، فتبقى خانات الإدخال ومتحكماتها حيّة أينما كان التمرير —
+          // تتبّع المؤشر موحَّد ولا يفقد المدرس حقلاً خارجه عن الشاشة.
+          child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            shrinkWrap: true,
-            itemCount: _blocks.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 10),
-            itemBuilder: (context, index) => _buildBlock(context, index, colorScheme),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                for (var index = 0; index < _blocks.length; index++) ...<Widget>[
+                  if (index > 0) const SizedBox(height: 10),
+                  _buildBlock(context, index, colorScheme),
+                ],
+              ],
+            ),
           ),
         ),
         Padding(

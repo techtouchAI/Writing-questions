@@ -408,9 +408,10 @@ abstract final class MathSymbols {
       return display;
     }
     final folded = _foldAliases(display);
+    final runes = folded.runes.toList(growable: false);
     final buffer = StringBuffer();
-    for (final rune in folded.runes) {
-      final char = String.fromCharCode(rune);
+    for (var index = 0; index < runes.length; index++) {
+      final char = String.fromCharCode(runes[index]);
       if (char == r'$') {
         buffer.write(r'\$');
         continue;
@@ -421,10 +422,25 @@ abstract final class MathSymbols {
           ..write(char);
         continue;
       }
-      buffer.write(commandForGlyph(char) ?? char);
+      final command = commandForGlyph(char);
+      if (command == null) {
+        buffer.write(char);
+        continue;
+      }
+      buffer.write(command);
+      // الأمر الحرفي يبتلع كل حرف لاتيني يليه: «αx» يجب أن تُحفظ
+      // `\alpha x` لا `\alphax` (أمر آخر غير معروف يفسد الصيغة كلها).
+      // الرمز أو الرقم ينهي اسم الأمر وحده فلا يحتاج فراغاً.
+      if (index + 1 < runes.length &&
+          _latinLetter.hasMatch(String.fromCharCode(runes[index + 1]))) {
+        buffer.write(' ');
+      }
     }
     return buffer.toString();
   }
+
+  /// حرف لاتيني — فاصل اسم الأمر الضروري (انظر [toLatex]).
+  static final RegExp _latinLetter = RegExp('[A-Za-z]');
 
   /// كل المحارف المرئية التي يستعملها التطبيق في المعادلات (جدول الرموز
   /// بجهتيه) — يفحص الاختبار أن خط الرياضيات المتجه يرسمها كلها، فلا تسقط
