@@ -60,6 +60,11 @@ class PaginationResult {
 /// إن لم تتسع في المساحة المتبقية من الصفحة الحالية تُنقل كاملة إلى بداية
 /// الصفحة التالية. الكتلة الوحيدة الأطول من صفحة كاملة تُوضع منفردة في
 /// صفحة خاصة بها (وتُصغَّر عند الرسم بدل أن تُقطع).
+///
+/// **حجز التذييل**: التذييل يُطبع في أسفل آخر صفحة فقط، لذلك تُحجز مساحته
+/// ([paginate]`.lastPageReserve`) من **آخر كتلة** وحدها: إن لم تتسع الكتلة
+/// الأخيرة مع التذييل انتقلت كاملة إلى صفحة جديدة، فلا يتداخل التذييل مع
+/// الأسئلة أبداً ولا يتكرر في صفحة غير أخيرة.
 abstract final class PaginationEngine {
   /// يوزّع [blocks] على صفحات.
   ///
@@ -67,14 +72,20 @@ abstract final class PaginationEngine {
   /// - [firstPageHeight]: الارتفاع المتاح في الصفحة الأولى (بعد الترويسة)؛
   ///   يساوي [pageHeight] افتراضياً.
   /// - [spacing]: المسافة الرأسية بين كتلتين متتاليتين في الصفحة نفسها.
+  /// - [lastPageReserve]: ارتفاع يُحجز في أسفل **الصفحة الأخيرة** (التذييل
+  ///   وما يفصله عن آخر سؤال). يُطبَّق على آخر كتلة فقط.
   static PaginationResult paginate({
     required List<PageBlock> blocks,
     required double pageHeight,
     double? firstPageHeight,
     double spacing = 0,
+    double lastPageReserve = 0,
   }) {
     if (pageHeight <= 0) {
       throw ArgumentError.value(pageHeight, 'pageHeight', 'يجب أن يكون موجباً.');
+    }
+    if (lastPageReserve < 0) {
+      throw ArgumentError.value(lastPageReserve, 'lastPageReserve', 'يجب ألا يكون سالباً.');
     }
     final firstHeight = firstPageHeight ?? pageHeight;
 
@@ -103,9 +114,12 @@ abstract final class PaginationEngine {
       previousBlock = null;
     }
 
-    for (final block in blocks) {
+    for (var blockIndex = 0; blockIndex < blocks.length; blockIndex++) {
+      final block = blocks[blockIndex];
+      // التذييل يحجز مكانه تحت الكتلة الأخيرة وحدها.
+      final reserve = blockIndex == blocks.length - 1 ? lastPageReserve : 0.0;
       final gap = currentIds.isEmpty ? 0.0 : gapAfter(previousBlock);
-      final available = availableFor(pages.length);
+      final available = availableFor(pages.length) - reserve;
       final fits = used + gap + block.height <= available + _epsilon;
 
       if (!fits && currentIds.isNotEmpty) {
@@ -113,7 +127,7 @@ abstract final class PaginationEngine {
         flush();
       }
 
-      final availableNow = availableFor(pages.length);
+      final availableNow = availableFor(pages.length) - reserve;
       final gapNow = currentIds.isEmpty ? 0.0 : gapAfter(previousBlock);
       if (currentIds.isEmpty && block.height > availableNow + _epsilon) {
         // كتلة أطول من الصفحة كلها: تُوضع منفردة وتُعلَّم كمتجاوزة.

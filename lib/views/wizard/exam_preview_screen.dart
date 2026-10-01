@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -7,22 +8,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 
+import '../../layout/blueprint/exam_blueprint.dart';
 import '../../layout/pagination_engine.dart';
 import '../../layout/paper_metrics.dart';
 import '../../models/branch_item.dart';
-import '../../models/branch_model.dart';
 import '../../models/exam_canvas_geometry.dart';
 import '../../models/exam_document.dart';
-import '../../models/exam_header_model.dart';
 import '../../models/latex_plain_text.dart';
 import '../../models/floating_element.dart';
 import '../../models/paper_divider.dart';
 import '../../models/paper_font.dart';
 import '../../models/paper_settings.dart';
 import '../../models/paper_text_style.dart';
+import '../../models/point_kind.dart';
 import '../../models/question_model.dart';
-import '../../models/question_option.dart';
-import '../../models/question_type.dart';
 import '../../models/quran_text.dart';
 import '../../models/subject_layout.dart';
 import '../../models/tex_content.dart';
@@ -31,6 +30,7 @@ import '../../providers/exam_wizard_controller.dart';
 import '../../services/docx_document_export_service.dart';
 import '../../services/export_file_service.dart';
 import '../../services/math_image_renderer.dart';
+import '../../services/page_frame_store.dart';
 import '../../services/pdf_export_service.dart';
 import '../../services/shape_image_renderer.dart';
 import '../widgets/floating_element_view.dart';
@@ -41,7 +41,9 @@ import '../widgets/pdf_preview_screen.dart';
 import '../widgets/smart_exam_toolbar.dart';
 import '../widgets/tex_text.dart';
 import '../widgets/visual_equation_editor.dart';
+import 'header_footer_forms.dart';
 import 'measure_size.dart';
+import 'paper_header_footer_view.dart';
 import 'paper_styles.dart';
 import 'preview_toolbar.dart';
 
@@ -274,16 +276,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     });
   }
 
-  static String _branchTextKey(String branchId) => 'branch-$branchId';
-  static String _branchMarksKey(String branchId) => 'marks-$branchId';
-  static String _optionKey(String branchId, int index) => 'option-$branchId-$index';
+  static String _statementKey(String questionId) => 'statement-$questionId';
+  static String _bodyKey(String questionId) => 'body-$questionId';
   static String _categoryKey(String questionId) => 'category-$questionId';
-  static String _promptKey(String questionId) => 'prompt-$questionId';
+  static String _branchStatementKey(String branchId) => 'branch-statement-$branchId';
+  static String _branchBodyKey(String branchId) => 'branch-body-$branchId';
   static String _itemKey(String itemId) => 'item-$itemId';
-  static String _headerKey(HeaderSlot slot, int line) => 'header-${slot.name}-$line';
-  static const String _instructionsKey = 'instructions';
-  static const String _headerTitleKey = 'header-title';
-  static const String _headerNotesKey = 'header-notes';
+  static String _optionKey(String itemId, int index) => 'option-$itemId-$index';
 
   /// يزامن الحقول مع النموذج بعد تغيّر خارجي (تبديل المحتوى بالسحب مثلاً).
   ///
@@ -297,62 +296,32 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _syncingFields = true;
     try {
       final document = controller.document;
+      void sync(String key, String value) {
+        final field = _fields[key];
+        if (field != null && field.text != value) {
+          field.text = value;
+        }
+      }
+
+      void syncPoints(List<BranchItem> points) {
+        for (final point in points) {
+          sync(_itemKey(point.id), point.text);
+          for (var index = 0; index < point.options.length; index++) {
+            sync(_optionKey(point.id, index), point.options[index].text);
+          }
+        }
+      }
+
       for (final question in document.questions) {
-        for (final item in question.items) {
-          final field = _fields[_itemKey(item.id)];
-          if (field != null && field.text != item.text) field.text = item.text;
-        }
-        final categoryField = _fields[_categoryKey(question.id)];
-        if (categoryField != null && categoryField.text != question.category) {
-          categoryField.text = question.category;
-        }
-        final promptField = _fields[_promptKey(question.id)];
-        if (promptField != null && promptField.text != question.prompt) {
-          promptField.text = question.prompt;
-        }
+        sync(_statementKey(question.id), question.statement);
+        sync(_bodyKey(question.id), question.body);
+        sync(_categoryKey(question.id), question.category);
+        syncPoints(question.items);
         for (final branch in question.branches) {
-          final textField = _fields[_branchTextKey(branch.id)];
-          if (textField != null && textField.text != branch.content.text) {
-            textField.text = branch.content.text;
-          }
-          final marksField = _fields[_branchMarksKey(branch.id)];
-          if (marksField != null && _parseMarks(marksField.text) != branch.marks) {
-            marksField.text = _formatMarksInput(branch.marks);
-          }
-          for (var index = 0; index < branch.content.options.length; index++) {
-            final optionField = _fields[_optionKey(branch.id, index)];
-            if (optionField != null && optionField.text != branch.content.options[index].text) {
-              optionField.text = branch.content.options[index].text;
-            }
-          }
-          for (final item in branch.content.items) {
-            final itemField = _fields[_itemKey(item.id)];
-            if (itemField != null && itemField.text != item.text) {
-              itemField.text = item.text;
-            }
-          }
+          sync(_branchStatementKey(branch.id), branch.content.statement);
+          sync(_branchBodyKey(branch.id), branch.content.body);
+          syncPoints(branch.content.items);
         }
-      }
-      for (final slot in HeaderSlot.values) {
-        final lines = document.header.column(slot).lines;
-        for (var index = 0; index < lines.length; index++) {
-          final field = _fields[_headerKey(slot, index)];
-          if (field != null && field.text != lines[index]) {
-            field.text = lines[index];
-          }
-        }
-      }
-      final titleField = _fields[_headerTitleKey];
-      if (titleField != null && titleField.text != document.header.title) {
-        titleField.text = document.header.title;
-      }
-      final notesField = _fields[_headerNotesKey];
-      if (notesField != null && notesField.text != document.header.notes) {
-        notesField.text = document.header.notes;
-      }
-      final instructions = _fields[_instructionsKey];
-      if (instructions != null && instructions.text != document.header.instructions) {
-        instructions.text = document.header.instructions;
       }
       _disposeStaleFields(document);
     } finally {
@@ -360,34 +329,38 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
   }
 
-  /// يتخلّص من تحكمات الحقول التي حُذف أصحابها (سؤال أو فرع) فلا تتراكم
-  /// تحكمات بلا مالك. الحذف يتم **بعد اكتمال الإطار** كي لا يُحرَّر تحكم
-  /// ما زال مربوطاً بحقل في الشجرة الحالية.
+  /// يتخلّص من تحكمات الحقول التي حُذف أصحابها (سؤال أو فرع أو نقطة) فلا
+  /// تتراكم تحكمات بلا مالك. الحذف يتم **بعد اكتمال الإطار** كي لا يُحرَّر
+  /// تحكم ما زال مربوطاً بحقل في الشجرة الحالية.
   void _disposeStaleFields(ExamDocument document) {
-    final live = <String>{
-      _instructionsKey,
-      _headerTitleKey,
-      _headerNotesKey,
-      for (final slot in HeaderSlot.values)
-        for (var line = 0; line < HeaderColumn.lineCount; line++) _headerKey(slot, line),
-      for (final question in document.questions) ...<String>{
-        _categoryKey(question.id),
-        _promptKey(question.id),
-        for (final item in question.items) _itemKey(item.id),
-        for (final branch in question.branches) ...<String>{
-          _branchTextKey(branch.id),
-          _branchMarksKey(branch.id),
-          for (var index = 0; index < branch.content.options.length; index++)
-            _optionKey(branch.id, index),
-          for (final item in branch.content.items) _itemKey(item.id),
-        },
-      },
-    };
+    final live = <String>{};
+    void addPoints(List<BranchItem> points) {
+      for (final point in points) {
+        live.add(_itemKey(point.id));
+        for (var index = 0; index < point.options.length; index++) {
+          live.add(_optionKey(point.id, index));
+        }
+      }
+    }
+
+    for (final question in document.questions) {
+      live
+        ..add(_statementKey(question.id))
+        ..add(_bodyKey(question.id))
+        ..add(_categoryKey(question.id));
+      addPoints(question.items);
+      for (final branch in question.branches) {
+        live
+          ..add(_branchStatementKey(branch.id))
+          ..add(_branchBodyKey(branch.id));
+        addPoints(branch.content.items);
+      }
+    }
     final stale = _fields.keys.where((key) => !live.contains(key)).toList(growable: false);
     if (stale.isEmpty) {
       return;
     }
-    // يُزال القيد فوراً (فلا يُعاد استخدام تحكم فرع محذوف)، ويُحرَّر التحكم
+    // يُزال القيد فوراً (فلا يُعاد استخدام تحكم نقطة محذوفة)، ويُحرَّر التحكم
     // بعد اكتمال إطارين — فالإطار الأول يُسقط الحقول من الشجرة، والثاني
     // يضمن أن التحكم لم يبق مربوطاً بأي حقل قبل تحريره.
     for (final key in stale) {
@@ -789,18 +762,29 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return null;
   }
 
+  /// مجموعة النقاط التي تحمل النقطة [pointId] (سؤال أو فرع) أو `null`.
+  PointsOwner? _ownerOfPoint(ExamDocument document, String pointId) {
+    for (var q = 0; q < document.questions.length; q++) {
+      final question = document.questions[q];
+      if (question.items.any((point) => point.id == pointId)) {
+        return PointsOwner.question(q);
+      }
+      for (var b = 0; b < question.branches.length; b++) {
+        if (question.branches[b].content.items.any((point) => point.id == pointId)) {
+          return PointsOwner.branch(BranchRef(questionIndex: q, branchIndex: b));
+        }
+      }
+    }
+    return null;
+  }
+
   BranchItem? _findItem(String itemId) {
     final doc = _controller?.document;
     if (doc == null) return null;
-    for (final q in doc.questions) {
-      for (final it in q.items) {
-        if (it.id == itemId) return it;
-      }
-      for (final b in q.branches) {
-        for (final it in b.content.items) {
-          if (it.id == itemId) return it;
-        }
-      }
+    final owner = _ownerOfPoint(doc, itemId);
+    if (owner == null) return null;
+    for (final point in doc.pointsOf(owner)) {
+      if (point.id == itemId) return point;
     }
     return null;
   }
@@ -808,11 +792,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// مفاتيح الحقول التي لها نظير مباشر في الموديل — تُقرأ من الموديل دائماً
   /// (ولا تتأثر ببقايا _fieldAlignments بعد التراجع).
   bool _isModelBackedAlignKey(String fieldKey) =>
+      fieldKey.startsWith('statement-') ||
+      fieldKey.startsWith('body-') ||
       fieldKey.startsWith('branch-') ||
-      fieldKey.startsWith('prompt-') ||
       fieldKey.startsWith('option-') ||
-      fieldKey.startsWith('item-') ||
-      fieldKey.startsWith('header-');
+      fieldKey.startsWith('item-');
+
+  static final RegExp _optionKeyPattern = RegExp(r'^option-(.+)-(\d+)$');
 
   /// المحاذاة المحفوظة في الموديل لمفتاح حقل (null = غير محددة).
   PaperAlign? _modelAlignFor(String fieldKey) {
@@ -820,38 +806,33 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (doc == null) {
       return null;
     }
-    if (fieldKey.startsWith('prompt-')) {
-      final qIndex = doc.indexOfQuestion(fieldKey.substring('prompt-'.length));
-      if (qIndex < 0) {
-        return null;
-      }
-      final question = doc.questions[qIndex];
-      return question.promptAlign ?? question.style.align;
+    if (fieldKey.startsWith('statement-')) {
+      final question = doc.questionById(fieldKey.substring('statement-'.length));
+      return question == null ? null : question.titleAlign ?? question.style.align;
     }
-    if (fieldKey.startsWith('branch-')) {
-      final ref = _findBranchRef(doc, fieldKey.substring('branch-'.length));
-      return ref == null ? null : doc.branchAt(ref).style.align;
+    if (fieldKey.startsWith('body-')) {
+      final question = doc.questionById(fieldKey.substring('body-'.length));
+      return question == null ? null : question.bodyAlign ?? question.style.align;
+    }
+    for (final prefix in const <String>['branch-statement-', 'branch-body-']) {
+      if (fieldKey.startsWith(prefix)) {
+        final ref = _findBranchRef(doc, fieldKey.substring(prefix.length));
+        return ref == null ? null : doc.branchAt(ref).style.align;
+      }
     }
     if (fieldKey.startsWith('option-')) {
-      final match = RegExp(r'^option-(.+)-(\d+)$').firstMatch(fieldKey);
+      final match = _optionKeyPattern.firstMatch(fieldKey);
       if (match == null) {
         return null;
       }
-      final ref = _findBranchRef(doc, match.group(1)!);
-      if (ref == null) {
-        return null;
-      }
+      final options = _findItem(match.group(1)!)?.options;
       final optionIndex = int.parse(match.group(2)!);
-      final options = doc.branchAt(ref).content.options;
-      return optionIndex >= 0 && optionIndex < options.length
+      return options != null && optionIndex >= 0 && optionIndex < options.length
           ? options[optionIndex].align
           : null;
     }
     if (fieldKey.startsWith('item-')) {
       return _findItem(fieldKey.substring('item-'.length))?.align;
-    }
-    if (fieldKey.startsWith('header-')) {
-      return doc.header.style.align;
     }
     return null;
   }
@@ -891,6 +872,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return _activeStyle().align;
   }
 
+  /// يطبّق محاذاة على الحقل النشط وحده (كما في Word: الفقرة الحالية)؛ وبلا
+  /// حقل نشط تُطبَّق على عناصر التحديد.
   void _onAlignChanged(PaperAlign align) {
     setState(() {
       if (_activeFieldKey != null) {
@@ -900,101 +883,73 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
     final controller = _controller!;
     final document = controller.document;
+    final key = _activeFieldKey;
+    if (key == null) {
+      // لا حقل نشط: تُطبَّق على الأهداف المحددة (سؤال/فرع كامل).
+      _applyStyle((current) => current.copyWith(align: () => align));
+      return;
+    }
 
-    // 1. إذا كان الحقل النشط نقطة محددة، تتغير محاذاة تلك النقطة وحدها
-    if (_activeFieldKey != null && _activeFieldKey!.startsWith('item-')) {
-      final itemId = _activeFieldKey!.substring('item-'.length);
-      for (var q = 0; q < document.questions.length; q++) {
-        final question = document.questions[q];
-        final itemIdx = question.items.indexWhere((it) => it.id == itemId);
-        if (itemIdx != -1) {
-          final updated = question.items[itemIdx].copyWith(align: () => align);
-          controller.updateQuestionItems(
-            q,
-            List<BranchItem>.of(question.items)..[itemIdx] = updated,
-          );
-          return;
-        }
-        for (var b = 0; b < question.branches.length; b++) {
-          final branch = question.branches[b];
-          final bItemIdx = branch.content.items.indexWhere((it) => it.id == itemId);
-          if (bItemIdx != -1) {
-            final ref = BranchRef(questionIndex: q, branchIndex: b);
-            final updated = branch.content.items[bItemIdx].copyWith(align: () => align);
-            controller.updateBranchContent(
-              ref,
-              branch.content.withItemAt(bItemIdx, updated),
-            );
-            return;
-          }
-        }
+    // 1. نقطة محددة: تتغير محاذاة تلك النقطة وحدها (في الموديل مباشرةً
+    //    فتصل إلى PDF/Word أيضاً).
+    if (key.startsWith('item-')) {
+      final pointId = key.substring('item-'.length);
+      final owner = _ownerOfPoint(document, pointId);
+      if (owner != null) {
+        controller.updatePointAlign(owner, pointId, align);
       }
       return;
     }
 
-    // 2. إذا كان الحقل النشط نص السؤال/التعليمات (prompt)
-    if (_activeFieldKey != null && _activeFieldKey!.startsWith('prompt-')) {
-      final qId = _activeFieldKey!.substring('prompt-'.length);
-      final qIndex = document.indexOfQuestion(qId);
-      if (qIndex != -1) {
-        // تحديث واحد يكتب promptAlign وstyle.align معاً = خطوة تراجع واحدة.
-        controller.updateQuestionPromptAlign(qIndex, align);
-        return;
+    // 2. خيار «اختيار من متعدد» محدد: محاذاته وحده.
+    final optionMatch = _optionKeyPattern.firstMatch(key);
+    if (optionMatch != null) {
+      final pointId = optionMatch.group(1)!;
+      final owner = _ownerOfPoint(document, pointId);
+      if (owner != null) {
+        controller.updatePointOptionAlign(
+          owner,
+          pointId,
+          int.parse(optionMatch.group(2)!),
+          align,
+        );
       }
+      return;
     }
 
-    // 3. إذا كان الحقل النشط نص فرع محدد
-    if (_activeFieldKey != null && _activeFieldKey!.startsWith('branch-')) {
-      final bId = _activeFieldKey!.substring('branch-'.length);
-      for (var q = 0; q < document.questions.length; q++) {
-        final bIdx = document.questions[q].indexOfBranch(bId);
-        if (bIdx != -1) {
-          final ref = BranchRef(questionIndex: q, branchIndex: bIdx);
+    // 3. منطوق السؤال (سطر العنوان).
+    if (key.startsWith('statement-')) {
+      final index = document.indexOfQuestion(key.substring('statement-'.length));
+      if (index != -1) {
+        controller.updateQuestionTitleAlign(index, align);
+      }
+      return;
+    }
+
+    // 4. نص السؤال: تحديث واحد يكتب bodyAlign وstyle.align معاً = خطوة
+    //    تراجع واحدة.
+    if (key.startsWith('body-')) {
+      final index = document.indexOfQuestion(key.substring('body-'.length));
+      if (index != -1) {
+        controller.updateQuestionBodyAlign(index, align);
+      }
+      return;
+    }
+
+    // 5. منطوق الفرع ونصه: محاذاة نمط الفرع.
+    for (final prefix in const <String>['branch-statement-', 'branch-body-']) {
+      if (key.startsWith(prefix)) {
+        final ref = _findBranchRef(document, key.substring(prefix.length));
+        if (ref != null) {
           controller.updateBranchStyle(
             ref,
             document.branchAt(ref).style.copyWith(align: () => align),
           );
-          return;
-        }
-      }
-    }
-
-    // 4. خيارات MCQ / الترويسة / النقاط: تُحفظ المحاذاة في الموديل
-    //    مباشرةً على مستوى الفقرة (كما في Word) — لا في خريطة الشاشة وحدها
-    //    التي كانت تضيع عند الحفظ ولا تصل إلى PDF/Word.
-    if (_activeFieldKey != null) {
-      final key = _activeFieldKey!;
-      final optionMatch = RegExp(r'^option-(.+)-(\d+)$').firstMatch(key);
-      if (optionMatch != null) {
-        final bId = optionMatch.group(1)!;
-        final optionIndex = int.parse(optionMatch.group(2)!);
-        final ref = _findBranchRef(document, bId);
-        if (ref != null) {
-          final content = document.branchAt(ref).content;
-          if (optionIndex >= 0 && optionIndex < content.options.length) {
-            final options = List<QuestionOption>.of(content.options);
-            options[optionIndex] =
-                options[optionIndex].copyWith(align: () => align);
-            controller.updateBranchContent(
-              ref,
-              content.copyWith(options: options),
-            );
-          }
         }
         return;
       }
-      if (key.startsWith('header-')) {
-        controller.updateHeaderStyle(
-          document.header.style.copyWith(align: () => align),
-        );
-        return;
-      }
-      // حقل بلا موديل مخصص بعد (مثل قسم السؤال) — يبقى في خريطة الشاشة.
-      return;
     }
-
-    // 5. السلوك الافتراضي: تطبيق المحاذاة على الأهداف المحددة (سؤال/فرع كامل بلا مؤشر في حقل معين)
-    _applyStyle((current) => current.copyWith(align: () => align));
+    // حقل بلا موديل مخصص بعد (مثل قسم السؤال) — يبقى في خريطة الشاشة.
   }
 
   void _applyStyle(PaperTextStyle Function(PaperTextStyle current) update) {
@@ -1604,16 +1559,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// تثبيت تسمية يدوية للسؤال («أولاً»، «س1»...) — فارغ = تلقائي.
+  /// رقم السؤال: ما يكتبه المدرس يُطبع حرفياً («س١/»، «السؤال الاول/»)،
+  /// والفارغ = ترقيم تلقائي من نمط التسمية العام.
   Future<void> _editQuestionLabel(int questionIndex) async {
     final controller = _controller!;
     final document = controller.document;
     final question = document.questions[questionIndex];
     final saved = await _showTextInputDialog(
-      title: 'تسمية السؤال',
+      title: 'رقم السؤال',
       initialText: question.numberOverride ?? '',
-      hintText: 'تلقائي: ${document.autoQuestionLabel(question)}',
-      helperText: 'اتركه فارغاً للعودة للترقيم التلقائي.',
+      hintText: 'مثال: س١/ أو السؤال الاول/ — تلقائي: '
+          '${document.autoQuestionLabel(question)}${document.layout.questionSeparator}',
+      helperText: 'يُطبع كما تكتبه تماماً. اتركه فارغاً للعودة للترقيم التلقائي.',
     );
     if (saved == null) {
       return;
@@ -1621,7 +1578,37 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     controller.updateQuestionNumberOverride(questionIndex, saved);
   }
 
-  /// تثبيت تسمية يدوية للفرع («أولاً»، «أ»...) — فارغ = تلقائي من الفهرس.
+  /// درجة السؤال: يكتب المدرس الرقم الخام فقط («20») فيطبعه النظام
+  /// «(٢٠ درجة)»؛ والفارغ = مجموع درجات الفروع والنقاط تلقائياً.
+  Future<void> _editQuestionMarks(int questionIndex) async {
+    final controller = _controller!;
+    final document = controller.document;
+    final question = document.questions[questionIndex];
+    final saved = await _showTextInputDialog(
+      title: 'درجة السؤال',
+      initialText: _formatMarksInput(question.marksOverride ?? 0),
+      hintText: 'اكتب الرقم فقط، مثال: 20',
+      helperText: 'تُطبع تلقائياً بصيغة (${document.formatNumber(20)} ${document.layout.marksUnit}). '
+          'فارغ = مجموع درجات الفروع تلقائياً.',
+      saveLabel: 'تطبيق',
+      numeric: true,
+    );
+    if (saved == null) {
+      return;
+    }
+    if (saved.trim().isEmpty) {
+      controller.updateQuestionMarksOverride(questionIndex, null);
+      return;
+    }
+    final marks = _parseMarks(saved);
+    if (marks == null) {
+      _showMessage('أدخل الدرجة رقماً صحيحاً فقط (مثال: 20).', isError: true);
+      return;
+    }
+    controller.updateQuestionMarksOverride(questionIndex, marks);
+  }
+
+  /// رقم الفرع («أ»...) — يُضاف القوس تلقائياً؛ فارغ = تلقائي من الفهرس.
   Future<void> _editBranchLabel(BranchRef ref) async {
     final controller = _controller!;
     final document = controller.document;
@@ -1630,15 +1617,41 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
     final branch = document.branchAt(ref);
     final saved = await _showTextInputDialog(
-      title: 'تسمية الفرع',
+      title: 'رقم الفرع',
       initialText: branch.labelOverride ?? '',
       hintText: 'تلقائي: ${document.autoBranchLabel(ref.branchIndex)}',
-      helperText: 'مثال: أولاً، ثانياً — فارغ = تلقائي.',
+      helperText: 'مثال: أ — يُضاف القوس تلقائياً. فارغ = تلقائي.',
     );
     if (saved == null) {
       return;
     }
     controller.updateBranchLabelOverride(ref, saved);
+  }
+
+  /// درجة الفرع: الرقم الخام فقط، ويطبعه النظام «(٥ درجة)».
+  Future<void> _editBranchMarks(BranchRef ref) async {
+    final controller = _controller!;
+    final document = controller.document;
+    if (!document.containsRef(ref)) {
+      return;
+    }
+    final saved = await _showTextInputDialog(
+      title: 'درجة الفرع',
+      initialText: _formatMarksInput(document.branchAt(ref).marks),
+      hintText: 'اكتب الرقم فقط، مثال: 5',
+      helperText: 'تُطبع تلقائياً بصيغة (${document.formatNumber(5)} ${document.layout.marksUnit}).',
+      saveLabel: 'تطبيق',
+      numeric: true,
+    );
+    if (saved == null) {
+      return;
+    }
+    final marks = _parseMarks(saved);
+    if (marks == null) {
+      _showMessage('أدخل الدرجة رقماً صحيحاً فقط (مثال: 5).', isError: true);
+      return;
+    }
+    controller.updateBranchMarks(ref, marks);
   }
 
   void _addBranchToSelected() {
@@ -1904,52 +1917,54 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _applyColor(argb);
   }
 
-  /// ترقيم النقطة: مخصص حرفي، فارغ = تلقائي، `-` = إخفاء.
-  Future<void> _editItemLabel(BranchRef ref, int index) async {
+  /// ترقيم النقطة (سؤال أو فرع): مخصص حرفي، فارغ = تلقائي، `-` = إخفاء.
+  Future<void> _editPointLabel(PointsOwner owner, String pointId) async {
     final controller = _controller!;
     final document = controller.document;
-    if (!document.containsRef(ref)) {
+    if (!document.containsOwner(owner)) {
       return;
     }
-    final content = document.branchAt(ref).content;
-    if (index < 0 || index >= content.items.length) {
+    final points = document.pointsOf(owner);
+    final index = points.indexWhere((point) => point.id == pointId);
+    if (index < 0) {
       return;
     }
-    final item = content.items[index];
     final saved = await _showTextInputDialog(
       title: 'ترقيم النقطة',
-      initialText: item.labelOverride ?? '',
+      initialText: points[index].labelOverride ?? '',
       hintText: 'تلقائي: ${document.autoItemLabel(index)}',
       helperText: 'مثال: أ-، 1) — فارغ = تلقائي، - = إخفاء.',
     );
     if (saved == null) {
       return;
     }
-    controller.updateBranchItemLabel(ref, index, saved);
+    controller.updatePointLabel(owner, pointId, saved);
   }
 
   /// تسمية الخيار: مخصصة حرفياً، فارغ = تلقائي، `-` = إخفاء.
-  Future<void> _editOptionLabel(BranchRef ref, int index) async {
+  Future<void> _editOptionLabel(PointsOwner owner, String pointId, int index) async {
     final controller = _controller!;
     final document = controller.document;
-    if (!document.containsRef(ref)) {
+    if (!document.containsOwner(owner)) {
       return;
     }
-    final content = document.branchAt(ref).content;
-    if (index < 0 || index >= content.options.length) {
+    final options = document.pointsOf(owner)
+        .where((point) => point.id == pointId)
+        .expand((point) => point.options)
+        .toList(growable: false);
+    if (index < 0 || index >= options.length) {
       return;
     }
-    final option = content.options[index];
     final saved = await _showTextInputDialog(
       title: 'تسمية الخيار',
-      initialText: option.labelOverride ?? '',
+      initialText: options[index].labelOverride ?? '',
       hintText: 'تلقائي: ${document.autoOptionLabel(index)}',
       helperText: 'مثال: ( أ )، A. — فارغ = تلقائي، - = إخفاء.',
     );
     if (saved == null) {
       return;
     }
-    controller.updateBranchOptionLabel(ref, index, saved);
+    controller.updatePointOptionLabel(owner, pointId, index, saved);
   }
 
   /// يفتح محرر المعادلات المرئي للحقل النشط (مسار شريط الصيغ).
@@ -2210,7 +2225,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   Future<void> _showSettings() async {
     final controller = _controller!;
-    var settings = controller.document.settings;
+    final originalSettings = controller.document.settings;
+    var settings = originalSettings;
+    // ملفات الإطار المختارة داخل هذا الحوار: تُحذف المتروكة منها عند الإلغاء أو
+    // الاستبدال حتى لا تتراكم ملفات يتيمة.
+    final sessionFramePaths = <String>[];
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -2307,11 +2326,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   label: 'هوامش الصفحة',
                   value: '${settings.marginMm.toStringAsFixed(0)} مم',
                   sliderValue: settings.marginMm,
-                  min: 8,
-                  max: 25,
+                  min: PaperSettings.minMarginMm,
+                  max: PaperSettings.maxMarginMm,
                   divisions: 17,
                   onChanged: (value) => setDialogState(
                     () => settings = settings.copyWith(marginMm: value),
+                  ),
+                ),
+                const Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    'الهامش هو حشوة الإطار: يبتعد النص بقدره عن حافة الورقة فلا يتداخل مع الإطار.',
+                    style: TextStyle(fontSize: 11, color: Colors.grey),
                   ),
                 ),
                 _settingsSlider(
@@ -2346,18 +2372,53 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 ),
                 SwitchListTile(
                   dense: true,
-                  title: const Text('ترقيم الصفحات', style: TextStyle(fontSize: 13)),
-                  value: settings.showPageNumbers,
-                  onChanged: (value) => setDialogState(
-                    () => settings = settings.copyWith(showPageNumbers: value),
-                  ),
-                ),
-                SwitchListTile(
-                  dense: true,
                   title: const Text('إطار حول الصفحة', style: TextStyle(fontSize: 13)),
                   value: settings.pageBorder,
                   onChanged: (value) => setDialogState(
                     () => settings = settings.copyWith(pageBorder: value),
+                  ),
+                ),
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.image_outlined),
+                  title: const Text(
+                    'صورة إطار الصفحة (PNG شفاف)',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                  subtitle: Text(
+                    settings.hasFrameImage
+                        ? 'صورة مختارة: تُرسم خلف النص بحجم الورقة كاملة'
+                        : 'اختر صورة PNG شفافة بحجم A4 (اختياري) — يبتعد النص عنها بقدر الهوامش',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      TextButton(
+                        onPressed: () async {
+                          final path = await _pickFrameImage();
+                          if (path != null) {
+                            sessionFramePaths.add(path);
+                            setDialogState(
+                              () => settings = settings.copyWith(
+                                frameImagePath: () => path,
+                                pageBorder: true,
+                              ),
+                            );
+                          }
+                        },
+                        child: Text(settings.hasFrameImage ? 'تغيير' : 'اختيار'),
+                      ),
+                      if (settings.hasFrameImage)
+                        IconButton(
+                          tooltip: 'إزالة صورة الإطار',
+                          icon: const Icon(Icons.delete_outline, size: 18),
+                          onPressed: () => setDialogState(
+                            () => settings = settings.copyWith(frameImagePath: () => null),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 SwitchListTile(
@@ -2373,12 +2434,26 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
           actions: <Widget>[
             TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
+              onPressed: () {
+                for (final path in sessionFramePaths) {
+                  unawaited(PageFrameStore.delete(path));
+                }
+                Navigator.of(dialogContext).pop();
+              },
               child: const Text('إلغاء'),
             ),
             FilledButton(
               onPressed: () {
                 controller.updateSettings(settings);
+                final kept = settings.frameImagePath;
+                for (final path in <String?>[
+                  originalSettings.frameImagePath,
+                  ...sessionFramePaths,
+                ]) {
+                  if (path != null && path != kept) {
+                    unawaited(PageFrameStore.delete(path));
+                  }
+                }
                 Navigator.of(dialogContext).pop();
               },
               child: const Text('تطبيق'),
@@ -2387,6 +2462,26 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         ),
       ),
     );
+  }
+
+  /// يختار صورة إطار PNG من المعرض ويحفظها في مساحة التطبيق (يعيد مسارها).
+  Future<String?> _pickFrameImage() async {
+    final bytes = await pickImageBytes(
+      onError: () => _showMessage(
+        'تعذر فتح الصورة. تحقق من صلاحية الوصول للصور وحاول مجدداً.',
+        isError: true,
+      ),
+    );
+    if (bytes == null || bytes.isEmpty) {
+      return null;
+    }
+    try {
+      return await PageFrameStore.save(bytes);
+    } catch (error, stackTrace) {
+      ExportFileService.logError('Page frame save failed', error, stackTrace);
+      _showMessage('تعذر حفظ صورة الإطار على الجهاز.', isError: true);
+      return null;
+    }
   }
 
   // ------------------------------------------------------------------
@@ -2646,6 +2741,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     int pageCount,
   ) {
     final document = controller.document;
+    final blueprint = controller.blueprint;
     final blocks = <Widget>[];
     String? previousBlockId;
     for (final blockId in page.blockIds) {
@@ -2664,18 +2760,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           MeasureSize(
             key: const ValueKey<String>('measure-header'),
             onChange: (size) => controller.reportBlockHeight(blockId, size.height),
-            child: _buildHeaderBlock(controller, layout),
+            child: _buildHeaderBlock(controller),
           ),
         );
         previousBlockId = blockId;
         continue;
       }
-      final question = controller.document.questionById(blockId);
-      if (question == null) {
+      final questionData = blueprint.questionById(blockId);
+      if (questionData == null) {
         continue;
       }
       // بحث بالمعرف لا بالهوية: نسخ المستند تستبدل النسخ لا المعرفات.
-      final questionIndex = controller.document.indexOfQuestion(question.id);
+      final questionIndex = questionData.index;
       // إفلات سؤال مسحوب هنا يعيد ترتيبه (السؤال وحدة لا تتجزأ).
       blocks.add(
         DragTarget<int>(
@@ -2694,7 +2790,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               child: MeasureSize(
                 key: ValueKey<String>('measure-$blockId'),
                 onChange: (size) => controller.reportBlockHeight(blockId, size.height),
-                child: _buildQuestionBlock(controller, layout, question),
+                child: _buildQuestionBlock(controller, layout, questionData),
               ),
             );
           },
@@ -2818,7 +2914,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       pageCount,
                       content,
                       document,
-                      layout,
                       highlighted: candidates.isNotEmpty,
                     ),
                   ),
@@ -2851,8 +2946,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// يهيّئ محتوى الصفحة (الكتل + التذييل + الإطار) داخل الهوامش؛ والعناصر
-  /// العائمة طبقة مستقلة فوقه بإحداثيات الصفحة.
+  /// يهيّئ محتوى الصفحة (الإطار + الكتل + تذييل آخر صفحة) داخل الهوامش؛
+  /// والعناصر العائمة طبقة مستقلة فوقه بإحداثيات الصفحة.
+  ///
+  /// صندوق المحتوى كله يُشتق من هامش واحد (`marginMm`) هو نفسه حشوة الإطار،
+  /// فيبتعد النص عن الإطار بقدره دائماً. ولا ترقيم للصفحات إطلاقاً.
   ///
   /// الطبقة نفسها **بحجم الورقة كاملة** وتُدخل الهوامش على أبنائها: اختبار
   /// الإصابة في Flutter لا يتجاوز حدود الأب، فلو كانت الطبقة بحجم مساحة
@@ -2863,58 +2961,39 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     PaginatedPage page,
     int pageCount,
     Widget content,
-    ExamDocument document,
-    SubjectLayoutTemplate layout, {
+    ExamDocument document, {
     required bool highlighted,
   }) {
-    final margin =
-        ExamCanvasGeometry.marginFor(document.settings.marginMm);
+    final settings = document.settings;
+    final margin = ExamCanvasGeometry.marginFor(settings.marginMm);
+    final isLastPage = page.index == pageCount - 1;
+    // التذييل يُطبع في أسفل آخر صفحة فقط، ومساحته محجوزة من آخر كتلة.
+    final footerReserve = isLastPage ? controller.footerReserve : 0.0;
     // صندوق صفحة كامل ⇒ كل العناصر العائمة قابلة للمس أينما وُضعت.
     Widget stack = Stack(
       clipBehavior: Clip.hardEdge,
       children: <Widget>[
-        // `bottom` يُترك مفتوحاً في الصفحة غير المتجاوزة كما كان: المحتوى
-        // الأطول من الصفحة (قياس أولي أو كتلة طويلة) يُقصّ على حدود الورقة
-        // بلا خطأ تجاوز، ويُصغَّر بتناسق حين تُعلَّم الصفحة متجاوزة.
+        // الإطار خلف المحتوى: صورة PNG بحجم الورقة أو إطار متجه داخل الهامش.
+        if (settings.pageBorder)
+          Positioned.fill(
+            child: IgnorePointer(child: _buildPageFrame(settings, margin)),
+          ),
+        // `bottom` يُترك مفتوحاً في الصفحة غير المتجاوزة: المحتوى الأطول من
+        // الصفحة (قياس أولي أو كتلة طويلة) يُقصّ على حدود الورقة بلا خطأ
+        // تجاوز، ويُصغَّر بتناسق حين تُعلَّم الصفحة متجاوزة.
         Positioned(
           top: margin,
           left: margin,
           right: margin,
-          bottom: page.overflows
-              ? margin + PaperMetrics.footerHeightPx
-              : null,
+          bottom: page.overflows ? margin + footerReserve : null,
           child: content,
         ),
-        Positioned(
-          left: margin,
-          right: margin,
-          bottom: margin,
-          height: PaperMetrics.footerHeightPx,
-          child: document.settings.showPageNumbers
-              ? Center(
-                  child: Text(
-                    layout.isLtr
-                        ? 'Page ${page.index + 1} of $pageCount'
-                        : 'صفحة ${document.formatNumber(page.index + 1)} من '
-                            '${document.formatNumber(pageCount)}',
-                    style: PaperStyles.footer,
-                  ),
-                )
-              : const SizedBox.shrink(),
-        ),
-        if (document.settings.pageBorder)
+        if (isLastPage)
           Positioned(
-            top: margin,
             left: margin,
             right: margin,
             bottom: margin,
-            child: IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: PaperStyles.primary, width: 1.4),
-                ),
-              ),
-            ),
+            child: _buildFooterBlock(controller),
           ),
       ],
     );
@@ -2927,6 +3006,58 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       );
     }
     return stack;
+  }
+
+  /// إطار الصفحة: صورة PNG مختارة تغطي الورقة كاملة (وإن تعذّر فتحها يُرسم
+  /// الإطار المتجه)، وإلا إطار متجه بسيط في منتصف المسافة بين الحافة والنص.
+  Widget _buildPageFrame(PaperSettings settings, double margin) {
+    final vector = Padding(
+      padding: EdgeInsets.all(margin * 0.5),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border.all(color: PaperStyles.ink, width: 1.4),
+        ),
+      ),
+    );
+    if (!settings.hasFrameImage) {
+      return vector;
+    }
+    return Image.file(
+      File(settings.frameImagePath!),
+      fit: BoxFit.fill,
+      errorBuilder: (context, error, stackTrace) => vector,
+    );
+  }
+
+  /// تذييل آخر صفحة (للقراءة فقط): يُقاس ارتفاعه فيُحجز في التقسيم الورقي.
+  Widget _buildFooterBlock(ExamWizardController controller) {
+    final document = controller.document;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: _tapHeader,
+      child: MeasureSize(
+        key: const ValueKey<String>('measure-footer'),
+        onChange: (size) =>
+            controller.reportBlockHeight(PaperMetrics.footerBlockId, size.height),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: _headerSelected
+                  ? PaperStyles.primary.withOpacity(0.45)
+                  : Colors.transparent,
+            ),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: PaperFooterView(
+            footer: controller.blueprint.footer,
+            style: document.header.style,
+            defaultFont: document.settings.defaultFont,
+            fontScale: _fontScale,
+            heightScale: _heightScale,
+          ),
+        ),
+      ),
+    );
   }
 
   RenderBox? _pageRenderBox(int pageIndex) {
@@ -3034,50 +3165,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   // الترويسة — قابلة للتحرير والتحديد والتنسيق
   // ------------------------------------------------------------------
 
-  Widget _buildHeaderBlock(ExamWizardController controller, SubjectLayoutTemplate layout) {
+  /// الترويسة بثلاثة أعمدة (للقراءة فقط على الورقة): النقر يحدّدها لتنسيقها
+  /// من الشريط، وزر «تعديل» الظاهر عند تحديدها يفتح ورقة تعديل بيانات
+  /// الترويسة والتذييل بتلميحات إرشادية لكل حقل.
+  Widget _buildHeaderBlock(ExamWizardController controller) {
     final document = controller.document;
-    final header = document.header;
-    final defaultFont = document.settings.defaultFont;
-    final lineStyle = PaperStyles.resolve(PaperStyles.headerLine, header.style,
-        defaultFont: defaultFont,
-        fontScale: _fontScale,
-        heightScale: _heightScale,
-      );
-    final centerStyle = PaperStyles.resolve(PaperStyles.headerCenter, header.style,
-        defaultFont: defaultFont,
-        fontScale: _fontScale,
-        heightScale: _heightScale,
-      );
-    final titleStyle = PaperStyles.resolve(PaperStyles.headerTitle, header.style,
-        defaultFont: defaultFont,
-        fontScale: _fontScale,
-        heightScale: _heightScale,
-      );
-
-    Widget column(HeaderSlot slot, {required bool center}) {
-      final lines = header.column(slot).lines;
-      return Expanded(
-        flex: center ? 4 : 3,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            for (var index = 0; index < lines.length; index++)
-              _paperField(
-                fieldKey: _headerKey(slot, index),
-                controller: _field(
-                  _headerKey(slot, index),
-                  lines[index],
-                  (value) => controller.updateHeaderLine(slot, index, value),
-                ),
-                style: center ? centerStyle : lineStyle,
-                textAlign: _textAlignFor(_headerKey(slot, index), fallback: center ? TextAlign.center : TextAlign.start),
-                hint: 'سطر ${index + 1}',
-              ),
-          ],
-        ),
-      );
-    }
-
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: _tapHeader,
@@ -3091,60 +3183,77 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
           borderRadius: BorderRadius.circular(4),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: Stack(
           children: <Widget>[
-            if (header.title.trim().isNotEmpty || _headerSelected)
-              _paperField(
-                fieldKey: _headerTitleKey,
-                controller: _field(
-                  _headerTitleKey,
-                  header.title,
-                  controller.updateHeaderTitle,
+            PaperHeaderView(
+              header: controller.blueprint.header,
+              style: document.header.style,
+              defaultFont: document.settings.defaultFont,
+              fontScale: _fontScale,
+              heightScale: _heightScale,
+            ),
+            // أداة تحرير فقط (لا تُطبع ولا تغيّر ارتفاع الكتلة).
+            if (_headerSelected)
+              PositionedDirectional(
+                top: 0,
+                end: 0,
+                child: IconButton(
+                  tooltip: 'تعديل الترويسة والتذييل',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  onPressed: _editHeaderAndFooter,
                 ),
-                style: titleStyle,
-                textAlign: _textAlignFor(_headerTitleKey, fallback: PaperStyles.toTextAlign(header.style.align, TextAlign.center)),
-                hint: 'عنوان الامتحان...',
               ),
-            Container(
-              // Preserve focused header fields when optional title/notes
-              // appear on selection before/after this group.
-              key: const ValueKey<String>('header-columns'),
-              decoration: BoxDecoration(
-                border: document.settings.headerBorder
-                    ? Border.all(color: PaperStyles.primary, width: 1.4)
-                    : null,
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// ورقة تعديل بيانات الترويسة والتذييل: النموذجان نفسهما في الخطوة 1،
+  /// وكل تعديل يُطبَّق مباشرة على الورقة (وتتبعه إعادة التقسيم الورقي).
+  Future<void> _editHeaderAndFooter() async {
+    final controller = _controller!;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(sheetContext).viewInsets.bottom),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Row(
                 children: <Widget>[
-                  column(HeaderSlot.right, center: false),
-                  const SizedBox(width: 8),
-                  column(HeaderSlot.center, center: true),
-                  const SizedBox(width: 8),
-                  column(HeaderSlot.left, center: false),
+                  const Expanded(
+                    child: Text(
+                      'تعديل الترويسة والتذييل',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'إغلاق',
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                  ),
                 ],
               ),
-            ),
-            _paperField(
-              fieldKey: _instructionsKey,
-              controller:
-                  _field(_instructionsKey, header.instructions, controller.updateInstructions),
-              style: _scaled(PaperStyles.note),
-              textAlign: _textAlignFor(_instructionsKey, fallback: TextAlign.center),
-              hint: 'ملاحظة / تعليمات للطلاب...',
-            ),
-            if (header.notes.trim().isNotEmpty || _headerSelected)
-              _paperField(
-                fieldKey: _headerNotesKey,
-                controller: _field(_headerNotesKey, header.notes, controller.updateHeaderNotes),
-                style: _scaled(PaperStyles.note),
-                textAlign: _textAlignFor(_headerNotesKey, fallback: TextAlign.center),
-                hint: 'ملاحظات إضافية (وقت/درجة/...)...',
+              const SizedBox(height: 12),
+              HeaderForm(
+                initial: controller.document.header,
+                onChanged: (header) =>
+                    controller.updateHeader(header, coalesceKey: 'header-form'),
               ),
-            const Divider(thickness: 1.5, color: PaperStyles.primary, height: 10),
-          ],
+              const SizedBox(height: 20),
+              FooterForm(
+                initial: controller.document.footer,
+                onChanged: (footer) =>
+                    controller.updateFooter(footer, coalesceKey: 'footer-form'),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
         ),
       ),
     );
@@ -3157,13 +3266,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   Widget _buildQuestionBlock(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
-    QuestionModel question,
+    QuestionBlueprint data,
   ) {
     final document = controller.document;
-    // بحث بالمعرف لا بالهوية: نسخ المستند تستبدل النسخ لا المعرفات.
-    final questionIndex = document.indexOfQuestion(question.id);
-    final category = question.category.trim();
+    final question = data.model;
+    final questionIndex = data.index;
     final selected = _isQuestionSelected(questionIndex);
+    // الحقول الاختيارية (نص السؤال) تظهر للتحرير عند تحديد السؤال نفسه،
+    // وتُحذف كلياً من الواجهة والطباعة عند فراغها.
+    final directlySelected = _selectedQuestions.contains(question.id);
     final defaultFont = document.settings.defaultFont;
     final bodyStyle = question.style.copyWith(color: () => null);
     final titleStyle = PaperStyles.resolve(
@@ -3173,7 +3284,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       fontScale: _fontScale,
       heightScale: _heightScale,
     );
-    final promptStyle = PaperStyles.resolve(
+    final textStyle = PaperStyles.resolve(
       PaperStyles.prompt,
       bodyStyle,
       defaultFont: defaultFont,
@@ -3183,33 +3294,33 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final paragraphSpacing = question.style.paragraphSpacing;
     final blockSpacing = paragraphSpacing ?? 2;
     final itemSpacing = paragraphSpacing ?? 0;
-
-    final label = document.displayQuestionLabel(question);
-    final marksPart = document.settings.showQuestionMarks
-        ? ': [${document.formatNumber(question.marks)} ${layout.marksUnit}]'
-        : '';
+    final owner = PointsOwner.question(questionIndex);
+    final statementKey = _statementKey(question.id);
+    final bodyKey = _bodyKey(question.id);
 
     Widget block = Column(
       key: ValueKey<String>('question-block-${question.id}'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        // عنوان القسم الوزاري: نص قابل للتحرير مباشرة على الورقة مثل بقية النصوص.
-        if (category.isNotEmpty)
+        // عنوان قسم السؤال: نص قابل للتحرير مباشرة على الورقة.
+        if (data.section != null)
           _paperField(
             fieldKey: _categoryKey(question.id),
             controller: _field(
               _categoryKey(question.id),
-              category,
+              question.category,
               (value) => controller.updateQuestionCategory(questionIndex, value),
             ),
             style: _scaled(PaperStyles.category),
             textAlign: _textAlignFor(_categoryKey(question.id), fallback: TextAlign.start),
-            hint: 'القسم الوزاري...',
+            hint: 'عنوان القسم...',
           ),
+        // سطر العنوان: الرقم ← المنطوق ← الدرجة «(٢٠ درجة)» في سطر واحد.
         GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () => _tapQuestion(questionIndex),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               if (!_locked)
                 LongPressDraggable<int>(
@@ -3221,7 +3332,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       width: 320,
                       padding: const EdgeInsets.all(8),
                       child: Text(
-                        '$label$marksPart',
+                        data.title.line,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: _scaled(PaperStyles.question),
@@ -3241,18 +3352,39 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 )
               else
                 Icon(Icons.drag_indicator, size: 18, color: Colors.grey.shade300),
+              Tooltip(
+                message: 'انقر لتعديل رقم السؤال',
+                child: GestureDetector(
+                  onTap: () => _editQuestionLabel(questionIndex),
+                  child: Text(data.title.number, style: titleStyle),
+                ),
+              ),
+              const SizedBox(width: 4),
               Expanded(
-                child: Tooltip(
-                  message: 'انقر لتعديل تسمية السؤال',
-                  child: GestureDetector(
-                    onTap: () => _editQuestionLabel(questionIndex),
-                    child: Text(
-                      '$label$marksPart',
-                      style: titleStyle,
-                      textAlign: PaperStyles.toTextAlign(question.titleAlign ?? PaperAlign.start),
+                child: _paperField(
+                  fieldKey: statementKey,
+                  controller: _field(
+                    statementKey,
+                    question.statement,
+                    (value) => controller.updateQuestionStatement(questionIndex, value),
+                  ),
+                  style: titleStyle,
+                  textAlign: _textAlignFor(
+                    statementKey,
+                    fallback: PaperStyles.toTextAlign(
+                      question.titleAlign ?? question.style.align,
                     ),
                   ),
+                  hint: layout.isLtr
+                      ? 'Question statement...'
+                      : 'اكتب منطوق السؤال هنا...',
                 ),
+              ),
+              _marksTarget(
+                marks: data.title.marks,
+                showPlaceholder: document.settings.showQuestionMarks,
+                style: titleStyle,
+                onEdit: () => _editQuestionMarks(questionIndex),
               ),
               IconButton(
                 tooltip: 'إضافة فرع',
@@ -3266,12 +3398,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 icon: const Icon(Icons.copy_outlined, size: 16),
                 onPressed: () => controller.duplicateQuestion(questionIndex),
               ),
-              IconButton(
-                tooltip: 'تثبيت تسمية السؤال',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.label_outline, size: 16),
-                onPressed: () => _editQuestionLabel(questionIndex),
-              ),
               if (controller.questions.length > 1)
                 IconButton(
                   tooltip: 'حذف السؤال',
@@ -3282,27 +3408,41 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             ],
           ),
         ),
-        if (blockSpacing > 0) SizedBox(height: blockSpacing),
-        _paperField(
-          fieldKey: _promptKey(question.id),
-          controller: _field(
-            _promptKey(question.id),
-            question.prompt,
-            (value) => controller.updateQuestionPrompt(questionIndex, value),
+        // نص السؤال: يُحذف كلياً عند فراغه (يظهر للتحرير عند تحديد السؤال).
+        if (data.body != null || directlySelected) ...<Widget>[
+          if (blockSpacing > 0) SizedBox(height: blockSpacing),
+          _paperField(
+            fieldKey: bodyKey,
+            controller: _field(
+              bodyKey,
+              question.body,
+              (value) => controller.updateQuestionBody(questionIndex, value),
+            ),
+            style: textStyle,
+            textAlign: _textAlignFor(
+              bodyKey,
+              fallback: PaperStyles.toTextAlign(
+                question.bodyAlign ?? question.style.align,
+              ),
+            ),
+            hint: layout.isLtr
+                ? 'Question text (optional)...'
+                : 'نص السؤال (اختياري) — يُحذف من الورقة إن تُرك فارغاً',
           ),
-          style: promptStyle,
-          textAlign: _textAlignFor(_promptKey(question.id), fallback: PaperStyles.toTextAlign(question.promptAlign ?? question.style.align)),
-          hint: layout.isLtr
-              ? 'Question text / instructions...'
-              : 'نص السؤال / التعليمات (أجب عن فرعين فقط: ...)...',
-        ),
-        // نقاط السؤال المباشرة (1، 2، 3...) — الترقيم تلقائي على الورقة،
-        // والمدرس يكتب محتوى كل سطر (عبارات/فراغات/اختيارات) بنفسه.
-        for (var index = 0; index < question.items.length; index++) ...<Widget>[
+        ],
+        // نقاط السؤال المباشرة (١-، ٢-، ٣-...) بأنواعها المختلطة وتسلسلها المتصل.
+        for (var index = 0; index < data.points.length; index++) ...<Widget>[
           if ((index == 0 ? blockSpacing : itemSpacing) > 0)
             SizedBox(height: index == 0 ? blockSpacing : itemSpacing),
-          _questionItemRow(controller, layout, question.id, index, promptStyle),
+          _pointRow(
+            controller,
+            owner,
+            data.points[index],
+            textStyle,
+            PaperStyles.toTextAlign(question.style.align),
+          ),
         ],
+        if (directlySelected) _addPointButton(controller, owner),
         // السؤال الجديد يبدأ بلا فروع؛ تُنشأ فقط بطلب صريح (زر +).
         if (question.branches.isEmpty)
           Padding(
@@ -3311,17 +3451,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               layout.isLtr
                   ? 'No branches yet — tap + to add one.'
                   : 'لا فروع بعد — انقر + لإضافة فرع.',
-              style: PaperStyles.hint(promptStyle),
+              style: PaperStyles.hint(textStyle),
             ),
           ),
-        for (var index = 0; index < question.branches.length; index++) ...<Widget>[
+        for (final branch in data.branches) ...<Widget>[
           if (blockSpacing > 0) SizedBox(height: blockSpacing),
-          _buildBranchBlock(
-            controller,
-            layout,
-            BranchRef(questionIndex: questionIndex, branchIndex: index),
-            question.branches[index],
-          ),
+          _buildBranchBlock(controller, layout, branch),
         ],
         if (question.dividerAfter != null)
           _buildDividerWidget(
@@ -3351,7 +3486,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       padding: EdgeInsets.all(question.showFrame ? 4 : 0),
       decoration: BoxDecoration(
         border: Border.all(
-          color: question.showFrame ? PaperStyles.primary : Colors.transparent,
+          color: question.showFrame ? PaperStyles.ink : Colors.transparent,
           width: question.showFrame ? 1 : 0,
         ),
         borderRadius: BorderRadius.circular(4),
@@ -3377,6 +3512,60 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return ConstrainedBox(
       constraints: BoxConstraints(minHeight: minHeight, minWidth: double.infinity),
       child: block,
+    );
+  }
+
+  /// درجة سطر العنوان «(٢٠ درجة)»: نقرة تفتح إدخال الرقم الخام فقط. وحين
+  /// لا درجة تظهر أداة «+ درجة» (أداة تحرير لا تُطبع) إن كانت الدرجات مفعّلة.
+  Widget _marksTarget({
+    required String? marks,
+    required bool showPlaceholder,
+    required TextStyle style,
+    required VoidCallback onEdit,
+  }) {
+    if (marks != null) {
+      return Tooltip(
+        message: 'انقر لتعديل الدرجة',
+        child: GestureDetector(
+          onTap: onEdit,
+          child: Padding(
+            padding: const EdgeInsetsDirectional.only(start: 4),
+            child: Text(marks, style: style),
+          ),
+        ),
+      );
+    }
+    if (!showPlaceholder) {
+      return const SizedBox.shrink();
+    }
+    return Tooltip(
+      message: 'إضافة درجة',
+      child: GestureDetector(
+        onTap: onEdit,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 4),
+          child: Text('+ درجة', style: TextStyle(fontSize: 10, color: Colors.grey)),
+        ),
+      ),
+    );
+  }
+
+  /// زر «إضافة نقطة» (أداة تحرير تظهر عند تحديد صاحب النقاط فقط).
+  Widget _addPointButton(ExamWizardController controller, PointsOwner owner) {
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(start: 36),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: TextButton.icon(
+          style: TextButton.styleFrom(
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+          ),
+          onPressed: () => controller.addPoint(owner),
+          icon: const Icon(Icons.add, size: 14),
+          label: const Text('إضافة نقطة', style: TextStyle(fontSize: 11)),
+        ),
+      ),
     );
   }
 
@@ -3430,11 +3619,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   Widget _buildBranchBlock(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
-    BranchRef ref,
-    BranchModel branch,
+    BranchBlueprint data,
   ) {
-    final document = controller.document;
-    final label = document.displayBranchLabel(ref.questionIndex, ref.branchIndex);
+    final branch = data.model;
+    final ref = BranchRef(
+      questionIndex: data.questionIndex,
+      branchIndex: data.branchIndex,
+    );
     final selected = _isBranchSelected(ref);
 
     // مقبض السحب وحده يبدأ السحب (حتى لا يتعارض مع تحديد النص في الحقول)؛
@@ -3452,7 +3643,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 // معاينة السحب تُعرض نصاً مقروءاً: لا كود LaTeX حتى في
                 // العنصر العائم أثناء السحب.
                 child: Text(
-                  '$label) ${LatexPlainText.ofMixed(branch.content.text)}',
+                  '${data.title.number} ${LatexPlainText.ofMixed(branch.content.statement)}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: _scaled(PaperStyles.body(layout)),
@@ -3506,8 +3697,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               controller,
               layout,
               ref,
-              branch,
-              label,
+              data,
               dragHandle,
               isSelected: selected,
             ),
@@ -3518,7 +3708,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           padding: EdgeInsets.all(branch.showFrame ? 3 : 0),
           decoration: BoxDecoration(
             border: Border.all(
-              color: branch.showFrame ? PaperStyles.primary : Colors.transparent,
+              color: branch.showFrame ? PaperStyles.ink : Colors.transparent,
               width: branch.showFrame ? 0.8 : 0,
             ),
             borderRadius: BorderRadius.circular(4),
@@ -3530,16 +3720,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
+  /// الفرع بنفس بنية السؤال: الرقم ← المنطوق ← الدرجة (سطر واحد) ← النص (يُحذف
+  /// كلياً عند فراغه) ← النقاط المرقّمة بأنواعها المختلطة.
   Widget _buildBranchBody(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
     BranchRef ref,
-    BranchModel branch,
-    String label,
+    BranchBlueprint data,
     Widget dragHandle, {
     required bool isSelected,
   }) {
     final document = controller.document;
+    final branch = data.model;
     final content = branch.content;
     final bodyStyle = PaperStyles.resolve(
       PaperStyles.body(layout),
@@ -3551,66 +3743,48 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final paragraphSpacing = branch.style.paragraphSpacing;
     final firstItemSpacing = paragraphSpacing ?? 1;
     final itemSpacing = paragraphSpacing ?? 0;
-    final typeBodySpacing = paragraphSpacing ?? 1;
-    // «صح/خطأ» بلا جسم مطبوع إطلاقاً (العبارات في نقاطها)، والنص الحر بلا
-    // جسم مولَّد، وبقية الأنواع تعرض خياراتها/فراغها فقط.
-    final showTypeBody = content.type != QuestionType.trueFalse && !content.plainText;
-    final text = Column(
+    final statementKey = _branchStatementKey(branch.id);
+    final bodyKey = _branchBodyKey(branch.id);
+    final owner = PointsOwner.branch(ref);
+    final branchAlign = PaperStyles.toTextAlign(branch.style.align);
+    final column = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Padding(padding: const EdgeInsets.only(top: 2), child: dragHandle),
-            SizedBox(
-              width: 26,
-              child: Tooltip(
-                message: 'انقر لتعديل تسمية الفرع',
-                child: GestureDetector(
-                  onTap: () => _editBranchLabel(ref),
-                  child: Text(
-                    '$label)',
-                    style: bodyStyle.copyWith(fontWeight: FontWeight.bold),
-                  ),
+            Tooltip(
+              message: 'انقر لتعديل رقم الفرع',
+              child: GestureDetector(
+                onTap: () => _editBranchLabel(ref),
+                child: Text(
+                  data.title.number,
+                  style: bodyStyle.copyWith(fontWeight: FontWeight.bold),
                 ),
               ),
             ),
+            const SizedBox(width: 4),
             Expanded(
               child: _paperField(
-                fieldKey: _branchTextKey(branch.id),
+                fieldKey: statementKey,
                 controller: _field(
-                  _branchTextKey(branch.id),
-                  content.text,
-                  (value) => controller.updateBranchText(ref, value),
+                  statementKey,
+                  content.statement,
+                  (value) => controller.updateBranchStatement(ref, value),
                 ),
                 style: bodyStyle,
-                textAlign: _textAlignFor(_branchTextKey(branch.id), fallback: PaperStyles.toTextAlign(branch.style.align)),
-                hint: layout.isLtr ? 'Branch text...' : 'نص الفرع...',
-
+                textAlign: _textAlignFor(statementKey, fallback: branchAlign),
+                hint: layout.isLtr ? 'Branch statement...' : 'اكتب منطوق الفرع هنا...',
                 mushafStyle: true,
               ),
             ),
-            SizedBox(
-              width: 44,
-              child: LtrNumericField(
-                key: ValueKey<String>(_branchMarksKey(branch.id)),
-                controller: _field(
-                  _branchMarksKey(branch.id),
-                  _formatMarksInput(branch.marks),
-                  (value) {
-                    final marks = _parseMarks(value);
-                    if (marks != null) {
-                      controller.updateBranchMarks(ref, marks);
-                    }
-                  },
-                ),
-                collapsed: true,
-                hintText: '0',
-                textAlign: TextAlign.center,
-                style: bodyStyle,
-              ),
+            _marksTarget(
+              marks: data.title.marks,
+              showPlaceholder: document.settings.showQuestionMarks,
+              style: bodyStyle,
+              onEdit: () => _editBranchMarks(ref),
             ),
-            Text(layout.marksUnit, style: _scaled(PaperStyles.small)),
             IconButton(
               tooltip: 'نسخ الفرع',
               visualDensity: VisualDensity.compact,
@@ -3618,16 +3792,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               onPressed: () => controller.duplicateBranch(ref),
             ),
             IconButton(
-              tooltip: 'تثبيت تسمية الفرع',
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.label_outline, size: 14),
-              onPressed: () => _editBranchLabel(ref),
-            ),
-            IconButton(
               tooltip: 'إدراج/تحرير معادلة',
               visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.functions, size: 14),
-              onPressed: () => _editEquationInField(_branchTextKey(branch.id)),
+              onPressed: () => _editEquationInField(statementKey),
             ),
             // لا حد أدنى للفروع: يُحذف الأخير أيضاً ويبقى السؤال فارغاً.
             IconButton(
@@ -3638,33 +3806,30 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             ),
           ],
         ),
-        for (var index = 0; index < content.items.length; index++) ...<Widget>[
-          if ((index == 0 ? firstItemSpacing : itemSpacing) > 0)
-            SizedBox(height: index == 0 ? firstItemSpacing : itemSpacing),
-          _branchItemRow(controller, layout, ref, index, bodyStyle),
-        ],
-        // زر «إضافة نقطة» مستقل عن جسم النوع: صح/خطأ لا جسم له الآن، لكن
-        // عباراته تُضاف وتُحذف من هنا كما في بقية الأنواع (الفرع المحدد فقط).
-        if (showTypeBody || isSelected)
+        // نص الفرع: يُحذف كلياً عند فراغه (يظهر للتحرير عند تحديد الفرع).
+        if (data.body != null || isSelected)
           Padding(
-            padding: EdgeInsetsDirectional.only(
-              start: 36,
-              top: typeBodySpacing,
-            ),
-            child: Row(
-              children: <Widget>[
-                if (showTypeBody)
-                  Expanded(child: _buildTypeBody(controller, ref, layout, branch)),
-                if (isSelected)
-                  IconButton(
-                    tooltip: 'إضافة نقطة',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.add, size: 14),
-                    onPressed: () => controller.addBranchItem(ref),
-                  ),
-              ],
+            padding: EdgeInsetsDirectional.only(start: 26, top: firstItemSpacing),
+            child: _paperField(
+              fieldKey: bodyKey,
+              controller: _field(
+                bodyKey,
+                content.body,
+                (value) => controller.updateBranchBody(ref, value),
+              ),
+              style: bodyStyle,
+              textAlign: _textAlignFor(bodyKey, fallback: branchAlign),
+              hint: layout.isLtr
+                  ? 'Branch text (optional)...'
+                  : 'نص الفرع (اختياري) — يُحذف من الورقة إن تُرك فارغاً',
             ),
           ),
+        for (var index = 0; index < data.points.length; index++) ...<Widget>[
+          if ((index == 0 ? firstItemSpacing : itemSpacing) > 0)
+            SizedBox(height: index == 0 ? firstItemSpacing : itemSpacing),
+          _pointRow(controller, owner, data.points[index], bodyStyle, branchAlign),
+        ],
+        if (isSelected) _addPointButton(controller, owner),
         if (branch.dividerAfter != null)
           _buildDividerWidget(
             key: 'b:${branch.id}',
@@ -3691,212 +3856,205 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         .where((element) => !globalIds.contains(element.id))
         .toList(growable: false);
     if (legacyAttachments.isEmpty) {
-      return text;
+      return column;
     }
     return ConstrainedBox(
       constraints: BoxConstraints(
         minHeight: _legacyAttachmentMinHeight(legacyAttachments, globalIds),
         minWidth: double.infinity,
       ),
-      child: text,
+      child: column,
     );
   }
 
-  /// سطر نقطة سؤال مباشرة (1، 2، 3...) على الورقة.
-  Widget _questionItemRow(
+  /// سطر نقطة واحدة (داخل سؤال أو فرع بالمسار نفسه): الرقم المتصل ← النص ←
+  /// ما يُلحقه نوعها (قوسا «صح/خطأ» أو فراغ «إكمال الفراغ») ← الدرجة، وتحتها
+  /// خيارات «اختيار من متعدد». أدوات النوع والحذف تظهر عند تفعيل النقطة فقط.
+  Widget _pointRow(
     ExamWizardController controller,
-    SubjectLayoutTemplate layout,
-    String questionId,
-    int index,
+    PointsOwner owner,
+    PointBlueprint point,
     TextStyle bodyStyle,
+    TextAlign ownerAlign,
   ) {
-    final document = controller.document;
-    final questionIndex = document.indexOfQuestion(questionId);
-    final question = controller.questions[questionIndex];
-    final item = question.items[index];
-    final itemId = item.id;
-    return _buildItemRow(
-      layout: layout,
-      item: item,
-      index: index,
-      count: question.items.length,
-      bodyStyle: bodyStyle,
-      fieldKey: _itemKey(itemId),
-      showActions: _activeItemFieldKey == _itemKey(itemId),
-      label: document.displayItemLabel(item, index),
-      textAlign: _textAlignFor(
-        _itemKey(itemId),
-        fallback: PaperStyles.toTextAlign(question.style.align),
-      ),
-      onEditLabel: () => _editQuestionItemLabel(questionId, index),
-      onTextChanged: (value) => _updateQuestionItemText(questionId, itemId, value),
-      onMoveUp: index == 0
-          ? null
-          : () => controller.moveQuestionItem(questionIndex, index, index - 1),
-      onMoveDown: index == question.items.length - 1
-          ? null
-          : () => controller.moveQuestionItem(questionIndex, index, index + 1),
-      onDelete: () => controller.removeQuestionItem(questionIndex, index),
-    );
-  }
-
-  /// سطر نقطة داخل فرع — نفس مسار نقاط السؤال.
-  Widget _branchItemRow(
-    ExamWizardController controller,
-    SubjectLayoutTemplate layout,
-    BranchRef ref,
-    int index,
-    TextStyle bodyStyle,
-  ) {
-    final document = controller.document;
-    final branch = document.branchAt(ref);
-    final content = branch.content;
-    final item = content.items[index];
-    final itemId = item.id;
-    return _buildItemRow(
-      layout: layout,
-      item: item,
-      index: index,
-      count: content.items.length,
-      bodyStyle: bodyStyle,
-      fieldKey: _itemKey(itemId),
-      showActions: _activeItemFieldKey == _itemKey(itemId),
-      label: document.displayItemLabel(item, index),
-      textAlign: _textAlignFor(
-        _itemKey(itemId),
-        fallback: PaperStyles.toTextAlign(branch.style.align),
-      ),
-      onEditLabel: () => _editItemLabel(ref, index),
-      onTextChanged: (value) => _updateBranchItemText(ref, itemId, value),
-      onMoveUp: index == 0
-          ? null
-          : () => controller.moveBranchItem(ref, index, index - 1),
-      onMoveDown: index == content.items.length - 1
-          ? null
-          : () => controller.moveBranchItem(ref, index, index + 1),
-      onDelete: () => controller.removeBranchItem(ref, index),
-    );
-  }
-
-  /// سطر نقطة واحد (داخل سؤال أو فرع) — العرض النهائي للنص بلا رموز
-  /// خامة، والتسمية والترتيب والحذف في مكانها.
-  ///
-  /// يُستخدم لنقاط السؤال المباشرة ونقاط الفروع بالمسار نفسه (نفس ما
-  /// يُطبع في الـ PDF حرفياً).
-  Widget _buildItemRow({
-    required SubjectLayoutTemplate layout,
-    required BranchItem item,
-    required int index,
-    required int count,
-    required TextStyle bodyStyle,
-    required String fieldKey,
-    required bool showActions,
-    required String label,
-    required VoidCallback onEditLabel,
-    required ValueChanged<String> onTextChanged,
-    required VoidCallback onDelete,
-    VoidCallback? onMoveUp,
-    VoidCallback? onMoveDown,
-    TextAlign textAlign = TextAlign.start,
-  }) {
+    final item = point.item;
+    final fieldKey = _itemKey(item.id);
+    final showActions = _activeItemFieldKey == fieldKey;
     return Padding(
       padding: const EdgeInsetsDirectional.only(start: 36),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Tooltip(
-            message: 'انقر لتعديل ترقيم النقطة',
-            child: GestureDetector(
-              onTap: onEditLabel,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 2, left: 6),
-                child: label.isEmpty
-                    ? const Icon(Icons.tag, size: 12, color: Colors.grey)
-                    : Text(
-                        label,
-                        style: bodyStyle.copyWith(fontWeight: FontWeight.bold),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Tooltip(
+                message: 'انقر لتعديل ترقيم النقطة',
+                child: GestureDetector(
+                  onTap: () => _editPointLabel(owner, item.id),
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 2, left: 6),
+                    child: point.label.isEmpty
+                        ? const Icon(Icons.tag, size: 12, color: Colors.grey)
+                        : Text(
+                            point.label,
+                            style: bodyStyle.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: _paperField(
+                  fieldKey: fieldKey,
+                  controller: _field(
+                    fieldKey,
+                    item.text,
+                    (value) => controller.updatePointText(owner, item.id, value),
+                  ),
+                  style: bodyStyle,
+                  textAlign: _textAlignFor(fieldKey, fallback: ownerAlign),
+                  hint: item.kind.textHint,
+                ),
+              ),
+              if (point.trailer != null)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(start: 4),
+                  child: Text(point.trailer!, style: bodyStyle),
+                ),
+              if (point.marks != null)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(start: 4),
+                  child: Text(point.marks!, style: bodyStyle),
+                ),
+              if (showActions) ...<Widget>[
+                PopupMenuButton<PointKind>(
+                  tooltip: 'نوع النقطة',
+                  onSelected: (kind) => controller.updatePointKind(owner, item.id, kind),
+                  itemBuilder: (context) => <PopupMenuEntry<PointKind>>[
+                    for (final kind in PointKind.values)
+                      PopupMenuItem<PointKind>(
+                        value: kind,
+                        child: Text(kind.arabicLabel),
                       ),
-              ),
-            ),
+                  ],
+                  child: const Padding(
+                    padding: EdgeInsets.all(4),
+                    child: Icon(Icons.swap_horiz, size: 14),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'حذف النقطة',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.close, size: 14),
+                  onPressed: () => controller.removePoint(owner, item.id),
+                ),
+              ],
+            ],
           ),
-          Expanded(
-            child: _paperField(
-              fieldKey: fieldKey,
-              controller: _field(
-                fieldKey,
-                item.text,
-                onTextChanged,
-              ),
-              style: bodyStyle,
-              textAlign: textAlign,
-              hint: layout.isLtr ? 'Item...' : 'نص النقطة...',
-            ),
-          ),
-          if (showActions) ...<Widget>[
-            IconButton(
-              tooltip: 'حذف النقطة',
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.close, size: 14),
-              onPressed: onDelete,
-            ),
-          ],
+          if (item.kind == PointKind.multipleChoice)
+            _buildPointOptions(controller, owner, item, bodyStyle, ownerAlign),
         ],
       ),
     );
   }
 
-  /// ترقيم نقطة السؤال المباشرة: مخصص حرفي، فارغ = تلقائي، `-` = إخفاء.
-  Future<void> _editQuestionItemLabel(String questionId, int index) async {
-    final controller = _controller!;
-    final questionIndex = controller.document.indexOfQuestion(questionId);
-    if (questionIndex < 0) {
-      return;
-    }
-    final question = controller.questions[questionIndex];
-    if (index < 0 || index >= question.items.length) {
-      return;
-    }
-    final item = question.items[index];
-    final saved = await _showTextInputDialog(
-      title: 'ترقيم النقطة',
-      initialText: item.labelOverride ?? '',
-      hintText: 'تلقائي: ${controller.document.autoItemLabel(index)}',
-      helperText: 'مثال: أ-، 1) — فارغ = تلقائي، - = إخفاء.',
+  /// عرض حقل الخيار الواحد على اللوحة (بكسل منطقي) — قريب من توزيع
+  /// الخيارات في الورقة المطبوعة مع إبقائها قابلة للتحرير في مكانها.
+  static const double _optionFieldWidth = 190;
+
+  /// خيارات نقطة «اختيار من متعدد»: كل خيار حقل كتابة مباشر بعرض ثابت، تحت
+  /// نص النقطة، والخيارات الفارغة تبقى ظاهرة ليُكتب فيها (الطباعة تستثني
+  /// الفارغ). زر «+ خيار» يظهر عند تفعيل النقطة أو أحد خياراتها.
+  Widget _buildPointOptions(
+    ExamWizardController controller,
+    PointsOwner owner,
+    BranchItem item,
+    TextStyle bodyStyle,
+    TextAlign ownerAlign,
+  ) {
+    final document = controller.document;
+    final active = _activeItemFieldKey == _itemKey(item.id) ||
+        (_activeFieldKey?.startsWith('option-${item.id}-') ?? false);
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(start: 20, top: 2),
+      child: Wrap(
+        spacing: 14,
+        runSpacing: 2,
+        children: <Widget>[
+          for (var index = 0; index < item.options.length; index++)
+            SizedBox(
+              width: _optionFieldWidth,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Tooltip(
+                    message: 'انقر لتعديل تسمية الخيار',
+                    child: GestureDetector(
+                      onTap: () => _editOptionLabel(owner, item.id, index),
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 1),
+                        child: document.displayOptionLabel(item.options[index], index).isEmpty
+                            ? const Icon(Icons.tag, size: 12, color: Colors.grey)
+                            : Text(
+                                document.displayOptionLabel(item.options[index], index),
+                                style: bodyStyle,
+                              ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _paperField(
+                      fieldKey: _optionKey(item.id, index),
+                      controller: _field(
+                        _optionKey(item.id, index),
+                        item.options[index].text,
+                        (value) => controller.updatePointOptionText(
+                          owner,
+                          item.id,
+                          index,
+                          value,
+                        ),
+                      ),
+                      style: bodyStyle,
+                      textAlign: _textAlignFor(
+                        _optionKey(item.id, index),
+                        fallback: ownerAlign,
+                      ),
+                      hint: 'اكتب الخيار هنا...',
+                    ),
+                  ),
+                  // لا حد أدنى للخيارات: يُحذف الأخير أيضاً.
+                  InkWell(
+                    onTap: () => controller.removePointOption(owner, item.id, index),
+                    child: const Padding(
+                      padding: EdgeInsets.all(2),
+                      child: Icon(Icons.close, size: 12, color: Colors.grey),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (active)
+            InkWell(
+              onTap: () => controller.addPointOption(owner, item.id),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(Icons.add, size: 14, color: PaperStyles.accent),
+                    Text(
+                      'خيار',
+                      style: TextStyle(fontSize: 11, color: PaperStyles.accent),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
     );
-    if (saved == null) {
-      return;
-    }
-    controller.updateQuestionItemLabel(questionIndex, index, saved);
-  }
-
-  /// نص نقطة السؤال — يُحلّ موضع النقطة وقت الكتابة بمعرفها الثابت (لا
-  /// فهرس مأسور وقت البناء)، فيبقى التعديل صحيحاً بعد النقل/الترتيب.
-  void _updateQuestionItemText(String questionId, String itemId, String value) {
-    final controller = _controller!;
-    final questionIndex = controller.document.indexOfQuestion(questionId);
-    if (questionIndex < 0) {
-      return;
-    }
-    final items = controller.questions[questionIndex].items;
-    final liveIndex = items.indexWhere((item) => item.id == itemId);
-    if (liveIndex < 0) {
-      return;
-    }
-    controller.updateQuestionItemText(questionIndex, liveIndex, value);
-  }
-
-  /// نص نقطة الفرع — يُحلّ فهرس النقطة وقت الكتابة (كما في نقاط السؤال).
-  void _updateBranchItemText(BranchRef ref, String itemId, String value) {
-    final controller = _controller!;
-    if (!controller.document.containsRef(ref)) {
-      return;
-    }
-    final items = controller.document.branchAt(ref).content.items;
-    final liveIndex = items.indexWhere((item) => item.id == itemId);
-    if (liveIndex < 0) {
-      return;
-    }
-    controller.updateBranchItemText(ref, liveIndex, value);
   }
 
   /// عرض الفاصل التالي في دورة (كامل ← ثلثان ← ثلث ← كامل).
@@ -4736,122 +4894,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// عرض حقل الخيار الواحد على اللوحة (بكسل منطقي) — قريب من توزيع
-  /// الخيارات في الورقة المطبوعة مع إبقائها قابلة للتحرير في مكانها.
-  static const double _optionFieldWidth = 190;
-
-  /// جسم الفرع حسب نوعه: خيارات «اختيار من متعدد» وحدها.
-  ///
-  /// كل نصوصه قابلة للتحرير في مكانها — بما فيها نصوص الخيارات.
-  /// و«صح/خطأ» و«الفراغ» و«المقالي» بلا جسم مولَّد إطلاقاً: العبارات/الفراغ
-  /// مكانه في نص الفرع ونقاطه.
-  Widget _buildTypeBody(
-    ExamWizardController controller,
-    BranchRef ref,
-    SubjectLayoutTemplate layout,
-    BranchModel branch,
-  ) {
-    final document = controller.document;
-    final content = branch.content;
-    final optionStyle = PaperStyles.resolve(
-      PaperStyles.option,
-      branch.style,
-      defaultFont: document.settings.defaultFont,
-      fontScale: _fontScale,
-      heightScale: _heightScale,
-    );
-    final paragraphSpacing = branch.style.paragraphSpacing ?? 2;
-    if (content.plainText) {
-      return const SizedBox.shrink();
-    }
-    switch (content.type) {
-      case QuestionType.multipleChoice:
-        // عرض الخيارات بنفس منطق الورقة المطبوعة (صفوف متعددة الخيارات)،
-        // لكن كل خيار حقل كتابة مباشر بعرض ثابت — والخيارات الفارغة تبقى
-        // ظاهرة ليُكتب فيها (محرك الطباعة يستثني الفارغ كما في الورقة).
-        return Wrap(
-          spacing: branch.style.paragraphSpacing == null ? 14 : paragraphSpacing,
-          runSpacing: paragraphSpacing,
-          crossAxisAlignment: WrapCrossAlignment.start,
-          children: <Widget>[
-            for (var index = 0; index < content.options.length; index++)
-              SizedBox(
-                width: _optionFieldWidth,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Tooltip(
-                      message: 'انقر لتعديل تسمية الخيار',
-                      child: GestureDetector(
-                        onTap: () => _editOptionLabel(ref, index),
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 1),
-                          child: document.displayOptionLabel(content.options[index], index).isEmpty
-                              ? const Icon(Icons.tag, size: 12, color: Colors.grey)
-                              : Text(
-                                  document.displayOptionLabel(content.options[index], index),
-                                  style: optionStyle,
-                                ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          _paperField(
-                            fieldKey: _optionKey(branch.id, index),
-                            controller: _field(
-                              _optionKey(branch.id, index),
-                              content.options[index].text,
-                              (value) => controller.updateBranchOptionText(ref, index, value),
-                            ),
-                            style: optionStyle,
-                            textAlign: _textAlignFor(_optionKey(branch.id, index), fallback: PaperStyles.toTextAlign(branch.style.align)),
-                            hint: layout.isLtr ? 'Option...' : 'نص الخيار...',
-                          ),
-                        ],
-                      ),
-                    ),
-                    // لا حد أدنى للخيارات: يُحذف الأخير أيضاً.
-                    InkWell(
-                      onTap: () => controller.removeBranchOption(ref, index),
-                      child: const Padding(
-                        padding: EdgeInsets.all(2),
-                        child: Icon(Icons.close, size: 12, color: Colors.grey),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            if (_isBranchSelected(ref))
-              InkWell(
-                onTap: () => controller.addBranchOption(ref),
-                child: const Padding(
-                padding: EdgeInsets.all(4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Icon(Icons.add, size: 14, color: PaperStyles.accent),
-                    Text('خيار', style: TextStyle(fontSize: 11, color: PaperStyles.accent)),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        );
-      case QuestionType.trueFalse:
-      case QuestionType.fillInTheBlank:
-      case QuestionType.definitions:
-      case QuestionType.essay:
-        // لا جسم مطبوع لهذه الأنواع: العبارات في نقاطها، والفراغ/المقالي
-        // مساحته في نص الفرع.
-        return const SizedBox.shrink();
-    }
-  }
-
   /// حقل النص على الورقة: **الشكل النهائي فقط** — معادلات مرسومة وآيات
   /// بخطها، لا رموز LaTeX خام (`$...$`) على الورقة إطلاقاً.
   ///
@@ -4870,6 +4912,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _inserter.controller = field;
     final controller = _controller!;
     final document = controller.document;
+    // هل المفتاح لنقطة من [points] (نصها أو أحد خياراتها)؟
+    bool belongsToPoints(List<BranchItem> points) => points.any(
+          (point) => key == _itemKey(point.id) || key.startsWith('option-${point.id}-'),
+        );
     setState(() {
       if (!_multiSelect) {
         _clearSelection();
@@ -4877,18 +4923,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         _activeItemFieldKey = null;
       }
       _activeFieldKey = key;
-      if (key.startsWith('header-') || key == _instructionsKey) {
-        _headerSelected = true;
-        controller.selectBranch(null);
-        controller.selectQuestion(null);
-        return;
-      }
       for (var q = 0; q < document.questions.length; q++) {
         final question = document.questions[q];
-        final isQuestionItem = question.items.any((item) => key == _itemKey(item.id));
-        if (key == _promptKey(question.id) || key == _categoryKey(question.id) ||
-            isQuestionItem) {
-          _activeItemFieldKey = isQuestionItem ? key : null;
+        final isQuestionPoint = belongsToPoints(question.items);
+        if (key == _statementKey(question.id) ||
+            key == _bodyKey(question.id) ||
+            key == _categoryKey(question.id) ||
+            isQuestionPoint) {
+          _activeItemFieldKey =
+              isQuestionPoint && key.startsWith('item-') ? key : null;
           _selectedQuestions.add(question.id);
           controller.selectBranch(null);
           controller.selectQuestion(q);
@@ -4896,11 +4939,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         }
         for (var b = 0; b < question.branches.length; b++) {
           final branch = question.branches[b];
-          final isBranchItem = branch.content.items.any((item) => key == _itemKey(item.id));
-          if (key == _branchTextKey(branch.id) ||
-              isBranchItem ||
-              List.generate(branch.content.options.length, (i) => _optionKey(branch.id, i)).contains(key)) {
-            _activeItemFieldKey = isBranchItem ? key : null;
+          final isBranchPoint = belongsToPoints(branch.content.items);
+          if (key == _branchStatementKey(branch.id) ||
+              key == _branchBodyKey(branch.id) ||
+              isBranchPoint) {
+            _activeItemFieldKey =
+                isBranchPoint && key.startsWith('item-') ? key : null;
             final ref = BranchRef(questionIndex: q, branchIndex: b);
             _selectedBranches.add(ref);
             controller.selectBranch(ref);

@@ -13,10 +13,10 @@ import 'question_step_screen.dart';
 /// خطوات المعالج المتسلسل.
 enum WizardStep { header, questions, preview }
 
-/// المعالج المتسلسل لإنشاء النموذج الوزاري (Wizard Flow):
+/// المعالج المتسلسل لإنشاء ورقة الأسئلة (Wizard Flow):
 ///
-/// 1. الترويسة (يمين/وسط/يسار) ← 2. إعداد الأسئلة سؤالاً سؤالاً ←
-/// 3. المعاينة A4 (تحرير مباشر، سحب وإفلات، أدوات عائمة، تصدير PDF).
+/// 1. الترويسة والتذييل ← 2. إعداد الأسئلة سؤالاً سؤالاً ←
+/// 3. المعاينة A4 (تحرير مباشر، سحب وإفلات، أدوات عائمة، تصدير PDF/Word).
 ///
 /// يملك [ExamWizardController] ويوفّره لكل الخطوات؛ زر الرجوع في النظام
 /// يعود خطوة واحدة بدل الخروج مباشرة.
@@ -128,21 +128,24 @@ class _ExamWizardScreenState extends State<ExamWizardScreen> {
         return HeaderStepScreen(
           key: const ValueKey<WizardStep>(WizardStep.header),
           initialHeader: _controller.document.header,
+          initialFooter: _controller.document.footer,
           initialName: _controller.document.name,
           initialSettings: _controller.document.settings,
-          onNext: (header, name, settings) {
+          onNext: (header, footer, name, settings) {
             _controller
               ..updateHeader(header)
+              ..updateFooter(footer)
               ..updateName(name)
               ..updateSettings(settings)
               ..openQuestion(0);
             _goTo(WizardStep.questions);
           },
-          // مسودة الترويسة عند الخروج المبكر: تُحفظ في المتحكم (ومن ثم
+          // مسودة الترويسة والتذييل عند الخروج المبكر: تُحفظ في المتحكم (ومن ثم
           // بالحفظ التلقائي) دون انتقال للخطوة التالية.
-          onDraft: (header, name, settings) {
+          onDraft: (header, footer, name, settings) {
             _controller
               ..updateHeader(header)
+              ..updateFooter(footer)
               ..updateName(name)
               ..updateSettings(settings);
           },

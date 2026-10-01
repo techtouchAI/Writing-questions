@@ -5,9 +5,8 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 
+import '../layout/blueprint/exam_blueprint.dart';
 import '../layout/paper_metrics.dart';
-import '../models/branch_item.dart';
-import '../models/branch_model.dart';
 import '../models/exam_canvas_geometry.dart';
 import '../models/exam_document.dart';
 import '../models/latex_plain_text.dart';
@@ -15,11 +14,10 @@ import '../models/floating_element.dart';
 import '../models/paper_divider.dart';
 import '../models/paper_font.dart';
 import '../models/paper_text_style.dart';
-import '../models/question_model.dart';
-import '../models/question_type.dart';
 import '../models/tex_content.dart';
 import '../pdf_engine/paginated_pdf_exam_engine.dart';
 import 'export_file_service.dart';
+import 'page_frame_store.dart';
 
 /// مخصّص تحويل شكل متجه إلى صورة نقطية (لأن Word لا يقبل SVG الداخلي
 /// بنفس البساطة؛ يُمرَّر من الواجهة حيث يتوفر مسجّل الرسم).
@@ -74,11 +72,12 @@ class _EmbeddedImage {
 
 /// تصدير ورقة الأسئلة ([ExamDocument]) إلى ملف Word قابل للتحرير.
 ///
-/// يحافظ قدر الإمكان على: الترويسة، ترتيب الأسئلة والفروع والنقاط،
-/// النصوص، الدرجات، المحاذاة، الخطوط، الفواصل، مربعات النص، والصور
-/// (مضمّنة فعلياً) — والأشكال تُرسم صوراً عبر [ShapeRasterizer]، وصيغ
-/// LaTeX (`$...$` و`$$...$$`) تُرسم معادلاتٍ عبر [MathRasterizer] بدل أن
-/// تظهر أكواداً خامة.
+/// يعرض نفس مخطط الورقة ([ExamBlueprint]) الذي تعرضه المعاينة وPDF:
+/// ترويسة الأعمدة الثلاثة، الأسئلة (رقم ← منطوق ← درجة ← نص ← نقاط ← فروع)،
+/// وتذييل (عبارة ختامية + توقيع/توقيعان) مثبّت أسفل آخر صفحة، وإطار الصفحة
+/// (صورة PNG خلف النص أو حدود متجهة) — بلا ترقيم صفحات إطلاقاً.
+/// والأشكال تُرسم صوراً عبر [ShapeRasterizer]، وصيغ LaTeX (`$...$` و`$$...$$`)
+/// تُرسم معادلاتٍ عبر [MathRasterizer] بدل أن تظهر أكواداً خامة.
 class DocxDocumentExportService {
   const DocxDocumentExportService._();
 
@@ -92,12 +91,14 @@ class DocxDocumentExportService {
     ShapeRasterizer? shapeRasterizer,
     MathRasterizer? mathRasterizer,
     List<List<String>>? pageAssignments,
+    Uint8List? frameImage,
   }) async {
     final bytes = await buildDocumentDocxBytes(
       document: document,
       shapeRasterizer: shapeRasterizer,
       mathRasterizer: mathRasterizer,
       pageAssignments: pageAssignments,
+      frameImage: frameImage,
     );
     return ExportFileService.writeExportFile(
       baseName: fileName ?? '${document.name}_ورقة_الامتحان',
@@ -112,12 +113,18 @@ class DocxDocumentExportService {
     ShapeRasterizer? shapeRasterizer,
     MathRasterizer? mathRasterizer,
     List<List<String>>? pageAssignments,
+    Uint8List? frameImage,
   }) async {
+    // صورة الإطار تُقرأ من مسارها عند عدم تمريرها (التصدير من المعاينة).
+    final frame = document.settings.pageBorder
+        ? (frameImage ?? await PageFrameStore.read(document.settings.frameImagePath))
+        : null;
     final builder = _DocxBuilder(
       document: document,
       shapeRasterizer: shapeRasterizer,
       mathRasterizer: mathRasterizer,
       pageAssignments: pageAssignments,
+      frameImage: frame,
     );
     await builder.build();
     final archive = Archive();
@@ -126,8 +133,18 @@ class DocxDocumentExportService {
     _addTextFile(archive, 'word/_rels/document.xml.rels', builder.documentRelationshipsXml);
     _addTextFile(archive, 'word/styles.xml', _stylesXml(document));
     _addTextFile(archive, 'word/document.xml', builder.documentXml);
-    if (builder.footerXml != null) {
-      _addTextFile(archive, 'word/footer1.xml', builder.footerXml!);
+    if (builder.headerXml != null) {
+      // طبقة الإطار: صورة PNG مثبّتة خلف النص في ترويسة الصفحة فتتكرر
+      // على كل صفحة.
+      _addTextFile(archive, 'word/header1.xml', builder.headerXml!);
+      _addTextFile(archive, 'word/_rels/header1.xml.rels', builder.headerRelationshipsXml!);
+      archive.addFile(
+        ArchiveFile(
+          'word/media/frame.png',
+          builder.frameImage!.length,
+          builder.frameImage!,
+        ),
+      );
     }
     for (var i = 0; i < builder.images.length; i++) {
       final image = builder.images[i];
@@ -208,12 +225,17 @@ class _DocxBuilder {
     required this.shapeRasterizer,
     required this.mathRasterizer,
     required this.pageAssignments,
-  });
+    required this.frameImage,
+  }) : blueprint = ExamBlueprint.from(document);
 
   final ExamDocument document;
+  final ExamBlueprint blueprint;
   final ShapeRasterizer? shapeRasterizer;
   final MathRasterizer? mathRasterizer;
   final List<List<String>>? pageAssignments;
+
+  /// صورة PNG الإطار (`null` = إطار متجه عند تفعيل «إطار حول الصفحة»).
+  final Uint8List? frameImage;
 
   final List<_EmbeddedImage> images = <_EmbeddedImage>[];
   int _drawingId = 1;
@@ -226,39 +248,22 @@ class _DocxBuilder {
   late final String contentTypesXml;
   late final String documentRelationshipsXml;
 
-  /// تذييل ترقيم الصفحات (`null` = لا ترقيم حسب إعدادات الورقة).
-  String? footerXml;
+  /// ترويسة الصفحة الحاملة لصورة الإطار (`null` = لا صورة إطار).
+  String? headerXml;
+  String? headerRelationshipsXml;
 
-  static const String _footerRelationId = 'rIdFooter';
+  static const String _headerRelationId = 'rIdFrameHeader';
+  static const String _frameImageRelationId = 'rIdFrameImage';
+
+  /// ارتفاع/عرض A4 بالتويبس (الإطار يغطي الصفحة كاملة).
+  static const int _pageWidthTwips = 11906;
+  static const int _pageHeightTwips = 16838;
 
   Future<void> build() async {
     final body = StringBuffer();
     body.write(_buildHeaderTable());
-    if (document.header.instructions.trim().isNotEmpty) {
-      _writeParagraph(
-        body,
-        document.header.instructions.trim(),
-        color: '4B5563',
-        alignment: 'center',
-        before: 120,
-        after: 80,
-      );
-    }
-    if (document.header.notes.trim().isNotEmpty) {
-      _writeParagraph(
-        body,
-        document.header.notes.trim(),
-        color: '4B5563',
-        alignment: 'center',
-        before: 40,
-        after: 120,
-      );
-    }
     final headerSpacingAfter = (PaperMetrics.pt(PaperMetrics.blockSpacingPx) * 20).round();
-    body.write(
-      '<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="12" w:space="4" w:color="1E3A8A"/></w:pBdr>'
-      '<w:spacing w:after="$headerSpacingAfter"/></w:pPr></w:p>',
-    );
+    body.write('<w:p><w:pPr><w:spacing w:after="$headerSpacingAfter"/></w:pPr></w:p>');
     final questionPages = await _resolvedQuestionPages();
     for (var pageIndex = 0; pageIndex < questionPages.length; pageIndex++) {
       if (pageIndex > 0) {
@@ -274,19 +279,33 @@ class _DocxBuilder {
         final question = pageQuestions[index];
         await _buildQuestion(body, question);
         if (index < pageQuestions.length - 1) {
-          _writeQuestionSpacing(body, question.spacingAfter);
+          _writeQuestionSpacing(body, question.model.spacingAfter);
         }
       }
     }
+    // التذييل بعد آخر سؤال مباشرةً، مثبّتاً أسفل آخر صفحة.
+    _buildFooterTable(body);
 
     // بعد اكتمال كل النصوص: تُرسم صيغ LaTeX ($...$ و$$...$$) وتُستبدل
     // علاماتها برسوم مضمّنة — قبل بناء قوائم الصور في الحزمة.
     final resolvedBody = await _resolveMath(body.toString());
 
     final marginTwips = (document.settings.marginMm / 25.4 * 1440).round();
-    if (document.settings.showPageNumbers) {
-      footerXml = _buildFooter();
+    if (document.settings.pageBorder && frameImage != null && frameImage!.isNotEmpty) {
+      headerXml = _buildFrameHeader();
+      headerRelationshipsXml =
+          '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+          '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+          '<Relationship Id="$_frameImageRelationId" '
+          'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
+          'Target="media/frame.png"/>'
+          '</Relationships>';
     }
+    final vectorBorder = document.settings.pageBorder && headerXml == null;
+    // حدود متجهة تتبع الهامش: تُرسم في منتصف المسافة بين حافة الورقة والنص.
+    final borderSpace = (document.settings.marginMm * 0.5 * 72 / 25.4).round().clamp(1, 31);
+    String side(String name) =>
+        '<w:$name w:val="single" w:sz="12" w:space="$borderSpace" w:color="000000"/>';
     documentXml =
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
@@ -297,11 +316,12 @@ class _DocxBuilder {
         '<w:body>'
         '$resolvedBody'
         '<w:sectPr>'
-        '<w:pgSz w:w="11906" w:h="16838"/>'
-        '<w:pgMar w:top="$marginTwips" w:right="$marginTwips" w:bottom="$marginTwips" w:left="$marginTwips"/>'
-        '${document.settings.pageBorder ? '<w:pgBorders w:offsetFrom="page"><w:top w:val="single" w:sz="12" w:space="24" w:color="1E3A8A"/><w:left w:val="single" w:sz="12" w:space="24" w:color="1E3A8A"/><w:bottom w:val="single" w:sz="12" w:space="24" w:color="1E3A8A"/><w:right w:val="single" w:sz="12" w:space="24" w:color="1E3A8A"/></w:pgBorders>' : ''}'
+        '${headerXml == null ? '' : '<w:headerReference r:id="$_headerRelationId" w:type="default"/>'}'
+        '<w:pgSz w:w="$_pageWidthTwips" w:h="$_pageHeightTwips"/>'
+        '<w:pgMar w:top="$marginTwips" w:right="$marginTwips" w:bottom="$marginTwips" '
+        'w:left="$marginTwips" w:header="0" w:footer="0" w:gutter="0"/>'
+        '${vectorBorder ? '<w:pgBorders w:offsetFrom="page">${side('top')}${side('left')}${side('bottom')}${side('right')}</w:pgBorders>' : ''}'
         '${document.layout.isLtr ? '' : '<w:bidi/>'}'
-        '${footerXml == null ? '' : '<w:footerReference r:id="$_footerRelationId" w:type="default"/>'}'
         '</w:sectPr>'
         '</w:body>'
         '</w:document>';
@@ -317,9 +337,15 @@ class _DocxBuilder {
         '\n  <Override PartName="/word/media/image${i + 1}.${images[i].extension}" ContentType="${images[i].contentType}"/>',
       );
     }
+    if (headerXml != null) {
+      overrides.write(
+        '\n  <Override PartName="/word/media/frame.png" ContentType="image/png"/>'
+        '\n  <Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>',
+      );
+    }
     overrides.write('''
   <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>${footerXml == null ? '' : '\n  <Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>'}
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
 </Types>''');
     contentTypesXml = overrides.toString();
 
@@ -333,25 +359,55 @@ class _DocxBuilder {
         '\n  <Relationship Id="${images[i].relationId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image${i + 1}.${images[i].extension}"/>',
       );
     }
-    if (footerXml != null) {
+    if (headerXml != null) {
       rels.write(
-        '\n  <Relationship Id="$_footerRelationId" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>',
+        '\n  <Relationship Id="$_headerRelationId" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>',
       );
     }
     rels.write('\n</Relationships>');
     documentRelationshipsXml = rels.toString();
   }
 
-  Future<List<List<QuestionModel>>> _resolvedQuestionPages() async {
+  /// ترويسة الصفحة الحاملة لصورة الإطار: صورة PNG بحجم A4 مثبّتة على الصفحة
+  /// (0،0) **خلف النص**، فتتكرر خلف كل صفحة ولا تزاحم الأسئلة.
+  String _buildFrameHeader() {
+    const emuWidth = 7560310;
+    const emuHeight = 10692130;
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+        'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/></w:pPr>'
+        '<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" '
+        'simplePos="0" relativeHeight="0" behindDoc="1" locked="1" '
+        'layoutInCell="1" allowOverlap="1">'
+        '<wp:simplePos x="0" y="0"/>'
+        '<wp:positionH relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionH>'
+        '<wp:positionV relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionV>'
+        '<wp:extent cx="$emuWidth" cy="$emuHeight"/><wp:wrapNone/>'
+        '<wp:docPr id="9000" name="Page frame"/>'
+        '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="0"/></wp:cNvGraphicFramePr>'
+        '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+        '<pic:pic><pic:nvPicPr><pic:cNvPr id="9000" name="Page frame"/><pic:cNvPicPr/></pic:nvPicPr>'
+        '<pic:blipFill><a:blip r:embed="$_frameImageRelationId"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+        '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="$emuWidth" cy="$emuHeight"/></a:xfrm>'
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
+        '</pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>'
+        '</w:hdr>';
+  }
+
+  Future<List<List<QuestionBlueprint>>> _resolvedQuestionPages() async {
     final globalElementIds =
         document.floatingElements.map((element) => element.id).toSet();
-    final printableQuestions = document.questions
-        .where((question) => question.hasExportableContent(
+    final printableQuestions = blueprint.questions
+        .where((question) => question.isPrintable(
               ignoredAttachmentIds: globalElementIds,
             ))
         .toList(growable: false);
-    final questionsById = <String, QuestionModel>{
-      for (final question in printableQuestions) question.id: question,
+    final questionsById = <String, QuestionBlueprint>{
+      for (final question in printableQuestions) question.model.id: question,
     };
     final expectedIds = questionsById.keys.toSet();
     var candidate = pageAssignments;
@@ -625,190 +681,177 @@ class _DocxBuilder {
         '</pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing>';
   }
 
-  /// تذييل ترقيم الصفحات («صفحة X من Y») بحقول Word الحية.
-  String _buildFooter() {
-    final layout = document.layout;
-    final before = layout.isLtr ? 'Page ' : 'صفحة ';
-    final middle = layout.isLtr ? ' of ' : ' من ';
-    String run(String text) =>
-        '<w:r><w:rPr>${document.layout.isLtr ? '' : '<w:rtl/>'}<w:sz w:val="18"/><w:color w:val="4B5563"/>'
-        '<w:rFonts w:cs="${DocxDocumentExportService._fontName(document.settings.defaultFont)}"/>'
-        '</w:rPr><w:t xml:space="preserve">${_escapeXml(text)}</w:t></w:r>';
-    String field(String instruction) =>
-        '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
-        '<w:r><w:instrText xml:space="preserve"> $instruction </w:instrText></w:r>'
-        '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
-        '${run('1')}'
-        '<w:r><w:fldChar w:fldCharType="end"/></w:r>';
-    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-        '<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:jc w:val="center"/></w:pPr>'
-        '${run(before)}${field('PAGE')}${run(middle)}${field('NUMPAGES')}'
-        '</w:p>'
-        '</w:ftr>';
-  }
-
   // ------------------------------- الترويسة -------------------------------
 
+  /// جدول الترويسة: ثلاثة أعمدة (يمين موسَّط | وسط موسَّط | يسار محاذى لليمين).
+  /// الجدول `bidiVisual` فالخلية الأولى عند اليمين.
   String _buildHeaderTable() {
-    final header = document.header;
-    final title = header.title.trim().isEmpty
-        ? header.center.lines[1]
-        : header.title.trim();
-    // ورقة الأسئلة بلا أي عدّادات على الورقة (لا الدرجة الكلية ولا عدد
-    // الأسئلة).
-    final titleAlign = header.style.align == null
-        ? 'center'
-        : _wordAlign(header.style.align);
-    final borders = document.settings.headerBorder
-        ? '''
-    <w:tblBorders>
-      <w:top w:val="single" w:sz="8" w:space="0" w:color="1E3A8A"/>
-      <w:left w:val="single" w:sz="8" w:space="0" w:color="1E3A8A"/>
-      <w:bottom w:val="single" w:sz="8" w:space="0" w:color="1E3A8A"/>
-      <w:right w:val="single" w:sz="8" w:space="0" w:color="1E3A8A"/>
-      <w:insideH w:val="single" w:sz="4" w:space="0" w:color="E5E7EB"/>
-      <w:insideV w:val="single" w:sz="4" w:space="0" w:color="E5E7EB"/>
-    </w:tblBorders>'''
+    final data = blueprint.header;
+    final borders = data.framed
+        ? '<w:tblBorders>'
+            '<w:top w:val="single" w:sz="8" w:space="0" w:color="000000"/>'
+            '<w:left w:val="single" w:sz="8" w:space="0" w:color="000000"/>'
+            '<w:bottom w:val="single" w:sz="8" w:space="0" w:color="000000"/>'
+            '<w:right w:val="single" w:sz="8" w:space="0" w:color="000000"/>'
+            '</w:tblBorders>'
         : '';
-
-    return '''
-<w:tbl>
-  <w:tblPr>
-    <w:tblW w:w="5000" w:type="pct"/>
-    <w:bidiVisual/>$borders
-  </w:tblPr>
-  <w:tr>
-    <w:tc>
-      <w:tcPr><w:tcW w:w="1700" w:type="pct"/></w:tcPr>
-      ${_tableCellLines(header.right.lines)}
-    </w:tc>
-    <w:tc>
-      <w:tcPr><w:tcW w:w="1600" w:type="pct"/></w:tcPr>
-      ${title.trim().isEmpty ? '' : _tableParagraph(title, bold: true, size: 28, alignment: titleAlign, color: '1E3A8A')}
-      ${_tableParagraph(header.center.lines[0], alignment: 'center')}
-      ${_tableParagraph(header.center.lines[2], alignment: 'center')}
-    </w:tc>
-    <w:tc>
-      <w:tcPr><w:tcW w:w="1700" w:type="pct"/></w:tcPr>
-      ${_tableCellLines(header.left.lines)}
-    </w:tc>
-  </w:tr>
-</w:tbl>
-''';
-  }
-
-  String _tableCellLines(List<String> lines) {
-    final buffer = StringBuffer();
-    for (final line in lines) {
-      if (line.trim().isEmpty) {
-        continue;
-      }
-      buffer.write(_tableParagraph(line));
+    final right = StringBuffer();
+    for (final line in data.rightLines) {
+      right.write(_headerParagraph(line, alignment: 'center'));
     }
-    return buffer.toString();
+    final center = StringBuffer();
+    if (data.showBismillah) {
+      // البسملة بخط خطّي أنيق (Amiri) — يبقى لها خطها مهما كان خط الورقة.
+      center.write(
+        _headerParagraph(
+          data.bismillah,
+          alignment: 'center',
+          size: 34,
+          font: PaperFont.amiri,
+          applyHeaderStyle: false,
+        ),
+      );
+    }
+    for (final line in data.centerLines) {
+      center.write(_headerParagraph(line, alignment: 'center', bold: true));
+    }
+    final left = StringBuffer();
+    for (final line in data.leftLines) {
+      left.write(_headerParagraph(line, alignment: 'right'));
+    }
+    return '<w:tbl>'
+        '<w:tblPr><w:bidiVisual/><w:tblW w:w="5000" w:type="pct"/>$borders</w:tblPr>'
+        '<w:tr>'
+        '<w:tc><w:tcPr><w:tcW w:w="1500" w:type="pct"/></w:tcPr>$right</w:tc>'
+        '<w:tc><w:tcPr><w:tcW w:w="2000" w:type="pct"/></w:tcPr>$center</w:tc>'
+        '<w:tc><w:tcPr><w:tcW w:w="1500" w:type="pct"/></w:tcPr>$left</w:tc>'
+        '</w:tr>'
+        '</w:tbl>';
   }
 
-  String _tableParagraph(
+  /// فقرة عربية (RTL دائماً) في الترويسة أو التذييل: تنسيق الترويسة الذي
+  /// اختاره المدرس (خط/حجم/عريض/مائل/تسطير/لون) يُطبَّق ما لم يُطلب غيره.
+  String _headerParagraph(
     String text, {
+    required String alignment,
     bool bold = false,
-    bool italic = false,
     int size = 22,
-    String alignment = 'right',
-    String? color,
+    PaperFont? font,
+    bool applyHeaderStyle = true,
   }) {
-    // تنسيق الترويسة (خط/حجم/عريض) كما صممه المدرس، مع قياس حجم الأساس
-    // بمعامل الورقة العام وتباعد أسطرها.
-    final headerStyle = document.header.style;
-    final effectiveBold = headerStyle.bold ?? bold;
-    final effectiveItalic = headerStyle.italic ?? italic;
-    final effectiveSize = headerStyle.fontSize != null
-        ? (headerStyle.fontSize! * 2).round().clamp(12, 96)
+    final style = applyHeaderStyle ? document.header.style : PaperTextStyle.empty;
+    final effectiveBold = style.bold ?? bold;
+    final effectiveSize = style.fontSize != null
+        ? (style.fontSize! * 2).round().clamp(12, 96)
         : (size * document.settings.fontScale).round().clamp(12, 96);
-    final font = DocxDocumentExportService._fontName(
-      headerStyle.font ?? document.settings.defaultFont,
+    final fontName = DocxDocumentExportService._fontName(
+      font ?? style.font ?? document.settings.defaultFont,
     );
-    // محاذاة الترويسة كما حددها المدرس في الموديل تعلو الافتراضي العمودي
-    // (يمين/وسط) — نفس ما تعرضه الشاشة بعد النقر على زر المحاذاة.
-    final effectiveAlign = headerStyle.align != null
-        ? _wordAlign(headerStyle.align)
-        : alignment;
+    final color = style.colorHex;
     final line = (240 * document.settings.lineSpacing).round();
-    final runProperties =
-        '<w:rPr>${document.layout.isLtr ? '' : '<w:rtl/>'}${effectiveBold ? '<w:b/>' : ''}${effectiveItalic ? '<w:i/>' : ''}'
-        '${headerStyle.underline == true ? '<w:u w:val="single"/>' : ''}'
+    final runProperties = '<w:rPr><w:rtl/>${effectiveBold ? '<w:b/>' : ''}'
+        '${style.italic == true ? '<w:i/>' : ''}'
+        '${style.underline == true ? '<w:u w:val="single"/>' : ''}'
         '${color == null ? '' : '<w:color w:val="$color"/>'}'
-        '<w:sz w:val="$effectiveSize"/><w:rFonts w:cs="$font"/></w:rPr>';
-    return '<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:jc w:val="$effectiveAlign"/>'
+        '<w:sz w:val="$effectiveSize"/>'
+        '<w:rFonts w:ascii="$fontName" w:hAnsi="$fontName" w:cs="$fontName"/></w:rPr>';
+    return '<w:p><w:pPr><w:bidi/><w:jc w:val="$alignment"/>'
         '<w:spacing w:line="$line" w:lineRule="auto"/></w:pPr>'
         '${_runsXml(text, runProperties, effectiveSize / 2)}'
         '</w:p>';
   }
 
+  // ------------------------------- التذييل -------------------------------
+
+  /// التذييل: جدول عائم مثبّت أسفل صندوق النص في آخر صفحة (بعد آخر سؤال):
+  /// التوقيع الثاني يميناً (إن وُجد) ← العبارة الختامية وسطاً ← التوقيع
+  /// الأساسي يساراً. الجدول `bidiVisual` فالخلية الأولى عند اليمين.
+  void _buildFooterTable(StringBuffer body) {
+    final data = blueprint.footer;
+    final marginTwips = (document.settings.marginMm / 25.4 * 1440).round();
+    final width = _pageWidthTwips - 2 * marginTwips;
+    final side = (width * 0.3).round();
+    final middle = width - 2 * side;
+
+    String signature(SignatureBlueprint? source) {
+      if (source == null) {
+        return '<w:p/>';
+      }
+      return '${_headerParagraph(source.title, alignment: 'center', bold: true)}'
+          '${_headerParagraph(source.nameLine, alignment: 'center')}';
+    }
+
+    String cell(int cellWidth, String content) =>
+        '<w:tc><w:tcPr><w:tcW w:w="$cellWidth" w:type="dxa"/><w:vAlign w:val="center"/></w:tcPr>'
+        '$content</w:tc>';
+
+    final phrase = data.closingPhrase;
+    body.write(
+      '<w:tbl><w:tblPr>'
+      '<w:tblpPr w:leftFromText="0" w:rightFromText="0" w:vertAnchor="margin" '
+      'w:horzAnchor="margin" w:tblpXSpec="center" w:tblpYSpec="bottom"/>'
+      '<w:bidiVisual/><w:tblW w:w="$width" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
+      '</w:tblPr>'
+      '<w:tblGrid><w:gridCol w:w="$side"/><w:gridCol w:w="$middle"/><w:gridCol w:w="$side"/></w:tblGrid>'
+      '<w:tr>'
+      '${cell(side, signature(data.secondary))}'
+      '${cell(middle, phrase == null ? '<w:p/>' : _headerParagraph(phrase, alignment: 'center', bold: true))}'
+      '${cell(side, signature(data.primary))}'
+      '</w:tr></w:tbl>'
+      // فقرة مرساة صغيرة تتبع الجدول العائم (لا تأخذ مساحة تُذكر).
+      '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/></w:pPr></w:p>',
+    );
+  }
+
   // ------------------------------- الأسئلة -------------------------------
 
-  Future<void> _buildQuestion(StringBuffer body, QuestionModel question) async {
-    final layout = document.layout;
-    final questionIndex = document.indexOfQuestion(question.id);
+  Future<void> _buildQuestion(StringBuffer body, QuestionBlueprint data) async {
+    final question = data.model;
     final bodyStyle = question.style.copyWith(color: () => null);
     final titleStyle = question.style.copyWith(
       align: () => question.titleAlign ?? question.style.align,
       color: () => question.effectiveTitleColor,
     );
-    final titleColor = titleStyle.colorHex ?? '111827';
-    final marksPart = document.settings.showQuestionMarks
-        ? ' [${document.formatNumber(question.marks)} ${layout.marksUnit}]'
-        : '';
     // الترتيب مطابق للوحة المعاينة ومحرك الـ PDF حرفياً:
-    // القسم ← العنوان ← النص ← نقاط السؤال ← الفروع.
-    if (question.category.trim().isNotEmpty) {
+    // القسم ← سطر العنوان ← النص ← نقاط السؤال ← الفروع.
+    if (data.section != null) {
       _writeParagraph(
         body,
-        question.category.trim(),
+        data.section!,
         bold: true,
         size: 24,
-        color: '1E3A8A',
         before: 40,
         after: 40,
       );
     }
     _writeStyledParagraph(
       body,
-      '${document.displayQuestionLabel(question)}$marksPart',
+      data.title.line,
       style: titleStyle,
       bold: true,
       size: 26,
-      color: titleColor,
+      color: titleStyle.colorHex,
       before: 180,
       after: 60,
       border: question.showFrame,
     );
-    if (question.prompt.trim().isNotEmpty) {
+    if (data.body != null) {
       _writeStyledParagraph(
         body,
-        question.prompt,
+        data.body!,
         style: bodyStyle.copyWith(
-          align: () => question.promptAlign ?? question.style.align,
+          align: () => question.bodyAlign ?? question.style.align,
         ),
         size: 24,
         before: question.style.paragraphSpacing == null ? 40 : 0,
         after: 40,
       );
     }
-    // نقاط السؤال المباشرة (1، 2، 3...) — نفس مسار نقاط الفرع في الطباعة.
-    for (var i = 0; i < question.items.length; i++) {
-      final item = question.items[i];
-      if (!item.showsInExport) {
-        continue;
-      }
-      _writeItemParagraph(body, item, i, style: bodyStyle);
-    }
-    for (var index = 0; index < question.branches.length; index++) {
+    _writePoints(body, data.points, style: bodyStyle, indent: 800);
+    for (final branch in data.branches) {
       await _buildBranch(
         body,
-        question.branches[index],
-        questionIndex,
-        index,
+        branch,
         questionParagraphSpacing: question.style.paragraphSpacing,
       );
     }
@@ -818,67 +861,61 @@ class _DocxBuilder {
     _buildDivider(body, question.dividerAfter);
   }
 
-  /// فقرة نقطة مرقَّمة (داخل سؤال أو فرع) — ترقيم تلقائي/مخصص + درجة.
-  ///
-  /// تُطبع العبارات وحدها بالترتيب.
-  void _writeItemParagraph(
+  /// نقاط مرقَّمة (داخل سؤال أو فرع) بتسلسلها المتصل — وتحت كل نقطة
+  /// «اختيار من متعدد» سطر خياراتها. الفارغة تماماً تُحذف.
+  void _writePoints(
     StringBuffer body,
-    BranchItem item,
-    int index, {
+    List<PointBlueprint> points, {
     required PaperTextStyle? style,
+    required int indent,
   }) {
-    final layout = document.layout;
-    final itemMarks = item.marks > 0
-        ? ' [${document.formatNumber(item.marks)} ${layout.marksUnit}]'
-        : '';
-    final itemLabel = document.displayItemLabel(item, index);
-    final chunks = <String>[
-      if (itemLabel.isNotEmpty) itemLabel,
-      if (item.text.trim().isNotEmpty) item.text,
-    ];
-    final line = '${chunks.join(' ')}$itemMarks';
-    if (line.trim().isEmpty) {
-      return;
+    for (final point in points) {
+      if (!point.isPrintable) {
+        continue;
+      }
+      final pointStyle =
+          point.item.align != null ? style?.copyWith(align: () => point.item.align) : style;
+      final before = style?.paragraphSpacing == null ? 30 : 0;
+      if (point.line.trim().isNotEmpty) {
+        _writeStyledParagraph(
+          body,
+          point.line,
+          style: pointStyle,
+          size: 22,
+          indent: indent,
+          before: before,
+          after: 30,
+        );
+      }
+      if (point.optionsLine.isNotEmpty) {
+        _writeStyledParagraph(
+          body,
+          point.optionsLine,
+          style: pointStyle,
+          size: 22,
+          indent: indent + 400,
+          before: 0,
+          after: 30,
+        );
+      }
     }
-    final itemStyle = item.align != null ? style?.copyWith(align: () => item.align) : style;
-    _writeStyledParagraph(
-      body,
-      line,
-      style: itemStyle,
-      size: 22,
-      indent: 800,
-      before: style?.paragraphSpacing == null ? 30 : 0,
-      after: 30,
-    );
   }
 
   Future<void> _buildBranch(
     StringBuffer body,
-    BranchModel branch,
-    int questionIndex,
-    int branchIndex, {
+    BranchBlueprint data, {
     double? questionParagraphSpacing,
   }) async {
-    final layout = document.layout;
-    final content = branch.content;
+    final branch = data.model;
     final globalElementIds =
         document.floatingElements.map((element) => element.id).toSet();
     // الفرع الفارغ تماماً يُحذف من الملف كاملاً ولا يترك فقرات فارغة.
-    if (!branch.hasExportableContentIn(
-      ignoredAttachmentIds: globalElementIds,
-    )) {
+    if (!data.isPrintable(ignoredAttachmentIds: globalElementIds)) {
       return;
     }
-    final label = questionIndex >= 0
-        ? document.displayBranchLabel(questionIndex, branchIndex)
-        : layout.branchLabel(branchIndex);
-    final marksSuffix = branch.marks > 0
-        ? ' [${document.formatNumber(branch.marks)} ${layout.marksUnit}]'
-        : '';
-    final hasText = content.text.trim().isNotEmpty;
     _writeStyledParagraph(
       body,
-      hasText ? '$label) ${content.text}$marksSuffix' : '$label)$marksSuffix',
+      data.title.line,
       style: branch.style,
       size: 22,
       indent: 400,
@@ -888,60 +925,20 @@ class _DocxBuilder {
       after: 40,
       border: branch.showFrame,
     );
-    for (var i = 0; i < content.items.length; i++) {
-      final item = content.items[i];
-      if (!item.showsInExport) {
-        continue;
-      }
-      _writeItemParagraph(body, item, i, style: branch.style);
+    if (data.body != null) {
+      _writeStyledParagraph(
+        body,
+        data.body!,
+        style: branch.style,
+        size: 22,
+        indent: 400,
+        before: 0,
+        after: 40,
+      );
     }
-    // مطابقة اللوحة ومحرك PDF حرفياً (انظر BranchContent.hasPrintableTypeBody).
-    if (content.hasPrintableTypeBody) {
-      _buildTypeBody(body, content, branch.style);
-    }
+    _writePoints(body, data.points, style: branch.style, indent: 800);
     await _buildAttachments(body, branch.attachments);
     _buildDivider(body, branch.dividerAfter);
-  }
-
-  void _buildTypeBody(
-      StringBuffer body, BranchContent content, PaperTextStyle? style) {
-    final alignment = _wordAlign(style?.align);
-    final lineHeight = style?.lineHeight;
-    final styleColor = style?.colorHex;
-    switch (content.type) {
-      case QuestionType.multipleChoice:
-        // الخيارات الفارغة تُحذف، لكن التسميات تبقى بفهارسها الأصلية
-        // (مطابقة اللوحة) ولا يعاد ترقيم المخصص منها أبداً.
-        for (var i = 0; i < content.options.length; i++) {
-          final option = content.options[i];
-          if (option.text.trim().isEmpty) {
-            continue;
-          }
-          final optionLabel = document.displayOptionLabel(option, i);
-          final prefix = optionLabel.isEmpty ? '' : '$optionLabel  ';
-          _writeParagraph(
-            body,
-            '$prefix${option.text}',
-            size: 22,
-            color: styleColor,
-            indent: 800,
-            before: style?.paragraphSpacing == null ? 30 : 0,
-            after: style?.paragraphSpacing == null
-                ? 30
-                : _paragraphSpacingTwips(style!.paragraphSpacing!),
-            alignment:
-                option.align != null ? _wordAlign(option.align) : alignment,
-            lineHeight: lineHeight,
-          );
-        }
-      case QuestionType.trueFalse:
-      case QuestionType.fillInTheBlank:
-      case QuestionType.definitions:
-      case QuestionType.essay:
-        // لا جسم مطبوع لهذه الأنواع: العبارات في نقاطها، ومساحة الفراغ/
-        // المقالي في نص الفرع.
-        return;
-    }
   }
 
   void _buildDivider(StringBuffer body, PaperDivider? divider) {
@@ -950,7 +947,7 @@ class _DocxBuilder {
     }
     final width = (divider.thickness * 8).round().clamp(4, 48);
     body.write(
-      '<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="$width" w:space="4" w:color="1E3A8A"/></w:pBdr>'
+      '<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="$width" w:space="4" w:color="000000"/></w:pBdr>'
       '<w:spacing w:before="${(divider.spacingBefore * 20).round()}" w:after="${(divider.spacingAfter * 20).round()}"/>'
       '</w:pPr></w:p>',
     );
@@ -1266,10 +1263,10 @@ class _DocxBuilder {
     body.write('<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:jc w:val="$alignment"/>');
     if (border) {
       body.write(
-        '<w:pBdr><w:top w:val="single" w:sz="6" w:space="4" w:color="1E3A8A"/>'
-        '<w:left w:val="single" w:sz="6" w:space="4" w:color="1E3A8A"/>'
-        '<w:bottom w:val="single" w:sz="6" w:space="4" w:color="1E3A8A"/>'
-        '<w:right w:val="single" w:sz="6" w:space="4" w:color="1E3A8A"/>'
+        '<w:pBdr><w:top w:val="single" w:sz="6" w:space="4" w:color="000000"/>'
+        '<w:left w:val="single" w:sz="6" w:space="4" w:color="000000"/>'
+        '<w:bottom w:val="single" w:sz="6" w:space="4" w:color="000000"/>'
+        '<w:right w:val="single" w:sz="6" w:space="4" w:color="000000"/>'
         '</w:pBdr>',
       );
     }

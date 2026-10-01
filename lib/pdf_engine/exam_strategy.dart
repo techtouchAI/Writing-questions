@@ -40,7 +40,6 @@ class ExamTextStyles {
     headerTitle: _textStyle(
       fontSize: 15,
       bold: true,
-      color: primaryColor,
       lineSpacing: 1.6,
     ),
     headerBody: _textStyle(fontSize: 10, lineSpacing: 1.6),
@@ -48,7 +47,6 @@ class ExamTextStyles {
     category: _textStyle(
       fontSize: 12.5,
       bold: true,
-      color: primaryColor,
       lineSpacing: 1.45,
     ),
     question: _textStyle(fontSize: 11, bold: true, lineSpacing: 1.7),
@@ -60,7 +58,7 @@ class ExamTextStyles {
   );
 
   /// نسخة مقاسة بمعاملَي الورقة العامّين (حجم الخط الأساسي وتباعد
-  /// الأسطر) — التذييل (أرقام الصفحات) يبقى ثابتاً كما هو معتاد.
+  /// الأسطر).
   ExamTextStyles scaled({double fontScale = 1.0, double heightScale = 1.0}) {
     if (fontScale == 1.0 && heightScale == 1.0) {
       return this;

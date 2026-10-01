@@ -3,44 +3,38 @@ import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../layout/blueprint/exam_blueprint.dart';
 import '../layout/pagination_engine.dart';
 import '../layout/paper_metrics.dart';
 import '../models/branch_item.dart';
-import '../models/branch_model.dart';
 import '../models/exam_canvas_geometry.dart';
 import '../models/exam_document.dart';
-import '../models/exam_header_model.dart';
 import '../models/floating_element.dart';
-import '../models/latex_plain_text.dart';
-import '../models/paper_divider.dart';
-import '../models/paper_text_style.dart';
 import '../models/question_model.dart';
-import '../models/question_option.dart';
-import '../models/question_type.dart';
 import '../models/quran_text.dart';
-import '../models/subject_layout.dart';
-import '../models/tex_content.dart';
 import 'exam_fonts.dart';
 import 'exam_strategy.dart' show ExamTextStyles;
 import 'floating_elements_pdf.dart';
-import 'latex/latex_svg_renderer.dart';
-import 'paper_style_resolver.dart';
+import 'pdf_paper_builder.dart';
 
 /// محرك PDF متعدد الصفحات لورقة الأسئلة (WYSIWYG A4).
+///
+/// المحرك **منسّق** فقط: يحسب التقسيم الورقي ويركّب الصفحات؛ أما بناء
+/// العناصر (الترويسة/السؤال/النقاط/التذييل/الإطار) فمسؤولية
+/// [PdfPaperBuilder] من مخطط الورقة المشترك [ExamBlueprint].
 ///
 /// الضمانات:
 /// 1. **السؤال وحدة لا تتجزأ**: التقسيم الورقي يُحسب عبر [PaginationEngine]
 ///    (نفس محرك الشاشة) على ارتفاعات الكتل المقاسة فعلياً بمقاييس pdf؛
 ///    وعند تمرير [pageAssignments] من لوحة المعاينة يُطبع **نفس** التوزيع
 ///    المعروض على الشاشة تماماً.
-/// 2. **لا تجاوز للورقة أبداً**: محتوى كل صفحة داخل [pw.FittedBox] بوضع
+/// 2. **التذييل في آخر صفحة فقط** وملتصق بأسفل صندوق المحتوى، ومساحته
+///    محجوزة في التقسيم فلا يتداخل مع أي سؤال. لا ترقيم للصفحات إطلاقاً.
+/// 3. **لا تجاوز للورقة أبداً**: محتوى كل صفحة داخل [pw.FittedBox] بوضع
 ///    `scaleDown` كشبكة أمان ضد فروق قياس الخطوط بين الشاشة والطباعة.
-/// 3. **قالب المادة** ([SubjectLayoutTemplate]) يقرّر الاتجاه (RTL/LTR)،
-///    والترقيم (السؤال الأول / Q1)، والفروع (أ / A)، ونسق الأرقام —
-///    ما لم تخصصه إعدادات الورقة أو المدرس لعنصر بعينه.
-/// 4. **ما يُرى هو ما يُطبع**: نص السؤال، النقاط، الفواصل، الإطارات،
-///    الصور، الأشكال، مربعات النص، والتنسيقات — كلها تُرسم هنا بنفس
-///    قرارات لوحة المعاينة حرفياً.
+/// 4. **صندوق المحتوى** يُشتق من هامش الورقة وحده (`marginMm`)، وهو نفسه
+///    حشوة الإطار (صورة PNG شفافة أو إطار متجه) فلا يتداخل النص معه.
+/// 5. **قالب المادة** يقرّر اتجاه منطقة الأسئلة وترقيمها ونسق أرقامها.
 class PaginatedPdfExamEngine {
   PaginatedPdfExamEngine();
 
@@ -52,19 +46,11 @@ class PaginatedPdfExamEngine {
       PdfPageFormat.a4.width - 2 * pageMarginMillimeters * PdfPageFormat.mm;
 
   /// إزاحة بداية كتلة الفرع عن صندوق المحتوى (بنقاط PDF).
-  ///
-  /// الفرع يُزاح عن بداية صندوق المحتوى كما تُزاح الفقرة الأولى في Word،
-  /// فتصير مساحة نص الفرع = [صندوق المحتوى − الإزاحة]. الاختبارات تقيس
-  /// المحاذاة على هذه المساحة نفسها (لا على صندوق المحتوى كاملاً).
-  static const double branchIndent = 10;
+  static const double branchIndent = PdfPaperBuilder.branchIndent;
 
-  /// ارتفاع المحتوى الافتراضي (للهامش الافتراضي) بعد حسم التذييل.
+  /// ارتفاع المحتوى الافتراضي (للهامش الافتراضي).
   static double get pageContentHeight =>
-      PdfPageFormat.a4.height -
-      2 * pageMarginMillimeters * PdfPageFormat.mm -
-      _footerHeight;
-
-  static double get _footerHeight => PaperMetrics.pt(PaperMetrics.footerHeightPx);
+      PdfPageFormat.a4.height - 2 * pageMarginMillimeters * PdfPageFormat.mm;
 
   static double get _blockSpacing => PaperMetrics.pt(PaperMetrics.blockSpacingPx);
 
@@ -75,27 +61,13 @@ class PaginatedPdfExamEngine {
       PdfPageFormat.a4.width - 2 * _marginFor(document);
 
   static double _pageContentHeightFor(ExamDocument document) =>
-      PdfPageFormat.a4.height - 2 * _marginFor(document) - _footerHeight;
+      PdfPageFormat.a4.height - 2 * _marginFor(document);
 
-  /// هل تحمل الورقة نصاً موسوماً بآية قرآنية؟
-  ///
-  /// يُستهلك هذا القرار في تحميل الخط القرآني: الورقة التي لا تحمل وسماً
-  /// قرآنياً لا يُحمَّل لها أصل الخط أصلاً — «إن توفّرت» تعني
-  /// أيضاً ألا نكلّف الورقة ما لا تحتاجه، مع بقاء السلوك نفسه تماماً.
+  /// هل تحتاج الورقة الخط القرآني (Amiri)؟ نعم عند تفعيل البسملة أو وجود
+  /// نص موسوم بآية قرآنية — وإلا لا يُحمَّل أصل الخط أصلاً.
   static bool needsQuranicFont(ExamDocument document) {
-    if (QuranText.containsQuran(document.header.title) ||
-        QuranText.containsQuran(document.header.instructions) ||
-        QuranText.containsQuran(document.header.notes)) {
+    if (document.header.showBismillah) {
       return true;
-    }
-    // أسطر الترويسة الثلاثة×الآن تُرسم بالمحلل نفسه (معاينة وعنواناً
-    // وصيغاً) — فالحاجة للخط القرآني تُحتسب منها أيضاً.
-    for (final slot in HeaderSlot.values) {
-      for (final line in document.header.column(slot).lines) {
-        if (QuranText.containsQuran(line)) {
-          return true;
-        }
-      }
     }
     for (final element in document.floatingElements) {
       if (QuranText.containsQuran(element.label)) {
@@ -103,7 +75,9 @@ class PaginatedPdfExamEngine {
       }
     }
     for (final question in document.questions) {
-      if (QuranText.containsQuran(question.prompt)) {
+      if (QuranText.containsQuran(question.statement) ||
+          QuranText.containsQuran(question.body) ||
+          _pointsContainQuran(question.items)) {
         return true;
       }
       for (final element in question.attachments) {
@@ -113,18 +87,10 @@ class PaginatedPdfExamEngine {
       }
       for (final branch in question.branches) {
         final content = branch.content;
-        if (QuranText.containsQuran(content.text)) {
+        if (QuranText.containsQuran(content.statement) ||
+            QuranText.containsQuran(content.body) ||
+            _pointsContainQuran(content.items)) {
           return true;
-        }
-        for (final item in content.items) {
-          if (QuranText.containsQuran(item.text)) {
-            return true;
-          }
-        }
-        for (final option in content.options) {
-          if (QuranText.containsQuran(option.text)) {
-            return true;
-          }
         }
         for (final element in branch.attachments) {
           if (QuranText.containsQuran(element.label)) {
@@ -136,14 +102,31 @@ class PaginatedPdfExamEngine {
     return false;
   }
 
+  static bool _pointsContainQuran(List<BranchItem> items) {
+    for (final item in items) {
+      if (QuranText.containsQuran(item.text)) {
+        return true;
+      }
+      for (final option in item.options) {
+        if (QuranText.containsQuran(option.text)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   /// يولّد ملف PDF متعدد الصفحات بحجم A4.
   ///
   /// [pageAssignments]: توزيع معرّفات الأسئلة على الصفحات كما حُسب على
   /// الشاشة؛ عند غيابه يُحسب التوزيع هنا بقياس عناصر pdf نفسها.
+  /// [frameImage]: بايتات صورة PNG الإطار (تُقرأ من مسارها في طبقة
+  /// الخدمات)؛ غيابها يرسم الإطار المتجه عند تفعيل «إطار حول الصفحة».
   Future<Uint8List> generate({
     required ExamDocument document,
     List<List<String>>? pageAssignments,
     ExamFonts? fonts,
+    Uint8List? frameImage,
   }) async {
     final loadedFonts =
         fonts ?? await ExamFonts.load(loadQuranic: needsQuranicFont(document));
@@ -152,15 +135,19 @@ class PaginatedPdfExamEngine {
     final margin = _marginFor(document);
     final contentWidth = _contentWidthFor(document);
     final direction = layout.isLtr ? pw.TextDirection.ltr : pw.TextDirection.rtl;
-    final theme = pw.ThemeData.withFont(
-      base: loadedFonts.fontFor(settings.defaultFont),
-      bold: loadedFonts.fontFor(settings.defaultFont, bold: true),
-    );
+    final theme = _themeFor(document, loadedFonts);
     // الأنماط الأساسية مقاسة بمعاملَي الورقة العامّين (القيم الافتراضية
     // تعني 1.0 أي بلا تغيير) — والتنسيق المخصص لعنصر بعينه يبقى مطلقاً.
     final styles = ExamTextStyles.standard.scaled(
       fontScale: settings.fontScale,
       heightScale: settings.heightScale,
+    );
+    final blueprint = ExamBlueprint.from(document);
+    final builder = PdfPaperBuilder(
+      document: document,
+      blueprint: blueprint,
+      fonts: loadedFonts,
+      styles: styles,
     );
 
     final pdf = pw.Document(
@@ -168,52 +155,43 @@ class PaginatedPdfExamEngine {
       creator: 'صانع ومحرر الأسئلة',
       subject: document.header.subject,
     );
+    double measure(pw.Widget widget) =>
+        _measure(widget, pdf, theme, direction, contentWidth);
 
     final pages = _resolvePages(
       document: document,
+      blueprint: blueprint,
+      builder: builder,
       pageAssignments: pageAssignments,
-      measure: (widget) => _measure(widget, pdf, theme, direction, contentWidth),
-      layout: layout,
-      styles: styles,
-      fonts: loadedFonts,
+      measure: measure,
     );
 
     // أعلى كل سؤال داخل صفحته (نقاط PDF) — مرجع العناصر المرتبطة بالسؤال،
     // فالسؤال قد يتصدّر الصفحة أو يتأخر بعد غيره أو ينتقل بين الصفحات.
+    final headerHeight = measure(builder.header());
     final questionTopsByPage = <int, Map<String, double>>{};
     for (var pageIndex = 0; pageIndex < pages.length; pageIndex++) {
       final tops = <String, double>{};
       var top = margin;
       if (pageIndex == 0) {
-        top += _measure(
-              _buildHeader(document, layout, styles, loadedFonts),
-              pdf,
-              theme,
-              direction,
-              contentWidth,
-            ) +
-            _blockSpacing;
+        top += headerHeight + _blockSpacing;
       }
       for (final id in pages[pageIndex]) {
         tops[id] = top;
-        final question = document.questionById(id);
+        final question = blueprint.questionById(id);
         if (question == null) {
           continue;
         }
-        top += _measure(
-              _buildQuestion(document, question, layout, styles, loadedFonts),
-              pdf,
-              theme,
-              direction,
-              contentWidth,
-            ) +
-            PaperMetrics.pt(question.spacingAfter);
+        top += measure(builder.question(question)) +
+            PaperMetrics.pt(question.model.spacingAfter);
       }
       questionTopsByPage[pageIndex] = tops;
     }
 
+    final frameLayer = builder.frame(imageBytes: frameImage);
     for (var pageIndex = 0; pageIndex < pages.length; pageIndex++) {
       final questionIds = pages[pageIndex];
+      final isLastPage = pageIndex == pages.length - 1;
       pdf.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4,
@@ -224,21 +202,13 @@ class PaginatedPdfExamEngine {
             final blocks = <pw.Widget>[];
             final spacingAfter = <double>[];
             if (pageIndex == 0) {
-              blocks.add(_buildHeader(document, layout, styles, loadedFonts));
+              blocks.add(builder.header());
               spacingAfter.add(_blockSpacing);
             }
             for (final id in questionIds) {
-              final question = document.questionById(id)!;
-              blocks.add(
-                _buildQuestion(
-                  document,
-                  question,
-                  layout,
-                  styles,
-                  loadedFonts,
-                ),
-              );
-              spacingAfter.add(PaperMetrics.pt(question.spacingAfter));
+              final question = blueprint.questionById(id)!;
+              blocks.add(builder.question(question));
+              spacingAfter.add(PaperMetrics.pt(question.model.spacingAfter));
             }
             final flowBlocks = <pw.Widget>[];
             for (var index = 0; index < blocks.length; index++) {
@@ -247,7 +217,7 @@ class PaginatedPdfExamEngine {
               }
               flowBlocks.add(blocks[index]);
             }
-            pw.Widget content = pw.Column(
+            final content = pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.stretch,
               children: <pw.Widget>[
                 pw.Expanded(
@@ -267,20 +237,16 @@ class PaginatedPdfExamEngine {
                     ),
                   ),
                 ),
-                _buildFooter(pageIndex + 1, pages.length, document, layout, styles),
+                // التذييل في أسفل آخر صفحة فقط (وملتصق بأسفل صندوق المحتوى).
+                if (isLastPage) ...<pw.Widget>[
+                  pw.SizedBox(height: _blockSpacing),
+                  builder.footer(),
+                ],
               ],
             );
-            if (settings.pageBorder) {
-              content = pw.Container(
-                decoration: pw.BoxDecoration(
-                  border: pw.Border.all(color: ExamTextStyles.primaryColor, width: 1.4),
-                ),
-                padding: const pw.EdgeInsets.all(4),
-                child: content,
-              );
-            }
             return pw.Stack(
               children: <pw.Widget>[
+                if (frameLayer != null) frameLayer,
                 pw.Positioned(
                   left: margin,
                   top: margin,
@@ -331,17 +297,21 @@ class PaginatedPdfExamEngine {
   }) async {
     final loadedFonts =
         fonts ?? await ExamFonts.load(loadQuranic: needsQuranicFont(document));
-    final layout = document.layout;
     final settings = document.settings;
     final contentWidth = _contentWidthFor(document);
-    final direction = layout.isLtr ? pw.TextDirection.ltr : pw.TextDirection.rtl;
-    final theme = pw.ThemeData.withFont(
-      base: loadedFonts.fontFor(settings.defaultFont),
-      bold: loadedFonts.fontFor(settings.defaultFont, bold: true),
-    );
+    final direction =
+        document.layout.isLtr ? pw.TextDirection.ltr : pw.TextDirection.rtl;
+    final theme = _themeFor(document, loadedFonts);
     final styles = ExamTextStyles.standard.scaled(
       fontScale: settings.fontScale,
       heightScale: settings.heightScale,
+    );
+    final blueprint = ExamBlueprint.from(document);
+    final builder = PdfPaperBuilder(
+      document: document,
+      blueprint: blueprint,
+      fonts: loadedFonts,
+      styles: styles,
     );
     final pdf = pw.Document(
       title: document.name,
@@ -351,11 +321,18 @@ class PaginatedPdfExamEngine {
 
     return _resolvePages(
       document: document,
+      blueprint: blueprint,
+      builder: builder,
       pageAssignments: null,
       measure: (widget) => _measure(widget, pdf, theme, direction, contentWidth),
-      layout: layout,
-      styles: styles,
-      fonts: loadedFonts,
+    );
+  }
+
+  pw.ThemeData _themeFor(ExamDocument document, ExamFonts fonts) {
+    final font = document.settings.defaultFont;
+    return pw.ThemeData.withFont(
+      base: fonts.fontFor(font),
+      bold: fonts.fontFor(font, bold: true),
     );
   }
 
@@ -365,18 +342,18 @@ class PaginatedPdfExamEngine {
 
   List<List<String>> _resolvePages({
     required ExamDocument document,
+    required ExamBlueprint blueprint,
+    required PdfPaperBuilder builder,
     required List<List<String>>? pageAssignments,
     required double Function(pw.Widget) measure,
-    required SubjectLayoutTemplate layout,
-    required ExamTextStyles styles,
-    required ExamFonts fonts,
   }) {
     final globalElementIds =
         document.floatingElements.map((element) => element.id).toSet();
-    final printableQuestions = document.questions
-        .where((question) => question.hasExportableContent(
+    final printableQuestions = blueprint.questions
+        .where((question) => question.isPrintable(
               ignoredAttachmentIds: globalElementIds,
             ))
+        .map((question) => question.model)
         .toList(growable: false);
     if (pageAssignments != null &&
         _coversAllQuestions(pageAssignments, printableQuestions)) {
@@ -385,24 +362,24 @@ class PaginatedPdfExamEngine {
           .toList(growable: false);
     }
 
-    final headerHeight = measure(_buildHeader(document, layout, styles, fonts));
     final result = PaginationEngine.paginate(
       blocks: <PageBlock>[
         PageBlock(
           id: PaperMetrics.headerBlockId,
-          height: headerHeight,
+          height: measure(builder.header()),
           spacingAfter: _blockSpacing,
         ),
         for (final question in printableQuestions)
           PageBlock(
             id: question.id,
-            height:
-                measure(_buildQuestion(document, question, layout, styles, fonts)),
+            height: measure(builder.question(blueprint.questionById(question.id)!)),
             spacingAfter: PaperMetrics.pt(question.spacingAfter),
           ),
       ],
       pageHeight: _pageContentHeightFor(document),
       spacing: _blockSpacing,
+      // مساحة التذييل (يُطبع أسفل آخر صفحة) محجوزة من آخر كتلة.
+      lastPageReserve: measure(builder.footer()) + _blockSpacing,
     );
     return <List<String>>[
       for (final page in result.pages)
@@ -538,712 +515,6 @@ class PaginatedPdfExamEngine {
       parentUsesSize: true,
     );
     return widget.box?.height ?? 0;
-  }
-
-  // ------------------------------------------------------------------
-  // الترويسة (عنوان + 3 أعمدة × 3 أسطر + ملاحظات)
-  // ------------------------------------------------------------------
-
-  pw.Widget _buildHeader(
-    ExamDocument document,
-    SubjectLayoutTemplate layout,
-    ExamTextStyles styles,
-    ExamFonts fonts,
-  ) {
-    final header = document.header;
-    final settings = document.settings;
-    final lineStyle = PaperStyleResolver.apply(
-      styles.headerBody.copyWith(lineSpacing: 1.6 * settings.heightScale),
-      header.style,
-      fonts: fonts,
-      defaultFont: settings.defaultFont,
-    );
-    final centerStyle = PaperStyleResolver.apply(
-      styles.headerBody.copyWith(
-          fontWeight: pw.FontWeight.bold, lineSpacing: 1.6 * settings.heightScale),
-      header.style,
-      fonts: fonts,
-      defaultFont: settings.defaultFont,
-    );
-    final titleStyle = PaperStyleResolver.apply(
-      styles.headerTitle,
-      header.style,
-      fonts: fonts,
-      defaultFont: settings.defaultFont,
-    );
-
-    pw.Widget column(HeaderColumn source, pw.TextStyle style, pw.TextAlign align) {
-      // الأسطر الفارغة تُحذف تماماً ولا تترك مسافة بيضاء.
-      final lines =
-          source.lines.where((line) => line.trim().isNotEmpty).toList(growable: false);
-      return pw.Expanded(
-        flex: align == pw.TextAlign.center ? 4 : 3,
-        child: pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-          mainAxisSize: pw.MainAxisSize.min,
-          children: <pw.Widget>[
-            // الصيغ داخل أسطر الترويسة تُرسم كمعادلات (SVG) كما في متن
-            // الأسئلة — لا نص LaTeX خام على الورقة.
-            for (final line in lines)
-              _renderText(line, style, fonts.quranic,
-                  align: align, maxLines: 2),
-          ],
-        ),
-      );
-    }
-
-    final instructions = header.instructions.trim();
-    final notes = header.notes.trim();
-    final title = header.title.trim();
-    final titleAlign =
-        PaperStyleResolver.toPdfAlign(header.style.align) ?? pw.TextAlign.center;
-    // محاذاة حددها المدرس لأي سطر ترويسة تُطبَّق على الأعمدة كلها (كما
-    // تعرضها الشاشة)؛ والافتراضي العمودي يبقى كما كان عند غيابها.
-    final headerAlign = PaperStyleResolver.toPdfAlign(header.style.align);
-    final children = <pw.Widget>[
-      if (title.isNotEmpty)
-        pw.Padding(
-          padding: const pw.EdgeInsets.only(bottom: 4),
-          child: _renderText(title, titleStyle, fonts.quranic, align: titleAlign),
-        ),
-      pw.Container(
-        decoration: settings.headerBorder
-            ? pw.BoxDecoration(
-                border: pw.Border.all(color: ExamTextStyles.primaryColor, width: 1.2),
-              )
-            : null,
-        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-        child: pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: <pw.Widget>[
-            // العمود الأول في اتجاه القراءة: اليمين في RTL.
-            column(header.right, lineStyle, headerAlign ?? pw.TextAlign.start),
-            pw.SizedBox(width: 6),
-            column(header.center, centerStyle, headerAlign ?? pw.TextAlign.center),
-            pw.SizedBox(width: 6),
-            column(header.left, lineStyle, headerAlign ?? pw.TextAlign.start),
-          ],
-        ),
-      ),
-      if (instructions.isNotEmpty)
-        pw.Padding(
-          padding: const pw.EdgeInsets.only(top: 2),
-          child: _renderText(instructions, styles.note, fonts.quranic,
-              align: pw.TextAlign.center),
-        ),
-      if (notes.isNotEmpty)
-        pw.Padding(
-          padding: const pw.EdgeInsets.only(top: 2),
-          child: _renderText(notes, styles.note, fonts.quranic,
-              align: pw.TextAlign.center),
-        ),
-      pw.Divider(thickness: 1.5, color: ExamTextStyles.primaryColor, height: 8),
-    ];
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-      mainAxisSize: pw.MainAxisSize.min,
-      children: children,
-    );
-  }
-
-  // ------------------------------------------------------------------
-  // السؤال الكامل (كتلة لا تتجزأ)
-  // ------------------------------------------------------------------
-
-  pw.Widget _buildQuestion(
-    ExamDocument document,
-    QuestionModel question,
-    SubjectLayoutTemplate layout,
-    ExamTextStyles styles,
-    ExamFonts fonts,
-  ) {
-    final settings = document.settings;
-    final globalElementIds =
-        document.floatingElements.map((element) => element.id).toSet();
-    final category = question.category.trim();
-    final label = document.displayQuestionLabel(question);
-    final marksPart = settings.showQuestionMarks
-        ? ': [${document.formatNumber(question.marks)} ${layout.marksUnit}]'
-        : '';
-    final bodyOverride = question.style.copyWith(color: () => null);
-    final titleOverride = question.style.copyWith(
-      color: () => question.effectiveTitleColor,
-    );
-    final titleStyle = PaperStyleResolver.apply(
-      styles.question,
-      titleOverride,
-      fonts: fonts,
-      defaultFont: settings.defaultFont,
-    );
-    final titleAlign =
-        PaperStyleResolver.toPdfAlign(question.titleAlign ?? question.style.align) ?? pw.TextAlign.start;
-
-    final prompt = question.prompt.trim();
-    final promptStyle = PaperStyleResolver.apply(
-      styles.body.copyWith(
-          fontSize: 11,
-          lineSpacing: 1.7 * settings.heightScale),
-      bodyOverride,
-      fonts: fonts,
-      defaultFont: settings.defaultFont,
-    );
-    final paragraphGap = PaperMetrics.pt(question.style.paragraphSpacing ?? 2);
-
-    final children = <pw.Widget>[
-      if (category.isNotEmpty)
-        pw.Text(
-          category,
-          style: PaperStyleResolver.apply(styles.category, bodyOverride,
-              fonts: fonts, defaultFont: settings.defaultFont),
-          textAlign: titleAlign,
-        ),
-      pw.Text('$label$marksPart', style: titleStyle, textAlign: titleAlign),
-      if (prompt.isNotEmpty)
-        pw.Padding(
-          padding: pw.EdgeInsets.only(top: paragraphGap),
-          child: _renderText(
-            prompt,
-            promptStyle,
-            fonts.quranic,
-            align: PaperStyleResolver.toPdfAlign(question.promptAlign ?? question.style.align),
-          ),
-        ),
-      // نقاط السؤال المباشرة (1، 2، 3...) — ترقيم تلقائي كما في نقاط الفرع.
-      if (question.items.any((item) => item.showsInExport))
-        pw.Padding(
-          padding: pw.EdgeInsetsDirectional.only(start: 14, top: paragraphGap),
-          child: _buildItems(
-            document,
-            question.items,
-            layout,
-            styles,
-            fonts,
-            bodyOverride,
-          ),
-        ),
-      for (var index = 0; index < question.branches.length; index++)
-        if (question.branches[index].hasExportableContentIn(
-          ignoredAttachmentIds: globalElementIds,
-        ))
-          pw.Padding(
-            padding: pw.EdgeInsetsDirectional.only(
-                start: branchIndent, top: paragraphGap),
-            child: _buildBranch(
-              document,
-              question.branches[index],
-              document.displayBranchLabel(
-                document.indexOfQuestion(question.id),
-                index,
-              ),
-              layout,
-              styles,
-              fonts,
-              globalElementIds,
-            ),
-          ),
-      if (question.dividerAfter != null)
-        _buildDivider(question.dividerAfter!, _contentWidthFor(document)),
-    ];
-
-    pw.Widget body = pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-      mainAxisSize: pw.MainAxisSize.min,
-      children: children,
-    );
-    if (question.showFrame) {
-      body = pw.Container(
-        decoration: pw.BoxDecoration(
-          border: pw.Border.all(color: ExamTextStyles.primaryColor, width: 1),
-        ),
-        padding: const pw.EdgeInsets.all(5),
-        child: body,
-      );
-    }
-    // حافظ على المساحة المحجوزة للمرفقات القديمة. المرايا المسجلة في
-    // document.floatingElements لا تؤثر في ارتفاع كتلة السؤال.
-    final legacyAttachments = question.attachments
-        .where((element) => !globalElementIds.contains(element.id))
-        .toList(growable: false);
-    if (legacyAttachments.isEmpty) {
-      return body;
-    }
-    return _withAttachments(
-      body: body,
-      attachments: legacyAttachments,
-      contentWidth: _contentWidthFor(document),
-    );
-  }
-
-  pw.Widget _buildBranch(
-    ExamDocument document,
-    BranchModel branch,
-    String label,
-    SubjectLayoutTemplate layout,
-    ExamTextStyles styles,
-    ExamFonts fonts,
-    Set<String> globalElementIds,
-  ) {
-    final settings = document.settings;
-    final content = branch.content;
-    // الفرع الفارغ تماماً يُحذف من المطبوع كاملاً (مع فاصله) ولا يترك مسافة.
-    if (!branch.hasExportableContentIn(ignoredAttachmentIds: globalElementIds)) {
-      return pw.SizedBox();
-    }
-    final marksSuffix = branch.marks > 0
-        ? ' (${document.formatNumber(branch.marks)} ${layout.marksUnit})'
-        : '';
-    final hasText = content.text.trim().isNotEmpty;
-    // سطر التسمية: النص عند وجوده، وإلا التسمية الهيكلية وحدها بلا فراغ شارد.
-    final labelLine =
-        hasText ? '$label) ${content.text}$marksSuffix' : '$label)$marksSuffix';
-    // المقاطع الموسومة بالآيات تُرسم بالخط القرآني في كل القوالب، وأما
-    // «أسلوب المصحف» — توسيط الآية القائمة بذاتها وتكبيرها — فيتبع تفضيل
-    // القالب ([SubjectLayoutTemplate.prefersQuranicFont] أي التربية
-    // الإسلامية). وهو **نفس قرار لوحة المعاينة** حرفياً؛ والتوسيط والحجم لا
-    // يتعلقان بتوفر الخط (الخط وحده يرتد إلى خط الورقة إن غاب الأصل).
-    final standaloneVerse = hasText &&
-        layout.prefersQuranicFont &&
-        QuranText.isStandaloneVerse(content.text);
-    final baseBody = standaloneVerse
-        ? styles.body.copyWith(
-            fontSize: 12 * settings.fontScale,
-            lineSpacing:
-                (layout.lineHeightFactor + 1) * settings.heightScale)
-        : styles.body.copyWith(
-            lineSpacing: layout.lineHeightFactor * settings.heightScale);
-    final bodyStyle = PaperStyleResolver.apply(
-      baseBody,
-      branch.style,
-      fonts: fonts,
-      defaultFont: settings.defaultFont,
-    );
-    final branchAlign = PaperStyleResolver.toPdfAlign(branch.style.align);
-    // مطابقة اللوحة حرفياً: النص الحر بلا جسم مولَّد.
-    final hasVisibleTypeBody = content.hasPrintableTypeBody;
-    final paragraphGap = PaperMetrics.pt(branch.style.paragraphSpacing ?? 1);
-
-    final children = <pw.Widget>[
-      _renderText(
-        labelLine,
-        bodyStyle,
-        fonts.quranic,
-        centerVerse: standaloneVerse,
-        align: branchAlign,
-      ),
-      if (content.items.any((item) => item.showsInExport))
-        pw.Padding(
-          padding: pw.EdgeInsetsDirectional.only(start: 14, top: paragraphGap),
-          child: _buildItems(
-            document,
-            content.items,
-            layout,
-            styles,
-            fonts,
-            branch.style,
-          ),
-        ),
-      if (hasVisibleTypeBody)
-        pw.Padding(
-          padding: pw.EdgeInsetsDirectional.only(start: 14, top: paragraphGap),
-          child: _buildTypeBody(
-            document,
-            content,
-            layout,
-            styles,
-            fonts,
-            branch.style,
-          ),
-        ),
-      if (branch.dividerAfter != null)
-        _buildDivider(branch.dividerAfter!, _contentWidthFor(document)),
-    ];
-
-    pw.Widget body = pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      mainAxisSize: pw.MainAxisSize.min,
-      children: children,
-    );
-    if (branch.showFrame) {
-      body = pw.Container(
-        decoration: pw.BoxDecoration(
-          border: pw.Border.all(color: ExamTextStyles.primaryColor, width: 0.8),
-        ),
-        padding: const pw.EdgeInsets.all(4),
-        child: body,
-      );
-    }
-    final legacyAttachments = branch.attachments
-        .where((element) => !globalElementIds.contains(element.id))
-        .toList(growable: false);
-    if (legacyAttachments.isEmpty) {
-      return body;
-    }
-    return _withAttachments(
-      body: body,
-      attachments: legacyAttachments,
-      contentWidth: _contentWidthFor(document),
-    );
-  }
-
-  /// نقاط مرقَّمة (داخل سؤال أو فرع) بترقيمها (تلقائي أو مخصص) — والفارغة
-  /// تُحذف. نفس مسار العرض للنقطتين معاً (ما تراه اللوحة هو ما يُطبع).
-  pw.Widget _buildItems(
-    ExamDocument document,
-    List<BranchItem> items,
-    SubjectLayoutTemplate layout,
-    ExamTextStyles styles,
-    ExamFonts fonts,
-    PaperTextStyle? ownerStyle,
-  ) {
-    final settings = document.settings;
-    final itemStyle = PaperStyleResolver.apply(
-      styles.body.copyWith(lineSpacing: 1.5 * settings.heightScale),
-      ownerStyle,
-      fonts: fonts,
-      defaultFont: settings.defaultFont,
-    );
-    final align = PaperStyleResolver.toPdfAlign(ownerStyle?.align);
-    final paragraphGap = PaperMetrics.pt(ownerStyle?.paragraphSpacing ?? 0);
-    final children = <pw.Widget>[];
-    var visibleItemCount = 0;
-    for (var index = 0; index < items.length; index++) {
-      if (!items[index].showsInExport) {
-        continue;
-      }
-      if (visibleItemCount > 0 && paragraphGap > 0) {
-        children.add(pw.SizedBox(height: paragraphGap));
-      }
-      children.add(
-        _buildItem(
-          document,
-          items[index],
-          index,
-          layout,
-          itemStyle,
-          fonts,
-          PaperStyleResolver.toPdfAlign(items[index].align) ?? align,
-        ),
-      );
-      visibleItemCount++;
-    }
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      mainAxisSize: pw.MainAxisSize.min,
-      children: children,
-    );
-  }
-
-  pw.Widget _buildItem(
-    ExamDocument document,
-    BranchItem item,
-    int index,
-    SubjectLayoutTemplate layout,
-    pw.TextStyle style,
-    ExamFonts fonts,
-    pw.TextAlign? align,
-  ) {
-    final marksSuffix = item.marks > 0
-        ? ' (${document.formatNumber(item.marks)} ${layout.marksUnit})'
-        : '';
-    final itemLabel = document.displayItemLabel(item, index);
-    final chunks = <String>[
-      if (itemLabel.isNotEmpty) itemLabel,
-      if (item.text.trim().isNotEmpty) item.text,
-    ];
-    final line = '${chunks.join(' ')}$marksSuffix';
-    if (line.trim().isEmpty) {
-      return pw.SizedBox();
-    }
-    return _renderText(
-      line,
-      style,
-      fonts.quranic,
-      align: align,
-    );
-  }
-
-  pw.Widget _buildDivider(PaperDivider divider, double contentWidth) {
-    return pw.Padding(
-      padding: pw.EdgeInsets.only(
-        top: divider.spacingBefore,
-        bottom: divider.spacingAfter,
-      ),
-      child: pw.Center(
-        child: pw.SizedBox(
-          width: contentWidth * divider.widthFraction,
-          child: pw.Divider(
-            thickness: divider.thickness,
-            color: ExamTextStyles.primaryColor,
-            height: divider.thickness + 2,
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// يحافظ على سلوك الملفات القديمة التي كانت تحجز مساحة للمرفقات التابعة
-  /// لسؤال/فرع؛ العناصر العامة الجديدة لا تمر عبر هذا المسار.
-  pw.Widget _withAttachments({
-    required pw.Widget body,
-    required List<FloatingElement> attachments,
-    required double contentWidth,
-  }) {
-    final scale = PaperMetrics.pointsPerPixel;
-    final minHeight = attachments.fold<double>(
-      0,
-      (max, element) {
-        final bottom = (element.dy + element.height) * scale;
-        return bottom > max ? bottom : max;
-      },
-    );
-    return pw.ConstrainedBox(
-      constraints: pw.BoxConstraints(minHeight: minHeight, minWidth: contentWidth - 24),
-      child: body,
-    );
-  }
-
-  pw.Widget _buildTypeBody(
-    ExamDocument document,
-    BranchContent content,
-    SubjectLayoutTemplate layout,
-    ExamTextStyles styles,
-    ExamFonts fonts,
-    PaperTextStyle? branchStyle,
-  ) {
-    final optionStyle = PaperStyleResolver.apply(
-      styles.option,
-      branchStyle,
-      fonts: fonts,
-      defaultFont: document.settings.defaultFont,
-    );
-    final align = PaperStyleResolver.toPdfAlign(branchStyle?.align);
-    switch (content.type) {
-      case QuestionType.multipleChoice:
-        // الخيارات الفارغة تُحذف، لكن التسميات تبقى بفهارسها الأصلية
-        // (مطابقة اللوحة) ولا يعاد ترقيم المخصص منها أبداً.
-        return pw.Wrap(
-          spacing: branchStyle?.paragraphSpacing == null
-              ? 14
-              : PaperMetrics.pt(branchStyle!.paragraphSpacing!),
-          runSpacing: PaperMetrics.pt(branchStyle?.paragraphSpacing ?? 2),
-          children: <pw.Widget>[
-            for (var index = 0; index < content.options.length; index++)
-              if (content.options[index].text.trim().isNotEmpty)
-                _renderText(
-                  _optionLine(document, content.options[index], index),
-                  optionStyle,
-                  fonts.quranic,
-                  align: PaperStyleResolver.toPdfAlign(content.options[index].align) ??
-                      align,
-                  // الخيار عنصر داخل Wrap: يأخذ عرضه الطبيعي حتى تتشارك
-                  // الخيارات السطر الواحد كما في الشاشة.
-                  fillWidth: false,
-                ),
-          ],
-        );
-      case QuestionType.trueFalse:
-      case QuestionType.fillInTheBlank:
-      case QuestionType.definitions:
-      case QuestionType.essay:
-        // لا جسم مطبوع لهذه الأنواع: العبارات في نقاطها، ومساحة الفراغ/
-        // المقالي في نص الفرع.
-        return pw.SizedBox();
-    }
-  }
-
-  /// سطر الخيار: تسميته (تلقائية بفهرسها الأصلي أو مخصصة) ثم نصه.
-  String _optionLine(
-    ExamDocument document,
-    QuestionOption option,
-    int index,
-  ) {
-    final label = document.displayOptionLabel(option, index);
-    final prefix = label.isEmpty ? '' : '$label ';
-    return '$prefix${option.text}';
-  }
-
-  pw.Widget _buildFooter(
-    int pageNumber,
-    int pageCount,
-    ExamDocument document,
-    SubjectLayoutTemplate layout,
-    ExamTextStyles styles,
-  ) {
-    if (!document.settings.showPageNumbers) {
-      return pw.SizedBox(height: _footerHeight);
-    }
-    return pw.SizedBox(
-      height: _footerHeight,
-      child: pw.Center(
-        child: pw.Text(
-          layout.isLtr
-              ? 'Page $pageNumber of $pageCount'
-              : 'صفحة ${document.formatNumber(pageNumber)} من ${document.formatNumber(pageCount)}',
-          style: styles.footer,
-        ),
-      ),
-    );
-  }
-
-  /// نص الورقة: مقاطع LaTeX ($...$) تُرسم SVG متجهة، وآيات القرآن الموسومة
-  /// بـ `﴿ ... ﴾` تُرسم بالخط القرآني (Amiri) إن توفّر، والباقي نص عادي.
-  ///
-  /// [centerVerse] يوسّط آية قائمة بذاتها كما في لوحة المعاينة، و[align]
-  /// محاذاة الكتلة المختارة من شريط التنسيق، و[fillWidth] يمنح الكتلة عرض
-  /// صندوق المحتوى (يُطفأ حين تكون الكتلة عنصراً داخل `Wrap` يتقاسمان السطر).
-  pw.Widget _renderText(
-    String text,
-    pw.TextStyle style,
-    pw.Font? quranFont, {
-    bool centerVerse = false,
-    pw.TextAlign? align,
-    int? maxLines,
-    bool fillWidth = true,
-  }) {
-    final segments = TexContent.split(text);
-    final hasMath = segments.any((segment) => segment.isMath);
-    if (!hasMath) {
-      final plain = _plainText(text, style, quranFont,
-          centerVerse: centerVerse, align: align, maxLines: maxLines);
-      return fillWidth ? _fullWidth(plain) : plain;
-    }
-    final fontSize = style.fontSize ?? 10.5;
-    final rows = <pw.Widget>[];
-    var inline = <pw.Widget>[];
-
-    void flushInline() {
-      if (inline.isEmpty) {
-        return;
-      }
-      rows.add(
-        pw.Wrap(
-          spacing: 1,
-          runSpacing: 2,
-          alignment: _wrapAlign(align),
-          crossAxisAlignment: pw.WrapCrossAlignment.center,
-          children: List<pw.Widget>.of(inline),
-        ),
-      );
-      inline = <pw.Widget>[];
-    }
-
-    for (final segment in segments) {
-      if (!segment.isMath) {
-        if (segment.text.isNotEmpty) {
-          inline.add(_plainText(segment.text, style, quranFont,
-              align: align, maxLines: maxLines));
-        }
-        continue;
-      }
-      final latex = LatexSvgRenderer.tryToSvg(segment.text, fontSize: fontSize);
-      if (latex == null) {
-        // صيغة تعذّر ترسيمها (نص قديم نادر): تُكتب نصاً رياضياً مقروءاً —
-        // ممنوع ظهور كود LaTeX في أي ملف مهما كان السبب.
-        inline.add(
-          pw.Text(LatexPlainText.of(segment.text), style: style, textAlign: align),
-        );
-        continue;
-      }
-      final image = pw.SvgImage(svg: latex.svg, width: latex.width, height: latex.height);
-      if (segment.isBlock) {
-        flushInline();
-        rows.add(pw.Center(child: image));
-      } else {
-        inline.add(image);
-      }
-    }
-    flushInline();
-    final block = pw.Column(
-      crossAxisAlignment: _columnAlign(align),
-      mainAxisSize: pw.MainAxisSize.min,
-      children: rows,
-    );
-    return fillWidth ? _fullWidth(block) : block;
-  }
-
-  /// يمنح كتلة النص عرض صندوق المحتوى كاملاً قبل حساب الالتفاف والمحاذاة.
-  ///
-  /// `pw.Text` في مكتبة pdf يقيس صندوقه على عرض **أطول سطر** (تقلّص)،
-  /// والمحاذاة والضبط يُحسبان على ذلك العرض المتقلّص: فلا يظهر أثر لمحاذاة
-  /// «يسار/وسط/يمين» على فقرة سطرها واحد، ولا يمدّ الضبط أسطره إلا إلى
-  /// عرض أطول سطر — بخلاف `TextPainter` على شاشة المعاينة الذي يعطي النص
-  /// عرض الورقة المتاح. `pw.SizedBox` بعرض لانهائي يُقيَّد بالمُتاح فيمنح
-  /// النص صندوقاً مطابقاً لصندوق الشاشة (WYSIWYG).
-  static pw.Widget _fullWidth(pw.Widget child) =>
-      pw.SizedBox(width: double.infinity, child: child);
-
-  static pw.CrossAxisAlignment _columnAlign(pw.TextAlign? align) {
-    switch (align) {
-      case pw.TextAlign.center:
-        return pw.CrossAxisAlignment.center;
-      case pw.TextAlign.right:
-      case pw.TextAlign.end:
-        return pw.CrossAxisAlignment.end;
-      default:
-        return pw.CrossAxisAlignment.start;
-    }
-  }
-
-  static pw.WrapAlignment _wrapAlign(pw.TextAlign? align) {
-    switch (align) {
-      case pw.TextAlign.center:
-        return pw.WrapAlignment.center;
-      case pw.TextAlign.right:
-      case pw.TextAlign.end:
-        return pw.WrapAlignment.end;
-      default:
-        return pw.WrapAlignment.start;
-    }
-  }
-
-  /// نص عادي — وإذا حمل آيات موسومة رُسمت مقاطعها بالخط القرآني [quranFont]
-  /// في نفس السطر ([pw.RichText] بامتدادات متعددة الخطوط).
-  ///
-  /// غياب الخط القرآني أو غياب الوسم يعيد النص كما هو بخط الورقة الأساسي.
-  static pw.Widget _plainText(
-    String text,
-    pw.TextStyle style,
-    pw.Font? quranFont, {
-    bool centerVerse = false,
-    pw.TextAlign? align,
-    int? maxLines,
-  }) {
-    if (quranFont == null || !QuranText.containsQuran(text)) {
-      return pw.Text(
-        text,
-        style: style,
-        textAlign: centerVerse ? pw.TextAlign.center : align,
-        maxLines: maxLines,
-      );
-    }
-    final spans = <pw.InlineSpan>[];
-    for (final segment in QuranText.split(text)) {
-      if (segment.text.isEmpty) {
-        continue;
-      }
-      // تنبيه دقيق في حزمة pdf: `copyWith(font:)` يوجَّه إلى خانة الوزن
-      // الفارغة فقط، وأي خط مضبوط مسبقاً (مثل Noto الصريح الذي يضعه
-      // PaperStyleResolver) يبقى ويسقط الخط الممرَّر. لذلك تُتجاوَز هنا
-      // الخانات الأربع صراحةً ليُلبَس الخط القرآني حتماً.
-      spans.add(
-        pw.TextSpan(
-          text: segment.text,
-          style: segment.isQuran
-              ? style.copyWith(
-                  fontNormal: quranFont,
-                  fontBold: quranFont,
-                  fontItalic: quranFont,
-                  fontBoldItalic: quranFont,
-                )
-              : style,
-        ),
-      );
-    }
-    return pw.RichText(
-      text: pw.TextSpan(children: spans),
-      textAlign: centerVerse ? pw.TextAlign.center : null,
-      maxLines: maxLines,
-    );
   }
 
 }

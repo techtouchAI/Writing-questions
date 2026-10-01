@@ -2,28 +2,24 @@ import 'package:flutter/material.dart';
 
 import '../../models/branch_item.dart';
 import '../../models/branch_model.dart';
-import '../../models/question_type.dart';
-import '../widgets/items_editor.dart';
+import '../../models/question_option.dart';
 import '../widgets/ltr_numeric_field.dart';
+import '../widgets/points_editor.dart';
 import '../widgets/rich_content_field.dart';
 
 /// بطاقة تحرير فرع واحد (أ، ب، ج...) داخل خطوة «إعداد السؤال».
 ///
-/// تُغلّف أدوات الإدخال الحالية بدل إعادة برمجتها: [ItemsEditor] للنقاط
-/// و[LtrNumericField] للدرجة — مع نوع السؤال قابل للاختيار لكل فرع على حدة،
-/// ووضع «نص حر»، ونقاط غير محدودة (1، 2، 3...).
-///
-/// التطبيق لكتابة الأسئلة وحدها، والحقول هنا هي: النص ← النقاط.
-/// **خيارات «اختيار من متعدد» لا تُكتب في هذه البطاقة إطلاقاً**: مكانها
-/// خانة الخيار على ورقة المعاينة (الخطوة 3) حيث تُعرض كما تُطبع حرفياً
-/// وتُحرَّر في مكانها (والإضافة بزر «+ خيار» عند تحديد الفرع). لهذا لا يوجد
-/// هنا محرر خيارات، بل سطر توجيه واحد لفرع «اختيار من متعدد».
+/// الحقول بترتيب الطباعة نفسه (وهو ترتيب السؤال): الرقم ← المنطوق ← الدرجة
+/// (رقم خام يطبعه النظام «(٥ درجة)») ← النص (يُحذف من الورقة عند فراغه) ←
+/// النقاط المرقّمة بأنواعها المختلطة ([PointsEditor]).
 class BranchEditorCard extends StatefulWidget {
   const BranchEditorCard({
     super.key,
     required this.label,
     required this.autoLabel,
     required this.branch,
+    required this.pointLabelOf,
+    required this.optionLabelOf,
     required this.onChanged,
     this.onRemove,
     this.enabled = true,
@@ -32,10 +28,15 @@ class BranchEditorCard extends StatefulWidget {
   /// التسمية المعروضة للفرع (يدوية إن ثُبّتت، وإلا تلقائية من الفهرس).
   final String label;
 
-  /// التسمية التلقائية من الفهرس (تلميح حقل التسمية المخصصة).
+  /// التسمية التلقائية من الفهرس (تلميح حقل الرقم المخصص).
   final String autoLabel;
 
   final BranchModel branch;
+
+  /// الرقم المعروض لنقطة (تسلسل متصل) وتسمية خيار — من مستند الورقة.
+  final String Function(int index, BranchItem point) pointLabelOf;
+  final String Function(int index, QuestionOption option) optionLabelOf;
+
   final ValueChanged<BranchModel> onChanged;
   final VoidCallback? onRemove;
   final bool enabled;
@@ -52,8 +53,7 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
   void initState() {
     super.initState();
     _marksController = TextEditingController(text: _formatMarks(widget.branch.marks));
-    _labelController =
-        TextEditingController(text: widget.branch.labelOverride ?? '');
+    _labelController = TextEditingController(text: widget.branch.labelOverride ?? '');
   }
 
   @override
@@ -142,15 +142,6 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
-                SizedBox(
-                  width: 84,
-                  child: LtrNumericField(
-                    controller: _marksController,
-                    enabled: widget.enabled,
-                    hintText: 'الدرجة',
-                    onChanged: _onMarksChanged,
-                  ),
-                ),
                 if (widget.onRemove != null)
                   IconButton(
                     tooltip: 'حذف الفرع',
@@ -164,8 +155,8 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
               controller: _labelController,
               enabled: widget.enabled,
               decoration: InputDecoration(
-                labelText: 'تسمية الفرع (فارغ = تلقائي)',
-                hintText: 'تلقائي: ${widget.autoLabel}',
+                labelText: 'رقم الفرع (فارغ = تلقائي)',
+                hintText: 'تلقائي: ${widget.autoLabel} — يُضاف القوس تلقائياً',
                 isDense: true,
                 border: const OutlineInputBorder(),
               ),
@@ -176,92 +167,47 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
               ),
             ),
             const SizedBox(height: 10),
-            DropdownButtonFormField<QuestionType>(
-              value: _content.type,
+            RichContentField(
+              label: 'منطوق الفرع',
+              hint: 'اكتب منطوق الفرع هنا (مثال: عرّف ما يأتي)',
+              value: _content.statement,
+              enabled: widget.enabled,
+              title: 'تحرير منطوق الفرع',
+              minHeight: 48,
+              onChanged: (value) => _emitContent(_content.copyWith(statement: value)),
+            ),
+            const SizedBox(height: 10),
+            LtrNumericField(
+              controller: _marksController,
+              enabled: widget.enabled,
               decoration: const InputDecoration(
-                labelText: 'نوع السؤال',
+                labelText: 'درجة الفرع',
+                hintText: 'اكتب الرقم فقط، مثال: 5',
+                suffixText: 'درجة',
                 isDense: true,
                 border: OutlineInputBorder(),
               ),
-              items: QuestionType.values
-                  .map(
-                    (type) => DropdownMenuItem<QuestionType>(
-                      value: type,
-                      child: Text(type.arabicLabel, style: const TextStyle(fontSize: 13)),
-                    ),
-                  )
-                  .toList(growable: false),
-              onChanged: widget.enabled
-                  ? (type) {
-                      if (type != null && type != _content.type) {
-                        var next = _content.copyWith(type: type);
-                        if (type == QuestionType.trueFalse && next.items.isEmpty) {
-                          next = next.copyWith(items: <BranchItem>[BranchItem()]);
-                        }
-                        _emitContent(next);
-                      }
-                    }
-                  : null,
-            ),
-            SwitchListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: const Text('نص حر فقط', style: TextStyle(fontSize: 13)),
-              subtitle: const Text(
-                'يعرض النص والنقاط كما كتبتها تماماً',
-                style: TextStyle(fontSize: 11),
-              ),
-              value: _content.plainText,
-              onChanged: widget.enabled
-                  ? (value) => _emitContent(_content.copyWith(plainText: value))
-                  : null,
-            ),
-            const SizedBox(height: 4),
-            RichContentField(
-              label: _content.type == QuestionType.fillInTheBlank
-                  ? 'نص الفرع (ضع _____ مكان الفراغ)'
-                  : 'نص الفرع',
-              value: _content.text,
-              enabled: widget.enabled,
-              title: 'تحرير نص الفرع',
-              minHeight: 64,
-              onChanged: (value) => _emitContent(_content.copyWith(text: value)),
+              onChanged: _onMarksChanged,
             ),
             const SizedBox(height: 10),
-            // النقاط (1، 2، 3...) بترتيب الطباعة نفسه.
-            ItemsEditor(
-              items: _content.items,
+            RichContentField(
+              label: 'نص الفرع (اختياري)',
+              hint: 'يُحذف من الورقة تلقائياً إذا تُرك فارغاً',
+              value: _content.body,
               enabled: widget.enabled,
+              title: 'تحرير نص الفرع',
+              minHeight: 48,
+              onChanged: (value) => _emitContent(_content.copyWith(body: value)),
+            ),
+            const SizedBox(height: 10),
+            // النقاط (١-، ٢-، ٣-...) بترتيب الطباعة نفسه وأنواعها مختلطة.
+            PointsEditor(
+              points: _content.items,
+              enabled: widget.enabled,
+              labelOf: widget.pointLabelOf,
+              optionLabelOf: widget.optionLabelOf,
               onChanged: (items) => _emitContent(_content.copyWith(items: items)),
             ),
-            // لا محرر خيارات هنا: خيارات «اختيار من متعدد» تُكتب على ورقة
-            // المعاينة حيث تُعرض كما تُطبع حرفياً. السطر توجيه فقط، ولا يُنشئ
-            // ولا يعدّل أي خيار (الخيارات الافتراضية الأربعة تبقى جاهزة هناك).
-            if (_content.type == QuestionType.multipleChoice)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Icon(
-                      Icons.touch_app_outlined,
-                      size: 14,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'خيارات هذا الفرع تُكتب على ورقة المعاينة (الخطوة 3): '
-                        'انقر خانة الخيار واكتب نصها، وزر «+ خيار» يظهر عند تحديد الفرع.',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
           ],
         ),
       ),

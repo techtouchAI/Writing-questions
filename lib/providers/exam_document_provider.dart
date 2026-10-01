@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/exam_document.dart';
 import '../services/storage_service.dart';
 
-/// مخزن النماذج الوزارية المنشأة عبر المعالج المتسلسل، مع حفظ ذري
+/// مخزن أوراق الأسئلة المنشأة عبر المعالج المتسلسل، مع حفظ ذري
 /// وتراجع عند فشل الكتابة.
 class ExamDocumentProvider extends ChangeNotifier {
   ExamDocumentProvider({StorageService? storageService})
@@ -51,7 +51,7 @@ class ExamDocumentProvider extends ChangeNotifier {
       }
     } catch (_) {
       _documents = <ExamDocument>[];
-      _errorMessage = 'تعذر تحميل النماذج الوزارية المحفوظة من مساحة التخزين.';
+      _errorMessage = 'تعذر تحميل أوراق الأسئلة المحفوظة من مساحة التخزين.';
     } finally {
       _isLoading = false;
       notifyListeners();

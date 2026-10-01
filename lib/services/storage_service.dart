@@ -43,7 +43,7 @@ class StorageService {
     return SharedPreferences.getInstance;
   }
 
-  /// النماذج الوزارية المنشأة عبر المعالج المتسلسل (Wizard).
+  /// أوراق الأسئلة المنشأة عبر المعالج المتسلسل (Wizard).
   Future<StorageLoadResult<ExamDocument>> loadExamDocuments() {
     return _loadList(_examDocumentsKey, ExamDocument.fromJson);
   }
@@ -55,7 +55,7 @@ class StorageService {
     );
   }
 
-  /// هوية آخر نموذج وزاري فُتح (للمتابعة من حيث توقف المدرس).
+  /// هوية آخر ورقة أسئلة فُتحت (للمتابعة من حيث توقف المدرس).
   Future<String?> loadLastOpenDocumentId() async {
     final preferences = await _getPreferences();
     final id = preferences.getString(_lastOpenDocumentKey);

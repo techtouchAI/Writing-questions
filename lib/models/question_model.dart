@@ -5,29 +5,30 @@ import 'branch_model.dart';
 import 'floating_element.dart';
 import 'paper_divider.dart';
 import 'paper_text_style.dart';
-import 'question_type.dart';
 
-/// السؤال الكامل (QuestionModel): «السؤال الأول» بنصه ونقاطه وفروعه ومرفقاته.
+/// السؤال الكامل (QuestionModel): «السؤال الأول» بمنطوقه ونصه ونقاطه وفروعه.
+///
+/// بنية السؤال على الورقة (وهي نفسها بنية الفرع):
+/// الرقم ← [statement] (المنطوق) ← الدرجة «(٢٠ درجة)» في سطر العنوان نفسه،
+/// ثم [body] (نص السؤال، يُحذف كلياً عند فراغه)، ثم [items] (النقاط المرقّمة
+/// بأنواعها المختلطة)، ثم [branches] (أ، ب، ج...).
 ///
 /// - [questionNumber] هو الرقم الهيكلي (1، 2، 3...) ويُعاد ضبطه من الترتيب
-///   داخل [ExamDocument] عند تفعيل الترقيم التلقائي.
-/// - [prompt] نص السؤال الحر الذي يكتبه المدرس («أجب عن فرعين فقط:»...)
-///   ويُحفظ حرفياً دون أي تفسير أو إعادة صياغة.
-/// - [items] نقاط السؤال المباشرة (1، 2، 3...) لسؤال **بلا فروع** — نفس
-///   بنية نقاط الفرع تماماً: يكتب المدرس محتوى كل سطر (عبارات صح/خطأ،
-///   فراغات، اختيارات...) والترقيم تلقائي يظهر على الورقة.
-/// - الدرجة الكلية = مجموع درجات الفروع والنقاط آلياً، ما لم يثبّت المدرس
-///   [marksOverride] يدوياً.
-/// - السؤال **وحدة لا تتجزأ**: ينتقل كاملاً بنصه ونقاطه وفروعه وصوره
+///   داخل `ExamDocument` عند تفعيل الترقيم التلقائي.
+/// - [numberOverride]: ما يكتبه المدرس حرفياً في موضع الرقم («س١/»،
+///   «السؤال الاول/»)؛ الفارغ = رقم تلقائي من نمط التسمية العام.
+/// - [marksOverride]: الدرجة كرقم خام يكتبه المدرس («20») فيطبعها النظام
+///   «(٢٠ درجة)»؛ غيابها يعني مجموع درجات الفروع والنقاط تلقائياً.
+/// - السؤال **وحدة لا تتجزأ**: ينتقل كاملاً بمنطوقه ونصه ونقاطه وفروعه وصوره
 ///   وأشكاله ودرجاته وفواصله عند النقل، ولا يُقسَّم بين صفحتين.
 class QuestionModel {
   QuestionModel({
     String? id,
     required this.questionNumber,
-    this.type = QuestionType.essay,
     List<BranchModel>? branches,
     this.category = '',
-    this.prompt = '',
+    this.statement = '',
+    this.body = '',
     this.marksOverride,
     this.numberOverride,
     this.spacingAfter = 10,
@@ -38,7 +39,7 @@ class QuestionModel {
     this.showFrame = false,
     this.dividerAfter,
     this.titleAlign,
-    this.promptAlign,
+    this.bodyAlign,
   })  : id = id ?? const Uuid().v4(),
         // السؤال الجديد يبدأ بلا فروع؛ تُنشأ فقط بطلب صريح من المدرس.
         branches = List<BranchModel>.unmodifiable(
@@ -63,26 +64,26 @@ class QuestionModel {
   final String id;
   final int questionNumber;
 
-  /// نوع السؤال المباشر عند عدم وجود فروع؛ لا يغيّر النص الذي كتبه المدرس.
-  final QuestionType type;
-
   /// فروع السؤال؛ فارغة افتراضياً وتُنشأ فقط بطلب صريح من المدرس.
   final List<BranchModel> branches;
 
-  /// نقاط السؤال المباشرة (1، 2، 3...) عند كتابة سؤال بلا فروع — نفس بنية
-  /// نقاط الفرع ([BranchItem])؛ والترقيم يُشتق من الفهرس وقت العرض.
+  /// نقاط السؤال المباشرة (١-، ٢-، ٣-...) بأنواعها المختلطة — نفس بنية
+  /// نقاط الفرع ([BranchItem]) والترقيم يُشتق من الفهرس وقت العرض.
   final List<BranchItem> items;
 
-  /// القسم الوزاري (القواعد/الأدب/أحكام التلاوة...) — فارغ = بلا قسم.
+  /// قسم السؤال (القواعد/الأدب/أحكام التلاوة...) — فارغ = بلا قسم.
   final String category;
 
-  /// نص السؤال/تعليماته كما كتبه المدرس («أجب عن فرعين فقط:»...).
-  final String prompt;
+  /// منطوق السؤال: يُطبع في سطر العنوان بعد الرقم وقبل الدرجة (يدعم LaTeX).
+  final String statement;
 
-  /// درجة يدوية ثابتة للسؤال (null = حساب تلقائي = مجموع الفروع).
+  /// نص السؤال: يُطبع تحت سطر العنوان ويُحذف كلياً عند فراغه.
+  final String body;
+
+  /// الدرجة التي كتبها المدرس كرقم خام (null = مجموع الفروع والنقاط).
   final double? marksOverride;
 
-  /// ترقيم يدوي ثابت للسؤال (null = تلقائي من الترتيب).
+  /// ما كتبه المدرس في موضع رقم السؤال حرفياً (null = ترقيم تلقائي).
   final String? numberOverride;
 
   /// المسافة بعد السؤال بالبكسل، قابلة للتخصيص لكل سؤال.
@@ -92,26 +93,29 @@ class QuestionModel {
   final List<FloatingElement> attachments;
 
   /// تنسيق السؤال المشترك بين العنوان والمتن.
-  /// يبقى [PaperTextStyle.color] القديم مقروءاً للتوافق ويُعامل كلون عنوان فقط.
+  /// يبقى [PaperTextStyle.color] مقروءاً ويُعامل كلون عنوان فقط.
   final PaperTextStyle style;
 
   /// لون عنوان السؤال فقط (ARGB). `null` = لون القالب.
   final int? titleColor;
 
-  /// اللون المعروض للعنوان؛ ينتقل من الحقل القديم في الملفات المخزنة.
+  /// اللون المعروض للعنوان.
   int? get effectiveTitleColor => titleColor ?? style.color;
 
   /// إطار حول السؤال كاملاً.
   final bool showFrame;
 
-  /// محاذاة خاصة لعنوان السؤال (null = وراثة من نمط السؤال).
+  /// محاذاة خاصة لسطر عنوان السؤال (null = وراثة من نمط السؤال).
   final PaperAlign? titleAlign;
 
-  /// محاذاة خاصة لنص السؤال / التعليمات (null = وراثة من نمط السؤال).
-  final PaperAlign? promptAlign;
+  /// محاذاة خاصة لنص السؤال (null = وراثة من نمط السؤال).
+  final PaperAlign? bodyAlign;
 
   /// فاصل بعد السؤال كاملاً.
   final PaperDivider? dividerAfter;
+
+  bool get hasStatement => statement.trim().isNotEmpty;
+  bool get hasBody => body.trim().isNotEmpty;
 
   /// الدرجة الفعلية: اليدوية إن ثُبّتت، وإلا مجموع درجات الفروع والنقاط.
   double get marks =>
@@ -122,9 +126,9 @@ class QuestionModel {
   /// هل درجة السؤال محسوبة تلقائياً من الفروع والنقاط؟
   bool get hasAutoMarks => marksOverride == null;
 
-  /// هل يحمل السؤال أي محتوى مكتوب (نص/نقاط/فروع)؟
+  /// هل يحمل السؤال أي محتوى مكتوب (منطوق/نص/نقاط/فروع)؟
   bool get hasContent {
-    if (prompt.trim().isNotEmpty) {
+    if (hasStatement || hasBody) {
       return true;
     }
     if (items.any((item) => !item.isEmpty)) {
@@ -140,7 +144,8 @@ class QuestionModel {
   bool hasExportableContent({
     Set<String> ignoredAttachmentIds = const <String>{},
   }) {
-    if (prompt.trim().isNotEmpty ||
+    if (hasStatement ||
+        hasBody ||
         items.any((item) => item.showsInExport) ||
         attachments.any((element) => !ignoredAttachmentIds.contains(element.id)) ||
         dividerAfter != null) {
@@ -155,10 +160,10 @@ class QuestionModel {
 
   QuestionModel copyWith({
     int? questionNumber,
-    QuestionType? type,
     List<BranchModel>? branches,
     String? category,
-    String? prompt,
+    String? statement,
+    String? body,
     double? Function()? marksOverride,
     String? Function()? numberOverride,
     double? spacingAfter,
@@ -169,15 +174,15 @@ class QuestionModel {
     bool? showFrame,
     PaperDivider? Function()? dividerAfter,
     PaperAlign? Function()? titleAlign,
-    PaperAlign? Function()? promptAlign,
+    PaperAlign? Function()? bodyAlign,
   }) {
     return QuestionModel(
       id: id,
       questionNumber: questionNumber ?? this.questionNumber,
-      type: type ?? this.type,
       branches: branches ?? this.branches,
       category: category ?? this.category,
-      prompt: prompt ?? this.prompt,
+      statement: statement ?? this.statement,
+      body: body ?? this.body,
       marksOverride: marksOverride != null ? marksOverride() : this.marksOverride,
       numberOverride: numberOverride != null ? numberOverride() : this.numberOverride,
       spacingAfter: spacingAfter ?? this.spacingAfter,
@@ -188,7 +193,7 @@ class QuestionModel {
       showFrame: showFrame ?? this.showFrame,
       dividerAfter: dividerAfter != null ? dividerAfter() : this.dividerAfter,
       titleAlign: titleAlign != null ? titleAlign() : this.titleAlign,
-      promptAlign: promptAlign != null ? promptAlign() : this.promptAlign,
+      bodyAlign: bodyAlign != null ? bodyAlign() : this.bodyAlign,
     );
   }
 
@@ -253,7 +258,6 @@ class QuestionModel {
     return copyWith(branches: <BranchModel>[...branches, branch ?? BranchModel()]);
   }
 
-  /// يحذف فرعاً؛ يرفض حذف الفرع الأخير (يبقى «أ» دائماً).
   /// يحذف فرعاً؛ ويُسمح بسؤال بلا فروع (يُنشأ الفرع عند الطلب الصريح).
   QuestionModel withBranchRemoved(int index) {
     RangeError.checkValidIndex(index, branches, 'index');
@@ -283,34 +287,26 @@ class QuestionModel {
 
   /// نسخة بهوية جديدة وهويات فروع/نقاط/مرفقات جديدة (للنسخ/التكرار).
   ///
-  /// نقاط السؤال تُنسخ **كاملة** (نص/درجة/تسمية/محاذاة) كما هي؛ وأما
-  /// [numberOverride] فلا يُنقل عمداً — التسمية اليدوية خاصة بالأصل،
+  /// نقاط السؤال تُنسخ **كاملة** (نص/نوع/خيارات/درجة/تسمية/محاذاة) كما هي؛
+  /// وأما [numberOverride] فلا يُنقل عمداً — الرقم اليدوي خاص بالأصل،
   /// والنسخة سؤال جديد بترقيمها التلقائي.
   QuestionModel duplicated({required int questionNumber}) {
     return QuestionModel(
       questionNumber: questionNumber,
-      type: type,
       branches: branches.map((branch) => branch.duplicated()).toList(),
       category: category,
-      prompt: prompt,
+      statement: statement,
+      body: body,
       marksOverride: marksOverride,
       spacingAfter: spacingAfter,
-      items: <BranchItem>[
-        for (final item in items)
-          BranchItem(
-            text: item.text,
-            marks: item.marks,
-            labelOverride: item.labelOverride,
-            align: item.align,
-          ),
-      ],
+      items: items.map((item) => item.duplicated()).toList(),
       attachments: attachments.map((element) => element.duplicated()).toList(),
       style: style,
       titleColor: titleColor,
       showFrame: showFrame,
       dividerAfter: dividerAfter,
       titleAlign: titleAlign,
-      promptAlign: promptAlign,
+      bodyAlign: bodyAlign,
     );
   }
 
@@ -318,10 +314,10 @@ class QuestionModel {
     return <String, dynamic>{
       'id': id,
       'questionNumber': questionNumber,
-      'type': type.name,
       'category': category,
       'branches': branches.map((branch) => branch.toMap()).toList(growable: false),
-      if (prompt.isNotEmpty) 'prompt': prompt,
+      if (statement.isNotEmpty) 'statement': statement,
+      if (body.isNotEmpty) 'body': body,
       if (marksOverride != null) 'marksOverride': marksOverride,
       if (numberOverride != null && numberOverride!.trim().isNotEmpty)
         'numberOverride': numberOverride,
@@ -336,7 +332,7 @@ class QuestionModel {
       if (showFrame) 'showFrame': true,
       if (dividerAfter != null) 'dividerAfter': dividerAfter!.toMap(),
       if (titleAlign != null) 'titleAlign': titleAlign!.name,
-      if (promptAlign != null) 'promptAlign': promptAlign!.name,
+      if (bodyAlign != null) 'bodyAlign': bodyAlign!.name,
     };
   }
 
@@ -381,16 +377,16 @@ class QuestionModel {
     }
     final rawNumberOverride = map['numberOverride']?.toString().trim();
     final rawTitleAlign = map['titleAlign'];
-    final rawPromptAlign = map['promptAlign'];
+    final rawBodyAlign = map['bodyAlign'];
     return QuestionModel(
       id: map['id'] is String && (map['id'] as String).trim().isNotEmpty
           ? map['id'] as String
           : null,
       questionNumber: number,
-      type: QuestionType.parse(map['type']?.toString() ?? QuestionType.essay.name),
       category: map['category']?.toString() ?? '',
       branches: branches,
-      prompt: map['prompt']?.toString() ?? '',
+      statement: map['statement']?.toString() ?? '',
+      body: map['body']?.toString() ?? '',
       marksOverride: marksOverride,
       numberOverride:
           rawNumberOverride == null || rawNumberOverride.isEmpty ? null : rawNumberOverride,
@@ -399,7 +395,6 @@ class QuestionModel {
               (map['spacingAfter'] as num) >= 0)
           ? (map['spacingAfter'] as num).toDouble().clamp(0, 200).toDouble()
           : 10,
-      // نقاط السؤال حقل جديد متسامح (كباقي حقول النقاط) لتبقى الأسئلة القديمة صالحة.
       items: BranchItem.listFromValue(map['items']),
       attachments: attachments,
       style: PaperTextStyle.fromValue(map['style']),
@@ -407,7 +402,7 @@ class QuestionModel {
       showFrame: map['showFrame'] == true,
       dividerAfter: PaperDivider.fromValue(map['dividerAfter']),
       titleAlign: rawTitleAlign != null ? PaperAlign.parse(rawTitleAlign) : null,
-      promptAlign: rawPromptAlign != null ? PaperAlign.parse(rawPromptAlign) : null,
+      bodyAlign: rawBodyAlign != null ? PaperAlign.parse(rawBodyAlign) : null,
     );
   }
 }
