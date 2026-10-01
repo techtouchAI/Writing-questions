@@ -21,6 +21,7 @@ class BranchEditorCard extends StatefulWidget {
     required this.pointLabelOf,
     required this.optionLabelOf,
     required this.onChanged,
+    this.pointMarksHelperOf,
     this.onRemove,
     this.enabled = true,
   });
@@ -36,6 +37,9 @@ class BranchEditorCard extends StatefulWidget {
   /// الرقم المعروض لنقطة (تسلسل متصل) وتسمية خيار — من مستند الورقة.
   final String Function(int index, BranchItem point) pointLabelOf;
   final String Function(int index, QuestionOption option) optionLabelOf;
+
+  /// تلميح درجة النقطة كما ستُطبع («(٢ درجة)») — يُمرَّر إلى [PointsEditor].
+  final String Function(double marks)? pointMarksHelperOf;
 
   final ValueChanged<BranchModel> onChanged;
   final VoidCallback? onRemove;
@@ -206,6 +210,7 @@ class _BranchEditorCardState extends State<BranchEditorCard> {
               enabled: widget.enabled,
               labelOf: widget.pointLabelOf,
               optionLabelOf: widget.optionLabelOf,
+              marksHelperOf: widget.pointMarksHelperOf,
               onChanged: (items) => _emitContent(_content.copyWith(items: items)),
             ),
           ],

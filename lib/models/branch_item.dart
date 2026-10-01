@@ -37,11 +37,14 @@ class BranchItem {
   static List<QuestionOption> blankOptions([int count = defaultOptionCount]) =>
       <QuestionOption>[for (var i = 0; i < count; i++) QuestionOption(text: '')];
 
+  /// يطبّع الخيارات: غياب القائمة (`null`) يعني «بلا خيارات مكتوبة» فيمنح
+  /// النوع الافتراضي خياراته الأربعة، أما القائمة **الفارغة صراحةً** فتبقى
+  /// فارغة: للمدرس أن يحذف كل الخيارات بلا حد أدنى.
   static List<QuestionOption> _normalizedOptions(
     PointKind kind,
     List<QuestionOption>? source,
   ) {
-    if (source == null || source.isEmpty) {
+    if (source == null) {
       return kind == PointKind.multipleChoice
           ? blankOptions()
           : const <QuestionOption>[];
@@ -97,11 +100,20 @@ class BranchItem {
     String? Function()? labelOverride,
     PaperAlign? Function()? align,
   }) {
+    // تبديل النوع إلى «اختيار من متعدد» بنقطة بلا خيارات يمنحها الخيارات
+    // الافتراضية الأربعة ليبدأ المدرس الكتابة فوراً؛ أما القائمة الفارغة
+    // التي تمرَّر صراحةً (حذف الخيارات) فتبقى كما هي.
+    final nextOptions = (options == null &&
+            kind == PointKind.multipleChoice &&
+            this.kind != PointKind.multipleChoice &&
+            this.options.isEmpty)
+        ? blankOptions()
+        : (options ?? this.options);
     return BranchItem(
       id: id,
       text: text ?? this.text,
       kind: kind ?? this.kind,
-      options: options ?? this.options,
+      options: nextOptions,
       marks: marks ?? this.marks,
       labelOverride:
           labelOverride == null ? this.labelOverride : labelOverride(),

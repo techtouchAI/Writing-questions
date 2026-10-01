@@ -198,6 +198,8 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
                     value: font,
                     decoration: const InputDecoration(
                       labelText: 'الخط',
+                      hintText: 'اختر خط الترويسة والتذييل',
+                      helperText: 'يظهر بخطه الحقيقي في القائمة والمعاينة.',
                       isDense: true,
                       border: OutlineInputBorder(),
                     ),
@@ -225,6 +227,8 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
                     value: size,
                     decoration: const InputDecoration(
                       labelText: 'الحجم',
+                      hintText: 'اختر حجم خط الترويسة',
+                      helperText: 'الحجم بالنقاط (8–16).',
                       isDense: true,
                       border: OutlineInputBorder(),
                     ),

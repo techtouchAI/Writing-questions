@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart' show Math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/exam_canvas_geometry.dart';
 import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
+import 'package:writing_questions_app/models/point_kind.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
@@ -23,16 +25,20 @@ ExamDocument _document() {
       QuestionModel(
         id: 'q1',
         questionNumber: 1,
-        prompt: 'نص السؤال',
+        statement: 'نص السؤال',
         branches: <BranchModel>[
           BranchModel(
             id: 'q1a',
             content: BranchContent(
-              type: QuestionType.multipleChoice,
-              text: 'اختر الإجابة',
-              options: <QuestionOption>[
-                QuestionOption(text: 'الأول'),
-                QuestionOption(text: 'الثاني'),
+              statement: 'اختر الإجابة',
+              items: <BranchItem>[
+                BranchItem(
+                  kind: PointKind.multipleChoice,
+                  options: <QuestionOption>[
+                    QuestionOption(text: 'الأول'),
+                    QuestionOption(text: 'الثاني'),
+                  ],
+                ),
               ],
             ),
             marks: 2,
@@ -165,6 +171,8 @@ void main() {
       final options = controller.document
           .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
           .content
+          .items
+          .single
           .options;
       expect(options[0].labelOverride, 'B.');
       expect(find.text('B.'), findsOneWidget);

@@ -23,6 +23,7 @@ class PointsEditor extends StatefulWidget {
     required this.labelOf,
     required this.optionLabelOf,
     required this.onChanged,
+    this.marksHelperOf,
     this.enabled = true,
   });
 
@@ -35,8 +36,14 @@ class PointsEditor extends StatefulWidget {
   /// تسمية الخيار المعروضة (تلقائية بالفهرس «( أ )» أو مخصصة).
   final String Function(int index, QuestionOption option) optionLabelOf;
 
-  /// يستقبل القائمة بعد كل تعديل (نص/نوع/خيارات/حذف/إضافة/عدد).
+  /// يستقبل القائمة بعد كل تعديل (نص/نوع/خيارات/درجة/حذف/إضافة/عدد).
   final ValueChanged<List<BranchItem>> onChanged;
+
+  /// تلميح إرشادي لدرجة النقطة كما ستُطبع («تُطبع بصيغة (٢ درجة)»).
+  ///
+  /// يُبنى من مستند الورقة في شاشة المعالج كي يرى المدرس نص الطباعة
+  /// النهائي قبل كتابته؛ وعند غيابه يظهر تلميح عام لا يفترض صيغة.
+  final String Function(double marks)? marksHelperOf;
 
   final bool enabled;
 
@@ -54,6 +61,31 @@ class _PointsEditorState extends State<PointsEditor> {
   }
 
   void _emit(List<BranchItem> points) => widget.onChanged(points);
+
+  /// نص حقل الدرجة: الرقم الخام الذي كتبه المدرس (والفارغ = بلا درجة).
+  static String _formatMarks(double marks) {
+    if (marks <= 0) {
+      return '';
+    }
+    return marks == marks.truncateToDouble()
+        ? marks.toInt().toString()
+        : marks.toString();
+  }
+
+  /// قراءة الرقم الخام: الفارغ صفر (بلا درجة)، وغير الصالح يُترك بلا تعديل.
+  static double? _parseMarks(String value) {
+    final normalized = value.trim().replaceAll('،', '.').replaceAll(',', '.');
+    if (normalized.isEmpty) {
+      return 0;
+    }
+    final marks = double.tryParse(normalized);
+    return marks != null && marks.isFinite && marks >= 0 ? marks : null;
+  }
+
+  /// التلميح الإرشادي للدرجة: صيغة الطباعة الفعلية من مستند الورقة إن توفّرت.
+  String _marksHelper(double marks) =>
+      widget.marksHelperOf?.call(marks) ??
+      'تُطبع بجانب النقطة إن كانت أكبر من صفر.';
 
   void _replaceAt(int index, BranchItem point) {
     final updated = List<BranchItem>.of(widget.points);
@@ -225,6 +257,29 @@ class _PointsEditorState extends State<PointsEditor> {
             title: 'تحرير نص النقطة',
             minHeight: 40,
             onChanged: (value) => _replaceAt(index, point.copyWith(text: value)),
+          ),
+          const SizedBox(height: 8),
+          // درجة النقطة: الرقم الخام فقط، والنظام يلفّه ويطبعه «(٢ درجة)»
+          // بحسب إعداد «إظهار درجات الأسئلة» ونسق أرقام الورقة.
+          LtrNumericField(
+            key: ValueKey<String>('point-marks-${point.id}'),
+            initialValue: _formatMarks(point.marks),
+            enabled: widget.enabled,
+            decoration: InputDecoration(
+              labelText: 'درجة النقطة',
+              hintText: 'اكتب الرقم فقط، مثال: 2 (فارغ = بلا درجة)',
+              helperText: _marksHelper(point.marks),
+              suffixText: 'درجة',
+              helperMaxLines: 2,
+              isDense: true,
+              border: const OutlineInputBorder(),
+            ),
+            onChanged: (value) {
+              final marks = _parseMarks(value);
+              if (marks != null) {
+                _replaceAt(index, point.copyWith(marks: marks));
+              }
+            },
           ),
           if (point.kind == PointKind.multipleChoice) _buildOptions(index, point),
         ],

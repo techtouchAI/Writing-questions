@@ -98,6 +98,7 @@ class _HomeScreenState extends State<HomeScreen> {
           autofocus: true,
           decoration: const InputDecoration(
             labelText: 'اسم الورقة',
+            hintText: 'مثال: امتحان نصف السنة - الثالث المتوسط',
             border: OutlineInputBorder(),
           ),
         ),

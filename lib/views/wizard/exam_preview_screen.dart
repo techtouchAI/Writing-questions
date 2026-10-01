@@ -1941,6 +1941,46 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     controller.updatePointLabel(owner, pointId, saved);
   }
 
+  /// درجة النقطة: الرقم الخام فقط («2») فيطبعه النظام «(٢ درجة)».
+  ///
+  /// الفارغ يعيد الدرجة صفراً (بلا درجة معلنة)، والإعداد «إظهار درجات
+  /// الأسئلة» وحده يقرر ظهورها على الورقة.
+  Future<void> _editPointMarks(PointsOwner owner, String pointId) async {
+    final controller = _controller!;
+    final document = controller.document;
+    if (!document.containsOwner(owner)) {
+      return;
+    }
+    final points = document.pointsOf(owner);
+    final index = points.indexWhere((point) => point.id == pointId);
+    if (index < 0) {
+      return;
+    }
+    final saved = await _showTextInputDialog(
+      title: 'درجة النقطة',
+      initialText: _formatMarksInput(points[index].marks),
+      hintText: 'اكتب الرقم فقط، مثال: 2',
+      helperText:
+          'تُطبع بصيغة (${document.formatNumber(2)} ${document.layout.marksUnit}). '
+          'فارغ = بلا درجة.',
+      saveLabel: 'تطبيق',
+      numeric: true,
+    );
+    if (saved == null) {
+      return;
+    }
+    if (saved.trim().isEmpty) {
+      controller.updatePointMarks(owner, pointId, 0);
+      return;
+    }
+    final marks = _parseMarks(saved);
+    if (marks == null) {
+      _showMessage('أدخل الدرجة رقماً صحيحاً فقط (مثال: 2).', isError: true);
+      return;
+    }
+    controller.updatePointMarks(owner, pointId, marks);
+  }
+
   /// تسمية الخيار: مخصصة حرفياً، فارغ = تلقائي، `-` = إخفاء.
   Future<void> _editOptionLabel(PointsOwner owner, String pointId, int index) async {
     final controller = _controller!;
@@ -2259,6 +2299,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   value: settings.numerals,
                   decoration: const InputDecoration(
                     labelText: 'نسق الأرقام',
+                    hintText: 'اختر شكل الأرقام المطبوعة (١٢٣ أو 123)',
+                    helperText: 'يسري على الأسئلة والفروع والنقاط والتواريخ في الورقة.',
                     isDense: true,
                     border: OutlineInputBorder(),
                   ),
@@ -2279,6 +2321,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   value: settings.questionLabelStyle,
                   decoration: const InputDecoration(
                     labelText: 'نمط تسمية الأسئلة',
+                    hintText: 'اختر «رسمي (السؤال الأول)» أو «مختصر (س1)»',
+                    helperText: 'ما تكتبه يدوياً في رقم أي سؤال يتقدم على النمط دائماً.',
                     isDense: true,
                     border: OutlineInputBorder(),
                   ),
@@ -2304,6 +2348,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   value: settings.defaultFont,
                   decoration: const InputDecoration(
                     labelText: 'الخط الافتراضي للورقة',
+                    hintText: 'اختر خط متن الورقة الافتراضي',
+                    helperText: 'يسري على كل نص لم تخصّص له خطاً من شريط التنسيق.',
                     isDense: true,
                     border: OutlineInputBorder(),
                   ),
@@ -3921,11 +3967,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   padding: const EdgeInsetsDirectional.only(start: 4),
                   child: Text(point.trailer!, style: bodyStyle),
                 ),
-              if (point.marks != null)
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(start: 4),
-                  child: Text(point.marks!, style: bodyStyle),
-                ),
+              _marksTarget(
+                marks: point.marks,
+                showPlaceholder: controller.document.settings.showQuestionMarks,
+                style: bodyStyle,
+                onEdit: () => _editPointMarks(owner, item.id),
+              ),
               if (showActions) ...<Widget>[
                 PopupMenuButton<PointKind>(
                   tooltip: 'نوع النقطة',

@@ -72,6 +72,15 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
     return marks == marks.truncateToDouble() ? marks.toInt().toString() : marks.toString();
   }
 
+  /// تلميح درجة النقطة: يري المدرس نص الطباعة النهائي «(٢ درجة)» قبل كتابته.
+  static String _pointMarksHelper(ExamDocument document, double marks) {
+    if (marks <= 0) {
+      return 'اكتب رقماً أكبر من صفر لتُطبع الدرجة بجانب النقطة.';
+    }
+    return 'تُطبع بصيغة (${document.formatNumber(marks)} ${document.layout.marksUnit}) '
+        'عند تفعيل «إظهار درجات الأسئلة».';
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<ExamWizardController>();
@@ -226,6 +235,8 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
                 value: sections.contains(question.category) ? question.category : '',
                 decoration: const InputDecoration(
                   labelText: 'القسم (اختياري)',
+                  hintText: 'اختر «بدون قسم» لعدم طباعة عنوان قسم قبل السؤال',
+                  helperText: 'يُطبع عنوان القسم قبل السؤال في الورقة.',
                   isDense: true,
                   border: OutlineInputBorder(),
                 ),
@@ -250,6 +261,7 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
               labelOf: (index, point) => controller.document.displayItemLabel(point, index),
               optionLabelOf: (index, option) =>
                   controller.document.displayOptionLabel(option, index),
+              marksHelperOf: (marks) => _pointMarksHelper(controller.document, marks),
               onChanged: (points) =>
                   controller.setPoints(PointsOwner.question(questionIndex), points),
             ),
@@ -264,6 +276,8 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
                     controller.document.displayItemLabel(point, pointIndex),
                 optionLabelOf: (optionIndex, option) =>
                     controller.document.displayOptionLabel(option, optionIndex),
+                pointMarksHelperOf: (marks) =>
+                    _pointMarksHelper(controller.document, marks),
                 onChanged: (branch) {
                   final ref = BranchRef(questionIndex: questionIndex, branchIndex: index);
                   controller.updateBranchContent(ref, branch.content);
