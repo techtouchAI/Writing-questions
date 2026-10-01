@@ -102,46 +102,37 @@ jobs:
             names="${names//$'\n'/%0A}"
             echo "::error title=Failing tests ($count)::$names"
           }
-          # ينشر سياق كل اختبار فاشل (بما فيه رسالة التوقّع والفرق). تُجمَّع
-          # المقاطع في تعليق واحد لكل ~12000 محرف: سقف عدد التعليقات على
-          # التشغيل كان يُسقط مقاطع فشل كاملة حين نُشر كل اختبار في تعليق
-          # مستقل. تُقدَّم أخطاء التشغيل على أخطاء التحميل (الترجمة).
+          # ينشر سياق كل اختبار فاشل (رسالة التوقّع والفرق) في تعليق **مستقل
+          # صغير** لكل اختبار: حجم التعليق الواحد محدود (~4KB) وسقف عدد
+          # التعليقات على التشغيل محدود أيضاً، فالتجميع في تعليق ضخم كان
+          # يُبتر قبل آخر الفشولات. تُقدَّم أخطاء التشغيل على أخطاء التحميل
+          # (الترجمة)، وأسماء كل الفشولات تُنشر دائماً في تعليق مستقل قبلها.
           publish_first_failure() {
-            local file="$1" label="$2" markers line start entry buffer=""
+            local file="$1" label="$2" markers line start entry count=0
             [ -f "$file" ] || return 0
             markers="$( { grep -n -E '❌.*\(failed\)' "$file" | grep -v 'loading ' || true; \
-                         grep -n -E '❌ loading ' "$file" || true; } | cut -d: -f1 | head -n 12 )"
-            local -a chunks=()
+                         grep -n -E '❌ loading ' "$file" || true; } | cut -d: -f1 | head -n 8 )"
             while read -r line; do
               [ -n "$line" ] || continue
               start=$((line > 2 ? line - 2 : 1))
-              entry="$(printf '===== سطر %s =====\n%s' "$line" \
-                "$(sed -n "${start},$((start + 55))p" "$file")")"
-              if [ "${#buffer}" -gt 12000 ]; then
-                chunks+=("$buffer")
-                buffer=""
-              fi
-              if [ -n "$buffer" ]; then
-                buffer="$(printf '%s\n%s' "$buffer" "$entry")"
-              else
-                buffer="$entry"
-              fi
+              entry="$(sed -n "${start},$((start + 34))p" "$file")"
+              [ -n "$entry" ] || continue
+              count=$((count + 1))
+              entry="${entry:0:2300}"
+              entry="${entry//%/%25}"
+              entry="${entry//$'\r'/%0D}"
+              entry="${entry//$'\n'/%0A}"
+              echo "::error title=$label ($count)::$entry"
             done <<< "$markers"
-            if [ -n "$buffer" ]; then
-              chunks+=("$buffer")
-            else
+            if [ "$count" -eq 0 ]; then
               # لا علامة فشل ظاهرة في السجل: ننشر آخر 140 سطراً كاملة.
-              buffer="$(tail -n 140 "$file")"
-              [ -n "$buffer" ] && chunks+=("$buffer")
+              entry="$(tail -n 140 "$file")"
+              [ -n "$entry" ] || return 0
+              entry="${entry//%/%25}"
+              entry="${entry//$'\r'/%0D}"
+              entry="${entry//$'\n'/%0A}"
+              echo "::error title=$label::$entry"
             fi
-            local n=0 escaped
-            for entry in "${chunks[@]}"; do
-              n=$((n + 1))
-              escaped="${entry//%/%25}"
-              escaped="${escaped//$'\r'/%0D}"
-              escaped="${escaped//$'\n'/%0A}"
-              echo "::error title=$label ($n من ${#chunks[@]})::$escaped"
-            done
           }
           # المحلل قد يُنتج عشرات الأخطاء فلا يكفي ذيل السجل: ننشر **كل**
           # أخطاء المحلل (منزوعة التكرار) ثم ملخّص التحذيرات/الملاحظات،

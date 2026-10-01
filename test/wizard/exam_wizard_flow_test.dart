@@ -485,6 +485,19 @@ void main() {
           .pointsOf(PointsOwner.branch(const BranchRef(questionIndex: 0, branchIndex: 0)))
           .single
           .options;
+      // الكتابة في المكان تصل إلى حقل الخيار نفسه قبل أن تصل إلى الموديل؛
+      // فشل هذه الخطوة يعني أن النص لم يدخل الحقل أصلاً لا أن المزامنة أخطأت.
+      final optionField = tester.widget<TextField>(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('option-mc-1')),
+          matching: find.byType(TextField),
+        ),
+      );
+      expect(
+        optionField.controller!.text,
+        'الخيار الثاني المعدّل',
+        reason: 'الكتابة في المكان يجب أن تصل إلى حقل الخيار فوراً.',
+      );
       // القائمة كاملة لا خانة واحدة: يظهر أي انزياح في فهرس الخيار المحرَّر.
       expect(
         options.map((option) => option.text).toList(),

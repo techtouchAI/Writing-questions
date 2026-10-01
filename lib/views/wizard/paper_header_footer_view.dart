@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../layout/blueprint/exam_blueprint.dart';
 import '../../models/paper_font.dart';
 import '../../models/paper_text_style.dart';
+import '../widgets/tex_text.dart';
 import 'paper_styles.dart';
 
 /// ترويسة الورقة كما تُطبع: ثلاثة أعمدة بحسب المواصفة، للقراءة فقط.
@@ -42,11 +43,22 @@ class PaperHeaderView extends StatelessWidget {
     );
   }
 
+  Widget _line(String text, TextStyle style, TextAlign align) {
+    // سطر الترويسة يُعرض منسّقاً كما يُطبع: صيغ `$...$` مرسومةً في مكانها
+    // (مطابقة للوحة القديمة ولمصدّر Word)، لا كوداً خاماً.
+    return TexText(
+      text,
+      style: style,
+      mathTextStyle: style,
+      textAlign: align,
+    );
+  }
+
   Widget _column(List<String> lines, TextStyle lineStyle, TextAlign align) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        for (final line in lines) Text(line, style: lineStyle, textAlign: align),
+        for (final line in lines) _line(line, lineStyle, align),
       ],
     );
   }
@@ -88,7 +100,7 @@ class PaperHeaderView extends StatelessWidget {
                       textAlign: TextAlign.center,
                     ),
                   for (final line in header.centerLines)
-                    Text(line, style: centerStyle, textAlign: TextAlign.center),
+                    _line(line, centerStyle, TextAlign.center),
                 ],
               ),
             ),

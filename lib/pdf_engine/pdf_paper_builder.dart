@@ -81,13 +81,14 @@ class PdfPaperBuilder {
       override,
     );
 
+    // سطر الترويسة يُرسم منسّقاً كما في اللوحة وWord: صيغ `$...$` مرسومةً
+    // متجهةً في مكانها داخل السطر، لا كوداً خاماً.
     pw.Widget column(List<String> lines, pw.TextStyle style, pw.TextAlign align) {
       return pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         mainAxisSize: pw.MainAxisSize.min,
         children: <pw.Widget>[
-          for (final line in lines)
-            _fullWidth(pw.Text(line, style: style, textAlign: align)),
+          for (final line in lines) _renderText(line, style, null, align: align),
         ],
       );
     }
@@ -114,7 +115,7 @@ class PdfPaperBuilder {
             ),
           ),
         for (final line in data.centerLines)
-          _fullWidth(pw.Text(line, style: centerStyle, textAlign: pw.TextAlign.center)),
+          _renderText(line, centerStyle, null, align: pw.TextAlign.center),
       ],
     );
 

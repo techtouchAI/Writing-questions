@@ -109,8 +109,9 @@ void main() {
       await _pumpPreview(tester, controller);
 
       // اسم المدرسة + نوع الامتحان (ترويسة) + منطوق السؤال + منطوق الفرع
-      // + نقطة الاختيار + خياراها = 6 معادلات مرسومة، ولا شيء غيرها.
-      expect(find.byType(Math), findsNWidgets(6));
+      // + نقطة الاختيار + خياراها = 7 معادلات مرسومة، ولا شيء غيرها.
+      // سطور الترويسة تُعرض مرسومة في اللوحة وفي PDF معاً (كما في Word).
+      expect(find.byType(Math), findsNWidgets(7));
     });
 
     testWidgets('بلا صيغ — لا معاينة ولا Math أصلاً (العرض مشروط بالمحتوى)', (tester) async {
