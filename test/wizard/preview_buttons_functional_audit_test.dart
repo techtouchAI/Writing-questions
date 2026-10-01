@@ -27,6 +27,7 @@ import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_canvas_geometry.dart';
 import 'package:writing_questions_app/models/exam_catalog.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
+import 'package:writing_questions_app/models/exam_footer_model.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/models/paper_divider.dart';
@@ -235,9 +236,9 @@ void main() {
     const BranchRef essayRef = BranchRef(questionIndex: 0, branchIndex: 0);
     const BranchRef mcqRef = BranchRef(questionIndex: 0, branchIndex: 1);
     const BranchRef tfRef = BranchRef(questionIndex: 1, branchIndex: 0);
-    const PointsOwner questionOwner = PointsOwner.question(0);
-    const PointsOwner mcqOwner = PointsOwner.branch(mcqRef);
-    const PointsOwner tfOwner = PointsOwner.branch(tfRef);
+    final PointsOwner questionOwner = PointsOwner.question(0);
+    final PointsOwner mcqOwner = PointsOwner.branch(mcqRef);
+    final PointsOwner tfOwner = PointsOwner.branch(tfRef);
 
     void addFreeElement(ExamWizardController c) {
       c.addFloatingElement(FloatingElement(
@@ -928,7 +929,7 @@ void main() {
   // ===========================================================================
   test('AUD-TYPE-01: نوع النقطة يقرر طريقة الطباعة ولا يمس النص المخزَّن', () {
     final controller = ExamWizardController(document: _document());
-    const owner = PointsOwner.branch(BranchRef(questionIndex: 0, branchIndex: 1));
+    final owner = PointsOwner.branch(const BranchRef(questionIndex: 0, branchIndex: 1));
     final pointId = controller.pointsOf(owner).single.id;
     expect(controller.pointsOf(owner).single.options, hasLength(2));
 
@@ -974,7 +975,7 @@ void main() {
     expect(find.byTooltip('عرض نموذج الإجابة'), findsNothing);
 
     // التحول إلى صح/خطأ يُخفي خانات الخيارات من الورقة.
-    const owner = PointsOwner.branch(BranchRef(questionIndex: 0, branchIndex: 1));
+    final owner = PointsOwner.branch(const BranchRef(questionIndex: 0, branchIndex: 1));
     controller.updatePointKind(owner, 'bi-mcq', PointKind.trueFalse);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey<String>('option-bi-mcq-0')), findsNothing,
@@ -984,7 +985,7 @@ void main() {
 
   test('AUD-MCQ-01: دورة حياة الخيارات — إضافة/تعديل/إخفاء تسمية/حذف', () {
     final controller = ExamWizardController(document: _document());
-    const owner = PointsOwner.branch(BranchRef(questionIndex: 0, branchIndex: 1));
+    final owner = PointsOwner.branch(const BranchRef(questionIndex: 0, branchIndex: 1));
     expect(controller.pointsOf(owner).single.options, hasLength(2));
 
     controller.addPointOption(owner, 'bi-mcq');
@@ -1007,7 +1008,7 @@ void main() {
       () {
     final controller = ExamWizardController(document: _document());
     const ref = BranchRef(questionIndex: 1, branchIndex: 0);
-    const owner = PointsOwner.branch(ref);
+    final owner = PointsOwner.branch(ref);
     controller.setPointCount(owner, 3);
     final ids = <String>[for (final point in controller.pointsOf(owner)) point.id];
     controller.updatePointText(owner, ids[0], 'الأولى');

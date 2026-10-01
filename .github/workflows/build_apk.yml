@@ -102,34 +102,46 @@ jobs:
             names="${names//$'\n'/%0A}"
             echo "::error title=Failing tests ($count)::$names"
           }
-          # ينشر سياق أول اختبار فاشل (بما فيه رسالة التوقّع والفرق)، لأن ذيل
-          # السجل قد يكون كله اختبارات ناجحة فلا يُظهر سبب الفشل.
+          # ينشر سياق كل اختبار فاشل (بما فيه رسالة التوقّع والفرق). تُجمَّع
+          # المقاطع في تعليق واحد لكل ~12000 محرف: سقف عدد التعليقات على
+          # التشغيل كان يُسقط مقاطع فشل كاملة حين نُشر كل اختبار في تعليق
+          # مستقل. تُقدَّم أخطاء التشغيل على أخطاء التحميل (الترجمة).
           publish_first_failure() {
-            local file="$1" label="$2" line start excerpt count=0
+            local file="$1" label="$2" markers line start entry buffer=""
             [ -f "$file" ] || return 0
-            # ينشر سياق كل اختبار فاشل (حتى 12 اختباراً) لا الأول فقط، لأن
-            # سجلات التنزيل قد لا تكون متاحة خارج GitHub.
+            markers="$( { grep -n -E '❌.*\(failed\)' "$file" | grep -v 'loading ' || true; \
+                         grep -n -E '❌ loading ' "$file" || true; } | cut -d: -f1 | head -n 12 )"
+            local -a chunks=()
             while read -r line; do
               [ -n "$line" ] || continue
-              count=$((count + 1))
-              [ "$count" -le 12 ] || break
               start=$((line > 2 ? line - 2 : 1))
-              excerpt="$(sed -n "${start},$((start + 70))p" "$file")"
-              [ -n "$excerpt" ] || continue
-              excerpt="${excerpt//%/%25}"
-              excerpt="${excerpt//$'\r'/%0D}"
-              excerpt="${excerpt//$'\n'/%0A}"
-              echo "::error title=$label ($count)::$excerpt"
-            done < <(grep -n -E '❌|\[E\]' "$file" | cut -d: -f1)
-            if [ "$count" -eq 0 ]; then
-              # لا علامة فشل ظاهرة في السجل: ننشر آخر 120 سطراً كاملة.
-              excerpt="$(tail -n 120 "$file")"
-              [ -n "$excerpt" ] || return 0
-              excerpt="${excerpt//%/%25}"
-              excerpt="${excerpt//$'\r'/%0D}"
-              excerpt="${excerpt//$'\n'/%0A}"
-              echo "::error title=$label::$excerpt"
+              entry="$(printf '===== سطر %s =====\n%s' "$line" \
+                "$(sed -n "${start},$((start + 55))p" "$file")")"
+              if [ "${#buffer}" -gt 12000 ]; then
+                chunks+=("$buffer")
+                buffer=""
+              fi
+              if [ -n "$buffer" ]; then
+                buffer="$(printf '%s\n%s' "$buffer" "$entry")"
+              else
+                buffer="$entry"
+              fi
+            done <<< "$markers"
+            if [ -n "$buffer" ]; then
+              chunks+=("$buffer")
+            else
+              # لا علامة فشل ظاهرة في السجل: ننشر آخر 140 سطراً كاملة.
+              buffer="$(tail -n 140 "$file")"
+              [ -n "$buffer" ] && chunks+=("$buffer")
             fi
+            local n=0 escaped
+            for entry in "${chunks[@]}"; do
+              n=$((n + 1))
+              escaped="${entry//%/%25}"
+              escaped="${escaped//$'\r'/%0D}"
+              escaped="${escaped//$'\n'/%0A}"
+              echo "::error title=$label ($n من ${#chunks[@]})::$escaped"
+            done
           }
           # المحلل قد يُنتج عشرات الأخطاء فلا يكفي ذيل السجل: ننشر **كل**
           # أخطاء المحلل (منزوعة التكرار) ثم ملخّص التحذيرات/الملاحظات،
@@ -149,7 +161,7 @@ jobs:
           publish_failure_names "$RUNNER_TEMP/flutter-test.log"
           publish_tail "$RUNNER_TEMP/flutter-analyze.log" 'Flutter analyzer log excerpt'
           publish_tail "$RUNNER_TEMP/flutter-test.log" 'Flutter test log excerpt'
-          publish_first_failure "$RUNNER_TEMP/flutter-test.log" 'First failing test excerpt'
+          publish_first_failure "$RUNNER_TEMP/flutter-test.log" 'Failing test excerpts'
 
       - name: Upload validation diagnostics on failure
         if: failure()

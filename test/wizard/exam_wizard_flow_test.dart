@@ -485,7 +485,11 @@ void main() {
           .pointsOf(PointsOwner.branch(const BranchRef(questionIndex: 0, branchIndex: 0)))
           .single
           .options;
-      expect(options[1].text, 'الخيار الثاني المعدّل');
+      // القائمة كاملة لا خانة واحدة: يظهر أي انزياح في فهرس الخيار المحرَّر.
+      expect(
+        options.map((option) => option.text).toList(),
+        <String>['الخيار الأول', 'الخيار الثاني المعدّل'],
+      );
       // الخيارات نصّية فقط: لا علم إجابة في أي خيار.
       expect(options.every((option) => !option.toMap().containsKey('isCorrect')), isTrue);
     });

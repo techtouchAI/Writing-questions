@@ -121,7 +121,10 @@ void main() {
       'ضبط': PaperAlign.justify,
     }.entries) {
       await _tap(tester, _tool(entry.key));
-      expect(controller.questions[1].style.align, entry.value);
+      // محاذاة منطوق السؤال تُكتب في محاذاة سطره (titleAlign) — النص يحمل
+      // محاذاته المستقلة (bodyAlign) منذ فصل الاثنين في الموديل.
+      expect(controller.questions[1].titleAlign, entry.value);
+      expect(controller.questions[1].bodyAlign, isNull);
     }
     await _tap(tester, find.byType(PaperHeaderView));
     expect(tester.widget<PreviewToolbar>(find.byType(PreviewToolbar)).selectionLabel, 'الترويسة');
@@ -386,7 +389,7 @@ void main() {
     expect(controller.questions[1].branches, isEmpty);
     await _tap(tester, find.byTooltip('نسخ الفرع').first);
     expect(controller.questions.first.branches, hasLength(3));
-    await _tap(tester, find.byTooltip('تثبيت تسمية الفرع').first);
+    await _tap(tester, find.byTooltip('انقر لتعديل رقم الفرع').first);
     await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), 'أولاً');
     await _tap(tester, find.text('حفظ'));
     expect(controller.questions.first.branches.first.labelOverride, 'أولاً');
@@ -394,7 +397,7 @@ void main() {
     expect(controller.questions.first.branches, hasLength(2));
     await _tap(tester, find.byTooltip('نسخ السؤال').first);
     expect(controller.questions, hasLength(3));
-    await _tap(tester, find.byTooltip('تثبيت تسمية السؤال').first);
+    await _tap(tester, find.byTooltip('انقر لتعديل رقم السؤال').first);
     await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), 'تمرين');
     await _tap(tester, find.text('حفظ'));
     expect(controller.questions.first.numberOverride, 'تمرين');
@@ -592,7 +595,7 @@ void main() {
     expect(find.byKey(const ValueKey<String>('b-b1-answer-0')), findsNothing);
     final firstItem = controller.document.branchAt(ref).content.items.first;
     expect(firstItem.toMap().containsKey('isCorrect'), isFalse);
-    await _tap(tester, find.byTooltip('إضافة نقطة'));
+    await _tap(tester, find.widgetWithText(TextButton, 'إضافة نقطة'));
     expect(controller.document.branchAt(ref).content.items, hasLength(3));
     await _tap(tester, find.byTooltip('حذف النقطة').last);
     expect(controller.document.branchAt(ref).content.items, hasLength(2));

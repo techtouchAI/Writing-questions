@@ -50,9 +50,13 @@ void main() {
     expect(find.text('1-'), findsOneWidget);
     expect(find.text('2-'), findsOneWidget);
 
-    // لا أزرار تقديم أو تأخير.
-    expect(find.byIcon(Icons.arrow_drop_up), findsNothing);
-    expect(find.byIcon(Icons.arrow_drop_down), findsNothing);
+    // لا أزرار تقديم أو تأخير: لا قائمة إعادة ترتيب ولا أيقونات نقل. سهم
+    // القائمة المنسدلة لنوع النقطة (DropdownButton) ليس زر ترتيب.
+    expect(find.byType(ReorderableListView), findsNothing);
+    expect(find.byIcon(Icons.arrow_upward), findsNothing);
+    expect(find.byIcon(Icons.arrow_downward), findsNothing);
+    expect(find.byTooltip('نقل النقطة لأعلى'), findsNothing);
+    expect(find.byTooltip('نقل النقطة لأسفل'), findsNothing);
 
     // لا عنصر إجابة إطلاقاً: لا علامات ✓/✗ ولا كلمات صح/خطأ ولا مفتاح نمط.
     expect(find.text('✓'), findsNothing);
