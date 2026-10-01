@@ -142,8 +142,21 @@ void _rewindToolbar(WidgetTester tester) {
 }
 
 /// يُمرّر شريط الأدوات حتى يظهر الزر المطلوب قبل النقر (شريط أفقي طويل).
+///
+/// الشريط يُبني بتقنية lazy بناءً على الموضع؛ فيُمسح من بدايته إلى نهايته
+/// (وليس إلى الأمام فقط) كي يُعثر على أزرار أوله — التراجع والإعادة والقفل —
+/// حتى لو كان الشريط قد تُرك عند نهايته. وقد يكون الزر غير موجود إطلاقاً،
+/// و`.last` يرمي حينها [StateError]، فنعدّ ذلك «غير ظاهر» بدل الانفجار.
 Future<void> _revealToolbarButton(WidgetTester tester, Finder finder) async {
-  if (finder.evaluate().isNotEmpty) {
+  bool visible() {
+    try {
+      return finder.evaluate().isNotEmpty;
+    } on StateError {
+      return false;
+    }
+  }
+
+  if (visible()) {
     return;
   }
   final scrollables = find.descendant(
@@ -155,9 +168,12 @@ Future<void> _revealToolbarButton(WidgetTester tester, Finder finder) async {
   }
   final scrollable = scrollables.first;
   final position = tester.state<ScrollableState>(scrollable).position;
+  // من البداية: أزرار أوائل الشريط (تراجع/إعادة/قفل) لا تُبنى إلا هناك.
+  position.jumpTo(0);
+  await tester.pumpAndSettle();
   var steps = 0;
-  while (finder.evaluate().isEmpty && steps < 40) {
-    final next = position.pixels + 180;
+  while (!visible() && position.pixels < position.maxScrollExtent && steps < 80) {
+    final next = position.pixels + 120;
     position.jumpTo(
       next > position.maxScrollExtent ? position.maxScrollExtent : next,
     );
@@ -657,6 +673,9 @@ void main() {
       reason: 'AUD-LOCK-01: الحفظ أثناء القفل يجب أن يعمل.',
     );
 
+    // زر فتح القفل في مطلع الشريط؛ نعيد الشريط إلى بدايته فيُبنى الزر أولاً.
+    _rewindToolbar(tester);
+    await tester.pumpAndSettle();
     await _tap(tester, _tool('فتح القفل (السماح بالتحريك)'));
     final unlockX = element().dx;
     await dragElement();

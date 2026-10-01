@@ -595,7 +595,7 @@ void main() {
     expect(find.byKey(const ValueKey<String>('b-b1-answer-0')), findsNothing);
     final firstItem = controller.document.branchAt(ref).content.items.first;
     expect(firstItem.toMap().containsKey('isCorrect'), isFalse);
-    await _tap(tester, find.widgetWithText(TextButton, 'إضافة نقطة'));
+    await _tap(tester, find.byTooltip('إضافة نقطة'));
     expect(controller.document.branchAt(ref).content.items, hasLength(3));
     await _tap(tester, find.byTooltip('حذف النقطة').last);
     expect(controller.document.branchAt(ref).content.items, hasLength(2));

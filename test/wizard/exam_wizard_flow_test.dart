@@ -102,6 +102,36 @@ void _expectQuestionsUnsplit(ExamWizardController controller) {
   }
 }
 
+/// جرد تشخيصي يُطبع مع الفشل فقط: مفتاح كل حقل نصي على الشاشة ونص متحكمه.
+String _fieldDump(WidgetTester tester) {
+  final parts = <String>[];
+  for (final element in find.byType(TextField).evaluate()) {
+    final field = element.widget as TextField;
+    var label = '?';
+    element.visitAncestorElements((ancestor) {
+      final key = ancestor.widget.key;
+      if (key == null) {
+        return true;
+      }
+      label = key is ValueKey<String> ? key.value : key.toString();
+      return false;
+    });
+    parts.add('$label="${field.controller?.text}"');
+  }
+  return parts.join(' | ');
+}
+
+/// حقل الآية القرآنية وحده.
+///
+/// صارت أسطر الترويسة (اسم المدرسة/نوع الامتحان/الدور) تُرسم بـ[TexText] أيضاً
+/// مثل بقية الورقة، فأصبح `find.byType(TexText)` يطابق أكثر من عنصر؛ نُصفّي هنا
+/// على النص الذي يحمل علامة الآية `﴿ ... ﴾`.
+Finder _verseTexText() => find
+    .byWidgetPredicate(
+      (widget) => widget is TexText && widget.text.contains('\uFD3F'),
+    )
+    .first;
+
 Widget _preview(ExamWizardController controller) {
   return _app(
     ChangeNotifierProvider<ExamWizardController>.value(
@@ -475,11 +505,22 @@ void main() {
       await tester.pump();
       expect(controller.document.questions.single.category, 'الحفظ');
 
-      await tester.enterText(
-        find.byKey(const ValueKey<String>('option-mc-1')),
-        'الخيار الثاني المعدّل',
-      );
+      // كما يفعل المستخدم: نقرة تُنشئ التركيز على حقل الخيار ثم الكتابة فيه؛
+      // فبعض أزمنة الواجهة لا تفتح وصلة الكتابة إلا بعد تفعيل الحقل بالنقر.
+      final optionFinder = find.byKey(const ValueKey<String>('option-mc-1'));
+      await tester.ensureVisible(optionFinder);
       await tester.pump();
+      await tester.tap(find.descendant(of: optionFinder, matching: find.byType(TextField)));
+      await tester.pump();
+      await tester.enterText(optionFinder, 'الخيار الثاني المعدّل');
+      await tester.pump();
+
+      // حارس: لا يجوز أن يتسرّب النص إلى الحقل السابق (حقل القسم) بدل الخيار.
+      expect(
+        controller.document.questions.single.category,
+        'الحفظ',
+        reason: 'DIAG=[${_fieldDump(tester)}]',
+      );
 
       final options = controller
           .pointsOf(PointsOwner.branch(const BranchRef(questionIndex: 0, branchIndex: 0)))
@@ -496,7 +537,8 @@ void main() {
       expect(
         optionField.controller!.text,
         'الخيار الثاني المعدّل',
-        reason: 'الكتابة في المكان يجب أن تصل إلى حقل الخيار فوراً.',
+        reason: 'الكتابة في المكان يجب أن تصل إلى حقل الخيار فوراً. '
+            'DIAG=[${_fieldDump(tester)}] الموديل=[${options.map((option) => option.text).join('|')}]',
       );
       // القائمة كاملة لا خانة واحدة: يظهر أي انزياح في فهرس الخيار المحرَّر.
       expect(
@@ -555,7 +597,7 @@ void main() {
       await tester.pumpWidget(_preview(controller));
       await tester.pump();
 
-      final verseText = tester.widget<TexText>(find.byType(TexText));
+      final verseText = tester.widget<TexText>(_verseTexText());
       expect(verseText.textAlign, TextAlign.center, reason: 'الآية القائمة بذاتها تُوسَّط');
       expect(verseText.quranStyle?.fontFamily, ExamFont.quranicFamily);
 
@@ -608,7 +650,7 @@ void main() {
       await tester.pumpWidget(_preview(controller));
       await tester.pump();
 
-      final verseText = tester.widget<TexText>(find.byType(TexText));
+      final verseText = tester.widget<TexText>(_verseTexText());
       expect(verseText.textAlign, TextAlign.start,
           reason: 'قالب لا يفضّل الخط القرآني: بلا توسيط مصحفي');
       expect(verseText.quranStyle?.fontFamily, ExamFont.quranicFamily,

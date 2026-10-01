@@ -3309,6 +3309,41 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   // السؤال الكامل (كتلة لا تتجزأ) وفروعه
   // ------------------------------------------------------------------
 
+  /// سطر عنوان (سؤال أو فرع) بلا طفح مهما كبر خط الورقة: تسمية الرقم والدرجة
+  /// محدودتان بنسبة من عرض السطر فتتلفّفان داخل حدودهما، ويبقى لمنطوق السؤال
+  /// وأزرار الإجراءات مكانه. الحد الأقصى لا يغيّر العرض العادي: لا أثر له إلا
+  /// إذا تجاوز المحتوى عرض السطر فعلاً.
+  Widget _titleRow({
+    required Widget dragHandle,
+    required Widget label,
+    required Widget statement,
+    required Widget marks,
+    required List<Widget> actions,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.isFinite ? constraints.maxWidth : 600.0;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            dragHandle,
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: width * 0.34),
+              child: label,
+            ),
+            const SizedBox(width: 4),
+            Expanded(child: statement),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: width * 0.26),
+              child: marks,
+            ),
+            ...actions,
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildQuestionBlock(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
@@ -3365,73 +3400,68 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () => _tapQuestion(questionIndex),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              if (!_locked)
-                LongPressDraggable<int>(
-                  data: questionIndex,
-                  feedback: Material(
-                    elevation: 4,
-                    color: Colors.white,
-                    child: Container(
-                      width: 320,
-                      padding: const EdgeInsets.all(8),
-                      child: Text(
-                        data.title.line,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: _scaled(PaperStyles.question),
+          child: _titleRow(
+            dragHandle: _locked
+                ? Icon(Icons.drag_indicator, size: 18, color: Colors.grey.shade300)
+                : LongPressDraggable<int>(
+                    data: questionIndex,
+                    feedback: Material(
+                      elevation: 4,
+                      color: Colors.white,
+                      child: Container(
+                        width: 320,
+                        padding: const EdgeInsets.all(8),
+                        child: Text(
+                          data.title.line,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: _scaled(PaperStyles.question),
+                        ),
                       ),
                     ),
-                  ),
-                  childWhenDragging: Icon(
-                    Icons.drag_indicator,
-                    size: 18,
-                    color: Colors.grey.shade300,
-                  ),
-                  child: Semantics(
-                    label: 'اضغط مطولاً واسحب لنقل السؤال كاملاً',
-                    child: Icon(Icons.drag_indicator,
-                        size: 18, color: Colors.grey.shade600),
-                  ),
-                )
-              else
-                Icon(Icons.drag_indicator, size: 18, color: Colors.grey.shade300),
-              Tooltip(
-                message: 'انقر لتعديل رقم السؤال',
-                child: GestureDetector(
-                  onTap: () => _editQuestionLabel(questionIndex),
-                  child: Text(data.title.number, style: titleStyle),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: _paperField(
-                  fieldKey: statementKey,
-                  controller: _field(
-                    statementKey,
-                    question.statement,
-                    (value) => controller.updateQuestionStatement(questionIndex, value),
-                  ),
-                  style: titleStyle,
-                  textAlign: _textAlignFor(
-                    statementKey,
-                    fallback: PaperStyles.toTextAlign(
-                      question.titleAlign ?? question.style.align,
+                    childWhenDragging: Icon(
+                      Icons.drag_indicator,
+                      size: 18,
+                      color: Colors.grey.shade300,
+                    ),
+                    child: Semantics(
+                      label: 'اضغط مطولاً واسحب لنقل السؤال كاملاً',
+                      child: Icon(Icons.drag_indicator,
+                          size: 18, color: Colors.grey.shade600),
                     ),
                   ),
-                  hint: layout.isLtr
-                      ? 'Question statement...'
-                      : 'اكتب منطوق السؤال هنا...',
+            label: Tooltip(
+              message: 'انقر لتعديل رقم السؤال',
+              child: GestureDetector(
+                onTap: () => _editQuestionLabel(questionIndex),
+                child: Text(data.title.number, style: titleStyle),
+              ),
+            ),
+            statement: _paperField(
+              fieldKey: statementKey,
+              controller: _field(
+                statementKey,
+                question.statement,
+                (value) => controller.updateQuestionStatement(questionIndex, value),
+              ),
+              style: titleStyle,
+              textAlign: _textAlignFor(
+                statementKey,
+                fallback: PaperStyles.toTextAlign(
+                  question.titleAlign ?? question.style.align,
                 ),
               ),
-              _marksTarget(
-                marks: data.title.marks,
-                showPlaceholder: document.settings.showQuestionMarks,
-                style: titleStyle,
-                onEdit: () => _editQuestionMarks(questionIndex),
-              ),
+              hint: layout.isLtr
+                  ? 'Question statement...'
+                  : 'اكتب منطوق السؤال هنا...',
+            ),
+            marks: _marksTarget(
+              marks: data.title.marks,
+              showPlaceholder: document.settings.showQuestionMarks,
+              style: titleStyle,
+              onEdit: () => _editQuestionMarks(questionIndex),
+            ),
+            actions: <Widget>[
               IconButton(
                 tooltip: 'إضافة فرع',
                 visualDensity: VisualDensity.compact,
@@ -3602,14 +3632,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       padding: const EdgeInsetsDirectional.only(start: 36),
       child: Align(
         alignment: AlignmentDirectional.centerStart,
-        child: TextButton.icon(
-          style: TextButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Tooltip(
+          message: 'إضافة نقطة',
+          child: TextButton.icon(
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+            ),
+            onPressed: () => controller.addPoint(owner),
+            icon: const Icon(Icons.add, size: 14),
+            label: const Text('إضافة نقطة', style: TextStyle(fontSize: 11)),
           ),
-          onPressed: () => controller.addPoint(owner),
-          icon: const Icon(Icons.add, size: 14),
-          label: const Text('إضافة نقطة', style: TextStyle(fontSize: 11)),
         ),
       ),
     );
@@ -3796,41 +3829,40 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final column = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Padding(padding: const EdgeInsets.only(top: 2), child: dragHandle),
-            Tooltip(
-              message: 'انقر لتعديل رقم الفرع',
-              child: GestureDetector(
-                onTap: () => _editBranchLabel(ref),
-                child: Text(
-                  data.title.number,
-                  style: bodyStyle.copyWith(fontWeight: FontWeight.bold),
-                ),
+        _titleRow(
+          dragHandle: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: dragHandle,
+          ),
+          label: Tooltip(
+            message: 'انقر لتعديل رقم الفرع',
+            child: GestureDetector(
+              onTap: () => _editBranchLabel(ref),
+              child: Text(
+                data.title.number,
+                style: bodyStyle.copyWith(fontWeight: FontWeight.bold),
               ),
             ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: _paperField(
-                fieldKey: statementKey,
-                controller: _field(
-                  statementKey,
-                  content.statement,
-                  (value) => controller.updateBranchStatement(ref, value),
-                ),
-                style: bodyStyle,
-                textAlign: _textAlignFor(statementKey, fallback: branchAlign),
-                hint: layout.isLtr ? 'Branch statement...' : 'اكتب منطوق الفرع هنا...',
-                mushafStyle: true,
-              ),
+          ),
+          statement: _paperField(
+            fieldKey: statementKey,
+            controller: _field(
+              statementKey,
+              content.statement,
+              (value) => controller.updateBranchStatement(ref, value),
             ),
-            _marksTarget(
-              marks: data.title.marks,
-              showPlaceholder: document.settings.showQuestionMarks,
-              style: bodyStyle,
-              onEdit: () => _editBranchMarks(ref),
-            ),
+            style: bodyStyle,
+            textAlign: _textAlignFor(statementKey, fallback: branchAlign),
+            hint: layout.isLtr ? 'Branch statement...' : 'اكتب منطوق الفرع هنا...',
+            mushafStyle: true,
+          ),
+          marks: _marksTarget(
+            marks: data.title.marks,
+            showPlaceholder: document.settings.showQuestionMarks,
+            style: bodyStyle,
+            onEdit: () => _editBranchMarks(ref),
+          ),
+          actions: <Widget>[
             IconButton(
               tooltip: 'نسخ الفرع',
               visualDensity: VisualDensity.compact,
