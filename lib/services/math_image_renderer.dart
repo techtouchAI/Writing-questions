@@ -22,7 +22,10 @@ import 'docx_document_export_service.dart' show MathRaster, MathRasterizer;
 /// الصيغة كما هو بدل إسقاط الفقرة.
 abstract final class MathImageRenderer {
   /// بكسل لكل نقطة — صور المتجهات لا تفقد الحدّة بكثافة أعلى.
-  static const double density = 6.0;
+  ///
+  /// ‏8 بكسل/نقطة ≈ 576 نقطة/بوصة: معادلة بعرض بوصة تحمل 576 بكسلاً فتبقى
+  /// حادّة عند الطباعة على طابعات الليزر (600dpi) وعند التكبير في Word.
+  static const double density = 8.0;
 
   static Future<MathRaster?> rasterize(String latex, double fontSizePt) async {
     final rendered = LatexSvgRenderer.tryToSvg(latex, fontSize: fontSizePt);
@@ -71,10 +74,117 @@ abstract final class MathImageRenderer {
   static final RegExp _pathDataPattern = RegExp(r'd="([^"]*)"');
   static final RegExp _strokeWidthPattern = RegExp(r'stroke-width="([0-9.]+)"');
 
-  /// أوامر M/L/Z وحدها هي ما يُنتجه [LatexSvgRenderer] (لا منحنيات ولا أقواس).
+  /// محلّل بيانات مسار SVG كامل: الأوامر المطلقة والنسبية
+  /// (M/L/H/V/C/S/Q/T/Z) — نفس مجموعة ما يُنتجه [LatexSvgRenderer]
+  /// (منحنيات Bézier للمحارف الناعمة) فيُرسم في Word كما في PDF تماماً.
   static final RegExp _tokenPattern = RegExp(
-    r'[MLZmlz]|-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?',
+    r'[MLHVCSQTZmlhvcsqtz]|-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?',
   );
+
+  /// يحوّل بيانات مسار SVG إلى [ui.Path].
+  static ui.Path _parsePathData(String data) {
+    final tokens = _tokenPattern
+        .allMatches(data)
+        .map((match) => match.group(0) ?? '')
+        .toList(growable: false);
+    final path = ui.Path();
+    var index = 0;
+    var command = 'M';
+    var x = 0.0;
+    var y = 0.0;
+    var startX = 0.0;
+    var startY = 0.0;
+    var lastControlX = 0.0;
+    var lastControlY = 0.0;
+
+    bool isCommand(String token) => RegExp(r'[A-Za-z]').hasMatch(token);
+    double nextNumber() {
+      final value = double.parse(tokens[index]);
+      index++;
+      return value;
+    }
+
+    while (index < tokens.length) {
+      if (isCommand(tokens[index])) {
+        command = tokens[index];
+        index++;
+      }
+      switch (command) {
+        case 'M':
+        case 'm':
+          x = nextNumber() + (command == 'm' ? x : 0);
+          y = nextNumber() + (command == 'm' ? y : 0);
+          path.moveTo(x, y);
+          startX = x;
+          startY = y;
+          command = command == 'm' ? 'l' : 'L';
+        case 'L':
+        case 'l':
+          x = nextNumber() + (command == 'l' ? x : 0);
+          y = nextNumber() + (command == 'l' ? y : 0);
+          path.lineTo(x, y);
+        case 'H':
+        case 'h':
+          x = nextNumber() + (command == 'h' ? x : 0);
+          path.lineTo(x, y);
+        case 'V':
+        case 'v':
+          y = nextNumber() + (command == 'v' ? y : 0);
+          path.lineTo(x, y);
+        case 'C':
+        case 'c':
+          final c1x = nextNumber() + (command == 'c' ? x : 0);
+          final c1y = nextNumber() + (command == 'c' ? y : 0);
+          final c2x = nextNumber() + (command == 'c' ? x : 0);
+          final c2y = nextNumber() + (command == 'c' ? y : 0);
+          x = nextNumber() + (command == 'c' ? x : 0);
+          y = nextNumber() + (command == 'c' ? y : 0);
+          path.cubicTo(c1x, c1y, c2x, c2y, x, y);
+          lastControlX = c2x;
+          lastControlY = c2y;
+        case 'S':
+        case 's':
+          final c1x = 2 * x - lastControlX;
+          final c1y = 2 * y - lastControlY;
+          final c2x = nextNumber() + (command == 's' ? x : 0);
+          final c2y = nextNumber() + (command == 's' ? y : 0);
+          x = nextNumber() + (command == 's' ? x : 0);
+          y = nextNumber() + (command == 's' ? y : 0);
+          path.cubicTo(c1x, c1y, c2x, c2y, x, y);
+          lastControlX = c2x;
+          lastControlY = c2y;
+        case 'Q':
+        case 'q':
+          final cx = nextNumber() + (command == 'q' ? x : 0);
+          final cy = nextNumber() + (command == 'q' ? y : 0);
+          x = nextNumber() + (command == 'q' ? x : 0);
+          y = nextNumber() + (command == 'q' ? y : 0);
+          path.quadraticBezierTo(cx, cy, x, y);
+          lastControlX = cx;
+          lastControlY = cy;
+        case 'T':
+        case 't':
+          final cx = 2 * x - lastControlX;
+          final cy = 2 * y - lastControlY;
+          x = nextNumber() + (command == 't' ? x : 0);
+          y = nextNumber() + (command == 't' ? y : 0);
+          path.quadraticBezierTo(cx, cy, x, y);
+          lastControlX = cx;
+          lastControlY = cy;
+        case 'Z':
+        case 'z':
+          path.close();
+          x = startX;
+          y = startY;
+        default:
+          // أمر غير معروف: تُتخطّى أرقامه بأمان بدل كسر الرسم كله.
+          while (index < tokens.length && !isCommand(tokens[index])) {
+            index++;
+          }
+      }
+    }
+    return path;
+  }
 
   /// عرض الخط من وسم `<g>` نفسه؛ وإن غاب يُحسب كما يحسبه المرسّم.
   static double _strokeWidth(String svg, double fontSizePt) {

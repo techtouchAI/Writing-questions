@@ -327,9 +327,9 @@ abstract final class FloatingElementsPdf {
                   textAlign: pw.TextAlign.center,
                 ),
               )
-            : pw.SizedBox(
-                width: widthPt,
-                height: heightPt,
+            // بلا SizedBox داخلي ثابت: الحشوة والإطار يحيطان بالمعادلة
+            // فعلاً فتُملاء المساحة المتاحة بلا تجاوز ولا قصّ.
+            : pw.Center(
                 child: pw.SvgImage(svg: rendered.svg, fit: pw.BoxFit.contain),
               ),
       ),

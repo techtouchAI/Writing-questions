@@ -150,11 +150,7 @@ class PaginatedPdfExamEngine {
       styles: styles,
     );
 
-    final pdf = pw.Document(
-      title: document.name,
-      creator: 'صانع ومحرر الأسئلة',
-      subject: document.header.subject,
-    );
+    final pdf = _newDocument(document);
     double measure(pw.Widget widget) =>
         _measure(widget, pdf, theme, direction, contentWidth);
 
@@ -313,11 +309,7 @@ class PaginatedPdfExamEngine {
       fonts: loadedFonts,
       styles: styles,
     );
-    final pdf = pw.Document(
-      title: document.name,
-      creator: 'صانع ومحرر الأسئلة',
-      subject: document.header.subject,
-    );
+    final pdf = _newDocument(document);
 
     return _resolvePages(
       document: document,
@@ -327,6 +319,19 @@ class PaginatedPdfExamEngine {
       measure: (widget) => _measure(widget, pdf, theme, direction, contentWidth),
     );
   }
+
+  /// مستند PDF ببيانات وصفية كاملة: الملف يحمل هويته (اسم الورقة، المادة،
+  /// المنتج) فيخصّص للطباعة والأرشفة بلا فقدان معلومات.
+  static pw.Document _newDocument(ExamDocument document) => pw.Document(
+        title: document.name,
+        creator: 'صانع ومحرر الأسئلة',
+        producer: 'صانع ومحرر الأسئلة — محرك PDF المتجه',
+        author: document.header.schoolName.isEmpty
+            ? null
+            : document.header.schoolName,
+        subject: document.header.subject,
+        keywords: 'ورقة أسئلة, امتحان, ${document.header.subject}',
+      );
 
   pw.ThemeData _themeFor(ExamDocument document, ExamFonts fonts) {
     final font = document.settings.defaultFont;

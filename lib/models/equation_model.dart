@@ -14,6 +14,8 @@
 ///   داخل [EqText] فلا يُفقَد أي محتوى أبداً — مع بديل آمن عند الفشل.
 library equation_model;
 
+import 'math_symbols.dart';
+
 /// يعقّم نصاً كتبه المستخدم داخل صيغة رياضية.
 ///
 /// علامة الدولار وحدها تُفسد محددات الصيغة (`$...$`) فتُستبدل بـ `\$`
@@ -31,15 +33,18 @@ abstract class EqNode {
 
 /// نص رياضي حر (أرقام/حروف/رموز) يُكتب مباشرة داخل خانة.
 ///
-/// يستقبل أيضاً أوامر LaTeX المتقدمة حرفياً (كـ `\alpha` و`\times`)
-/// فيبقى معناها محفوظاً وقابلاً للتحرير والعرض الحي.
+/// الخانة تعرض **محارف مرئية** فقط (`α`، `×`، `{`) — والمحلّل يحوّل أوامر
+/// LaTeX المخزَّنة القديمة إلى محارفها عند التحميل ([MathSymbols.toDisplay])،
+/// فلا يرى المدرس كوداً في أي مرحلة. عند الحفظ يُعاد توليد LaTeX آمن:
+/// المحارف الخاصة تُهرَّب (`{` ← `\{`) والمكافئة تُكتب أوامرها القياسية
+/// (`α` ← `\alpha`) والناقصة تُطبَّع (`−` ← `-`) — انظر [MathSymbols.toLatex].
 class EqText extends EqNode {
   EqText(this.text);
 
   String text;
 
   @override
-  String toLatex() => sanitizeMathText(text);
+  String toLatex() => MathSymbols.toLatex(text);
 }
 
 /// كسر ببسط ومقام قابلين للتحرير (`\frac{num}{den}`).
@@ -118,6 +123,33 @@ class EqFence extends EqNode {
   @override
   String toLatex() => '$left${_joinNodes(body)}$right';
 }
+
+/// علامة فوق متغير: سهم `\vec` أو قبعة `\hat` أو خط `\bar`/`\overline`.
+class EqAccent extends EqNode {
+  EqAccent({this.kind = EqAccentKind.vector, List<EqNode>? body})
+      : body = body ?? <EqNode>[];
+
+  final EqAccentKind kind;
+
+  final List<EqNode> body;
+
+  String get _command {
+    switch (kind) {
+      case EqAccentKind.vector:
+        return r'\vec';
+      case EqAccentKind.hat:
+        return r'\hat';
+      case EqAccentKind.bar:
+        return r'\bar';
+    }
+  }
+
+  @override
+  String toLatex() => '$_command{${_joinNodes(body)}}';
+}
+
+/// نوع العلامة فوق المتغير.
+enum EqAccentKind { vector, hat, bar }
 
 /// مجموعة صريحة بأقواس معقوفة (`{...}`) تحفظ تجميع LaTeX الأصلي.
 class EqGroup extends EqNode {
@@ -299,6 +331,15 @@ class _EqParser {
       }
       return EqSqrt(body: _parseRequiredGroup(), root: root);
     }
+    if (command == r'\vec' || command == r'\hat' || command == r'\bar' ||
+        command == r'\overline' || command == r'\widehat') {
+      final kind = command == r'\vec'
+          ? EqAccentKind.vector
+          : (command == r'\hat' || command == r'\widehat')
+              ? EqAccentKind.hat
+              : EqAccentKind.bar;
+      return EqAccent(kind: kind, body: _parseRequiredGroup());
+    }
     if (command == r'\left') {
       final left = _parseDelimiter();
       final body = _parseSequence(stopAtRight: true);
@@ -313,7 +354,9 @@ class _EqParser {
       }
       return EqFence(left: '\\left$left', right: '\\right$right', body: body);
     }
-    return EqText(command);
+    // الرمز المعروف يُعرض محرفاً مرئياً في خانة التحرير (بلا كود LaTeX)،
+    // وما لا يُعرف يبقى حرفياً فلا يُفقَد معناه أبداً.
+    return EqText(MathSymbols.toDisplay(command));
   }
 
   /// مجموعة واجبة بعد `\frac`/`\sqrt`؛ الغائبة تُعوَّض بفارغ.
