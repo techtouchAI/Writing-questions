@@ -225,12 +225,17 @@ ExamDocument _fixtureDocument() {
   );
 }
 
+/// وسم مراحل الركيزة في مخرجات CI: بيان آخر ما وصلت إليه الركيزة عند الفشل
+/// (لا يُترك التشخيص لتخمين رقم الخروج).
+void _stage(String message) => debugPrint('[fixture] $message');
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('تركيبة الانحدار البصري: لقطات المعاينة + ملفات Exact',
       (tester) async {
     await _loadAppFonts();
+    _stage('الخطوط حُمّلت');
 
     final controller = ExamWizardController(document: _fixtureDocument());
     addTearDown(controller.dispose);
@@ -253,20 +258,24 @@ void main() {
 
     // الارتفاعات تُقاس بعد أول رسم (`MeasureSize`) فتُعاد جدولة التقسيم،
     // ولا يُقرأ عدد الصفحات قبل اكتمال القياس (وإلا كان صفحة واحدة دائماً).
-    await tester.pump();
-    await tester.pump();
+    for (var frame = 0; frame < 10 && !controller.isFullyMeasured; frame++) {
+      await tester.pump();
+    }
+    _stage('اكتمال القياس: ${controller.isFullyMeasured}');
     expect(controller.isFullyMeasured, isTrue,
         reason: 'لم يكتمل قياس كتل الورقة، فلا معنى لعدد الصفحات.');
 
     final pageCount = controller.pagination.pageCount;
+    _stage('عدد الصفحات: $pageCount');
     expect(pageCount, greaterThan(1),
         reason: 'التركيبة يجب أن تكون متعددة الصفحات لتغطية الترقيم.');
 
     // (2) نافذة تكفي لعرض كل الصفحات دفعة واحدة: كل الصفحات تُبنى في `Column`
     // غير كسول، لكن اللقط يحتاج الصفحة **مرسومة فعلاً**، وما خرج من نافذة
-    // التمرير لا يُرسم.
-    tester.view.physicalSize =
-        Size(1600, (ExamCanvasGeometry.height + 16) * pageCount + 400);
+    // التمرير لا يُرسم. الارتفاع يُقدَّر ثم يُوسَّع حتى يُرسم آخر جذر لقط —
+    // فلا يعتمد الأمر على مقاس التكبير الذي تختاره الشاشة.
+    var viewHeight = (ExamCanvasGeometry.height + 16) * pageCount + 400;
+    tester.view.physicalSize = Size(1600, viewHeight);
     await tester.pumpAndSettle();
 
     // جذور اللقط بترتيب الشجرة = ترتيب الصفحات.
@@ -276,8 +285,20 @@ void main() {
             boundary.size.width == ExamCanvasGeometry.width &&
             boundary.size.height == ExamCanvasGeometry.height)
         .toList(growable: false);
+    // التوسيع حتى تُرسم كل الصفحات (صفحة خارج نافذة التمرير لا تُرسم، ولقطها
+    // يفشل) — شرط `debugNeedsPaint` هو نفس شرط `toImage` نفسه.
+    for (var attempt = 0;
+        attempt < 8 && boundaries.any((boundary) => boundary.debugNeedsPaint);
+        attempt++) {
+      viewHeight += 900;
+      tester.view.physicalSize = Size(1600, viewHeight);
+      await tester.pumpAndSettle();
+    }
+    _stage('جذور اللقط: ${boundaries.length} لعرض ${viewHeight}px');
     expect(boundaries, hasLength(pageCount),
         reason: 'جذر لقط لكل صفحة معروضة (${boundaries.length}/$pageCount).');
+    expect(boundaries.every((boundary) => !boundary.debugNeedsPaint), isTrue,
+        reason: 'صفحة لم تُرسم (خارج نافذة العرض) فلا يمكن لقطها.');
 
     final snapshots = <PageSnapshot>[];
     final capture = await tester.runAsync(() async {
@@ -304,6 +325,7 @@ void main() {
     });
     expect(capture, isNotNull);
     final snapshotList = capture!;
+    _stage('اللقطات: ${snapshotList.length}');
     expect(snapshotList, hasLength(pageCount),
         reason: 'لقطة لكل صفحة معاينة (${snapshotList.length}/$pageCount).');
     snapshots.addAll(snapshotList);
@@ -346,8 +368,7 @@ void main() {
     }
     // النمط الإنجليزي يظهر في الصفحة نفسها بمحاذاة يسار (تحقق تركيبي خفيف).
     expect(_fixtureDocument().questions[2].bodyAlign, PaperAlign.left);
-    // ignore: avoid_print
-    print('قطع التحقق البصري: ${Directory(_artifactDir).absolute.path} '
+    _stage('كُتبت القطع: ${Directory(_artifactDir).absolute.path} '
         '(${snapshots.length} صفحات)');
   });
 }

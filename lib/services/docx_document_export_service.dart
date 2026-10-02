@@ -19,7 +19,6 @@ import '../models/floating_element.dart';
 import '../models/paper_divider.dart';
 import '../models/paper_font.dart';
 import '../models/paper_text_style.dart';
-import '../models/tex_content.dart';
 import '../pdf_engine/paginated_pdf_exam_engine.dart';
 import 'export_file_service.dart';
 import 'math_snapshot_renderer.dart' show MathRaster;
@@ -308,7 +307,7 @@ class _RunProperties {
     );
   }
 
-  String toXml() => DocxDocumentExportService._runPropertiesXml(
+  String toXml() => _DocxBuilder._runPropertiesXml(
         bold: bold,
         italic: italic,
         underline: underline,

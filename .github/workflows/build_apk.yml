@@ -251,23 +251,46 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             poppler-utils imagemagick libreoffice-writer
 
+      # ناتج الركيزة يُحفظ ويُنشر عند الفشل: مرفقات CI أنفع عند قراءتها،
+      # وفشل الاختبار يجب أن يظهر سببه لا رقم خروجه فقط.
       - name: Produce comparison artifacts (preview snapshots + Exact files)
-        run: flutter test test/visual/visual_parity_fixture_test.dart
+        shell: bash
+        run: |
+          mkdir -p build/visual_parity
+          set -o pipefail
+          flutter test test/visual/visual_parity_fixture_test.dart 2>&1 \
+            | tee build/visual_parity/fixture_test.log
 
       - name: Compare rendered files against the preview (RMSE)
         run: bash tool/verify_visual_parity.sh build/visual_parity
 
+      # سبب الفشل يُنشر كتعليق على التشغيل: سجلات CI قد لا تكون مقروءة من كل
+      # بيئة، والملخّص يجب أن يحمل السبب لا رقم الخروج وحده.
       - name: Publish visual parity report
         if: failure()
         shell: bash
         run: |
-          file=build/visual_parity/report.txt
-          [ -f "$file" ] || exit 0
-          excerpt="$(tail -n 25 "$file")"
-          excerpt="${excerpt//%/%25}"
-          excerpt="${excerpt//$'\r'/%0D}"
-          excerpt="${excerpt//$'\n'/%0A}"
-          echo "::error title=الطابقة البصرية::$excerpt"
+          annotate() { # <العنوان> <النص>
+            local text="$1"
+            text="${text//%/%25}"
+            text="${text//$'\r'/%0D}"
+            text="${text//$'\n'/%0A}"
+            echo "::error title=$2::$text"
+          }
+
+          report=build/visual_parity/report.txt
+          if [ -f "$report" ]; then
+            annotate "$(tail -n 25 "$report")" "الطابقة البصرية"
+          fi
+
+          log=build/visual_parity/fixture_test.log
+          [ -f "$log" ] || exit 0
+          # (1) مراحل الركيزة: آخر ما وصلت إليه قبل الفشل.
+          stages="$(grep -F '[fixture]' "$log" | tail -n 8 || true)"
+          [ -z "$stages" ] || annotate "$stages" "مسار الركيزة"
+          # (2) رسالة الفشل نفسها (توقّع/استثناء) بأسطرها التالية.
+          failure="$(grep -m 1 -A 14 -F -e '[E]' -e 'Expected:' -e 'Actual:' -e 'Exception' -e 'assertion' "$log" || true)"
+          [ -z "$failure" ] || annotate "$failure" "سبب فشل الركيزة"
 
       - name: Upload visual parity artifacts
         if: always()
