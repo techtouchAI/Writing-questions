@@ -27,6 +27,8 @@ class PaperField extends StatefulWidget {
     this.hint,
     this.onActivate,
     this.onEditFormula,
+    this.allowTextSelection = true,
+    this.onLongPress,
   });
 
   /// متحكم النص (نفسه في وضعَي العرض والتحرير).
@@ -48,6 +50,23 @@ class PaperField extends StatefulWidget {
 
   /// يُستدعى عند النقر على صيغة خالصة (فتح محرر المعادلات المرئي).
   final VoidCallback? onEditFormula;
+
+  /// هل يشارك الحقل في إيماءات تأشير النص (الضغط المطوّل لتحديد كلمة)؟
+  ///
+  /// `false` في وضع التحديد المتعدد على الورقة: يمرّ الضغط المطوّل إلى كتلة
+  /// السؤال/الفرع فتُحدَّد من أي موضع. وفي الوضع العادي يُشارك الحقل
+  /// بالتأشير **فقط وهو مفعّل** (قيد التحرير) — فضغط مطوّل على نص غير مفعّل
+  /// يحدد كتلته كما يتوقع المستخدم، ويبقى تأشير النص متاحاً أثناء الكتابة.
+  final bool allowTextSelection;
+
+  /// يُستدعى عند ضغط مطوّل على الحقل **وهو غير قيد التحرير** (أو حين يكون
+  /// تأشير النص معطَّلاً في وضع التحديد المتعدد).
+  ///
+  /// الطبقة التي تستدعيه تسبق محرّك النص في ساحة الإيماءات (انظر
+  /// [_buildLongPressLayer]) فيصل الضغط المطوّل إلى كتلة السؤال/الفرع
+  /// فتُحدَّد من أي موضع على الورقة، بينما يبقى تأشير النص متاحاً داخل حقل
+  /// مفعّل قيد الكتابة.
+  final VoidCallback? onLongPress;
 
   @override
   State<PaperField> createState() => _PaperFieldState();
@@ -88,9 +107,14 @@ class _PaperFieldState extends State<PaperField> {
   }
 
   void _onFocusChange() {
-    if (!_focusNode.hasFocus && _editing) {
-      setState(() => _editing = false);
+    if (!mounted) {
+      return;
     }
+    setState(() {
+      if (!_focusNode.hasFocus) {
+        _editing = false;
+      }
+    });
     if (_focusNode.hasFocus) {
       widget.onActivate?.call();
     }
@@ -219,6 +243,7 @@ class _PaperFieldState extends State<PaperField> {
             message: 'انقر للتحرير',
             child: InkWell(
               onTap: _handleRenderedTap,
+              onLongPress: widget.onLongPress,
               child: SizedBox(
                 width: double.infinity,
                 child: widget.renderBuilder(widget.controller.text),
@@ -228,23 +253,57 @@ class _PaperFieldState extends State<PaperField> {
         }
         return SizedBox(
           width: double.infinity,
-          child: TextField(
+          child: _buildLongPressLayer(
+            TextField(
             controller: widget.controller,
             focusNode: _focusNode,
             maxLines: null,
             textAlign: widget.textAlign,
             style: effectiveStyle,
+            // التأشير متاح فقط حين يكون الحقل قيد التحرير (أو حقل معادلات
+            // صيغته خالصة): فيبقى الضغط المطوّل على بقية الورقة لكتلتها.
+            enableInteractiveSelection:
+                widget.allowTextSelection && _focusNode.hasFocus,
             decoration: InputDecoration.collapsed(
               hintText: widget.hint,
               hintStyle: effectiveStyle.copyWith(color: Colors.grey),
             ),
-            onTap: () {
-              setState(() => _editing = true);
-              widget.onActivate?.call();
-            },
+              onTap: () {
+                setState(() => _editing = true);
+                widget.onActivate?.call();
+              },
+            ),
           ),
         );
       },
+    );
+  }
+
+  /// يضع طبقة إيماءة شفافة فوق حقل التحرير تلتقط الضغط المطوّل وحده.
+  ///
+  /// لماذا طبقة عليا لا `GestureDetector` أب؟ لأن `RenderEditable` في Flutter
+  /// يضيف مُعرّف ضغط مطوّل إلى ساحة الإيماءات طالما `rendererIgnoresPointer`
+  /// مطفأ (وهو مطفأ في `TextField` دائماً)، ومُعرّف النص هذا يفوز على أي
+  /// سلف. الطبقة العليا تُدخَل إلى الساحة قبله (الأعلى يُختبر أولاً) فتفوز
+  /// بالضغط المطوّل، وبلا `onTap` فيها تمرّ النقرات إلى الحقل فيتركّز
+  /// ويظهر المؤشر كالمعتاد. وتُخفى الطبقة حين يكون الحقل مفعّلاً فيبقى
+  /// تأشير النص (تحديد كلمة/سحب المقابض) كما كان.
+  Widget _buildLongPressLayer(Widget field) {
+    final onLongPress = widget.onLongPress;
+    final interactiveSelection = widget.allowTextSelection && _focusNode.hasFocus;
+    if (onLongPress == null || interactiveSelection) {
+      return field;
+    }
+    return Stack(
+      children: <Widget>[
+        field,
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onLongPress: onLongPress,
+          ),
+        ),
+      ],
     );
   }
 }

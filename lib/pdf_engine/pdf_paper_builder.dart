@@ -188,8 +188,10 @@ class PdfPaperBuilder {
   pw.Widget footer() {
     final data = blueprint.footer;
     final override = document.header.style;
+    // ارتفاع سطر التذييل = 1.6× معامل الورقة — رقم الترويسة والمعاينة نفسه
+    // (كان 1.5 فينحرف التذييل المطبوع عن الشاشة).
     final style = _apply(
-      styles.headerBody.copyWith(lineSpacing: 1.5 * _heightScale),
+      styles.headerBody.copyWith(lineSpacing: 1.6 * _heightScale),
       override,
     );
     final bold = style.copyWith(fontWeight: pw.FontWeight.bold);
@@ -294,10 +296,14 @@ class PdfPaperBuilder {
         data.points.where((point) => point.isPrintable).toList(growable: false);
     final children = <pw.Widget>[
       if (data.section != null)
-        pw.Text(
+        // سطر القسم بمقاسه المستقل (12.5pt × معامل الورقة) ومحاذاته الخاصة
+        // من النموذج (`categoryAlign`) — لا يرث تنسيق السؤال، تماماً كما في
+        // المعاينة وملف Word.
+        _renderText(
           data.section!,
-          style: _apply(styles.category, bodyOverride),
-          textAlign: titleAlign,
+          styles.category,
+          fonts.quranic,
+          align: PaperStyleResolver.toPdfAlign(question.categoryAlign),
         ),
       _titleLine(
         data.title,

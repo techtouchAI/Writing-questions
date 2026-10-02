@@ -183,6 +183,10 @@ class DocxDocumentExportService {
       <w:rPr>
         <w:rFonts w:ascii="$font" w:hAnsi="$font" w:cs="$font"/>
         <w:sz w:val="22"/>
+        <!-- مقاس النص العربي (Complex Script): بدونه يتجاهل Word حجم المجموعة
+             نفسه ويستعمل مقاس المحرك الافتراضي، فلا يتغير حجم الخط العربي
+             في الملف مهما ضبطه المدرس في المعاينة. -->
+        <w:szCs w:val="22"/>
         <w:lang w:val="ar-SA" w:bidi="ar-SA"/>
       </w:rPr>
     </w:rPrDefault>
@@ -700,6 +704,10 @@ class _DocxBuilder {
           font: PaperFont.amiri,
           applyHeaderStyle: false,
           applyHeaderLayout: false,
+          // البسملة تحفظ لون الترويسة (كالمعاينة والـ PDF) وارتفاع سطرها
+          // المستقل 1.5× معامل الورقة — لا تباعد الورقة العام.
+          colorHex: document.header.style.colorHex,
+          lineRatio: 1.5 * document.settings.heightScale,
         ),
       );
     }
@@ -736,6 +744,8 @@ class _DocxBuilder {
     PaperFont? font,
     bool applyHeaderStyle = true,
     bool applyHeaderLayout = true,
+    String? colorHex,
+    double? lineRatio,
   }) {
     final style = applyHeaderStyle ? document.header.style : PaperTextStyle.empty;
     final effectiveBold = style.bold ?? bold;
@@ -745,13 +755,16 @@ class _DocxBuilder {
     final fontName = DocxDocumentExportService._fontName(
       font ?? style.font ?? document.settings.defaultFont,
     );
-    final color = style.colorHex;
+    // اللون: لون الترويسة الذي اختاره المدرس، أو لون صريح لعنصر يبقى على
+    // خطه وحجمه (البسملة) ولا يفقد لون الورقة — كما في المعاينة والـ PDF.
+    final color = colorHex ?? style.colorHex;
     // تباعد الأسطر: إعداد المدرس للترويسة يسود، وإلا أساس الترويسة
     // (1.6 × معامل ارتفاع الورقة — كما في المعاينة والـ PDF حرفياً)،
     // أو التباعد العام للورقة في التذييل والبسملة.
-    final baseLineRatio = applyHeaderLayout
-        ? 1.6 * document.settings.heightScale
-        : document.settings.lineSpacing;
+    final baseLineRatio = lineRatio ??
+        (applyHeaderLayout
+            ? 1.6 * document.settings.heightScale
+            : document.settings.lineSpacing);
     final line = (240 * (style.lineHeight ?? baseLineRatio)).round();
     // المسافة بعد كل سطر ترويسة (إعداد المدرس: بكسل منطقي ← تويب).
     final spacingAfter = !applyHeaderLayout || style.paragraphSpacing == null
@@ -766,7 +779,7 @@ class _DocxBuilder {
         '${style.italic == true ? '<w:i/>' : ''}'
         '${style.underline == true ? '<w:u w:val="single"/>' : ''}'
         '${color == null ? '' : '<w:color w:val="$color"/>'}'
-        '<w:sz w:val="$effectiveSize"/>'
+        '<w:sz w:val="$effectiveSize"/><w:szCs w:val="$effectiveSize"/>'
         '<w:rFonts w:ascii="$fontName" w:hAnsi="$fontName" w:cs="$fontName"/></w:rPr>';
     return '<w:p><w:pPr><w:bidi/><w:jc w:val="$effectiveAlign"/>'
         '<w:spacing${spacingAfter == null ? '' : ' w:before="0" w:after="$spacingAfter"'} w:line="$line" w:lineRule="auto"/></w:pPr>'
@@ -792,16 +805,21 @@ class _DocxBuilder {
       }
       // سطر التذييل يأخذ تنسيق نص الترويسة (خط/حجم/لون/تباعد أسطر) لكن
       // لا محاذاة الترويسة ولا مسافة فقراتها — كالمعاينة والـ PDF.
+      // ارتفاع سطر التذييل = 1.6× معامل الورقة (رقم الترويسة والمعاينة
+      // نفسه) مع احتفاظه بتنسيق نص الترويسة (خط/حجم/لون).
+      final footerLineRatio = 1.6 * document.settings.heightScale;
       final title = _headerParagraph(
         source.title,
         alignment: 'center',
         bold: true,
         applyHeaderLayout: false,
+        lineRatio: footerLineRatio,
       );
       final nameLine = _headerParagraph(
         source.nameLine,
         alignment: 'center',
         applyHeaderLayout: false,
+        lineRatio: footerLineRatio,
       );
       return '$title$nameLine';
     }
@@ -840,13 +858,17 @@ class _DocxBuilder {
     // الترتيب مطابق للوحة المعاينة ومحرك الـ PDF حرفياً:
     // القسم ← سطر العنوان ← النص ← نقاط السؤال ← الفروع.
     if (data.section != null) {
+      // سطر القسم: 12.5pt ومحاذاته من النموذج (`categoryAlign`) — نفس مقاس
+      // المعاينة ومحرك PDF ونفس قرار المحاذاة، وبلا فجوة قبله أو بعده
+      // (المعاينة تلصقه بسطر العنوان).
       _writeParagraph(
         body,
         data.section!,
         bold: true,
-        size: 24,
-        before: 40,
-        after: 40,
+        size: 25,
+        alignment: DocxDocumentExportService._wordAlign(question.categoryAlign),
+        before: 0,
+        after: 0,
       );
     }
     _writeStyledParagraph(
@@ -854,10 +876,11 @@ class _DocxBuilder {
       data.title.line,
       style: titleStyle,
       bold: true,
-      size: 26,
+      // 11pt = مقاس سطر عنوان السؤال في المعاينة وPDF حرفياً.
+      size: 22,
       color: titleStyle.colorHex,
-      before: 180,
-      after: 60,
+      before: 0,
+      after: PaperMetrics.twips(PaperMetrics.elementGapPx),
       border: question.showFrame,
     );
     if (data.body != null) {
@@ -867,12 +890,21 @@ class _DocxBuilder {
         style: bodyStyle.copyWith(
           align: () => question.bodyAlign ?? question.style.align,
         ),
-        size: 24,
-        before: question.style.paragraphSpacing == null ? 40 : 0,
-        after: 40,
+        // 11pt = مقاس نص السؤال في المعاينة وPDF (كان 12pt فينحرف الملف).
+        size: 22,
+        before: question.style.paragraphSpacing == null
+            ? PaperMetrics.twips(PaperMetrics.elementGapPx)
+            : 0,
+        after: 0,
       );
     }
-    _writePoints(body, data.points, style: bodyStyle, indent: 800);
+    _writePoints(
+      body,
+      data.points,
+      style: bodyStyle,
+      indent: 800,
+      firstGapPx: PaperMetrics.elementGapPx,
+    );
     for (final branch in data.branches) {
       await _buildBranch(
         body,
@@ -893,34 +925,46 @@ class _DocxBuilder {
     List<PointBlueprint> points, {
     required PaperTextStyle? style,
     required int indent,
+    required double firstGapPx,
   }) {
+    var written = 0;
     for (final point in points) {
       if (!point.isPrintable) {
         continue;
       }
       final pointStyle =
           point.item.align != null ? style?.copyWith(align: () => point.item.align) : style;
-      final before = style?.paragraphSpacing == null ? 30 : 0;
+      final customSpacing = style?.paragraphSpacing;
+      // الفجوة قبل أول نقطة = فجوة الكتلة (سؤال: 2px، فرع: 1px)، وبين
+      // نقطتين = فجوة المسافة بين الفقرات (صفر افتراضاً) — كما في
+      // المعاينة ومحرك PDF بالبكسل المنطقي نفسه.
+      final before = customSpacing != null
+          ? 0
+          : (written == 0
+              ? PaperMetrics.twips(firstGapPx)
+              : PaperMetrics.twips(PaperMetrics.itemGapPx));
       if (point.line.trim().isNotEmpty) {
         _writeStyledParagraph(
           body,
           point.line,
           style: pointStyle,
-          size: 22,
+          // 10.5pt = مقاس النقطة في المعاينة وPDF (كان 11pt).
+          size: 21,
           indent: indent,
           before: before,
-          after: 30,
+          after: customSpacing == null ? 0 : _paragraphSpacingTwips(customSpacing),
         );
+        written++;
       }
       if (point.optionsLine.isNotEmpty) {
         _writeStyledParagraph(
           body,
           point.optionsLine,
           style: pointStyle,
-          size: 22,
+          size: 21,
           indent: indent + 400,
           before: 0,
-          after: 30,
+          after: customSpacing == null ? 0 : _paragraphSpacingTwips(customSpacing),
         );
       }
     }
@@ -942,12 +986,13 @@ class _DocxBuilder {
       body,
       data.title.line,
       style: branch.style,
-      size: 22,
+      // 10.5pt = مقاس نص الفرع في المعاينة وPDF (كان 11pt).
+      size: 21,
       indent: 400,
       before: questionParagraphSpacing == null
-          ? 40
+          ? PaperMetrics.twips(PaperMetrics.elementGapPx)
           : _paragraphSpacingTwips(questionParagraphSpacing),
-      after: 40,
+      after: PaperMetrics.twips(PaperMetrics.branchGapPx),
       border: branch.showFrame,
     );
     if (data.body != null) {
@@ -955,13 +1000,21 @@ class _DocxBuilder {
         body,
         data.body!,
         style: branch.style,
-        size: 22,
+        size: 21,
         indent: 400,
-        before: 0,
-        after: 40,
+        before: branch.style.paragraphSpacing == null
+            ? PaperMetrics.twips(PaperMetrics.branchGapPx)
+            : 0,
+        after: 0,
       );
     }
-    _writePoints(body, data.points, style: branch.style, indent: 800);
+    _writePoints(
+      body,
+      data.points,
+      style: branch.style,
+      indent: 800,
+      firstGapPx: PaperMetrics.branchGapPx,
+    );
     await _buildAttachments(body, branch.attachments);
     _buildDivider(body, branch.dividerAfter);
   }
@@ -1379,7 +1432,16 @@ class _DocxBuilder {
     if (color != null) {
       runProperties.write('<w:color w:val="$color"/>');
     }
-    runProperties.write('<w:sz w:val="$effectiveSize"/><w:rFonts w:cs="${font ?? DocxDocumentExportService._fontName(document.settings.defaultFont)}"/></w:rPr>');
+    // مقاس ASCII والعربي معاً (`w:sz` + `w:szCs`) وخط المجموعة والخط
+    // اللاتيني معاً: Word يستعمل `w:szCs` لنص المجموعة العربية، وبدونه لا
+    // يظهر أي تغيير في الحجم على الورقة العربية مهما ضبطه المدرس.
+    final fontName =
+        font ?? DocxDocumentExportService._fontName(document.settings.defaultFont);
+    runProperties.write(
+      '<w:sz w:val="$effectiveSize"/><w:szCs w:val="$effectiveSize"/>'
+      '<w:rFonts w:ascii="$fontName" w:hAnsi="$fontName" w:cs="$fontName"/>'
+      '</w:rPr>',
+    );
     body.write('</w:pPr>');
     body.write(_runsXml(text, runProperties.toString(), effectiveSize / 2));
     body.write('</w:p>');

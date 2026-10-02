@@ -551,7 +551,10 @@ void main() {
             xml.contains('<w:u w:val="single"/>'),
         'color DC2600': xml.contains('<w:color w:val="DC2600"/>'),
         'size 13pt→<w:sz w:val="26"/>': xml.contains('<w:sz w:val="26"/>'),
-        'font Tajawal': xml.contains('<w:rFonts w:cs="Tajawal"/>'),
+        // الخط يصل للخط اللاتيني (ascii/hAnsi) ولنص المجموعة العربية (cs)
+        // معاً: Word يستعمل cs للعربية وascii للأرقام/اللاتينية.
+        'font Tajawal (ascii)': xml.contains('w:ascii="Tajawal"'),
+        'font Tajawal (cs)': xml.contains('w:cs="Tajawal"'),
         'justify→jc both': xml.contains('w:jc w:val="both"'),
         'lineHeight 2.0→w:line=480': xml.contains('w:line="480"'),
         'paragraphSpacing 12→w:after=180':
@@ -562,7 +565,8 @@ void main() {
         'underline <w:u w:val="single"/>': true,
         'color DC2600': true,
         'size 13pt→<w:sz w:val="26"/>': true,
-        'font Tajawal': true,
+        'font Tajawal (ascii)': true,
+        'font Tajawal (cs)': true,
         'justify→jc both': true,
         'lineHeight 2.0→w:line=480': true,
         'paragraphSpacing 12→w:after=180': true,

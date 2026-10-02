@@ -222,6 +222,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   final Set<String> _selectedQuestions = <String>{};
   final Set<BranchRef> _selectedBranches = <BranchRef>{};
   bool _headerSelected = false;
+
+  /// تلميح «أنت الآن في وضع التحديد» يُعرض مرة واحدة في الجلسة عند الدخول
+  /// بالضغط المطوّل (لا مع كل ضغطة فيزعج المستخدم).
+  bool _selectionHintShown = false;
   bool _showFormulas = true;
 
   double _zoom = 1.0;
@@ -450,6 +454,178 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       _clearSelection();
       _headerSelected = !was;
     });
+  }
+
+  /// مفتاح «تحديد متعدد» في الشريط: يفتح الوضع ويُغلقه ويفرّغ التحديد عند
+  /// كل تبديل (كما كان) — والخروج يلغي كل تحديد فلا تبقى عناصر «معلّقة»
+  /// بلا وضع يفسّرها.
+  void _toggleMultiSelect() {
+    setState(() {
+      _multiSelect = !_multiSelect;
+      _clearSelection();
+    });
+  }
+
+  /// الضغط المطوّل على أي موضع من السؤال: يفتح وضع التحديد المتعدد ويحدد
+  /// السؤال، أو يقلب تحديده إن كان الوضع مفتوحاً (سلوك شريط خطوة الأسئلة
+  /// نفسه، موسَّعاً ليشمل أي نقطة من كتلة السؤال لا رقمها وحده).
+  void _longPressQuestion(int index) {
+    final controller = _controller!;
+    final id = controller.questions[index].id;
+    final wasInMultiSelect = _multiSelect;
+    setState(() {
+      if (!_multiSelect) {
+        _clearSelection();
+        _multiSelect = true;
+        _selectedQuestions.add(id);
+      } else if (!_selectedQuestions.remove(id)) {
+        _selectedQuestions.add(id);
+      }
+      controller.selectQuestion(index);
+      if (!wasInMultiSelect) {
+        controller.selectBranch(null);
+      }
+    });
+    _announceSelectionMode(wasInMultiSelect);
+  }
+
+  /// الضغط المطوّل على أي موضع من الفرع (منطوقه أو نصه أو نقاطه أو خياراتها):
+  /// يفتح وضع التحديد المتعدد ويحدد الفرع، أو يقلب تحديده داخله.
+  /// استدعاء الضغط المطوّل المناسب لعنوان النقاط: نقطة سؤال مباشرة أو نقطة
+  /// فرع. تُستعمل حقول النقاط والخيارات نفسها في المسارين، فلا يعرف الحقل
+  /// تلقائياً إلى أي كتلة ينتمي، فيمرَّر إليه هذا الاستدعاء صراحة.
+  VoidCallback _pointsOwnerLongPress(PointsOwner owner) {
+    final branchIndex = owner.branchIndex;
+    if (branchIndex == null) {
+      return () => _longPressQuestion(owner.questionIndex);
+    }
+    return () => _longPressBranch(
+          BranchRef(questionIndex: owner.questionIndex, branchIndex: branchIndex),
+        );
+  }
+
+  void _longPressBranch(BranchRef ref) {
+    final controller = _controller!;
+    final wasInMultiSelect = _multiSelect;
+    setState(() {
+      if (!_multiSelect) {
+        _clearSelection();
+        _multiSelect = true;
+      }
+      if (!_selectedBranches.remove(ref)) {
+        _selectedBranches.add(ref);
+      }
+      controller.selectBranch(ref);
+    });
+    _announceSelectionMode(wasInMultiSelect);
+  }
+
+  /// رسالة قصيرة عند الدخول إلى وضع التحديد بالضغط المطوّل (مرة واحدة).
+  void _announceSelectionMode(bool wasInMultiSelect) {
+    if (wasInMultiSelect || _selectionHintShown) {
+      return;
+    }
+    _selectionHintShown = true;
+    _showMessage('وضع التحديد المتعدد: انقر أي عنصر آخر لإضافته أو إزالته.');
+  }
+
+  /// «تحديد الكل» في الشريط: يحدد كل أسئلة الورقة وفروعها دفعة واحدة
+  /// (تنسيق جماعي حقيقي لكل محتوى منطقة الأسئلة)، ومرة أخرى يلغي تحديد
+  /// الجميع مع البقاء في الوضع — كزر «تحديد الكل» في شريط خطوة الأسئلة.
+  void _toggleSelectAll() {
+    final controller = _controller;
+    if (controller == null || controller.questions.isEmpty) {
+      _showMessage('لا توجد أسئلة لتحديدها.');
+      return;
+    }
+    setState(() {
+      if (_allBlocksSelected) {
+        _selectedQuestions.clear();
+        _selectedBranches.clear();
+        return;
+      }
+      _multiSelect = true;
+      _headerSelected = false;
+      _selectedAttachment = null;
+      _selectedDividerKey = null;
+      _selectedQuestions
+        ..clear()
+        ..addAll(controller.questions.map((question) => question.id));
+      _selectedBranches
+        ..clear()
+        ..addAll(<BranchRef>[
+          for (var questionIndex = 0;
+              questionIndex < controller.questions.length;
+              questionIndex++)
+            for (var branchIndex = 0;
+                branchIndex < controller.questions[questionIndex].branches.length;
+                branchIndex++)
+              BranchRef(questionIndex: questionIndex, branchIndex: branchIndex),
+        ]);
+    });
+    if (!_selectionHintShown) {
+      _selectionHintShown = true;
+      _showMessage('حُددت أسئلة الورقة وفروعها كلها — طبّق التنسيق ثم ألغِ التحديد.');
+    }
+  }
+
+  /// هل أسئلة الورقة وفروعها محددة كلها؟ (المصدر الوحيد لحالة زر «تحديد الكل»).
+  bool get _allBlocksSelected {
+    final controller = _controller;
+    if (controller == null || controller.questions.isEmpty) {
+      return false;
+    }
+    for (final question in controller.questions) {
+      if (!_selectedQuestions.contains(question.id)) {
+        return false;
+      }
+    }
+    for (var questionIndex = 0;
+        questionIndex < controller.questions.length;
+        questionIndex++) {
+      for (var branchIndex = 0;
+          branchIndex < controller.questions[questionIndex].branches.length;
+          branchIndex++) {
+        if (!_selectedBranches
+            .contains(BranchRef(questionIndex: questionIndex, branchIndex: branchIndex))) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  /// عدد كتل الورقة القابلة للتحديد (أسئلة + فروع).
+  int get _selectableBlockCount {
+    final controller = _controller;
+    if (controller == null) {
+      return 0;
+    }
+    var count = controller.questions.length;
+    for (final question in controller.questions) {
+      count += question.branches.length;
+    }
+    return count;
+  }
+
+  /// عدد الكتل المحددة فعلاً (المعرفات الباقية في النموذج فقط).
+  int get _selectedBlockCount {
+    final controller = _controller;
+    if (controller == null) {
+      return 0;
+    }
+    var count = 0;
+    for (final question in controller.questions) {
+      if (_selectedQuestions.contains(question.id)) {
+        count++;
+      }
+    }
+    for (final ref in _selectedBranches) {
+      if (controller.document.containsRef(ref)) {
+        count++;
+      }
+    }
+    return count;
   }
 
   /// هل الفرع [ref] محدد حالياً (منفرداً أو ضمن متعدد)؟
@@ -794,6 +970,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   bool _isModelBackedAlignKey(String fieldKey) =>
       fieldKey.startsWith('statement-') ||
       fieldKey.startsWith('body-') ||
+      fieldKey.startsWith('category-') ||
       fieldKey.startsWith('branch-') ||
       fieldKey.startsWith('option-') ||
       fieldKey.startsWith('item-');
@@ -813,6 +990,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (fieldKey.startsWith('body-')) {
       final question = doc.questionById(fieldKey.substring('body-'.length));
       return question == null ? null : question.bodyAlign ?? question.style.align;
+    }
+    // سطر القسم: محاذاته تُحفظ في النموذج (`categoryAlign`) فتصل إلى
+    // المعاينة وPDF وWord — لا تبقى في خريطة الشاشة وحدها.
+    if (fieldKey.startsWith('category-')) {
+      final question = doc.questionById(fieldKey.substring('category-'.length));
+      return question == null ? null : question.categoryAlign;
     }
     for (final prefix in const <String>['branch-statement-', 'branch-body-']) {
       if (fieldKey.startsWith(prefix)) {
@@ -922,6 +1105,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       final index = document.indexOfQuestion(key.substring('statement-'.length));
       if (index != -1) {
         controller.updateQuestionTitleAlign(index, align);
+      }
+      return;
+    }
+
+    // 3ب. سطر القسم: محاذاته في النموذج مباشرةً (categoryAlign).
+    if (key.startsWith('category-')) {
+      final index = document.indexOfQuestion(key.substring('category-'.length));
+      if (index != -1) {
+        controller.updateQuestionCategoryAlign(index, align);
       }
       return;
     }
@@ -2620,10 +2812,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             onFit: _fitToScreen,
             onCenter: _centerPaper,
             multiSelect: _multiSelect,
-            onToggleMultiSelect: () => setState(() {
-              _multiSelect = !_multiSelect;
-              _clearSelection();
-            }),
+            onToggleMultiSelect: _toggleMultiSelect,
+            onToggleSelectAll: _toggleSelectAll,
+            allBlocksSelected: _allBlocksSelected,
+            selectedBlockCount: _selectedBlockCount,
+            totalBlockCount: _selectableBlockCount,
+            formatCount: document.formatNumber,
             activeFont: activeStyle.font,
             onFontChanged: (font) => _applyStyle(
               (current) => current.copyWith(font: () => font),
@@ -3387,6 +3581,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         if (data.section != null)
           _paperField(
             fieldKey: _categoryKey(question.id),
+            onLongPress: () => _longPressQuestion(questionIndex),
             controller: _field(
               _categoryKey(question.id),
               question.category,
@@ -3439,6 +3634,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             ),
             statement: _paperField(
               fieldKey: statementKey,
+              onLongPress: () => _longPressQuestion(questionIndex),
               controller: _field(
                 statementKey,
                 question.statement,
@@ -3489,6 +3685,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           if (blockSpacing > 0) SizedBox(height: blockSpacing),
           _paperField(
             fieldKey: bodyKey,
+            onLongPress: () => _longPressQuestion(questionIndex),
             controller: _field(
               bodyKey,
               question.body,
@@ -3587,7 +3784,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final minHeight = _legacyAttachmentMinHeight(question.attachments, globalIds);
     return ConstrainedBox(
       constraints: BoxConstraints(minHeight: minHeight, minWidth: double.infinity),
-      child: block,
+      // الضغط المطوّل في أي موضع من كتلة السؤال (بما فيها الفراغات والنقاط
+      // وأرقامها، وحقول النص غير المفعّلة) يفتح وضع التحديد المتعدد ويحدد
+      // السؤال — بلا تعارض مع سحب المقبض (LongPressDraggable أعمق فيفوز)
+      // ولا مع تأشير النص داخل حقل قيد التحرير.
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onLongPress: () => _longPressQuestion(questionIndex),
+        child: block,
+      ),
     );
   }
 
@@ -3756,6 +3961,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         Widget body = GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () => _tapBranch(ref),
+          onLongPress: () => _longPressBranch(ref),
           child: Container(
             margin: const EdgeInsets.only(top: 2),
             padding:
@@ -3846,6 +4052,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
           statement: _paperField(
             fieldKey: statementKey,
+            onLongPress: () => _longPressBranch(ref),
             controller: _field(
               statementKey,
               content.statement,
@@ -3890,6 +4097,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             padding: EdgeInsetsDirectional.only(start: 26, top: firstItemSpacing),
             child: _paperField(
               fieldKey: bodyKey,
+              onLongPress: () => _longPressBranch(ref),
               controller: _field(
                 bodyKey,
                 content.body,
@@ -3984,6 +4192,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               Expanded(
                 child: _paperField(
                   fieldKey: fieldKey,
+                  onLongPress: _pointsOwnerLongPress(owner),
                   controller: _field(
                     fieldKey,
                     item.text,
@@ -4085,6 +4294,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   Expanded(
                     child: _paperField(
                       fieldKey: _optionKey(item.id, index),
+                      onLongPress: _pointsOwnerLongPress(owner),
                       controller: _field(
                         _optionKey(item.id, index),
                         item.options[index].text,
@@ -5041,6 +5251,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     TextAlign textAlign = TextAlign.start,
     String? hint,
     bool mushafStyle = false,
+    VoidCallback? onLongPress,
   }) {
     final layout = _controller!.document.layout;
     return PaperField(
@@ -5051,6 +5262,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       hint: hint,
       onActivate: () => _activateField(fieldKey, controller),
       onEditFormula: () => _editEquationInField(fieldKey),
+      // في وضع التحديد المتعدد لا يبتلع الحقل الضغط المطوّل: يمرّ إلى كتلة
+      // السؤال/الفرع فتُحدَّد من أي موضع (والنص غير قابل للتأشير وقتها).
+      allowTextSelection: !_multiSelect,
+      // الضغط المطوّل على أي موضع داخل الكتلة (نص السؤال أو الفرع أو نقطة
+      // أو خيار) يفعّل التحديد المتعدد ويحدّد الكتلة نفسها.
+      onLongPress: onLongPress,
       // نص الفرع وحده يتبع «أسلوب المصحف» (توسيط الآية القائمة بذاتها)
       // كما في محرك الـ PDF — وبقية الحقول تُعرض بمحاذاة الحقل نفسها.
       renderBuilder: (text) => mushafStyle
