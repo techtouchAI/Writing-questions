@@ -116,9 +116,13 @@ fi
 
 # Word: LibreOffice يحوّل DOCX إلى PDF ثم poppler يصيّره. ملف تعريف
 # LibreOffice في /tmp حتى لا يحتاج مجلد المستخدم في بيئة نظيفة.
+# ضغط بلا فقد وإيقاف تصغير دقة الصور في تصدير LibreOffice: الفشل الافتراضي
+# (JPEG) يُدخل ضجيج ضغط يُقرأ خطأً كفرق تخطيط، والمقارنة تقيس **ملفنا** لا
+# إعدادات المُصدِّر الوسيط.
+LO_EXPORT_OPTIONS='pdf:writer_pdf_Export:{"UseLosslessCompression":{"type":"boolean","value":"true"},"ReduceImageResolution":{"type":"boolean","value":"false"}}'
 soffice_output="$("$SOFFICE" --headless --norestore --nolockcheck \
   -env:UserInstallation="file:///tmp/lo-visual-parity" \
-  --convert-to pdf --outdir "$RENDERED/docx_pdf" \
+  --convert-to "$LO_EXPORT_OPTIONS" --outdir "$RENDERED/docx_pdf" \
   "$ARTIFACTS/exact.docx" 2>&1)" || true
 {
   echo '[تحويل Word (LibreOffice)]'
@@ -195,6 +199,19 @@ check_track() { # <وسم> <مجلد التصيير> <سقف>
     fi
     printf '%-4s صفحة %-2s  المقاس %sx%s (%s)  RMSE %s  (السقف %s)  %s\n' \
       "$label" "$index" "$rw" "$rh" "$size_status" "$value" "$threshold" "$verdict"
+    # تشخيص (لا حكم): كم بكسل اختلف فعلاً بسماح 2%؟ وهل ينهار الفرق بتنعيم
+    # نصف بكسل؟ فرق واسع ينهار بالتنعيم = ضجيج ضغط/إعادة تحجيم تحت البكسل،
+    # وفرق محصور لا ينهار = انزياح أو اختلاف محتوى حقيقي.
+    if [ "$verdict" = "FAIL" ]; then
+      local differing blurred blurred_ref
+      differing="$($COMPARE -metric AE -fuzz 2% "$norm" "$reference" null: 2>&1 || true)"
+      blurred="$RENDERED/norm/${label}_${index}_blur.png"
+      blurred_ref="$RENDERED/norm/${label}_${index}_blur_ref.png"
+      $CONVERT "$norm" -blur 0x0.5 "$blurred"
+      $CONVERT "$reference" -blur 0x0.5 "$blurred_ref"
+      printf '     ↳ تشخيص: %s بكسل مختلف (سماح 2%%)، وRMSE بعد تنعيم نصف بكسل %s\n' \
+        "$differing" "$(rmse_between "$blurred" "$blurred_ref")"
+    fi
   done <<<"$files"
   return "$status"
 }
