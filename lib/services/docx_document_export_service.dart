@@ -1649,7 +1649,7 @@ class _DocxBuilder {
     final runs = <DocxRunSpec>[];
     for (final option in options) {
       if (runs.isNotEmpty) {
-        runs.add(DocxRunSpec(_optionSeparator + _optionSeparator));
+        runs.add(const DocxRunSpec(_optionSeparator + _optionSeparator));
       }
       if (option.label.trim().isNotEmpty) {
         runs.add(DocxRunSpec(option.label, bold: bold, size: size, color: color, font: font));

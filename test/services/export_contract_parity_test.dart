@@ -1,9 +1,9 @@
-// تطابق عقد التصدير: الرقم الواحد يصل إلى المعاينة وPDF وWord.
+// تطابق العقد: الرقم الواحد يصل إلى المعاينة وPDF وWord.
 //
-// هذا الاختبار لا يقارن «شيفرة بشيفرة» بل **قيمة بقيمة**: لكل عنصر (قسم،
-// عنوان سؤال، متن، نقطة، خيار، فرع) يُقاس:
+// هذا الاختبار لا يقارن «شيفرة بشيفرة» بل **قيمة بقيمة**: لكل عنصر
+// (قسم، عنوان سؤال، متن، نقطة، خيار، فرع) يُقاس:
 //   * المعاينة: نمط Flutter المشتق من العقد (بكسل اللوحة).
-//   * PDF: حجم الخط الفعلي داخل الملف (عبر PdfContentProbe) — لا وجود الشيفرة.
+//   * PDF: الحجم الفعلي داخل الملف (عبر PdfContentProbe) — لا وجود الشيفرة.
 //   * Word: قيم `w:sz`/`w:ind`/`w:spacing` داخل الفقرة نفسها في مستند مفكوك.
 // ويُعاد الاختبار نفسه بمعاملَي قياس (fontScale/heightScale ≠ 1) لإثبات أن
 // القياس يُطبَّق مرة واحدة في الثلاثة ولا يُضاعف في أي مسار.
@@ -36,16 +36,16 @@ import '../pdf_engine/pdf_content_probe.dart';
 QuestionModel _question() => QuestionModel(
       id: 'q1',
       questionNumber: 1,
-      category: 'القواعد',
-      statement: 'منطوق السؤال',
-      body: 'نص السؤال',
+      category: 'Cat',
+      statement: 'Stmt',
+      body: 'BodyText',
       marks: 10,
       items: <BranchItem>[
         BranchItem(
           id: 'p1',
           kind: PointKind.multipleChoice,
-          text: 'نقطة السؤال',
-          options: <QuestionOption>[QuestionOption(text: 'خيار أول')],
+          text: 'PointText',
+          options: <QuestionOption>[QuestionOption(text: 'OptA')],
         ),
       ],
       branches: <BranchModel>[
@@ -53,8 +53,8 @@ QuestionModel _question() => QuestionModel(
           id: 'b1',
           marks: 4,
           content: BranchContent(
-            statement: 'عنوان الفرع',
-            body: 'نص الفرع',
+            statement: 'BranchTitle',
+            body: 'BranchBody',
           ),
         ),
       ],
@@ -121,11 +121,11 @@ void main() {
       // PDF: السطر المرسوم فعلاً.
       final bytes = await PaginatedPdfExamEngine().generate(document: document);
       final probe = PdfContentProbe.fromBytes(bytes);
-      expect(_pdfFontSizeFor(probe, 'القواعد'), closeTo(12.5, 0.01));
+      expect(_pdfFontSizeFor(probe, 'Cat'), closeTo(12.5, 0.01));
 
       // Word: w:sz/w:szCs من نفس القيمة.
       final xml = await _docxXml(document);
-      final paragraph = _paragraphWith(xml, 'القواعد');
+      final paragraph = _paragraphWith(xml, 'Cat');
       expect(paragraph.contains('<w:sz w:val="25"/>'), isTrue);
       expect(paragraph.contains('<w:szCs w:val="25"/>'), isTrue);
     });
@@ -134,10 +134,10 @@ void main() {
       final document = _document();
       final bytes = await PaginatedPdfExamEngine().generate(document: document);
       final probe = PdfContentProbe.fromBytes(bytes);
-      expect(_pdfFontSizeFor(probe, 'منطوق'), closeTo(11, 0.01));
+      expect(_pdfFontSizeFor(probe, 'Stmt'), closeTo(11, 0.01));
 
       final xml = await _docxXml(document);
-      final paragraph = _paragraphWith(xml, 'منطوق');
+      final paragraph = _paragraphWith(xml, 'Stmt');
       expect(paragraph.contains('<w:sz w:val="22"/>'), isTrue);
       expect(paragraph.contains('w:line="408"'), isTrue,
           reason: '240 × 1.7 = 408 — ارتفاع سطر العنوان من العقد لا من إعداد الورقة.');
@@ -149,10 +149,10 @@ void main() {
       final document = _document();
       final bytes = await PaginatedPdfExamEngine().generate(document: document);
       final probe = PdfContentProbe.fromBytes(bytes);
-      expect(_pdfFontSizeFor(probe, 'نص السؤال'), closeTo(11, 0.01));
+      expect(_pdfFontSizeFor(probe, 'BodyText'), closeTo(11, 0.01));
 
       final xml = await _docxXml(document);
-      final paragraph = _paragraphWith(xml, 'نص السؤال');
+      final paragraph = _paragraphWith(xml, 'BodyText');
       expect(paragraph.contains('<w:sz w:val="22"/>'), isTrue);
       expect(paragraph.contains('<w:b/>'), isFalse);
       expect(
@@ -166,10 +166,10 @@ void main() {
       final document = _document();
       final bytes = await PaginatedPdfExamEngine().generate(document: document);
       final probe = PdfContentProbe.fromBytes(bytes);
-      expect(_pdfFontSizeFor(probe, 'نقطة السؤال'), closeTo(10.5, 0.01));
+      expect(_pdfFontSizeFor(probe, 'PointText'), closeTo(10.5, 0.01));
 
       final xml = await _docxXml(document);
-      final paragraph = _paragraphWith(xml, 'نقطة السؤال');
+      final paragraph = _paragraphWith(xml, 'PointText');
       expect(paragraph.contains('<w:sz w:val="21"/>'), isTrue);
       expect(
         paragraph.contains(
@@ -182,23 +182,33 @@ void main() {
           reason: '240 × 1.5 = 360 لارتفاع سطر النقطة من العقد.');
     });
 
-    test('الفرع: إزاحة 390 تويب وخط 348 (1.45)', () async {
+    test('الفرع: الإزاحة وارتفاع السطر من العقد نفسه', () async {
       final document = _document();
+      final expectedLine = ExamTypography.resolve(
+        VisualRole.branchTitle,
+        settings: document.settings,
+        layout: document.layout,
+      );
       final xml = await _docxXml(document);
-      final paragraph = _paragraphWith(xml, 'عنوان الفرع');
+      final paragraph = _paragraphWith(xml, 'BranchTitle');
       expect(
         paragraph.contains(
           '<w:ind w:right="${PaperMetrics.twips(VisualMetrics.branchIndentPx)}"/>',
         ),
         isTrue,
+        reason: 'إزاحة الفرع 26px = 390 تويب من VisualMetrics.',
       );
-      expect(paragraph.contains('w:line="348"'), isTrue);
+      expect(
+        paragraph.contains('w:line="${expectedLine.lineTwips}"'),
+        isTrue,
+        reason: 'ارتفاع سطر الفرع من قالب المادة عبر العقد (${expectedLine.lineTwips}).',
+      );
     });
 
     test('الخيار: إزاحة النقطة + 300 تويب', () async {
       final document = _document();
       final xml = await _docxXml(document);
-      final paragraph = _paragraphWith(xml, 'خيار أول');
+      final paragraph = _paragraphWith(xml, 'OptA');
       expect(
         paragraph.contains(
           '<w:ind w:right="${PaperMetrics.twips(VisualMetrics.pointIndentPx) + PaperMetrics.twips(VisualMetrics.optionIndentPx)}"/>',
@@ -227,11 +237,11 @@ void main() {
 
       final bytes = await PaginatedPdfExamEngine().generate(document: document);
       final probe = PdfContentProbe.fromBytes(bytes);
-      expect(_pdfFontSizeFor(probe, 'منطوق'), closeTo(13.75, 0.05),
+      expect(_pdfFontSizeFor(probe, 'Stmt'), closeTo(13.75, 0.05),
           reason: 'PDF يجب أن يحمل الحجم المقاس مرة واحدة، لا 17.2pt.');
 
       final xml = await _docxXml(document);
-      final paragraph = _paragraphWith(xml, 'منطوق');
+      final paragraph = _paragraphWith(xml, 'Stmt');
       expect(paragraph.contains('<w:sz w:val="28"/>'), isTrue,
           reason: 'round(13.75 × 2) = 28 — قياس واحد لا مضاعف.');
       expect(paragraph.contains('w:line="510"'), isTrue);

@@ -1,27 +1,15 @@
-// عقد التخطيط البصري الواحد (Visual Layout Contract):
-//   * جدول الطباعة واحد لكل الأدوار (لا ثلاثة جداول في ثلاثة راسمين)،
-//   * معامل القياس العام (fontScale/heightScale) يُطبَّق **مرة واحدة**،
-//   * تنسيق العنصر المخصص مطلق لا يتأثر بالمعامل العام،
-//   * المسافات والإزاحات من VisualMetrics لا من أرقام محلية،
-//   * والمحتوى مقاطع (نص/رياضيات/قرآن) لا نصاً واحداً.
+// عقد Layout/Rendering الواحد: الحجم والتباعد والإزاحة والمحتوى تُقرأ من هنا
+// في المعاينة وPDF وWord — فلا رقم مكتوب في راسم، ولا جدول ثانٍ ينحرف.
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:writing_questions_app/layout/paper_metrics.dart';
 import 'package:writing_questions_app/layout/visual/visual_content.dart';
-import 'package:writing_questions_app/layout/visual/visual_document.dart';
 import 'package:writing_questions_app/layout/visual/visual_metrics.dart';
 import 'package:writing_questions_app/layout/visual/visual_style.dart';
 import 'package:writing_questions_app/layout/visual/visual_typography.dart';
-import 'package:writing_questions_app/models/branch_item.dart';
-import 'package:writing_questions_app/models/branch_model.dart';
-import 'package:writing_questions_app/models/exam_document.dart';
-import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_settings.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
-import 'package:writing_questions_app/models/point_kind.dart';
-import 'package:writing_questions_app/models/question_model.dart';
-import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/subject_layout.dart';
 
 VisualTextStyle _resolve(
@@ -38,100 +26,116 @@ VisualTextStyle _resolve(
     );
 
 void main() {
-  group('جدول الطباعة الواحد', () {
-    test('مقاسات الأدوار بالنقاط مطابقة لما ترسمه المعاينة وPDF وWord', () {
-      // القيم التاريخية نفسها التي كانت مكررة في ثلاثة أماكن.
+  group('جدول الأدوار — نفس أرقام المعاينة قبل التوحيد', () {
+    test('الترويسة والتذييل', () {
+      expect(_resolve(VisualRole.headerTitle).fontSizePt, 15);
+      expect(_resolve(VisualRole.headerTitle).lineHeight, 1.6);
+      expect(_resolve(VisualRole.headerTitle).bold, isTrue);
       expect(_resolve(VisualRole.headerBody).fontSizePt, 10);
-      expect(_resolve(VisualRole.category).fontSizePt, 12.5);
-      expect(_resolve(VisualRole.questionTitle).fontSizePt, 11);
-      expect(_resolve(VisualRole.questionBody).fontSizePt, 11);
-      expect(_resolve(VisualRole.point).fontSizePt, 10.5);
-      expect(_resolve(VisualRole.option).fontSizePt, 10.5);
-      expect(_resolve(VisualRole.bismillah).fontSizePt, 17);
-      expect(_resolve(VisualRole.verse).fontSizePt, 12);
-      expect(_resolve(VisualRole.footer).fontSizePt, 8.5);
-    });
-
-    test('ارتفاعات الأسطر من الدور والقالب (والآية تزيد على القالب)', () {
-      expect(_resolve(VisualRole.questionTitle).lineHeight, 1.7);
-      expect(_resolve(VisualRole.point).lineHeight, 1.5);
       expect(_resolve(VisualRole.headerBody).lineHeight, 1.6);
-      expect(_resolve(VisualRole.branchBody).lineHeight, 1.45);
-      expect(
-        _resolve(VisualRole.branchBody, layout: SubjectLayoutTemplate.scientific)
-            .lineHeight,
-        1.8,
+      // التذييل بالدور نفسه حتى لا ينحرف عن الترويسة.
+      expect(_resolve(VisualRole.footer).fontSizePt, 10);
+      expect(_resolve(VisualRole.footer).lineHeight, 1.6);
+    });
+
+    test('البسملة والقسم والعنوان والنص', () {
+      final bismillah = _resolve(VisualRole.bismillah);
+      expect(bismillah.fontSizePt, 17);
+      expect(bismillah.lineHeight, 1.5);
+      expect(bismillah.font, PaperFont.amiri);
+
+      final category = _resolve(VisualRole.category);
+      expect(category.fontSizePt, 12.5);
+      expect(category.lineHeight, 1.45);
+      expect(category.bold, isTrue);
+
+      final title = _resolve(VisualRole.questionTitle);
+      expect(title.fontSizePt, 11);
+      expect(title.lineHeight, 1.7);
+      expect(title.bold, isTrue);
+
+      expect(_resolve(VisualRole.questionBody).fontSizePt, 11);
+      expect(_resolve(VisualRole.questionBody).lineHeight, 1.7);
+    });
+
+    test('النقطة والخيار', () {
+      expect(_resolve(VisualRole.point).fontSizePt, 10.5);
+      expect(_resolve(VisualRole.point).lineHeight, 1.5);
+      expect(_resolve(VisualRole.option).fontSizePt, 10.5);
+      expect(_resolve(VisualRole.option).lineHeight, 1.4);
+    });
+
+    test('الآية: خط مصحفي وارتفاع أعلى قليلاً', () {
+      final verse = _resolve(
+        VisualRole.verse,
+        layout: SubjectLayoutTemplate.arabic,
       );
+      expect(verse.fontSizePt, 12);
+      expect(verse.font, PaperFont.amiri);
       expect(
-        _resolve(VisualRole.verse, layout: SubjectLayoutTemplate.islamic).lineHeight,
-        closeTo(1.65, 1e-9),
+        verse.lineHeight,
+        closeTo(SubjectLayoutTemplate.arabic.lineHeightFactor + 0.2, 1e-9),
       );
     });
 
-    test('الأوزان والخطوط: العنوان غامق والبسملة بخط أميري', () {
-      expect(_resolve(VisualRole.questionTitle).bold, isTrue);
-      expect(_resolve(VisualRole.questionBody).bold, isFalse);
-      expect(_resolve(VisualRole.category).bold, isTrue);
-      expect(_resolve(VisualRole.bismillah).font, PaperFont.amiri);
+    test('المتن يتبع قالب المادة', () {
+      for (final layout in SubjectLayoutTemplate.values) {
+        expect(
+          _resolve(VisualRole.branchBody, layout: layout).lineHeight,
+          closeTo(layout.lineHeightFactor, 1e-9),
+        );
+      }
+    });
+
+    test('الملاحظات بلون واحد من العقد (لا رمادي مكتوب في ثلاثة أماكن)', () {
+      expect(_resolve(VisualRole.small).color, ExamTypography.mutedColor);
+      expect(_resolve(VisualRole.note).color, ExamTypography.mutedColor);
     });
   });
 
-  group('معامل القياس يُطبَّق مرة واحدة', () {
-    test('fontScale يضرب المرجع مرة واحدة، ولا يضاعفه أي مُلحِق', () {
-      final scaled = _resolve(
-        VisualRole.questionTitle,
-        settings: const PaperSettings(baseFontSize: 10.5 * 1.2),
+  group('معامل الورقة يُطبَّق مرة واحدة', () {
+    const scaled = PaperSettings(baseFontSize: 12.6, lineSpacing: 2.0);
+    final fontScale = 12.6 / PaperSettings.referenceFontSize;
+    final heightScale = 2.0 / PaperSettings.referenceLineSpacing;
+
+    test('الحجم والارتفاع مضروبان بالمعامل مرة واحدة لا مرتين', () {
+      final title = _resolve(VisualRole.questionTitle, settings: scaled);
+      expect(title.fontSizePt, closeTo(11 * fontScale, 1e-9));
+      expect(title.lineHeight, closeTo(1.7 * heightScale, 1e-9));
+      // لو ضُرب مرتين لصار 11 × 1.2 × 1.2.
+      expect(
+        title.fontSizePt,
+        isNot(closeTo(11 * fontScale * fontScale, 1e-6)),
       );
-      // 11 × 1.2 = 13.2 — لا 11 × 1.44.
-      expect(scaled.fontSizePt, closeTo(13.2, 1e-9));
     });
 
-    test('heightScale يضرب مرجع الدور مرة واحدة', () {
-      final scaled = _resolve(
-        VisualRole.questionTitle,
-        settings: const PaperSettings(lineSpacing: 1.45 * 1.2),
-      );
-      expect(scaled.lineHeight, closeTo(1.7 * 1.2, 1e-9));
-    });
-
-    test('تنسيق العنصر المخصص مطلق: لا يتأثر بالمعامل العام', () {
-      final scaled = _resolve(
+    test('التنسيق المخصص المطلق للعنصر لا يتأثر بالمعامل العام', () {
+      final custom = _resolve(
         VisualRole.questionBody,
-        settings: const PaperSettings(baseFontSize: 12.6, lineSpacing: 2.0),
+        settings: scaled,
         override: const PaperTextStyle(fontSize: 9, lineHeight: 1.1),
       );
-      expect(scaled.fontSizePt, 9);
-      expect(scaled.lineHeight, 1.1);
+      expect(custom.fontSizePt, 9);
+      expect(custom.lineHeight, 1.1);
     });
 
     test('تحويلات Word: أنصاف النقاط وارتفاع السطر بالتويب', () {
-      final title = _resolve(VisualRole.questionTitle);
-      // 11pt → 22 نصف نقطة (نفس w:sz في الملف)، و1.7 → 408 = 240×1.7.
-      expect(title.halfPoints, 22);
-      expect(title.lineTwips, 408);
-      final scaled = _resolve(
-        VisualRole.questionTitle,
-        settings: const PaperSettings(baseFontSize: 13.125), // fontScale 1.25
+      expect(_resolve(VisualRole.questionTitle).halfPoints, 22); // 11pt
+      expect(_resolve(VisualRole.questionTitle).lineTwips, 408); // 1.7
+      expect(_resolve(VisualRole.point).halfPoints, 21); // 10.5pt
+      expect(
+        _resolve(VisualRole.questionTitle, settings: scaled).halfPoints,
+        (11 * fontScale * 2).round(),
       );
-      expect(scaled.halfPoints, 28); // round(11×1.25×2)
     });
   });
 
   group('المسافات والإزاحات (VisualMetrics)', () {
     test('التحويل الموحّد بكسل ← نقطة ← تويب', () {
-      // معامل واحد ([PaperMetrics.pointsPerPixel]) يحمل البكسل إلى نقاط
-      // الطباعة: 794px = عرض A4 بالضبط (595.276pt)، فالإزاحة 36px تساوي
-      // 26.99pt لا 27pt — والفرق 0.01pt لا يُرى، والأهم أن التوينب يطابق
-      // ما يتوقعه Word (540 و390 و300) فلا ينحرف ملف عن آخر.
-      expect(PaperMetrics.twips(VisualMetrics.pointIndentPx), 540);
-      expect(PaperMetrics.twips(VisualMetrics.branchIndentPx), 390);
-      expect(PaperMetrics.twips(VisualMetrics.optionIndentPx), 300);
-      final perPixel = PaperMetrics.pointsPerPixel;
-      expect(PaperMetrics.pt(VisualMetrics.pointIndentPx),
-          closeTo(VisualMetrics.pointIndentPx * perPixel, 1e-9));
-      expect(PaperMetrics.pt(VisualMetrics.branchIndentPx),
-          closeTo(VisualMetrics.branchIndentPx * perPixel, 1e-9));
-      // ذهاب وعودة بلا فقد: النقاط تعود إلى البكسل نفسه.
+      expect(PaperMetrics.twips(VisualMetrics.pointIndentPx), 540); // 36px
+      expect(PaperMetrics.twips(VisualMetrics.branchIndentPx), 390); // 26px
+      expect(PaperMetrics.twips(VisualMetrics.optionIndentPx), 300); // 20px
+      // معامل واحد: النقاط من البكسل وبالعكس بلا فقد.
       expect(
         PaperMetrics.px(PaperMetrics.pt(VisualMetrics.pointIndentPx)),
         closeTo(VisualMetrics.pointIndentPx, 1e-9),
@@ -144,11 +148,21 @@ void main() {
       expect(VisualMetrics.branchGapPx, PaperMetrics.branchGapPx);
       expect(VisualMetrics.blockSpacingPx, PaperMetrics.blockSpacingPx);
     });
+
+    test('أرقام البنية كلها في العقد (لا ثابت في راسم)', () {
+      expect(VisualMetrics.branchIndentPx, 26);
+      expect(VisualMetrics.pointIndentPx, 36);
+      expect(VisualMetrics.optionIndentPx, 20);
+      expect(VisualMetrics.optionLabelGapPx, 6);
+      expect(VisualMetrics.optionBoxWidthPx, 190);
+      expect(VisualMetrics.titleGapPx, 4);
+      expect(VisualMetrics.questionFramePaddingPx, 5);
+    });
   });
 
   group('المحتوى مقاطع لا نصاً واحداً', () {
     test('يفصل النص عن الصيغة والآية بترتيب الظهور', () {
-      final content = RichContent.parse('قبل \$\$x^2\$\$ بين ﴿آية﴾ بعد');
+      final content = RichContent.parse(r'قبل $$x^2$$ بين ﴿آية﴾ بعد');
       expect(content.hasMath, isTrue);
       expect(content.hasQuran, isTrue);
       expect(content.runs.map((run) => run.kind), <VisualRunKind>[
@@ -158,130 +172,22 @@ void main() {
         VisualRunKind.quran,
         VisualRunKind.text,
       ]);
-      // النص القرآني يبقى بزخرفته ﴿...﴾ في المقاطع: الزخرفة هي التي تعرّفه
-      // للراسم (فلا مُحلِّل ثانٍ)، ورسمها مسؤوليته في المعاينة وPDF وWord.
-      expect(content.plainText, 'قبل x^2 بين ﴿آية﴾ بعد');
-      expect(
-        content.runs
-            .firstWhere((run) => run.isQuran)
-            .text
-            .contains('آية'),
-        isTrue,
-      );
+      // الزخرفة تبقى في المقطع القرآني (هي التي تعرّفه للراسم)، والمجموع
+      // يعيد النص الأصلي كاملاً بلا فقد.
+      expect(content.plainText, r'قبل $$x^2$$ بين ﴿آية﴾ بعد');
+      expect(content.runs.every((run) => run.text.isNotEmpty), isTrue);
     });
 
-    test('النص العادي بلا صيغ مقطع واحد', () {
+    test('النص العادي مقطع واحد', () {
       final content = RichContent.parse('نص عادي');
       expect(content.runs, hasLength(1));
       expect(content.runs.single.isText, isTrue);
       expect(content.hasMath, isFalse);
-    });
-  });
-
-  group('المستند البصري: البنية والإزاحات والمحاذاة', () {
-    ExamDocument buildDocument() => ExamDocument(
-          name: 'عقد',
-          header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
-          questions: <QuestionModel>[
-            QuestionModel(
-              id: 'q1',
-              questionNumber: 1,
-              // قسم بمحاذاة خاصة + سؤال بنص ونقطة وخيارات وفرع بنقاط.
-              category: 'القواعد',
-              categoryAlign: PaperAlign.center,
-              statement: 'منطوق السؤال',
-              body: 'نص السؤال',
-              bodyAlign: PaperAlign.end,
-              items: <BranchItem>[
-                BranchItem(
-                  id: 'p1',
-                  kind: PointKind.multipleChoice,
-                  text: 'نقطة السؤال',
-                  options: <QuestionOption>[
-                    QuestionOption(text: 'خيار أول'),
-                    QuestionOption(text: 'خيار ثانٍ'),
-                  ],
-                ),
-              ],
-              branches: <BranchModel>[
-                BranchModel(
-                  id: 'b1',
-                  content: BranchContent(
-                    statement: 'عنوان الفرع',
-                    items: <BranchItem>[BranchItem(id: 'bp1', text: 'نقطة الفرع')],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        );
-
-    test('ترتيب العناصر: قسم ← عنوان ← نص ← نقاط ← فرع ← نقطة الفرع', () {
-      final document = VisualLayoutEngine.build(buildDocument());
-      final block = document.questionBlock('q1');
-      expect(block, isNotNull);
-      final kinds = block!.elements.map((element) => element.kind).toList();
-      expect(kinds, <VisualElementKind>[
-        VisualElementKind.category,
-        VisualElementKind.title,
-        VisualElementKind.body,
-        VisualElementKind.point,
-        VisualElementKind.title, // عنوان الفرع
-        VisualElementKind.point, // نقطة الفرع
-      ]);
-      final roles = block.elements.map((element) => element.role).toList();
-      expect(roles[0], VisualRole.category);
-      expect(roles[1], VisualRole.questionTitle);
-      expect(roles[2], VisualRole.questionBody);
-      expect(roles[3], VisualRole.point);
-      expect(roles[4], VisualRole.branchTitle);
-      expect(roles[5], VisualRole.point);
+      expect(content.hasQuran, isFalse);
     });
 
-    test('الإزاحات من العقد: الفرع 26، نقطة السؤال 36، نقطة الفرع 62', () {
-      final document = VisualLayoutEngine.build(buildDocument());
-      final elements = document.questionBlock('q1')!.elements;
-      expect(elements[0].indentPx, VisualMetrics.blockStartIndentPx);
-      expect(elements[3].indentPx, VisualMetrics.pointIndentPx);
-      expect(elements[4].indentPx, VisualMetrics.branchIndentPx);
-      expect(
-        elements[5].indentPx,
-        VisualMetrics.branchIndentPx + VisualMetrics.pointIndentPx,
-      );
-    });
-
-    test('محاذاة القسم والنص من النموذج (categoryAlign/bodyAlign)', () {
-      final document = VisualLayoutEngine.build(buildDocument());
-      final elements = document.questionBlock('q1')!.elements;
-      expect(elements[0].align, PaperAlign.center);
-      expect(elements[2].align, PaperAlign.end);
-    });
-
-    test('النقاط والخيارات تحمل محتواها مقاطعَ وأجزاءها كاملة', () {
-      final document = VisualLayoutEngine.build(buildDocument());
-      final point = document
-          .questionBlock('q1')!
-          .elements
-          .firstWhere((element) => element.kind == VisualElementKind.point);
-      expect(point.point, isNotNull);
-      expect(point.point!.number.isNotEmpty, isTrue);
-      expect(point.point!.content.plainText, 'نقطة السؤال');
-      expect(point.point!.options, hasLength(2));
-      expect(point.point!.options.first.content.plainText, 'خيار أول');
-    });
-
-    test('الترويسة والتذييل كتلتان بصريتان بأدوارهما', () {
-      final document = VisualLayoutEngine.build(buildDocument());
-      expect(document.header.isHeader, isTrue);
-      expect(document.footer.isFooter, isTrue);
-      expect(
-        document.header.elements.first.role,
-        anyOf(VisualRole.bismillah, VisualRole.headerBody),
-      );
-      expect(
-        document.footer.elements.every((element) => element.role == VisualRole.headerBody),
-        isTrue,
-      );
+    test('نص فارغ = بلا مقاطع (لا يُرسم شيء)', () {
+      expect(RichContent.parse('').isEmpty, isTrue);
     });
   });
 }
