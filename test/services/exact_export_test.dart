@@ -18,6 +18,14 @@ final Uint8List _png1x1 = base64Decode(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk'
   'YPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
 );
+final Uint8List _redPixel = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4'
+  'z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
+);
+final Uint8List _bluePixel = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNg'
+  'YPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg==',
+);
 
 List<PageSnapshot> _snapshots(int count) => <PageSnapshot>[
       for (var index = 0; index < count; index++)
@@ -145,6 +153,47 @@ void main() {
       // الصورة المثبّتة لا تدفع محتوىً، فيلزم فاصل صريح بين الصفحات.
       expect(RegExp(r'<w:br w:type="page"/>').allMatches(xml).length, 2);
       expect(xml.contains('<w:t'), isFalse);
+    });
+
+    test('ترتيب DOCX يتبع فهرس الصفحة لا ترتيب وصول اللقطات', () {
+      final bytes = ExactExportService.buildDocxFromSnapshots(<PageSnapshot>[
+        PageSnapshot(
+          pageIndex: 1,
+          pngBytes: _bluePixel,
+          widthPx: 794,
+          heightPx: 1123,
+        ),
+        PageSnapshot(
+          pageIndex: 0,
+          pngBytes: _redPixel,
+          widthPx: 794,
+          heightPx: 1123,
+        ),
+      ]);
+      final archive = ZipDecoder().decodeBytes(bytes);
+      expect(
+        archive.findFile('word/media/page1.png')!.content,
+        equals(_redPixel),
+      );
+      expect(
+        archive.findFile('word/media/page2.png')!.content,
+        equals(_bluePixel),
+      );
+    });
+
+    test('الفهارس غير المتصلة لا تنتج ترتيب صفحات صامتاً خاطئاً', () {
+      expect(
+        () => ExactExportService.buildDocxFromSnapshots(<PageSnapshot>[
+          _snapshots(1).single,
+          PageSnapshot(
+            pageIndex: 2,
+            pngBytes: _png1x1,
+            widthPx: 794,
+            heightPx: 1123,
+          ),
+        ]),
+        throwsA(isA<StateError>()),
+      );
     });
 
     test('لا صفحات ⇒ استثناء واضح', () {
