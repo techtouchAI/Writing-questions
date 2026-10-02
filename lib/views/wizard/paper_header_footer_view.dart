@@ -54,12 +54,24 @@ class PaperHeaderView extends StatelessWidget {
     );
   }
 
+  /// أسطر عمود في الترويسة: محاذاة المدرس ([PaperTextStyle.align]) تسود
+  /// محاذاة العمود الافتراضية، وبعد كل سطر مسافة الفقرات إن ضبطها —
+  /// المصدر الوحيد نفسه الذي يصل إلى ملفي Word وPDF حرفياً.
+  List<Widget> _lines(List<String> lines, TextStyle lineStyle, TextAlign columnAlign) {
+    final align = PaperStyles.toTextAlign(style.align, columnAlign);
+    final spacing = style.paragraphSpacing;
+    return <Widget>[
+      for (final line in lines) ...<Widget>[
+        _line(line, lineStyle, align),
+        if (spacing != null && spacing > 0) SizedBox(height: spacing),
+      ],
+    ];
+  }
+
   Widget _column(List<String> lines, TextStyle lineStyle, TextAlign align) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        for (final line in lines) _line(line, lineStyle, align),
-      ],
+      children: _lines(lines, lineStyle, align),
     );
   }
 
@@ -93,14 +105,15 @@ class PaperHeaderView extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
+                  // البسملة موسَّطة دائماً (خطها ومحاذاتها مستقلان عن
+                  // تنسيق الترويسة — كما في Word وPDF).
                   if (header.showBismillah)
                     Text(
                       header.bismillah,
                       style: bismillahStyle,
                       textAlign: TextAlign.center,
                     ),
-                  for (final line in header.centerLines)
-                    _line(line, centerStyle, TextAlign.center),
+                  ..._lines(header.centerLines, centerStyle, TextAlign.center),
                 ],
               ),
             ),

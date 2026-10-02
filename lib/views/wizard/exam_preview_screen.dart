@@ -14,7 +14,7 @@ import '../../layout/paper_metrics.dart';
 import '../../models/branch_item.dart';
 import '../../models/exam_canvas_geometry.dart';
 import '../../models/exam_document.dart';
-import '../../models/latex_plain_text.dart';
+import '../../models/equation_model.dart';
 import '../../models/floating_element.dart';
 import '../../models/paper_divider.dart';
 import '../../models/paper_font.dart';
@@ -3722,7 +3722,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 // معاينة السحب تُعرض نصاً مقروءاً: لا كود LaTeX حتى في
                 // العنصر العائم أثناء السحب.
                 child: Text(
-                  '${data.title.number} ${LatexPlainText.ofMixed(branch.content.statement)}',
+                  '${data.title.number} ${_readableStatement(branch.content.statement)}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: _scaled(PaperStyles.body(layout)),
@@ -5058,4 +5058,19 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           : TexText(text, style: style, mathTextStyle: style, textAlign: textAlign),
     );
   }
+}
+
+/// نص العبارة مقروءاً للسحب والمعاينات الخفيفة: يُقسَّم النص بمقاطع
+/// [TexContent.split] وتُعرض كل صيغة من نموذج المعادلات نفسه
+/// ([EquationModel.readableText]) — فلا يظهر كود LaTeX على الشاشة أبداً.
+String _readableStatement(String statement) {
+  final buffer = StringBuffer();
+  for (final segment in TexContent.split(statement)) {
+    if (segment.isMath) {
+      buffer.write(EquationModel.readableText(segment.text));
+    } else {
+      buffer.write(segment.text);
+    }
+  }
+  return buffer.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
 }

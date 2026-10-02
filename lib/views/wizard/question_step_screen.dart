@@ -37,6 +37,47 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
   final TextEditingController _manualMarksController = TextEditingController();
   int? _marksQuestionIndex;
 
+  /// التحديد المتعدد في قائمة الأسئلة: ضغط مطوّل على سؤال يدخل «وضع
+  /// التحديد» ويحدد السؤال المضغوط، وبعدها كل ضغطة تقلب تحديد سؤالها.
+  /// حالة عرض مؤقتة فقط — لا تغيّر الأسئلة ولا محتواها ولا ترتيبها.
+  bool _selectionMode = false;
+  final Set<String> _selectedQuestionIds = <String>{};
+
+  void _enterSelectionModeWith(String questionId) {
+    setState(() {
+      _selectionMode = true;
+      _selectedQuestionIds.add(questionId);
+    });
+  }
+
+  void _toggleQuestionSelection(String questionId) {
+    setState(() {
+      if (!_selectedQuestionIds.remove(questionId)) {
+        _selectedQuestionIds.add(questionId);
+      }
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _selectionMode = false;
+      _selectedQuestionIds.clear();
+    });
+  }
+
+  /// «تحديد الكل» ↔ «إلغاء تحديد الكل»: إن كانت كل الأسئلة محددة تُفرَّغ،
+  /// وإلا تُحدد كلها — مع الدخول في وضع التحديد في الحالتين.
+  void _toggleSelectAll(List<QuestionModel> questions) {
+    final ids = questions.map((question) => question.id).toSet();
+    final allSelected = ids.isNotEmpty && _selectedQuestionIds.containsAll(ids);
+    setState(() {
+      _selectionMode = true;
+      _selectedQuestionIds
+        ..clear()
+        ..addAll(allSelected ? const <String>{} : ids);
+    });
+  }
+
   @override
   void dispose() {
     _manualMarksController.dispose();
@@ -388,23 +429,93 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
     );
   }
 
-  /// شريط تنقّل سريع بين الأسئلة المُعدّة.
+  /// شريط التنقّل بين الأسئلة المُعدّة — وهو قائمة الأسئلة نفسها: ضغطة
+  /// تفتح السؤال، وضغطة مطوّلة تدخل وضع التحديد المتعدد، وزر «تحديد الكل»
+  /// يحدد الأسئلة جميعها (ويتحول «إلغاء تحديد الكل» عندما تكون محددة).
   Widget _buildProgressStrip(BuildContext context, ExamWizardController controller) {
-    return SizedBox(
-      height: 40,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: controller.questions.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 6),
-        itemBuilder: (context, index) {
-          final selected = index == controller.currentQuestionIndex;
-          return ChoiceChip(
-            label: Text(
-              controller.document.displayQuestionLabel(controller.questions[index]),
+    final document = controller.document;
+    final questions = controller.questions;
+    final selectedCount = _selectionMode
+        ? questions.where((question) => _selectedQuestionIds.contains(question.id)).length
+        : 0;
+    final allSelected = questions.isNotEmpty && selectedCount == questions.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (_selectionMode)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    'المحدد ${document.formatNumber(selectedCount)} '
+                    'من ${document.formatNumber(questions.length)}',
+                    key: const ValueKey<String>('question-selection-count'),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                TextButton.icon(
+                  key: const ValueKey<String>('exit-selection-mode'),
+                  onPressed: _exitSelectionMode,
+                  icon: const Icon(Icons.close, size: 18),
+                  label: const Text('إنهاء التحديد'),
+                ),
+              ],
             ),
-            selected: selected,
-            onSelected: (_) => controller.openQuestion(index),
-          );
+          ),
+        SizedBox(
+          height: 40,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: <Widget>[
+              ActionChip(
+                key: const ValueKey<String>('select-all-questions'),
+                avatar: Icon(
+                  allSelected ? Icons.deselect : Icons.select_all,
+                  size: 18,
+                ),
+                label: Text(allSelected ? 'إلغاء تحديد الكل' : 'تحديد الكل'),
+                onPressed: () => _toggleSelectAll(questions),
+              ),
+              for (var index = 0; index < questions.length; index++) ...<Widget>[
+                const SizedBox(width: 6),
+                _buildQuestionChip(controller, index),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// رقاقة سؤال واحد: الضغطة العادية تفتحه للتحرير كما كانت دائماً (أو
+  /// تقلب تحديده داخل وضع التحديد)، والضغط المطوّل يدخل وضع التحديد
+  /// المتعدد ويحدد هذا السؤال — بلا أي أثر على بقية الأسئلة.
+  Widget _buildQuestionChip(ExamWizardController controller, int index) {
+    final question = controller.questions[index];
+    final selectedInMode =
+        _selectionMode && _selectedQuestionIds.contains(question.id);
+    return GestureDetector(
+      onLongPress: () {
+        if (_selectionMode) {
+          _toggleQuestionSelection(question.id);
+        } else {
+          _enterSelectionModeWith(question.id);
+        }
+      },
+      child: ChoiceChip(
+        key: ValueKey<String>('question-chip-${question.id}'),
+        label: Text(controller.document.displayQuestionLabel(question)),
+        selected: _selectionMode
+            ? selectedInMode
+            : index == controller.currentQuestionIndex,
+        onSelected: (_) {
+          if (_selectionMode) {
+            _toggleQuestionSelection(question.id);
+          } else {
+            controller.openQuestion(index);
+          }
         },
       ),
     );

@@ -121,7 +121,14 @@ class MathSnapshot {
     );
     canvas.drawImage(image, ui.Offset.zero, ui.Paint());
     final picture = recorder.endRecording();
-    final padded = await picture.toImage(widthPx, paddedHeightPx);
+    final ui.Image padded;
+    try {
+      padded = await picture.toImage(widthPx, paddedHeightPx);
+    } finally {
+      // اللوحة الوسيطة مورد أصلي: تُطلق فور أخذ الصورة منها (وحتى عند
+      // فشل الرسم) فلا تتراكم لوحات غير محررة عبر تصدير طويل.
+      picture.dispose();
+    }
     final data = await padded.toByteData(format: ui.ImageByteFormat.png);
     padded.dispose();
     if (data == null) {

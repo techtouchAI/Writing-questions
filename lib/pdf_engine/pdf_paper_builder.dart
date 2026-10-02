@@ -6,7 +6,7 @@ import 'package:pdf/widgets.dart' as pw;
 import '../layout/blueprint/exam_blueprint.dart';
 import '../layout/paper_metrics.dart';
 import '../models/exam_document.dart';
-import '../models/latex_plain_text.dart';
+import '../models/equation_model.dart';
 import '../models/paper_divider.dart';
 import '../models/paper_font.dart';
 import '../models/paper_settings.dart';
@@ -87,14 +87,32 @@ class PdfPaperBuilder {
       override,
     );
 
+    // تخطيط الترويسة من إعداد المدرس نفسه الذي تقرأه المعاينة وWord:
+    // المحاذاة تسود محاذاة العمود، ومسافة الفقرات بعد كل سطر (بكسل
+    // منطقي ← نقطة). «بداية السطر» في ترويسة RTL هي اليمين.
+    final spacingPt = override.paragraphSpacing == null
+        ? null
+        : PaperMetrics.pt(override.paragraphSpacing!);
+    pw.TextAlign alignFor(pw.TextAlign columnAlign) {
+      final align = override.align;
+      if (align == null) {
+        return columnAlign;
+      }
+      return PaperStyleResolver.toPdfAlign(align) ?? pw.TextAlign.start;
+    }
+
     // سطر الترويسة يُرسم منسّقاً كما في اللوحة وWord: صيغ `$...$` مرسومةً
     // متجهةً في مكانها داخل السطر، لا كوداً خاماً.
     pw.Widget column(List<String> lines, pw.TextStyle style, pw.TextAlign align) {
+      final resolved = alignFor(align);
       return pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         mainAxisSize: pw.MainAxisSize.min,
         children: <pw.Widget>[
-          for (final line in lines) _renderText(line, style, null, align: align),
+          for (final line in lines) ...<pw.Widget>[
+            _renderText(line, style, null, align: resolved),
+            if (spacingPt != null && spacingPt > 0) pw.SizedBox(height: spacingPt),
+          ],
         ],
       );
     }
@@ -112,6 +130,7 @@ class PdfPaperBuilder {
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       mainAxisSize: pw.MainAxisSize.min,
       children: <pw.Widget>[
+        // البسملة موسَّطة دائماً (مستقلة عن محاذاة الترويسة — كاللوحة وWord).
         if (data.showBismillah)
           _fullWidth(
             pw.Text(
@@ -120,8 +139,15 @@ class PdfPaperBuilder {
               textAlign: pw.TextAlign.center,
             ),
           ),
-        for (final line in data.centerLines)
-          _renderText(line, centerStyle, null, align: pw.TextAlign.center),
+        for (final line in data.centerLines) ...<pw.Widget>[
+          _renderText(
+            line,
+            centerStyle,
+            null,
+            align: alignFor(pw.TextAlign.center),
+          ),
+          if (spacingPt != null && spacingPt > 0) pw.SizedBox(height: spacingPt),
+        ],
       ],
     );
 
@@ -573,7 +599,7 @@ class PdfPaperBuilder {
         // صيغة لم تُلتقط (مضيف غائب أو تعذّر الرسم): نص رياضي مقروء —
         // ممنوع ظهور كود LaTeX في أي ملف مهما كان السبب.
         inline.add(
-          pw.Text(LatexPlainText.of(segment.text), style: style, textAlign: align),
+          pw.Text(EquationModel.readableText(segment.text), style: style, textAlign: align),
         );
         continue;
       }
