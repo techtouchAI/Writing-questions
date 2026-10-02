@@ -164,12 +164,15 @@ void main() {
     await _pump(tester, controller);
     final before = _snapshot(controller);
 
-    // التحديد الأول: كل الكتل القابلة للتحديد (سؤالان + فرع = ٣).
-    await _tapSelectAll(tester);
+    // التحديد الأول: كل الكتل القابلة للتحديد = أسئلة + فروع، محسوبة من
+    // النموذج نفسه (مصدر الـselection logic) لا من عدد الودجات.
     final document = controller.document;
+    final total = document.questions.length +
+        document.questions.fold<int>(0, (sum, q) => sum + q.branches.length);
+    await _tapSelectAll(tester);
     expect(
       _counterText(tester),
-      'المحدد ${document.formatNumber(3)} من ${document.formatNumber(3)}',
+      'المحدد ${document.formatNumber(total)} من ${document.formatNumber(total)}',
       reason: 'العدّاد يجب أن يعرض المحدد من المجموع الكلي للكتل القابلة للتحديد.',
     );
 
@@ -177,7 +180,7 @@ void main() {
     await _tapSelectAll(tester);
     expect(
       _counterText(tester),
-      'المحدد ${document.formatNumber(0)} من ${document.formatNumber(3)}',
+      'المحدد ${document.formatNumber(0)} من ${document.formatNumber(total)}',
       reason: 'الضغط الثاني يلغي تحديد الجميع ويحدّث العدّاد.',
     );
     final after = _snapshot(controller);
@@ -258,12 +261,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.longPress(mathField);
     await tester.pumpAndSettle();
-    final format = controller.document.formatNumber;
+    final document = controller.document;
+    final total = document.questions.length +
+        document.questions.fold<int>(0, (sum, q) => sum + q.branches.length);
     expect(
       _counterText(tester),
-      'المحدد ${format(1)} من ${format(3)}',
+      'المحدد ${document.formatNumber(1)} من ${document.formatNumber(total)}',
       reason: 'الضغط المطوّل على معادلة مرسومة يفعّل التحديد ويحدد السؤال '
-          'وحده (٣ كتل: ثلاثة أسئلة بلا فروع).',
+          'الذي يحملها وحده.',
     );
   });
 
