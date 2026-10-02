@@ -83,14 +83,10 @@ void main() {
         isTrue,
         reason: 'هوامش صفر: الصورة تغطي الورقة كاملة.',
       );
-      // صورتان، ولكل منهما امتداد الرسم وامتداد الشكل بمقاس بكسلات اللقطة
-      // نفسه عند 96dpi (794×1123 ⇒ 7562850×10696575 EMU)، لا بمليمترات A4:
-      // التحجيم إلى A4 يُدخل إزاحة تحت البكسل (قياس CI البصري).
-      expect(
-        RegExp(r'<wp:extent cx="7562850" cy="10696575"/>').allMatches(xml).length,
-        2,
-      );
-      expect(RegExp(r'cx="7562850" cy="10696575"').allMatches(xml).length, 4);
+      // صورتان، ولكل منهما امتداد الرسم وامتداد الشكل بعرض الورقة نفسه
+      // (A4 كاملاً: الصورة تغطي الورقة بلا قصّ).
+      expect(RegExp(r'<wp:extent cx="7560000" cy="10692000"/>').allMatches(xml).length, 2);
+      expect(RegExp(r'cx="7560000" cy="10692000"').allMatches(xml).length, 4);
       // الصور نفسها مضمّنة، وعلاقاتها معلنة.
       expect(archive.findFile('word/media/page1.png'), isNotNull);
       expect(archive.findFile('word/media/page2.png'), isNotNull);

@@ -98,7 +98,7 @@ abstract final class ExactExportService {
       imageTags.add(
         '<w:p><w:pPr><w:spacing w:before="0" w:after="0"/>'
         '<w:jc w:val="center"/></w:pPr>'
-        '<w:r>${_pageDrawing(index + 1, relationId, snapshots[index])}</w:r></w:p>',
+        '<w:r>${_pageDrawing(index + 1, relationId)}</w:r></w:p>',
       );
       if (index < snapshots.length - 1) {
         imageTags.add('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
@@ -183,27 +183,21 @@ abstract final class ExactExportService {
   static final int _pageWidthTwips = (210 / 25.4 * 1440).round();
   static final int _pageHeightTwips = (297 / 25.4 * 1440).round();
 
-  /// EMU لكل بكسل عند 96dpi (914400 ÷ 96 = 9525) — مقاس الصورة الأصلي بلا
-  /// تحويل مليمترات يفقد دقة تحت البكسل.
-  static const double _emuPerPixel = 9525;
-
-  /// صورة الصفحة **مثبّتة على الورقة** بمقاسها الأصلي بوحدة EMU
-  /// (1/914400 بوصة)، أي بمقاس بكسلات اللقطة على 96dpi بالضبط
-  /// ([PageSnapshotService.canvasDpi]).
+  /// صورة الصفحة **مثبّتة على الورقة** بحجم A4 كامل بوحدة EMU (1/914400 بوصة).
   ///
   /// الموضع `posOffset = 0` نسبةً إلى **الصفحة** لا إلى الفقرة: فلا يدخل
   /// ارتفاع السطر ولا خط الأساس ولا هوامش الخلية في مكان الصورة، بل تبدأ من
   /// أصل الورقة تماماً كما تبدأ لقطة المعاينة. (`behindDoc` يمنعها من دفع أي
   /// محتوى، ولذلك يفصل بين الصفحات فاصل صفحات صريح.)
   ///
-  /// ولماذا المقاس الأصلي لا مقاس A4 بالمليمترات؟ لأن مقاس A4 بالبكسل عند
-  /// 96dpi = 793.70×1122.52 بينما اللوحة 794×1123: تحجيم الصورة إلى مليمترات
-  /// A4 يُدخل إزاحة تحت البكسل ظهرت في القياس البصري (RMSE ≈ 0.06 مع أنها
-  /// تنهار بالتنعيم). فتُثبَّت الصورة ببكسلاتها (فرق 0.08مم يُقصّ خارج المحتوى)
-  /// فيصير الرسم 1:1 كما في مسار PDF الذي قاس RMSE = 0.
-  static String _pageDrawing(int id, String relationId, PageSnapshot snapshot) {
-    final widthEmu = (snapshot.widthPx * _emuPerPixel).round();
-    final heightEmu = (snapshot.heightPx * _emuPerPixel).round();
+  /// والمقاس هو A4 بالمليمترات لا بكسلات اللقطة: فالمطلوب أن تغطي الصورة
+  /// الورقة كاملة بلا قصّ. وخلص قياس CI البصري إلى أن الفرق المتبقي في مسار
+  /// Word (≈0.06) هو إعادة عيّنات في **تصيير LibreOffice** نفسه، لأن مسار
+  /// PDF — بالصورة نفسها والشبكة نفسها — قاس RMSE = 0، وبايتات الصورة المضمّنة
+  /// في ملف Word هي بايتات اللقطة حرفياً (يفحصه السكربت).
+  static String _pageDrawing(int id, String relationId) {
+    final widthEmu = (210 / 25.4 * 914400).round();
+    final heightEmu = (297 / 25.4 * 914400).round();
     return '<w:drawing>'
         '<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" '
         'relativeHeight="1" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1">'

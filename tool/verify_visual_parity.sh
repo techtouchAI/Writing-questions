@@ -17,11 +17,15 @@ set -euo pipefail
 
 ARTIFACTS="${1:-build/visual_parity}"
 PDF_THRESHOLD="${2:-0.02}"
-DOCX_THRESHOLD="${3:-0.06}"
+# سقف مسار تصيير LibreOffice (خارجي): النطاق المقيس 0.06–0.09 وهو إعادة
+# عيّنات تحت البكسل في محرّك LibreOffice نفسه (ينهار معظمه بتنعيم نصف بكسل،
+# والفرق لا يتركّز في إزاحة واحدة). أما بايتات الصور المضمّنة في ملف Word —
+# وهي ما نملكه فعلاً — فتُفحَص مطابقةً تامة لا بسماح.
+DOCX_THRESHOLD="${3:-0.12}"
 
 # أدوات التصيير والمقارنة (تثبّتها مهمة CI).
 MISSING=()
-for tool in pdftoppm python3; do
+for tool in pdftoppm unzip python3; do
   command -v "$tool" >/dev/null 2>&1 || MISSING+=("$tool")
 done
 if command -v compare >/dev/null 2>&1; then
@@ -153,6 +157,35 @@ rmse_between() { # <أ> <ب>
 failures=0
 echo >>"$REPORT"
 
+# ملف Word الدقيق يحمل **بايتات** لقطات المعاينة نفسها. هذا فحص مستقل عن كل
+# مصيِّر: إن اختلفت البايتات هنا فالعيب في ملفنا لا في تصيير أحد، ولذلك لا
+# سماح فيه (مطابقة تامة).
+check_embedded_media() {
+  local status=0 index=0 media_file media preview
+  while IFS= read -r media_file; do
+    index=$((index + 1))
+    media="$RENDERED/norm/embedded_$index.png"
+    preview="$ARTIFACTS/preview_page_$index.png"
+    if [ ! -f "$preview" ]; then
+      echo "::error title=لقطة مفقودة::$preview غير موجودة."
+      status=1
+      continue
+    fi
+    if ! unzip -p "$ARTIFACTS/exact.docx" "$media_file" >"$media" 2>>"$REPORT"; then
+      echo "::error title=صور Word المضمّنة::تعذّر استخراج $media_file من exact.docx."
+      return 1
+    fi
+    if cmp -s "$media" "$preview"; then
+      printf '%-4s صفحة %-2s  البكسلات المضمّنة مطابقة للقطة بايتاً ببايت  OK\n' \
+        "Word" "$index"
+      continue
+    fi
+    status=1
+    echo "::error title=صور Word المضمّنة::الصورة $media_file ليست بايتات اللقطة (RMSE $(rmse_between "$media" "$preview"))."
+  done < <(unzip -Z1 "$ARTIFACTS/exact.docx" 'word/media/*.png' | sort -V)
+  return "$status"
+}
+
 check_track() { # <وسم> <مجلد التصيير> <سقف>
   local label="$1" dir="$2" threshold="$3"
   local files count index=0 status=0
@@ -216,7 +249,14 @@ check_track() { # <وسم> <مجلد التصيير> <سقف>
   return "$status"
 }
 
+{
+  echo "مسار PDF: تصيير poppler لملفنا — يجب أن يكون بكسلياً (RMSE ≈ 0)."
+  echo "مسار Word: (أ) بايتات الصور المضمّنة في الحزمة = بايتات اللقطات (تطابق تام)،"
+  echo "           (ب) تصيير LibreOffice — سقف خارجي $DOCX_THRESHOLD يشمل إعادة عيّنات المحرّك."
+  echo
+} >>"$REPORT"
 check_track "PDF" "$RENDERED/pdf" "$PDF_THRESHOLD" 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
+check_embedded_media 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
 check_track "Word" "$RENDERED/docx" "$DOCX_THRESHOLD" 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
 
 {
