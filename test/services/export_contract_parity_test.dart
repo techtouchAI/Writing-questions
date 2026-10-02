@@ -267,4 +267,60 @@ void main() {
       );
     });
   });
+
+  // مسح معاملات القياس: الحجم والمسافات يتغيّران في الثلاثة **بنفس الاتجاه
+  // والنسبة** — لا مسار يتجاهل المعامل ولا مسار يضاعفه.
+  group('مسح fontScale × heightScale', () {
+    for (final fontScale in const <double>[0.8, 1.0, 1.2]) {
+      for (final heightScale in const <double>[0.9, 1.0, 1.1]) {
+        test('fontScale=$fontScale heightScale=$heightScale', () async {
+          final settings = PaperSettings(
+            baseFontSize: PaperSettings.referenceFontSize * fontScale,
+            lineSpacing: PaperSettings.referenceLineSpacing * heightScale,
+          );
+          final document = _document(settings: settings);
+          final contract = ExamTypography.resolve(
+            VisualRole.questionTitle,
+            settings: settings,
+            layout: document.layout,
+          );
+          expect(contract.fontSizePt, closeTo(11 * fontScale, 1e-9));
+
+          // PDF: الحجم المرسوم فعلاً.
+          final bytes =
+              await PaginatedPdfExamEngine().generate(document: document);
+          expect(
+            _pdfFontSizeFor(PdfContentProbe.fromBytes(bytes), 'Stmt'),
+            closeTo(contract.fontSizePt, 0.05),
+          );
+
+          // Word: نفس القيمة بأنصاف النقاط وبنفس ارتفاع السطر بالتويب.
+          final paragraph = _paragraphWith(await _docxXml(document), 'Stmt');
+          expect(
+            paragraph.contains('<w:sz w:val="${contract.halfPoints}"/>'),
+            isTrue,
+            reason: 'w:sz من العقد مباشرة عند قياس $fontScale.',
+          );
+          expect(
+            paragraph.contains('w:line="${contract.lineTwips}"'),
+            isTrue,
+            reason: 'w:line من العقد مباشرة عند قياس $heightScale.',
+          );
+
+          // المعاينة: النمط نفسه محوَّلاً إلى بكسل اللوحة.
+          final preview = PaperStyles.resolve(
+            PaperStyles.question,
+            null,
+            fontScale: fontScale,
+            heightScale: heightScale,
+          );
+          expect(
+            preview.fontSize,
+            closeTo(PaperMetrics.px(contract.fontSizePt), 0.01),
+          );
+          expect(preview.height, closeTo(contract.lineHeight, 1e-9));
+        });
+      }
+    }
+  });
 }

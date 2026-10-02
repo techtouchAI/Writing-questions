@@ -1494,15 +1494,21 @@ class _DocxBuilder {
     );
   }
 
-  static String _wordAlign(PaperAlign? align) {
+  /// محاذاة Word من محاذاة النموذج — بمراعاة **اتجاه الورقة**: `start`/`end`
+  /// يتبعان اتجاه المستند كما يتبعهما `TextAlign.start/end` في المعاينة و
+  /// `pw.TextAlign` في PDF، فلا تنحرف ورقة LTR عن ورقة RTL.
+  String _wordAlign(PaperAlign? align) {
+    final isLtr = document.layout.isLtr;
     switch (align) {
       case null:
-      case PaperAlign.start:
+        // الافتراضي القائم (يمين) لم يتغيّر: ورقات العربية هي الغالبة.
         return 'right';
+      case PaperAlign.start:
+        return isLtr ? 'left' : 'right';
+      case PaperAlign.end:
+        return isLtr ? 'right' : 'left';
       case PaperAlign.center:
         return 'center';
-      case PaperAlign.end:
-        return 'left';
       case PaperAlign.justify:
         return 'both';
       case PaperAlign.left:
