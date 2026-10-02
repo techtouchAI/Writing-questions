@@ -2610,9 +2610,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 title: const Text('مطابق للمعاينة (Exact)'),
                 subtitle: Text(
                   _exactExport
-                      ? 'PDF وWord = صور صفحات الورقة كما تظهر في المعاينة '
-                          'دون أدوات التحرير. ملف Word في هذا النمط غير قابل '
-                          'للتحرير.'
+                      ? 'PDF وWord = صور صفحات المعاينة نفسها دون أدوات '
+                          'التحرير. ملف Word في هذا النمط غير قابل للتحرير.'
                       : 'PDF بنص متجه وWord قابل للتحرير (نص ومعادلات OMML) '
                           '— التطابق البصري قريب لا مطابق.',
                 ),
