@@ -1,3 +1,4 @@
+import '../../models/paper_font.dart';
 import '../../models/quran_text.dart';
 import '../../models/tex_content.dart';
 
@@ -13,21 +14,98 @@ enum VisualRunKind {
   quran,
 }
 
+/// تنسيق مقطع واحد داخل العنصر — كل قيمة اختيارية: ما يُترك `null` يتبع
+/// تنسيق العنصر من عقد الطباعة. فالتنسيق الخاص بمقطع (خط آية، حجم صيغة،
+/// لون كلمة) لا يُكتب في أي راسم، بل يُقرأ من هنا في الثلاثة.
+class VisualRunStyle {
+  const VisualRunStyle({
+    this.font,
+    this.fontSizePt,
+    this.bold,
+    this.italic,
+    this.underline,
+    this.colorArgb,
+    this.baselineShiftPt,
+  });
+
+  final PaperFont? font;
+  final double? fontSizePt;
+  final bool? bold;
+  final bool? italic;
+  final bool? underline;
+  final int? colorArgb;
+
+  /// إزاحة عن خط الأساس بالنقاط (سلبية للنزول) — للصيغ والمؤشرات.
+  ///
+  /// خاصية جريان حقيقية في الراسمين: `w:position` في Word و
+  /// `Transform.translate` في Flutter؛ ولذلك موضعها هنا لا في واجهة الراسم.
+  final double? baselineShiftPt;
+
+  bool get isEmpty =>
+      font == null &&
+      fontSizePt == null &&
+      bold == null &&
+      italic == null &&
+      underline == null &&
+      colorArgb == null &&
+      baselineShiftPt == null;
+
+  VisualRunStyle merge(VisualRunStyle? other) {
+    if (other == null || other.isEmpty) {
+      return this;
+    }
+    return VisualRunStyle(
+      font: other.font ?? font,
+      fontSizePt: other.fontSizePt ?? fontSizePt,
+      bold: other.bold ?? bold,
+      italic: other.italic ?? italic,
+      underline: other.underline ?? underline,
+      colorArgb: other.colorArgb ?? colorArgb,
+      baselineShiftPt: other.baselineShiftPt ?? baselineShiftPt,
+    );
+  }
+}
+
 /// مقطع محتوى واحد — **التمثيل الوحيد** الذي تقرأه المعاينة وPDF وWord.
 ///
 /// الراسمون لا يعيدون تحليل النص؛ يقرؤون المقاطع ويطبع كل واحد بطريقته
-/// (محرك الرياضيات للقطة، الخط القرآني للنص القرآني، النص العادي للنص).
+/// (محرك الرياضيات للقطة، الخط القرآني للنص القرآني، النص العادي للنص)،
+/// ويقرؤون [style] لتنسيقه الخاص إن وُجد.
 class VisualRun {
-  const VisualRun(this.kind, this.text);
+  const VisualRun(
+    this.kind,
+    this.text, {
+    this.style,
+    this.isBlockMath = false,
+  });
 
   final VisualRunKind kind;
 
-  /// النص كما هو (بلا وسوم) للمقطع النصي، أو محتوى الصيغة/الآية كما كُتب.
+  /// النص كما هو (الآية **بقوسَيها** الضمنيين) للمقطع النصي/القرآني، أو متن
+  /// LaTeX بلا محددات للمقطع الرياضي — تماماً كما يقرؤه الراسمون.
   final String text;
+
+  /// تنسيق خاص بالمقطع (`null` = يتبع تنسيق العنصر).
+  final VisualRunStyle? style;
+
+  /// هل الصيغة منفصلة (`$$...$$`) أم سطرية (`$...$`)؟ قرار **محتوى** لا
+  /// قرار راسم: المعاينة ترسم المنفصلة في كتلة مستقلة، وWord يبنيها منطقة
+  /// رياضية منفصلة، وPDF يرثها من المعاينة.
+  final bool isBlockMath;
 
   bool get isMath => kind == VisualRunKind.math;
   bool get isQuran => kind == VisualRunKind.quran;
   bool get isText => kind == VisualRunKind.text;
+
+  /// نسخة بتنسيق إضافي يُدمج فوق تنسيق المقطع القائم.
+  VisualRun withStyle(VisualRunStyle? extra) => extra == null || extra.isEmpty
+      ? this
+      : VisualRun(
+          kind,
+          text,
+          style: (style ?? const VisualRunStyle()).merge(extra),
+          isBlockMath: isBlockMath,
+        );
 
   @override
   String toString() => 'VisualRun(${kind.name}, ${text.length} chars)';
@@ -44,8 +122,12 @@ class RichContent {
   factory RichContent.plain(String text) =>
       RichContent(<VisualRun>[VisualRun(VisualRunKind.text, text)]);
 
-  /// يحلّل [text] إلى مقاطع: آية ← صيغة ← نص، بترتيب الظهور (نفس تقسيم
-  /// محرك المعاينة/الطباعة: [QuranText.split] ثم [TexContent.split]).
+  /// يحلّل [text] إلى مقاطع: صيغة ← آية ← نص، بترتيب الظهور.
+  ///
+  /// الترتيب هو ترتيب الراسمين أنفسهم حرفياً: [TexContent.split] أولاً (فما
+  /// داخل `$...$` يبقى رياضيات ولا تُفسَّر أقواس المصحف داخله)، ثم
+  /// [QuranText.split] على كل مقطع نصي — فلا يختلف القطع بين المعاينة
+  /// وWord، ويقرأ الراسمان القائمة نفسها بلا إعادة تحليل.
   factory RichContent.parse(String text) {
     return RichContent(_parse(text));
   }
@@ -70,24 +152,38 @@ class RichContent {
       return const <VisualRun>[];
     }
     final runs = <VisualRun>[];
-    for (final quranSegment in QuranText.split(text)) {
-      if (quranSegment.text.isEmpty) {
+    for (final segment in TexContent.split(text)) {
+      if (segment.text.isEmpty) {
         continue;
       }
-      if (quranSegment.isQuran) {
-        runs.add(VisualRun(VisualRunKind.quran, quranSegment.text));
-        continue;
-      }
-      for (final segment in TexContent.split(quranSegment.text)) {
-        if (segment.text.isEmpty) {
-          continue;
-        }
+      if (segment.isMath) {
         runs.add(
           VisualRun(
-            segment.isMath ? VisualRunKind.math : VisualRunKind.text,
+            VisualRunKind.math,
             segment.text,
+            isBlockMath: segment.isBlock,
           ),
         );
+        continue;
+      }
+      // النص العادي نفسه قد يحمل آيات موسومة بقوسَي المصحف.
+      for (final piece in QuranText.split(segment.text)) {
+        if (piece.text.isEmpty) {
+          continue;
+        }
+        if (piece.isQuran) {
+          // الخط القرآني جزء من **معنى المقطع** لا من قرار الراسم: يصل إلى
+          // المعاينة وPDF وWord من مصدر واحد، فيُطبع بتنسيقه المعلن هنا.
+          runs.add(
+            VisualRun(
+              VisualRunKind.quran,
+              piece.text,
+              style: const VisualRunStyle(font: PaperFont.amiri),
+            ),
+          );
+          continue;
+        }
+        runs.add(VisualRun(VisualRunKind.text, piece.text));
       }
     }
     return List<VisualRun>.unmodifiable(runs);

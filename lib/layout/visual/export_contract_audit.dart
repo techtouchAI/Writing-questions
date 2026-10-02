@@ -263,9 +263,13 @@ abstract final class ExportContractAudit {
     ),
     ExportContractEntry(
       property: r'النص الغني ($...$ و﴿...﴾)',
-      effect: 'مقاطع نص/رياضيات/قرآن داخل السطر',
+      effect: 'مقاطع نص/رياضيات/قرآن داخل السطر، والآية بخطها القرآني',
       surfaces: ExportSurface.values,
-      evidence: 'RichContent.parse → لقطات PDF/Word ومحرك المعاينة',
+      // قطع واحد يقرؤه الثلاثة: `RichContent.parse` تُستدعى في المعاينة
+      // (TexText) وفي Word (_runsXml)، والصيغة تُبنى OMML، والآية تُكتب
+      // بخطها المعلن في المقطع (VisualRunStyle.font) فيصل الخط إلى Word.
+      evidence: 'RichContent.parse في TexText و_runsXml + VisualRunStyle.font '
+          '→ w:rFonts (خط الآية) + m:oMath للصيغ',
     ),
   ];
 

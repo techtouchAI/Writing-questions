@@ -9,6 +9,7 @@ import '../docx/omml_from_equation.dart';
 import '../layout/blueprint/exam_blueprint.dart';
 import '../layout/paper_metrics.dart';
 import '../layout/visual/visual_metrics.dart';
+import '../layout/visual/visual_content.dart';
 import '../layout/visual/visual_style.dart';
 import '../layout/visual/visual_typography.dart';
 import '../models/exam_canvas_geometry.dart';
@@ -237,6 +238,10 @@ class DocxDocumentExportService {
 </w:styles>''';
   }
 
+  /// لون Word: ست خانات سداسية بلا قناة ألفا.
+  static String _hexColor(int argb) =>
+      (argb & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase();
+
   static String _fontName(PaperFont font) {
     switch (font) {
       case PaperFont.naskh:
@@ -249,6 +254,70 @@ class DocxDocumentExportService {
         return 'Rakkas';
     }
   }
+}
+
+/// خصائص جريان Word **كقيم** لا كنص XML: تُبنى مرّة من الفقرة، ثم يُدمج
+/// فيها تنسيق المقطع المعلن في العقد ([VisualRunStyle])، ثم تُولَّد مرّة
+/// واحدة. فلا جراحة نصية على XML ولا خاصية تُكتب مرتين بقيمتين متضادتين.
+class _RunProperties {
+  const _RunProperties({
+    this.bold = false,
+    this.italic = false,
+    this.underline = false,
+    this.highlight = false,
+    this.color,
+    required this.size,
+    required this.font,
+    required this.rtl,
+  });
+
+  final bool bold;
+  final bool italic;
+  final bool underline;
+  final bool highlight;
+  final String? color;
+
+  /// الحجم بأنصاف النقاط كما يكتبه Word.
+  final int size;
+
+  /// اسم عائلة الخط كما يعرفه Word.
+  final String font;
+
+  final bool rtl;
+
+  /// يدمج تنسيق مقطع من العقد فوق خصائص الفقرة: المعلَن يستبدل الموروث،
+  /// و`null` يعني «اتبع الفقرة».
+  _RunProperties merge(VisualRunStyle? style) {
+    if (style == null || style.isEmpty) {
+      return this;
+    }
+    final fontSizePt = style.fontSizePt;
+    return _RunProperties(
+      bold: style.bold ?? bold,
+      italic: style.italic ?? italic,
+      underline: style.underline ?? underline,
+      highlight: highlight,
+      color: style.colorArgb == null
+          ? color
+          : DocxDocumentExportService._hexColor(style.colorArgb!),
+      size: fontSizePt == null ? size : (fontSizePt * 2).round(),
+      font: style.font == null
+          ? font
+          : DocxDocumentExportService._fontName(style.font!),
+      rtl: rtl,
+    );
+  }
+
+  String toXml() => DocxDocumentExportService._runPropertiesXml(
+        bold: bold,
+        italic: italic,
+        underline: underline,
+        highlight: highlight,
+        color: color,
+        size: size,
+        font: font,
+        rtl: rtl,
+      );
 }
 
 /// بانِي مستند Word الداخلي (يجمع الصور أثناء بناء XML).
@@ -807,12 +876,15 @@ class _DocxBuilder {
     final effectiveAlign = !applyHeaderLayout || style?.align == null
         ? alignment
         : _wordAlign(style!.align);
-    final runProperties = '<w:rPr><w:rtl/>${effectiveBold ? '<w:b/>' : ''}'
-        '${resolved.italic ? '<w:i/>' : ''}'
-        '${resolved.underline ? '<w:u w:val="single"/>' : ''}'
-        '${color == null ? '' : '<w:color w:val="$color"/>'}'
-        '<w:sz w:val="$effectiveSize"/><w:szCs w:val="$effectiveSize"/>'
-        '<w:rFonts w:ascii="$fontName" w:hAnsi="$fontName" w:cs="$fontName"/></w:rPr>';
+    final runProperties = _RunProperties(
+      bold: effectiveBold,
+      italic: resolved.italic,
+      underline: resolved.underline,
+      color: color,
+      size: effectiveSize,
+      font: fontName,
+      rtl: true,
+    );
     return '<w:p><w:pPr><w:bidi/><w:jc w:val="$effectiveAlign"/>'
         '<w:spacing${spacingAfter == null ? '' : ' w:before="0" w:after="$spacingAfter"'} w:line="$line" w:lineRule="auto"/></w:pPr>'
         '${_runsXml(text, runProperties, effectiveSize / 2)}'
@@ -1201,12 +1273,14 @@ class _DocxBuilder {
         element.textStyle.fontSize ?? 11 * document.settings.fontScale;
     final size = (baseSize * 2).round().clamp(16, 72);
     final line = (240 * document.settings.lineSpacing).round();
-    final runProperties =
-        '<w:rPr>${document.layout.isLtr ? '' : '<w:rtl/>'}'
-        '${element.textStyle.bold == true ? '<w:b/>' : ''}'
-        '${element.textStyle.italic == true ? '<w:i/>' : ''}'
-        '${element.textStyle.underline == true ? '<w:u w:val="single"/>' : ''}'
-        '<w:sz w:val="$size"/><w:rFonts w:cs="$font"/></w:rPr>';
+    final runProperties = _RunProperties(
+      bold: element.textStyle.bold == true,
+      italic: element.textStyle.italic == true,
+      underline: element.textStyle.underline == true,
+      size: size,
+      font: font,
+      rtl: !document.layout.isLtr,
+    );
     final widthTwips = (PaperMetrics.pt(element.width) * 20).round();
     final heightTwips = (PaperMetrics.pt(element.height) * 20).round();
     final referenceWidth = pageAnchored
@@ -1569,7 +1643,7 @@ class _DocxBuilder {
       body.write(
         _runsXml(
           text,
-          _runPropertiesXml(
+          _RunProperties(
             bold: bold,
             italic: italic,
             underline: underline,
@@ -1589,7 +1663,7 @@ class _DocxBuilder {
         body.write(
           _runsXml(
             run.text,
-            _runPropertiesXml(
+            _RunProperties(
               bold: run.bold ?? bold,
               italic: run.italic ?? italic,
               underline: run.underline ?? underline,
@@ -1705,42 +1779,66 @@ class _DocxBuilder {
   /// مؤقتة يستبدلها [_resolveMath] بالرسم بعد رسمه (فتبقى في مكانها من
   /// السطر وبالترتيب نفسه). وبدون مرسّم تُكتب نصاً رياضياً مقروءاً، وهو
   /// آخر ارتداد: لا يظهر كود LaTeX الخام في أي ملف.
-  String _runsXml(String text, String runProperties, double fontSizePt) {
-    if (!TexContent.containsMath(text)) {
+  /// يبني جريانات الفقرة من **عقد المحتوى** نفسه ([RichContent.parse]) الذي
+  /// تقرؤه المعاينة — لا بتحليل نصي ثانٍ.
+  ///
+  /// لكل مقطع تنسيقه المعلن في العقد (خط الآية القرآني مثلاً)، والصيغ تُبنى
+  /// **معادلات Word أصلية** `<m:oMath>` داخل الفقرة نفسها (تُحرَّر في Word
+  /// كما تُحرَّر من أداتها، بلا صورة) — انظر [OmmlFromEquation]. وعند تعذّر
+  /// تمثيل صيغة بُنيةً (مصفوفة، أسطر متعددة…) تُرسَم تلك الصيغة وحدها بمعامل
+  /// [mathRasterizer] — أي بمحرك المعاينة نفسه — بعلامة موضع مؤقتة يستبدلها
+  /// [_resolveMath] بالرسم بعد رسمه (فتبقى في مكانها من السطر وبالترتيب
+  /// نفسه). وبدون مرسّم تُكتب نصاً رياضياً مقروءاً، وهو آخر ارتداد: لا يظهر
+  /// كود LaTeX الخام في أي ملف.
+  String _runsXml(String text, _RunProperties properties, double fontSizePt) {
+    final content = RichContent.parse(text);
+    final runProperties = properties.toXml();
+    // مسار سريع حين لا يغيّر العقد شيئاً: نص واحد يطابق الأصل حرفياً.
+    // (وهو أيضاً ما يجعل الدولار المهروب `\$` يُكتب `$` كما في المعاينة، بلا
+    // شرطة مائلة لا أصل لها على الورقة.)
+    if (content.runs.length == 1 &&
+        content.runs.single.isText &&
+        content.runs.single.text == text) {
       return '<w:r>$runProperties<w:t xml:space="preserve">${_escapeXml(text)}</w:t></w:r>';
     }
     final mathRunProperties = _mathRunProperties(runProperties);
     final buffer = StringBuffer();
-    for (final segment in TexContent.split(text)) {
-      if (segment.isMath && segment.text.trim().isNotEmpty) {
+    for (final run in content.runs) {
+      if (run.text.isEmpty) {
+        continue;
+      }
+      if (run.isMath) {
+        if (run.text.trim().isEmpty) {
+          continue;
+        }
         final math = OmmlFromEquation.mathZoneXml(
-          segment.text,
+          run.text,
           fontSizePt: fontSizePt,
           extraRunProperties: mathRunProperties,
         );
         if (math != null) {
           // المنطقة الرياضية ابن مباشر للفقرة (لا داخل <w:r>): تُدرج كما هي
-          // بجانب الجريانات، فتنزل حيث نزلت $...$ في الجملة تماماً.
+          // بجانب الجريانات، فتنزل حيث نزل $...$ في الجملة تماماً.
           buffer.write(math);
           continue;
         }
         if (mathRasterizer != null) {
           final index = _mathQueue.length;
-          _mathQueue.add(_MathPlaceholder(segment.text, fontSizePt));
+          _mathQueue.add(_MathPlaceholder(run.text, fontSizePt));
           buffer.write('<w:r>$runProperties${_mathMarker(index)}</w:r>');
           continue;
         }
         buffer.write(
           '<w:r>$runProperties<w:t xml:space="preserve">'
-          '${_escapeXml(EquationModel.readableText(segment.text))}</w:t></w:r>',
+          '${_escapeXml(EquationModel.readableText(run.text))}</w:t></w:r>',
         );
         continue;
       }
-      if (segment.text.isEmpty) {
-        continue;
-      }
+      // تنسيق المقطع المعلن في العقد (خط الآية مثلاً) يتقدم على تنسيق
+      // الفقرة — ومنه تصل الآية إلى Word بالخط القرآني نفسه الذي في المعاينة.
+      final runXmlProperties = properties.merge(run.style).toXml();
       buffer.write(
-        '<w:r>$runProperties<w:t xml:space="preserve">${_escapeXml(segment.text)}</w:t></w:r>',
+        '<w:r>$runXmlProperties<w:t xml:space="preserve">${_escapeXml(run.text)}</w:t></w:r>',
       );
     }
     return buffer.toString();

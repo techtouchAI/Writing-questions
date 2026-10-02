@@ -91,8 +91,12 @@ abstract final class ExactExportService {
         'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
         'Target="media/$fileName"/>',
       );
+      // سطر بارتفاع الصفحة نفسه (`exact` بتويب A4): لا تُضاف مسافة سطر
+      // فوق الصورة فتدفعها إلى صفحة ثانية، ولا يُقصّ الصفّ الصورة كما قد
+      // يفعل ارتفاع سطر صغير. الارتفاع من [_pageHeightTwips] لا رقم مكتوب.
       imageTags.add(
-        '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="1" w:lineRule="exact"/>'
+        '<w:p><w:pPr><w:spacing w:before="0" w:after="0" '
+        'w:line="$_pageHeightTwips" w:lineRule="exact"/>'
         '<w:jc w:val="center"/></w:pPr><w:r>${_pageDrawing(index + 1, relationId)}</w:r></w:p>',
       );
       final bytes = snapshots[index].pngBytes;

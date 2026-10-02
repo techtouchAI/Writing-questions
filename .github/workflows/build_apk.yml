@@ -217,6 +217,67 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # --------------------------------------------------------------------------
+  # التحقق البصري الخارجي: يُصيّر ملفَّي النمط الدقيق (Exact) بمحرّكات مستقلة
+  # ويقارن كل صفحة بلقطة المعاينة المقابلة بمقياس RMSE (انظر
+  # tool/verify_visual_parity.sh). مهمة منفصلة حتى لا تُثقل مسار البناء، لكن
+  # فشلها يُظهر التشغيل فاشلاً — فالطابقة البصرية شرط قبول لا إضافة تجميلية.
+  # --------------------------------------------------------------------------
+  visual-parity:
+    name: Visual regression (Exact PDF/DOCX vs preview)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.22.3'
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      # poppler لتصيير PDF، ImageMagick للمقارنة، وLibreOffice لتصيير Word
+      # (ثم يُحوَّل ناتجه إلى PDF بالـpoppler نفسه).
+      - name: Install rendering tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            poppler-utils imagemagick libreoffice-writer
+
+      - name: Produce comparison artifacts (preview snapshots + Exact files)
+        run: flutter test test/visual/visual_parity_fixture_test.dart
+
+      - name: Compare rendered files against the preview (RMSE)
+        run: bash tool/verify_visual_parity.sh build/visual_parity
+
+      - name: Publish visual parity report
+        if: failure()
+        shell: bash
+        run: |
+          file=build/visual_parity/report.txt
+          [ -f "$file" ] || exit 0
+          excerpt="$(tail -n 25 "$file")"
+          excerpt="${excerpt//%/%25}"
+          excerpt="${excerpt//$'\r'/%0D}"
+          excerpt="${excerpt//$'\n'/%0A}"
+          echo "::error title=الطابقة البصرية::$excerpt"
+
+      - name: Upload visual parity artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: visual-parity
+          path: build/visual_parity
+          if-no-files-found: warn
+          retention-days: 14
+
   release:
     name: Attach APK to GitHub release
     needs: build
