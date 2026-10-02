@@ -13,6 +13,7 @@ import '../models/floating_element.dart';
 import '../models/question_model.dart';
 import '../models/quran_text.dart';
 import 'exam_fonts.dart';
+import 'pdf_math_rasters.dart';
 import 'exam_strategy.dart' show ExamTextStyles;
 import 'floating_elements_pdf.dart';
 import 'pdf_paper_builder.dart';
@@ -130,6 +131,41 @@ class PaginatedPdfExamEngine {
   }) async {
     final loadedFonts =
         fonts ?? await ExamFonts.load(loadQuranic: needsQuranicFont(document));
+    // مرحلتان: جولة تبني الورقة كاملةً وتسجّل كل معادلة يحتاجها الرسم — متن
+    // وفروع ومربعات نص وبطاقات معادلة حرّة — ثم تُلتقط كلها دفعة واحدة بمحرك
+    // المعاينة، ثم تُبنى الورقة ثانيةً والمخزون خلف كل طلب. والسبب أن بناء
+    // `pdf` متزامن واللقطة تحتاج إطار رسم في شجرة الودجت. ورقة بلا معادلات
+    // تُستعمل منها الجولة الأولى كما هي (لا إعادة بناء بلا طائل).
+    final collected = PdfMathRasters.collecting();
+    final probe = await _generateOnce(
+      document: document,
+      pageAssignments: pageAssignments,
+      fonts: loadedFonts,
+      frameImage: frameImage,
+      mathRasters: collected,
+    );
+    if (collected.isEmpty) {
+      return probe;
+    }
+    return _generateOnce(
+      document: document,
+      pageAssignments: pageAssignments,
+      fonts: loadedFonts,
+      frameImage: frameImage,
+      mathRasters: await collected.resolve(),
+    );
+  }
+
+  /// بناء ملف واحد فعلي: [mathRasters] هو مخزون لقطات المعادلات (أو جولة جمع
+  /// في `_generateOnce` الأولى)، ونتاجه بايتات PDF كاملة.
+  Future<Uint8List> _generateOnce({
+    required ExamDocument document,
+    required List<List<String>>? pageAssignments,
+    required ExamFonts fonts,
+    required Uint8List? frameImage,
+    required PdfMathRasters mathRasters,
+  }) async {
+    final loadedFonts = fonts;
     final layout = document.layout;
     final settings = document.settings;
     final margin = _marginFor(document);
@@ -148,6 +184,7 @@ class PaginatedPdfExamEngine {
       blueprint: blueprint,
       fonts: loadedFonts,
       styles: styles,
+      mathRasters: mathRasters,
     );
 
     final pdf = _newDocument(document);
@@ -272,6 +309,7 @@ class PaginatedPdfExamEngine {
                       defaultFont: settings.defaultFont,
                       fontScale: settings.fontScale,
                       heightScale: settings.heightScale,
+                      mathRasters: mathRasters,
                     ),
                   ),
               ],
@@ -303,20 +341,40 @@ class PaginatedPdfExamEngine {
       heightScale: settings.heightScale,
     );
     final blueprint = ExamBlueprint.from(document);
-    final builder = PdfPaperBuilder(
-      document: document,
-      blueprint: blueprint,
-      fonts: loadedFonts,
-      styles: styles,
-    );
     final pdf = _newDocument(document);
 
-    return _resolvePages(
-      document: document,
-      blueprint: blueprint,
-      builder: builder,
-      pageAssignments: null,
-      measure: (widget) => _measure(widget, pdf, theme, direction, contentWidth),
+    List<List<String>> assign(PdfPaperBuilder paperBuilder) => _resolvePages(
+          document: document,
+          blueprint: blueprint,
+          builder: paperBuilder,
+          pageAssignments: null,
+          measure: (widget) =>
+              _measure(widget, pdf, theme, direction, contentWidth),
+        );
+
+    // ارتفاع المعادلة يحدّد التقسيم، فقياسٌ بلا لقطات يعطي تقسيماً غير
+    // التقسيم المطبوع: جولة جمع ثم قياس بالمخزون نفسه (كـ generate).
+    final collected = PdfMathRasters.collecting();
+    final probe = assign(
+      PdfPaperBuilder(
+        document: document,
+        blueprint: blueprint,
+        fonts: loadedFonts,
+        styles: styles,
+        mathRasters: collected,
+      ),
+    );
+    if (collected.isEmpty) {
+      return probe;
+    }
+    return assign(
+      PdfPaperBuilder(
+        document: document,
+        blueprint: blueprint,
+        fonts: loadedFonts,
+        styles: styles,
+        mathRasters: await collected.resolve(),
+      ),
     );
   }
 
@@ -325,7 +383,7 @@ class PaginatedPdfExamEngine {
   static pw.Document _newDocument(ExamDocument document) => pw.Document(
         title: document.name,
         creator: 'صانع ومحرر الأسئلة',
-        producer: 'صانع ومحرر الأسئلة — محرك PDF المتجه',
+        producer: 'صانع ومحرر الأسئلة — محرك PDF',
         author: document.header.schoolName.isEmpty
             ? null
             : document.header.schoolName,

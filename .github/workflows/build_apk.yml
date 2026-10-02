@@ -72,6 +72,21 @@ jobs:
           set -o pipefail
           flutter test 2>&1 | tee "$RUNNER_TEMP/flutter-test.log"
 
+      # عينات Word التي تكتبها اختبارات التصدير إلى build/math_samples تُرفع
+      # مرفقاً عندما يحمل آخر رسائل الالتزام وسم [math-samples] فقط: يفتحها
+      # إنسان في Word ليراجع المعادلات الأصلية، ومن بلا Flutter في بيئته يحصل
+      # على الملفات من هنا. لا وسم ← لا مرفق، فلا ثقل على البناء المعتاد.
+      - name: Upload Word math samples
+        if: >-
+          !cancelled() &&
+          contains(github.event.head_commit.message, '[math-samples]')
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: math-docx-samples
+          path: build/math_samples/*.docx
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Publish analyzer and test diagnostics
         if: failure() && (steps.analyze.outcome == 'failure' || steps.test.outcome == 'failure')
         shell: bash

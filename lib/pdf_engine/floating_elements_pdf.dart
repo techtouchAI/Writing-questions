@@ -8,8 +8,8 @@ import '../models/latex_plain_text.dart';
 import '../models/paper_font.dart';
 import '../models/tex_content.dart';
 import 'exam_fonts.dart';
-import 'latex/latex_svg_renderer.dart';
 import 'paper_style_resolver.dart';
+import 'pdf_math_rasters.dart';
 
 /// تحويل العناصر العائمة من لوحة الـ WYSIWYG إلى عناصر `pw`.
 ///
@@ -19,6 +19,8 @@ import 'paper_style_resolver.dart';
 /// - مربعات النص: نص بخط الورقة وتنسيقه، مع إطار اختياري.
 /// - التدوير: `pw.Transform.rotateBox` حول المركز (نفس زاوية اللوحة).
 /// - أي مصدر `svg` مخزَّن مع العنصر يُرسم مباشرة كما هو.
+/// - المعادلة الحرة ونص المربع: لقطات من محرك العرض نفسه عبر [PdfMathRasters]
+///   (نفس صورة المعادلة في المتن)، فلا محرك رياضيات ثانياً في الملف.
 abstract final class FloatingElementsPdf {
   /// يبني محتوى عنصر عائم بمقاس [widthPt]×[heightPt] نقاط PDF.
   static pw.Widget build(
@@ -29,6 +31,7 @@ abstract final class FloatingElementsPdf {
     PaperFont defaultFont = PaperFont.naskh,
     double fontScale = 1.0,
     double heightScale = 1.0,
+    PdfMathRasters? mathRasters,
   }) {
     final pw.Widget content;
     switch (element.type) {
@@ -45,7 +48,7 @@ abstract final class FloatingElementsPdf {
           heightScale: heightScale,
         );
       case FloatingElementType.formula:
-        content = _buildFormula(element, widthPt, heightPt);
+        content = _buildFormula(element, widthPt, heightPt, mathRasters);
     }
     if (element.rotationDegrees == 0) {
       return content;
@@ -137,17 +140,19 @@ abstract final class FloatingElementsPdf {
           style,
           PaperStyleResolver.toPdfAlign(element.textStyle.align) ??
               pw.TextAlign.start,
+          mathRasters,
         ),
       ),
     );
   }
 
-  /// نص مربع النص مع رسم صيغ LaTeX (`$...$`) صوراً — بنفس منطق `_renderText`
-  /// في محرك الصفحات، فلا تظهر الأكواد الخامة في مربعات النص المطبوعة.
+  /// نص مربع النص مع رسم صيغ LaTeX (`$...$`) لقطاتٍ من محرك العرض — بنفس
+  /// منطق `_renderText` في محرك الصفحات، فلا تظهر الأكواد الخامة في المربع.
   static pw.Widget _textWithMath(
     String text,
     pw.TextStyle style,
     pw.TextAlign align,
+    PdfMathRasters? mathRasters,
   ) {
     final segments = TexContent.split(text);
     if (!segments.any((segment) => segment.isMath)) {
@@ -180,17 +185,18 @@ abstract final class FloatingElementsPdf {
         }
         continue;
       }
-      final latex = LatexSvgRenderer.tryToSvg(segment.text, fontSize: fontSize);
-      if (latex == null) {
+      final raster = mathRasters?.lookup(segment.text, fontSize);
+      if (raster == null) {
         inline.add(
           pw.Text(LatexPlainText.of(segment.text), style: style, textAlign: align),
         );
         continue;
       }
-      final image = pw.SvgImage(
-        svg: latex.svg,
-        width: latex.width,
-        height: latex.height,
+      final image = pw.Image(
+        pw.MemoryImage(raster.pngBytes),
+        width: raster.widthPt,
+        height: raster.heightPt,
+        fit: pw.BoxFit.fill,
       );
       if (segment.isBlock) {
         flushInline();
@@ -299,16 +305,17 @@ abstract final class FloatingElementsPdf {
     return buffer.toString();
   }
 
-  /// معادلة حرة: تُرسم بنفس محوّل LaTeX المتجه المستخدم في متن الورقة ثم
-  /// تُقاس داخل الصندوق (بلا تشويه) — فإن غابت الصيغة كُتبت نصاً بديلاً.
+  /// معادلة حرة: تُلتقط بمحرك العرض نفسه (كمتن الورقة) ثم تُقاس داخل الصندوق
+  /// بلا تشويه — فإن غابت اللقطة كُتبت الصيغة نصاً بديلاً مقروءاً.
   static pw.Widget _buildFormula(
     FloatingElement element,
     double widthPt,
     double heightPt,
+    PdfMathRasters? mathRasters,
   ) {
-    final rendered = LatexSvgRenderer.tryToSvg(
+    final rendered = mathRasters?.lookup(
       element.label,
-      fontSize: ExamCanvasGeometry.formulaBaseFontSize,
+      ExamCanvasGeometry.formulaBaseFontSize,
     );
     return pw.SizedBox(
       width: widthPt,
@@ -328,17 +335,16 @@ abstract final class FloatingElementsPdf {
                 ),
               )
             // بلا SizedBox داخلي ثابت: الحشوة والإطار يحيطان بالمعادلة
-            // فعلاً فتُملاء المساحة المتاحة بلا تجاوز ولا قصّ.
+            // فعلاً فتُملاء المساحة المتاحة بلا تجاوز ولا قصّ (اللقطة صورة
+            // فتُوضع بـ contain كما كانت، بلا تمطيط ولا تغيير مقياس يدوي).
             : pw.Center(
-                child: pw.SvgImage(svg: rendered.svg, fit: pw.BoxFit.contain),
+                child: pw.Image(
+                  pw.MemoryImage(rendered.pngBytes),
+                  fit: pw.BoxFit.contain,
+                ),
               ),
       ),
     );
-  }
-
-  /// SVG جاهز لصيغة LaTeX — يُعاد استخدام نفس المحوّل المتجه.
-  static LatexSvg? formulaToSvg(String latex, {double fontSize = 10.5}) {
-    return LatexSvgRenderer.tryToSvg(latex, fontSize: fontSize);
   }
 
   /// خطوط احتياطية عند غياب المحمّلة (تُستخدم خطوط PDF الأربعة عشر فقط

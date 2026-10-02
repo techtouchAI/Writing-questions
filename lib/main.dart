@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'providers/backup_controller.dart';
 import 'providers/exam_document_provider.dart';
 import 'views/home_screen.dart';
+import 'views/widgets/math_snapshot_host.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -77,6 +78,11 @@ class WritingQuestionsApp extends StatelessWidget {
             floatingLabelBehavior: FloatingLabelBehavior.always,
           ),
         ),
+        // مضيف اللقطات الخفيّ: يبني المعادلة بالودجت نفسه الذي تعرضه
+        // اللوحة (SafeMathTex ← flutter_math_fork) ويرسمها خارج الشاشة
+        // ليلتقطها محرك PDF وارتداد Word — بلا أثر بصري على أي شاشة،
+        // وبلا محرك رياضيات ثانٍ يحاول تقليد الأول.
+        builder: (_, child) => MathSnapshotHost(child: child),
         home: const HomeScreen(),
       ),
     );
