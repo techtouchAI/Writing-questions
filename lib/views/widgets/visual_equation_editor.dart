@@ -3,7 +3,6 @@ import 'package:flutter_math_fork/flutter_math.dart';
 
 import '../../models/equation_model.dart';
 import '../../models/tex_content.dart';
-import '../../pdf_engine/latex/latex_svg_renderer.dart';
 import 'safe_math_tex.dart';
 
 /// يفتح محرر المعادلات المرئي (بأسلوب Word) ويعيد المقطع الجاهز للإدراج.
@@ -520,7 +519,6 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
     final latex = _latex;
     final openBraces = '{'.allMatches(latex).length;
     final closeBraces = '}'.allMatches(latex).length;
-    final unsupported = LatexSvgRenderer.unsupportedCharacters(latex);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -559,16 +557,6 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
                 'تحقق من تطابق الأقواس { } — المعاينة قد لا تكتمل.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.orange, fontSize: 11),
-              ),
-            ),
-          // تحذير حيّ: رموز لن يرسمها محرك PDF — تُستبدل قبل الحفظ لا بعده.
-          if (unsupported.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                'رموز غير مدعومة في التصدير: ${unsupported.join(' ، ')}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.deepOrange, fontSize: 11),
               ),
             ),
         ],

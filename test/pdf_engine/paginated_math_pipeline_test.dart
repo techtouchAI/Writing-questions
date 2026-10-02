@@ -1,6 +1,11 @@
 // اختبار خط أنابيب المعادلات الكامل: ما يُكتب في الحقل يجب أن يُطبع
 // معادلةً مرئية — لا نص LaTeX خاماً — في كل حقل يقبل الإدراج.
 //
+// المسار المقصوص: LaTeX ← محرك العرض نفسه (flutter_math_fork عبر مضيف
+// اللقطات) ← لقطة عالية الدقة ← صورة في الصفحة. المضيف هنا وهمي لكنه يُلصق
+// صوراً حقيقية من `dart:ui` (انظر fake_math_host.dart)، فيُختبر المسار كله:
+// الصيغ التي طلبتها الشجرة فعلاً، وعدد الصور التي نزلت الملف، وفراغ السطر.
+//
 // المنهج: لا نفحص الشيفرة، بل **نقرأ ملف PDF الناتج** عبر [PdfContentProbe]
 // (قارئ مستقل يفك ضغط مجرى الصفحة ويستخرج كل كلمة مرسومة فعلاً). ملاحظة
 // هندسية: طبقة النص في الـ PDF تُخزَّن بالعربية مشكّلة (أشكال عرض + قلب
@@ -13,7 +18,9 @@
 //     لاستحالت الفجوة المكانية أدناه.
 //  3) مكانياً: سطر نص السؤال يحمل مِرساة ASCII على كل جانب من المعادلة؛
 //     المسافة الأفقية بين المِرساتين في ملف الصيغ يجب أن تتجاوز نظيرتها
-//     في الملف الضابط — دليل فراغ الرسم المتجه لا فراغ كلمة.
+//     في الملف الضابط — دليل فراغ صورة المعادلة لا فراغ كلمة.
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
@@ -25,6 +32,7 @@ import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/pdf_engine/pdf_engine.dart';
 
+import 'fake_math_host.dart';
 import 'pdf_content_probe.dart';
 
 /// عدد مقاطع الصيغ التي تُلغي كلمة ضابطة واحدة من طبقة النص (صيغة المِرساتين
@@ -40,7 +48,7 @@ ExamDocument _document({required bool withMath}) {
   String blockFormula(String latex, String control) =>
       withMath ? r'$$' '$latex' r'$$' : control;
   // صيغة المنطوق محشورة بين مِرساة ASCII: الضابط يترك المِرساتين
-  // متجاورتين بمسافة واحدة، والمرسوم يضع بينهن صورة متجهة أعرض.
+  // متجاورتين بمسافة واحدة، والمرسوم يضع بينهما صورة المعادلة أعرض.
   String anchored(String latex, String controlWord) => withMath
       ? 'F5A \$' '$latex' '\$ F5B'
       : (controlWord.isEmpty ? 'F5A F5B' : 'F5A $controlWord F5B');
@@ -143,14 +151,48 @@ double _anchorsSpan(PdfContentProbe probe) {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  // مضيف يلتقط كل صيغة كما تطلبها الشجرة: بلا هذا يغيب المضيف فتُطبع
+  // الصيغ نصاً مقروءاً (وهو ارتداد صحيح يُغطّى في مكانه) ولا يُختبر الرسم.
+  final host = FakeMathHost();
+  setUp(host.attach);
+  tearDown(host.detach);
+
   group('خط أنابيب رسم المعادلات في الـ PDF (ورقة الأسئلة)', () {
-    test('يطبع كل صيغ الحقول كرسم متجه ولا يترك LaTeX خاماً في أي منها', () async {
+    test('يطبع كل صيغ الحقول صورةً من محرك العرض ولا يترك LaTeX خاماً', () async {
       final bytes = await PaginatedPdfExamEngine().generate(
         document: _document(withMath: true),
       );
       final probe = PdfContentProbe.fromBytes(bytes);
 
+      // ملف للمراجعة البشرية: هذا ملف المُصدِّر الحقيقي بأكمله (ورقة بصيغ في
+      // كل حقل). ملاحظة صادقة: في بيئة الاختبار لا شجرة ودجت، فاللقطات تأتي
+      // من المضيف الوهمي — أي أن مواضع المعادلات وأبعادها وطبقة النص حقيقية،
+      // وصور المعادلات نفسها مربعات سواد مكانية. الملف يُراجع للهيكل، وشكل
+      // المعادلة يُراجع بالتصدير من التطبيق نفسه.
+      final sample = File('build/math_samples/math-pdf-samples.pdf');
+      await sample.parent.create(recursive: true);
+      await sample.writeAsBytes(bytes);
+
       expectNoRawLatex(probe, surface: 'ورقة الأسئلة');
+
+      // كل صيغة في كل حقل وصلت إلى المحرك تُلتمس له لقطة: لا حقل يُنسى
+      // (منطوق، نص، منطوق فرع، نقطة، خيار، صيغة عرض $$…$$).
+      expect(
+        host.requestedLatex,
+        containsAll(<String>[
+          r'\frac{5}{8}',
+          r'\sqrt{9}',
+          r'\sqrt{16}',
+          r'\geq',
+          r'x^{2}',
+          r'y_{3}',
+          r'\frac{5}{8}=0.625',
+          r'\times',
+        ]),
+        reason: 'صيغ لم تطلب المحرك: كل حقل يقبل LaTeX يجب أن يمرّ باللقطة.',
+      );
+      // وفي الملف صورٌ بقدرها: معادلة مرسومة = كائن صورة في الصفحة.
+      expect(imagesInPdf(bytes), greaterThanOrEqualTo(host.requests.length));
 
       // المِرساة الرقمية الوحيدة في الترويسة (الوقت 60) حية — طبقة النص
       // تعمل ولم تُبتلع الصفحة كلها. (الأرقام تُطبع مشرقية: ٦٠)
@@ -178,7 +220,7 @@ void main() {
       expect(controlWords.length - mathWords.length, _documentFormulaCount);
     });
 
-    test('موضع المعادلة يشغل فراغ الرسم المتجه — لا حذف صامت', () async {
+    test('موضع المعادلة يشغل فراغ صورتها في السطر — لا حذف صامت', () async {
       final mathBytes = await PaginatedPdfExamEngine().generate(
         document: _document(withMath: true),
       );
@@ -190,7 +232,7 @@ void main() {
       final controlSpan = _anchorsSpan(PdfContentProbe.fromBytes(controlBytes));
 
       // الضابط: «F5A F5B» بمسافة كلمة واحدة. المرسوم: بينهما صورة الكسر
-      // المتجه — الفارق أعرض من نصف حرف وأصغر من سطر — إن حُذفت المعادلة
+      // المعادلة المرسومة — الفارق أعرض من نصف حرف وأصغر من سطر — إن حُذفت المعادلة
       // لتساوى الحقلان تماماً.
       expect(mathSpan, greaterThan(controlSpan + 5.0),
           reason: 'الكسر لم يأخذ مكانه في السطر — رُسم؟ حُذف؟');

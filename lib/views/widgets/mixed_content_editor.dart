@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart' show MathStyle;
 
 import '../../models/tex_content.dart';
-import '../../pdf_engine/latex/latex_svg_renderer.dart';
 import 'safe_math_tex.dart';
 import 'visual_equation_editor.dart';
 
@@ -443,7 +442,6 @@ class _MathBlockEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final unsupported = LatexSvgRenderer.unsupportedCharacters(block.latex);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -472,14 +470,6 @@ class _MathBlockEditor extends StatelessWidget {
                   ),
                 ),
         ),
-        if (unsupported.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              'لا يرسم خط الرياضيات: ${unsupported.join('، ')} — ستُطبع نصاً بديلاً.',
-              style: const TextStyle(color: Colors.orange, fontSize: 11),
-            ),
-          ),
         const SizedBox(height: 6),
         VisualEquationEditor(
           key: ValueKey<String>('eq-${block.id}'),

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 
+import '../docx/omml_from_equation.dart';
 import '../layout/blueprint/exam_blueprint.dart';
 import '../layout/paper_metrics.dart';
 import '../models/exam_canvas_geometry.dart';
@@ -17,6 +18,7 @@ import '../models/paper_text_style.dart';
 import '../models/tex_content.dart';
 import '../pdf_engine/paginated_pdf_exam_engine.dart';
 import 'export_file_service.dart';
+import 'math_snapshot_renderer.dart' show MathRaster;
 import 'page_frame_store.dart';
 
 /// مخصّص تحويل شكل متجه إلى صورة نقطية (لأن Word لا يقبل SVG الداخلي
@@ -28,19 +30,6 @@ typedef ShapeRasterizer = Future<Uint8List?> Function(
   double widthPx,
   double heightPx,
 );
-
-/// معادلة LaTeX مرسومة صورةً: بايتات PNG بمقاساتها بالنقاط (pt).
-class MathRaster {
-  const MathRaster({
-    required this.pngBytes,
-    required this.widthPt,
-    required this.heightPt,
-  });
-
-  final Uint8List pngBytes;
-  final double widthPt;
-  final double heightPt;
-}
 
 /// مخصّص تحويل صيغة LaTeX إلى صورة نقطية (يُمرَّر من الواجهة حيث يتوفر
 /// مسجّل الرسم؛ انظر `MathImageRenderer`).
@@ -77,7 +66,10 @@ class _EmbeddedImage {
 /// وتذييل (عبارة ختامية + توقيع/توقيعان) مثبّت أسفل آخر صفحة، وإطار الصفحة
 /// (صورة PNG خلف النص أو حدود متجهة) — بلا ترقيم صفحات إطلاقاً.
 /// والأشكال تُرسم صوراً عبر [ShapeRasterizer]، وصيغ LaTeX (`$...$` و`$$...$$`)
-/// تُرسم معادلاتٍ عبر [MathRasterizer] بدل أن تظهر أكواداً خامة.
+/// تُصدَّر **معادلات Word أصلية قابلة للتحرير** (OMML — [OmmlFromEquation])
+/// من `EquationModel` نفسه، فلا تظهر أكواداً خامة ولا تُفلطح صوراً؛ ولا
+/// تُرسم عبر [MathRasterizer] إلا صيغةٌ تعذّر تمثيلها بُنيةً، فتُرسَم
+/// بمحرك المعاينة نفسه (`MathImageRenderer`) حفظاً لشكلها.
 class DocxDocumentExportService {
   const DocxDocumentExportService._();
 
@@ -309,6 +301,7 @@ class _DocxBuilder {
     documentXml =
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        '${OmmlFromEquation.mathNamespaceDeclaration} '
         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
         'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
         'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
@@ -375,6 +368,7 @@ class _DocxBuilder {
     const emuHeight = 10692130;
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        '${OmmlFromEquation.mathNamespaceDeclaration} '
         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
         'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
         'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
@@ -509,6 +503,19 @@ class _DocxBuilder {
     if (element.isFormula) {
       final label = element.label.trim();
       if (label.isEmpty) {
+        return;
+      }
+      final mathZone = _formulaMathZone(element);
+      if (mathZone != null) {
+        // معادلة Word أصلية داخل الإطار العائم نفسه: حدّ الصندوق وموضعه
+        // وحجم خطّه كما هي، والمعادلة داخله قابلة للتحرير بلا صورة.
+        _buildTextBox(
+          body,
+          element,
+          floatingOnPage: true,
+          pageAnchored: pageAnchored,
+          mathOverride: mathZone,
+        );
         return;
       }
       final boxWidthPt = PaperMetrics.pt(element.width);
@@ -1012,6 +1019,7 @@ class _DocxBuilder {
     bool floatingOnPage = false,
     bool pageAnchored = true,
     String? textOverride,
+    String? mathOverride,
   }) {
     final text = textOverride ??
         (element.label.trim().isEmpty ? ' ' : element.label.trim());
@@ -1076,8 +1084,52 @@ class _DocxBuilder {
       '$grid<w:tr>$rowProperties<w:tc><w:tcPr>$cellWidth</w:tcPr>'
       '<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:jc w:val="$align"/>'
       '<w:spacing w:line="$line" w:lineRule="auto"/></w:pPr>'
-      '${_runsXml(text, runProperties, size / 2)}</w:p></w:tc></w:tr></w:tbl>',
+      '${mathOverride ?? _runsXml(text, runProperties, size / 2)}</w:p></w:tc></w:tr></w:tbl>',
     );
+  }
+
+  /// صيغة عنصر معادلة حرّ كـ**معادلة Word أصلية** (`m:oMathPara`)؛ ويعيد
+  /// `null` إن تعذّر تمثيلها بُنيةً (فيرتدّ Caller إلى الرسم ثم إلى النص).
+  ///
+  /// حجم الخط: ما حدّده المدرس للعنصر إن حدّد، وإلا فراغ الصندوق نفسه
+  /// (أصغر ضلعه بالنقاط) — وهو المقاس الذي كانت الصورة تُرسَم به ثم تُلاءَم،
+  /// فتبقى المعادلة على مقياس الورقة كما كانت، بلا تمديد يُفلطحها: في Word
+  /// المعادلة بحجم خطها (حدّة كاملة وتحرير متاح)، والإطار يحتفظ بحدّه
+  /// وموضعه وحجمه.
+  String? _formulaMathZone(FloatingElement element) {
+    final label = element.label.trim();
+    if (label.isEmpty) {
+      return null;
+    }
+    final configured = element.textStyle.fontSize;
+    final fontSizePt = configured != null
+        ? configured.clamp(11.0, 72.0).toDouble()
+        : math
+            .min(PaperMetrics.pt(element.height), PaperMetrics.pt(element.width))
+            .clamp(11.0, 72.0)
+            .toDouble();
+    return OmmlFromEquation.mathParagraphXml(
+      label,
+      fontSizePt: fontSizePt,
+      extraRunProperties: _mathRunProperties(_formulaRunProperties(element)),
+    );
+  }
+
+  /// تنسيق نص عنصر المعادلة (يُورَّث للمعادلة نفسها: غامق/مائل/لون).
+  String _formulaRunProperties(FloatingElement element) {
+    final style = element.textStyle;
+    final buffer = StringBuffer();
+    if (style.bold == true) {
+      buffer.write('<w:b/>');
+    }
+    if (style.italic == true) {
+      buffer.write('<w:i/>');
+    }
+    final color = style.colorHex;
+    if (color != null) {
+      buffer.write('<w:color w:val="$color"/>');
+    }
+    return buffer.toString();
   }
 
   void _embedImage(StringBuffer body, Uint8List bytes, double widthPx, double heightPx) {
@@ -1092,15 +1144,27 @@ class _DocxBuilder {
     );
   }
 
-  /// يضيف فقرة معادلة حرة ([FloatingElementType.formula]) كصورة معادلة
-  /// بمقاسها على الورقة (تصغير فقط حتى لا تتشوّه ولا تفقد الحدّة) — وإن
-  /// تعذّر رسمها كُتبت الصيغة نصاً.
+  /// يضيف فقرة معادلة حرة ([FloatingElementType.formula]) إلى المرفقات:
+  /// تُصدَّر أولاً **معادلة Word أصلية** (`m:oMathPara` في فقرة موسَّطة؛
+  /// انظر [_formulaMathZone]) — فإن تعذّر تمثيلها بُنيةً رُسمت بمحرك المعاينة
+  /// بمقاسها على الورقة (تصغير فقط حتى لا تتشوّه ولا تفقد الحدّة)، وإن تعذّر
+  /// رسمها كُتبت نصاً رياضياً مقروءاً.
   Future<void> _buildFormulaAttachment(
     StringBuffer body,
     FloatingElement element,
   ) async {
     final label = element.label.trim();
     if (label.isEmpty) {
+      return;
+    }
+    final mathZone = _formulaMathZone(element);
+    if (mathZone != null) {
+      // معادلة Word حقيقية في فقرة مستقلة (محاذاة كما في باقي المرفقات).
+      body.write(
+        '<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}'
+        '<w:jc w:val="center"/><w:spacing w:before="60" w:after="60"/>'
+        '</w:pPr>$mathZone</w:p>',
+      );
       return;
     }
     final boxWidthPt = PaperMetrics.pt(element.width);
@@ -1299,25 +1363,43 @@ class _DocxBuilder {
   }
 
   /// يبني مقاطع الفقرة: نص عادي ككتلة `<w:r>` واحدة أو أكثر، وصيغ LaTeX
-  /// كعلامة موضع مؤقتة يُستبدلها [MathRasterizer] برسم المعادلة بعد رسمها
-  /// (انظر [_resolveMath]) — فيظهر الرمز المرسوم مكان `$...$` تماماً،
-  /// وبالترتيب نفسه داخل السطر.
+  /// **معادلات Word أصلية** `<m:oMath>` داخل الفقرة نفسها (تُحرَّر في Word
+  /// كما تُحرَّر من أداتها، بلا صورة) — انظر [OmmlFromEquation].
+  ///
+  /// عند تعذّر تمثيل صيغة بُنيةً (مصفوفة، أسطر متعددة…) تُرسَم تلك الصيغة
+  /// وحدها بمعامل [mathRasterizer] — أي بمحرك المعاينة نفسه — بعلامة موضع
+  /// مؤقتة يستبدلها [_resolveMath] بالرسم بعد رسمه (فتبقى في مكانها من
+  /// السطر وبالترتيب نفسه). وبدون مرسّم تُكتب نصاً رياضياً مقروءاً، وهو
+  /// آخر ارتداد: لا يظهر كود LaTeX الخام في أي ملف.
   String _runsXml(String text, String runProperties, double fontSizePt) {
     if (!TexContent.containsMath(text)) {
       return '<w:r>$runProperties<w:t xml:space="preserve">${_escapeXml(text)}</w:t></w:r>';
     }
-    if (mathRasterizer == null) {
-      // بلا مرسّم صيغ: تُكتب الصيغ نصاً رياضياً مقروءاً — لا كود LaTeX إطلاقاً
-      // في أي ملف مهما كان سبب تعذّر الرسم.
-      return '<w:r>$runProperties<w:t xml:space="preserve">'
-          '${_escapeXml(LatexPlainText.ofMixed(text))}</w:t></w:r>';
-    }
+    final mathRunProperties = _mathRunProperties(runProperties);
     final buffer = StringBuffer();
     for (final segment in TexContent.split(text)) {
       if (segment.isMath && segment.text.trim().isNotEmpty) {
-        final index = _mathQueue.length;
-        _mathQueue.add(_MathPlaceholder(segment.text, fontSizePt));
-        buffer.write('<w:r>$runProperties${_mathMarker(index)}</w:r>');
+        final math = OmmlFromEquation.mathZoneXml(
+          segment.text,
+          fontSizePt: fontSizePt,
+          extraRunProperties: mathRunProperties,
+        );
+        if (math != null) {
+          // المنطقة الرياضية ابن مباشر للفقرة (لا داخل <w:r>): تُدرج كما هي
+          // بجانب الجريانات، فتنزل حيث نزلت $...$ في الجملة تماماً.
+          buffer.write(math);
+          continue;
+        }
+        if (mathRasterizer != null) {
+          final index = _mathQueue.length;
+          _mathQueue.add(_MathPlaceholder(segment.text, fontSizePt));
+          buffer.write('<w:r>$runProperties${_mathMarker(index)}</w:r>');
+          continue;
+        }
+        buffer.write(
+          '<w:r>$runProperties<w:t xml:space="preserve">'
+          '${_escapeXml(LatexPlainText.of(segment.text))}</w:t></w:r>',
+        );
         continue;
       }
       if (segment.text.isEmpty) {
@@ -1326,6 +1408,35 @@ class _DocxBuilder {
       buffer.write(
         '<w:r>$runProperties<w:t xml:space="preserve">${_escapeXml(segment.text)}</w:t></w:r>',
       );
+    }
+    return buffer.toString();
+  }
+
+  /// تنسيق جريانات المعادلة الموروث من جيرانها: غامق/مائل/لون الفقرة فقط.
+  ///
+  /// يُنتقى ولا يُنسخ كاملاً: `<w:rtl/>` يفسد ترتيب محارف الرياضيات (المنطقة
+  /// الرياضية LTR مستقلة بطبيعتها)، و`w:sz` يرسله المُصدِّر من [fontSizePt]،
+  /// و`w:rFonts` يُستبدل بخط الرياضيات الذي تطلبه OMML.
+  static final RegExp _mathBoldPattern = RegExp('<w:b/>');
+  static final RegExp _mathItalicPattern = RegExp('<w:i/>');
+  static final RegExp _mathColorPattern =
+      RegExp('<w:color w:val="[0-9A-Fa-f]{6}"/>');
+
+  String _mathRunProperties(String runProperties) {
+    if (runProperties.isEmpty) {
+      return '';
+    }
+    final buffer = StringBuffer();
+    if (_mathBoldPattern.hasMatch(runProperties)) {
+      buffer.write('<w:b/>');
+    }
+    if (_mathItalicPattern.hasMatch(runProperties)) {
+      buffer.write('<w:i/>');
+    }
+    final color = _mathColorPattern.firstMatch(runProperties);
+    final colorXml = color?.group(0);
+    if (colorXml != null) {
+      buffer.write(colorXml);
     }
     return buffer.toString();
   }

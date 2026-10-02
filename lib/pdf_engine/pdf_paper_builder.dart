@@ -13,12 +13,13 @@ import '../models/paper_settings.dart';
 import '../models/paper_text_style.dart';
 import '../models/point_kind.dart';
 import '../models/quran_text.dart';
+import '../services/math_snapshot_renderer.dart' show MathRaster;
 import '../models/subject_layout.dart';
 import '../models/tex_content.dart';
 import 'exam_fonts.dart';
 import 'exam_strategy.dart' show ExamTextStyles;
-import 'latex/latex_svg_renderer.dart';
 import 'paper_style_resolver.dart';
+import 'pdf_math_rasters.dart';
 
 /// بانٍ لعناصر `pw` من [ExamBlueprint]: الترويسة والسؤال والفرع والنقاط
 /// والتذييل والإطار — **رسم فقط**، فكل قرار نصي (ترقيم، درجات، حذف عند
@@ -32,6 +33,7 @@ class PdfPaperBuilder {
     required this.blueprint,
     required this.fonts,
     required this.styles,
+    this.mathRasters,
   })  : settings = document.settings,
         layout = document.layout;
 
@@ -41,6 +43,10 @@ class PdfPaperBuilder {
   final ExamTextStyles styles;
   final PaperSettings settings;
   final SubjectLayoutTemplate layout;
+
+  /// لقطات المعادلات بمحرك المعاينة نفسه (انظر [PdfMathRasters])؛ `null`
+  /// معناها لا مضيف رسم: تُكتب الصيغ نصاً رياضياً مقروءاً بلا كود.
+  final PdfMathRasters? mathRasters;
 
   /// إزاحة بداية كتلة الفرع عن صندوق المحتوى (بنقاط PDF).
   static const double branchIndent = 10;
@@ -510,8 +516,10 @@ class PdfPaperBuilder {
   // نص الورقة: LaTeX وآيات القرآن
   // ------------------------------------------------------------------
 
-  /// نص الورقة: مقاطع LaTeX ($...$) تُرسم SVG متجهة، وآيات القرآن الموسومة
-  /// بـ `﴿ ... ﴾` تُرسم بالخط القرآني (Amiri) إن توفّر، والباقي نص عادي.
+  /// نص الورقة: مقاطع LaTeX ($...$) **لقطات من محرك العرض نفسه**
+  /// ([PdfMathRasters]) فتُطبع كما تُرى على اللوحة تماماً، وآيات القرآن
+  /// الموسومة بـ `﴿ ... ﴾` تُرسم بالخط القرآني (Amiri) إن توفّر، والباقي نص
+  /// عادي.
   ///
   /// [centerVerse] يوسّط آية قائمة بذاتها كما في لوحة المعاينة، و[align]
   /// محاذاة الكتلة المختارة من شريط التنسيق، و[fillWidth] يمنح الكتلة عرض
@@ -560,16 +568,16 @@ class PdfPaperBuilder {
         }
         continue;
       }
-      final latex = LatexSvgRenderer.tryToSvg(segment.text, fontSize: fontSize);
-      if (latex == null) {
-        // صيغة تعذّر ترسيمها (نص قديم نادر): تُكتب نصاً رياضياً مقروءاً —
+      final raster = mathRasters?.lookup(segment.text, fontSize);
+      if (raster == null) {
+        // صيغة لم تُلتقط (مضيف غائب أو تعذّر الرسم): نص رياضي مقروء —
         // ممنوع ظهور كود LaTeX في أي ملف مهما كان السبب.
         inline.add(
           pw.Text(LatexPlainText.of(segment.text), style: style, textAlign: align),
         );
         continue;
       }
-      final image = pw.SvgImage(svg: latex.svg, width: latex.width, height: latex.height);
+      final image = _mathImage(raster);
       if (segment.isBlock) {
         flushInline();
         rows.add(pw.Center(child: image));
@@ -585,6 +593,15 @@ class PdfPaperBuilder {
     );
     return fillWidth ? _fullWidth(block) : block;
   }
+
+  /// صورة المعادلة بمقاسها الطبيعي بالنقاط: لا تحجيم يدوي ولا تصحيح مواضع —
+  /// القياس من المحرك الذي صنع الصورة.
+  static pw.Widget _mathImage(MathRaster raster) => pw.Image(
+        pw.MemoryImage(raster.pngBytes),
+        width: raster.widthPt,
+        height: raster.heightPt,
+        fit: pw.BoxFit.fill,
+      );
 
   /// يمنح كتلة النص عرض صندوق المحتوى كاملاً قبل حساب الالتفاف والمحاذاة.
   ///
