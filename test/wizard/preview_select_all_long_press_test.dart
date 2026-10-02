@@ -66,6 +66,11 @@ ExamDocument _document() => ExamDocument(
           statement: 'منطوق السؤال الثاني',
           body: 'نص السؤال الثاني',
         ),
+        QuestionModel(
+          id: 'q3',
+          questionNumber: 3,
+          statement: r'احسب قيمة $x^2+1$',
+        ),
       ],
     );
 
@@ -234,6 +239,32 @@ void main() {
     await tester.pumpAndSettle();
     expect(_counterText(tester), isNotEmpty,
         reason: 'الضغط المطوّل على خيار يجب أن يحدد الكتلة صاحبة الخيار.');
+  });
+
+  testWidgets('الضغط المطوّل داخل حقل معادلة مرسومة يحدد السؤال', (tester) async {
+    final controller = _controller();
+    addTearDown(controller.dispose);
+    await _pump(tester, controller);
+
+    // حقل المعادلة يُعرض مرسوماً (TexText) لا `TextField` — والضغط المطوّل
+    // عليه يجب أن يمرّ إلى طبقة التحديد لا أن يضيع في الرسم.
+    final mathField = find.byKey(const ValueKey<String>('statement-q3'));
+    expect(
+      find.descendant(of: mathField, matching: find.byType(TextField)),
+      findsNothing,
+      reason: 'حقل المعادلة يُعرض مرسوماً لا محرَّراً في الوضع العادي.',
+    );
+    await tester.ensureVisible(mathField);
+    await tester.pumpAndSettle();
+    await tester.longPress(mathField);
+    await tester.pumpAndSettle();
+    final format = controller.document.formatNumber;
+    expect(
+      _counterText(tester),
+      'المحدد ${format(1)} من ${format(3)}',
+      reason: 'الضغط المطوّل على معادلة مرسومة يفعّل التحديد ويحدد السؤال '
+          'وحده (٣ كتل: ثلاثة أسئلة بلا فروع).',
+    );
   });
 
   testWidgets('الضغط المطوّل على حقل قيد التحرير لا يسرق تأشير النص',
