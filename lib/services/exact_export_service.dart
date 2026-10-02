@@ -27,15 +27,13 @@ abstract final class ExactExportService {
   static Future<Uint8List> buildPdfFromSnapshots(
     List<PageSnapshot> snapshots,
   ) async {
-    if (snapshots.isEmpty) {
-      throw StateError('التصدير الدقيق يحتاج صفحة واحدة على الأقل.');
-    }
+    final orderedSnapshots = _orderedSnapshots(snapshots);
     final document = pw.Document(
       title: 'ورقة الامتحان (مطابقة للمعاينة)',
       creator: 'Writing Questions',
       producer: 'Writing Questions',
     );
-    for (final snapshot in snapshots) {
+    for (final snapshot in orderedSnapshots) {
       final image = pw.MemoryImage(snapshot.pngBytes);
       document.addPage(
         pw.Page(
@@ -71,15 +69,13 @@ abstract final class ExactExportService {
   /// مستند Word هنا **غير قابل للتحرير** نصياً: هو صورة الورقة النهائية —
   /// الاسم في الواجهة يعلن ذلك صراحةً بوسم «مطابق للمعاينة».
   static Uint8List buildDocxFromSnapshots(List<PageSnapshot> snapshots) {
-    if (snapshots.isEmpty) {
-      throw StateError('التصدير الدقيق يحتاج صفحة واحدة على الأقل.');
-    }
+    final orderedSnapshots = _orderedSnapshots(snapshots);
     final archive = Archive();
     final media = StringBuffer();
     final relationships = StringBuffer();
     final imageTags = <String>[];
 
-    for (var index = 0; index < snapshots.length; index++) {
+    for (var index = 0; index < orderedSnapshots.length; index++) {
       final relationId = 'rIdPage${index + 1}';
       final fileName = 'page${index + 1}.png';
       media.write(
@@ -100,10 +96,10 @@ abstract final class ExactExportService {
         '<w:jc w:val="center"/></w:pPr>'
         '<w:r>${_pageDrawing(index + 1, relationId)}</w:r></w:p>',
       );
-      if (index < snapshots.length - 1) {
+      if (index < orderedSnapshots.length - 1) {
         imageTags.add('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
       }
-      final bytes = snapshots[index].pngBytes;
+      final bytes = orderedSnapshots[index].pngBytes;
       archive.addFile(ArchiveFile('word/media/$fileName', bytes.length, bytes));
     }
 
@@ -178,6 +174,58 @@ abstract final class ExactExportService {
   }
 
   // ------------------------------ أدوات داخلية ------------------------------
+
+  /// يضمن ترتيب الصفحات وسلامة بيانات اللقط قبل بناء أي ملف؛ لا يُسمح أن ينتج
+  /// PDF أو DOCX بصفحات مكررة/ناقصة/معكوسة أو بيانات بلا توقيع PNG.
+  static List<PageSnapshot> _orderedSnapshots(
+    List<PageSnapshot> snapshots,
+  ) {
+    if (snapshots.isEmpty) {
+      throw StateError('التصدير الدقيق يحتاج صفحة واحدة على الأقل.');
+    }
+
+    final ordered = List<PageSnapshot>.of(snapshots)
+      ..sort((left, right) => left.pageIndex.compareTo(right.pageIndex));
+    final expectedAspect = PdfPageFormat.a4.width / PdfPageFormat.a4.height;
+    for (var index = 0; index < ordered.length; index++) {
+      final snapshot = ordered[index];
+      if (snapshot.pageIndex != index) {
+        throw StateError(
+          'ترقيم صفحات اللقط غير متصل: الصفحة المطلوبة ${index + 1} '
+          'لكن اللقطة تحمل الفهرس ${snapshot.pageIndex}.',
+        );
+      }
+      if (!snapshot.widthPx.isFinite ||
+          !snapshot.heightPx.isFinite ||
+          snapshot.widthPx <= 0 ||
+          snapshot.heightPx <= 0) {
+        throw StateError(
+          'أبعاد لقطة الصفحة ${index + 1} غير صالحة '
+          '(${snapshot.widthPx}×${snapshot.heightPx}).',
+        );
+      }
+      final aspect = snapshot.widthPx / snapshot.heightPx;
+      if ((aspect - expectedAspect).abs() > 0.002) {
+        throw StateError(
+          'نسبة أبعاد الصفحة ${index + 1} لا تطابق ورقة A4.',
+        );
+      }
+      final png = snapshot.pngBytes;
+      const signature = <int>[137, 80, 78, 71, 13, 10, 26, 10];
+      var validPng = png.length >= signature.length;
+      for (var byteIndex = 0;
+          validPng && byteIndex < signature.length;
+          byteIndex++) {
+        validPng = png[byteIndex] == signature[byteIndex];
+      }
+      if (!validPng) {
+        throw StateError(
+          'بيانات لقطة الصفحة ${index + 1} لا تحمل توقيع PNG صالحاً.',
+        );
+      }
+    }
+    return List<PageSnapshot>.unmodifiable(ordered);
+  }
 
   /// عرض/ارتفاع A4 بالتويب (210×297 مم) — مقاس الورقة يبقى A4 مضبوطاً.
   static final int _pageWidthTwips = (210 / 25.4 * 1440).round();

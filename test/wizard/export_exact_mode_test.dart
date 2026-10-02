@@ -1,9 +1,8 @@
 // نمط التصدير في حوار المراجعة: «مطابق للمعاينة (Exact)» مقابل النص المتجه.
 //
-// الشرط الذي لا يجوز أن يسقط: حين يكون النمط الدقيق مفعّلاً يجب أن **يُعلَن
-// صراحةً** أن ملف Word غير قابل للتحرير (فالصفحات صور)، وحين يُطفأ يجب أن
-// يظهر وعد المسار الآخر (نص + معادلات OMML). الاختبار يفتح الحوار كما
-// يفتحه المستخدم من الشريط، ويقرأ الإعلان من الواجهة نفسها.
+// Exact نمط اختياري لا افتراضي: المسار المعتاد يبقي PDF نصياً وWord قابلاً
+// للتحرير. عند تفعيله يجب أن يُعلَن صراحةً أن PDF صورة غير قابلة للبحث وأن
+// Word صفحات صور غير قابلة للتحرير. الاختبار يقرأ الوصف من حوار المستخدم نفسه.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -63,37 +62,48 @@ Future<void> _openReview(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('مفتاح Exact موجود ومفعّل افتراضاً ويعلن عدم قابلية Word للتحرير',
-      (tester) async {
-    await _pump(tester);
-    await _openReview(tester);
+  testWidgets(
+    'Exact اختياري ومطفأ افتراضياً لإبقاء التصدير قابلاً للتحرير',
+    (tester) async {
+      await _pump(tester);
+      await _openReview(tester);
 
-    final switchFinder = find.byKey(const ValueKey<String>('export-exact-mode'));
-    expect(switchFinder, findsOneWidget, reason: 'مفتاح نمط التصدير في الحوار.');
+      final switchFinder = find.byKey(const ValueKey<String>('export-exact-mode'));
+      expect(
+        switchFinder,
+        findsOneWidget,
+        reason: 'مفتاح نمط التصدير في الحوار.',
+      );
 
-    final asSwitch = tester.widget<SwitchListTile>(switchFinder);
-    expect(asSwitch.value, isTrue, reason: 'الافتراضي: مطابق للمعاينة.');
-    // الإعلان الصريح — شرط المستخدم عند قبول Word غير القابل للتحرير.
-    expect(find.textContaining('غير قابل للتحرير'), findsOneWidget);
-    expect(find.textContaining('صور صفحات المعاينة'), findsOneWidget);
-    // عدد صفحات المعاينة ظاهر في المراجعة (مصدر عدّ النمط الدقيق).
-    expect(find.text('صفحات المعاينة'), findsOneWidget);
-  });
+      final asSwitch = tester.widget<SwitchListTile>(switchFinder);
+      expect(
+        asSwitch.value,
+        isFalse,
+        reason: 'المسار الافتراضي نصي وقابل للتحرير.',
+      );
+      expect(find.textContaining('OMML'), findsOneWidget);
+      expect(find.textContaining('غير قابل للتحرير'), findsNothing);
+      expect(find.textContaining('صور صفحات المعاينة'), findsNothing);
+      expect(find.text('صفحات المعاينة'), findsOneWidget);
+    },
+  );
 
-  testWidgets('إطفاء Exact يبدّل الإعلان إلى المسار المتجه القابل للتحرير',
-      (tester) async {
-    await _pump(tester);
-    await _openReview(tester);
+  testWidgets(
+    'تفعيل Exact يعلن أن PDF وWord صفحات صور غير قابلة للتحرير',
+    (tester) async {
+      await _pump(tester);
+      await _openReview(tester);
 
-    await tester.tap(find.byKey(const ValueKey<String>('export-exact-mode')));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey<String>('export-exact-mode')));
+      await tester.pumpAndSettle();
 
-    final asSwitch = tester.widget<SwitchListTile>(
-      find.byKey(const ValueKey<String>('export-exact-mode')),
-    );
-    expect(asSwitch.value, isFalse);
-    expect(find.textContaining('OMML'), findsOneWidget,
-        reason: 'إعلان المسار المتجه: نص ومعادلات OMML قابلة للتحرير.');
-    expect(find.textContaining('غير قابل للتحرير'), findsNothing);
-  });
+      final asSwitch = tester.widget<SwitchListTile>(
+        find.byKey(const ValueKey<String>('export-exact-mode')),
+      );
+      expect(asSwitch.value, isTrue);
+      expect(find.textContaining('صور صفحات المعاينة'), findsOneWidget);
+      expect(find.textContaining('غير قابل للتحرير'), findsOneWidget);
+      expect(find.textContaining('OMML'), findsNothing);
+    },
+  );
 }

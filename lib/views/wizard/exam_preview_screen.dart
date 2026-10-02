@@ -210,20 +210,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// جذور اللقط (RepaintBoundary) لكل صفحة في المعاينة الحية.
   final Map<int, GlobalKey> _pageSnapshotKeys = <int, GlobalKey>{};
 
-  /// جذور لقطٍ مستقلة لمسار Exact: تُبنى خارج شجرة التحرير وتُرسم كلها دفعةً
-  /// واحدة، فلا تتأثر بالصفحات غير المرئية ولا بزخارف التحديد والتحرير.
-  final Map<int, GlobalKey> _exactSnapshotKeys = <int, GlobalKey>{};
+  /// يجمّد زخارف التحرير ويُظهر حاجباً أثناء التقاط صفحات المعاينة الأصلية.
+  bool _exactCaptureInProgress = false;
 
-  /// يُظهر سطح لقطٍ داخلياً أثناء تجهيز التصدير الدقيق فقط.
-  bool _exactCaptureHostVisible = false;
-
-  /// يكبح زخارف التحديد/التحرير في أثناء بناء سطح Exact حتى لا تدخل إلى
-  /// الملف (إطارات التحديد، مقابض العناصر، المؤشرات...).
+  /// يكبح زخارف التحديد من صورة Exact (إطارات التحديد ومقابض العناصر).
   bool _suppressSelectionChrome = false;
 
-  /// نمط التصدير: مطابق للمعاينة (لقطات الصفحات) افتراضاً — وهو ما يحقق
-  /// التطابق البصري المطلوب؛ و«متجه/قابل للتحرير» يبقى متاحاً كما كان.
-  bool _exactExport = true;
+  /// النمط الافتراضي يحافظ على PDF المتجهي وWord القابل للتحرير؛ يُفعّل Exact
+  /// صراحةً فقط عند أولوية التطابق البصري التام على البحث والتحرير النصي.
+  bool _exactExport = false;
   ExamWizardController? _controller;
   _AttachmentRef? _selectedAttachment;
   String? _selectedDividerKey;
@@ -353,29 +348,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
     throw StateError(
       'لم يكتمل قياس صفحات المعاينة بعد. انتظر لحظة ثم أعد المحاولة.',
-    );
-  }
-
-  Future<void> _awaitExactCaptureSurface(int pageCount) async {
-    for (var attempt = 0; attempt < 12; attempt++) {
-      await SchedulerBinding.instance.endOfFrame;
-      final indexes = _exactSnapshotKeys.keys.toList()..sort();
-      if (indexes.length != pageCount) {
-        continue;
-      }
-      final allPainted = indexes.every((pageIndex) {
-        final renderObject =
-            _exactSnapshotKeys[pageIndex]?.currentContext?.findRenderObject();
-        return renderObject is RenderRepaintBoundary &&
-            renderObject.attached &&
-            !renderObject.debugNeedsPaint;
-      });
-      if (allPainted) {
-        return;
-      }
-    }
-    throw StateError(
-      'تعذّر تجهيز صفحات التصدير المطابق للمعاينة. حاول مرة أخرى.',
     );
   }
 
@@ -2014,57 +1986,92 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
   }
 
-  /// يلتقط صفحات Exact من سطحٍ داخلي نظيف مستقل عن شجرة التحرير.
+  /// يلتقط صفحات Exact من حدود صفحات المعاينة الأصلية، واحدةً تلو الأخرى.
   ///
-  /// هذا يمنع ثلاث علل جوهرية في اللقط المباشر من الشاشة:
-  /// 1) الصفحات الخارجة عن نافذة التمرير قد لا تكون مرسومة بعد؛
-  /// 2) زخارف التحديد وأدوات التحرير قد تتسرّب إلى الملف؛
-  /// 3) إطار/ظل المعاينة يخص الواجهة لا الورقة المطبوعة.
+  /// جلب الصفحة إلى نافذة التمرير قبل الالتقاط يعالج سبب فشل الصفحات البعيدة
+  /// (حدود `RepaintBoundary` خارج النافذة لم تكن مرسومة)، ويجنّب إنشاء نسخة
+  /// ثانية من محررات النص والقياس لكل صفحة. أثناء اللقط تُخفى فقط زخارف
+  /// التحرير وإطار/ظل الشاشة، ثم تُستعاد حالة التحديد والتمرير كما كانت.
   Future<List<PageSnapshot>> _capturePreviewPages() async {
     final controller = _controller!;
     FocusManager.instance.primaryFocus?.unfocus();
     await _awaitStablePreviewLayout();
 
+    final pages = controller.pagination.pages.toList()
+      ..sort((left, right) => left.index.compareTo(right.index));
+    if (pages.isEmpty) {
+      throw StateError('لا توجد صفحات معاينة لالتقاطها.');
+    }
+
     final uiSnapshot = _snapshotUiState();
-    _exactSnapshotKeys.clear();
+    final verticalOffset = _vScroll.hasClients ? _vScroll.offset : null;
+    final horizontalOffset = _hScroll.hasClients ? _hScroll.offset : null;
     setState(() {
       _suppressSelectionChrome = true;
-      _exactCaptureHostVisible = true;
+      _exactCaptureInProgress = true;
       _clearSelection();
       _stagedFormula = null;
       _stagedFormulaIsBlock = false;
     });
 
     try {
-      final pages = controller.pagination.pages;
-      await _awaitExactCaptureSurface(pages.length);
       final snapshots = <PageSnapshot>[];
       for (final page in pages) {
         try {
+          final boundaryKey = _pageSnapshotKeys[page.index];
+          if (boundaryKey == null) {
+            throw StateError(
+              'لم تُبنَ لوحة صفحة المعاينة ${page.index + 1}.',
+            );
+          }
           snapshots.add(
-            await PageSnapshotService.capturePage(
-              _exactSnapshotKeys[page.index]!,
+            await PageSnapshotService.captureVisiblePage(
+              boundaryKey,
               pageIndex: page.index,
             ),
           );
         } catch (error, stackTrace) {
           PageSnapshotService.logCaptureFailure(error, stackTrace, page.index);
-          throw StateError(
-            'تعذّر التقاط الصفحة ${page.index + 1} للتصدير المطابق للمعاينة.',
+          Error.throwWithStackTrace(
+            ExportException(
+              'تعذّر التقاط صفحة ${page.index + 1} من المعاينة. '
+              'أعد المحاولة بعد ظهور الصفحة بالكامل.',
+            ),
+            stackTrace,
           );
         }
       }
-      return snapshots;
+      if (snapshots.length != pages.length) {
+        throw StateError(
+          'عدد اللقطات (${snapshots.length}) لا يطابق عدد صفحات المعاينة '
+          '(${pages.length}).',
+        );
+      }
+      return List<PageSnapshot>.unmodifiable(snapshots);
     } finally {
-      _exactSnapshotKeys.clear();
       if (mounted) {
         setState(() {
-          _exactCaptureHostVisible = false;
+          _exactCaptureInProgress = false;
           _suppressSelectionChrome = false;
           _restoreUiState(uiSnapshot);
         });
+        // ننتظر تحديث مدى التمرير قبل استعادة الإزاحة (قد يعاد قياس الصفحة
+        // عند إزالة حالة الالتقاط، وإن كان محتواها البصري لم يتغير).
+        await SchedulerBinding.instance.endOfFrame;
+        _restoreScrollOffset(_vScroll, verticalOffset);
+        _restoreScrollOffset(_hScroll, horizontalOffset);
       }
     }
+  }
+
+  void _restoreScrollOffset(ScrollController controller, double? offset) {
+    if (offset == null || !controller.hasClients) {
+      return;
+    }
+    final position = controller.position;
+    controller.jumpTo(
+      offset.clamp(position.minScrollExtent, position.maxScrollExtent).toDouble(),
+    );
   }
 
   Future<void> _exportPdf({
@@ -2110,7 +2117,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     } catch (error, stackTrace) {
       ExportFileService.logError('Wizard PDF export failed', error, stackTrace);
       if (mounted) {
-        _showMessage('تعذر إنشاء ملف الـ PDF. حاول مرة أخرى.', isError: true);
+        _showMessage(
+          error is ExportException
+              ? error.message
+              : 'تعذر إنشاء ملف الـ PDF. حاول مرة أخرى.',
+          isError: true,
+        );
       }
     } finally {
       if (mounted) {
@@ -2120,9 +2132,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   }
 
   /// تصدير Word:
-  /// - **Exact** (افتراضي): كل صفحة صورة صفحتها النهائية — مطابق للمعاينة
+  /// - **Editable** (افتراضي): مسار Word الأصلي (نص + OMML + جداول) قابل للتحرير.
+  /// - **Exact** (اختياري): كل صفحة صورة صفحتها النهائية — مطابق للمعاينة
   ///   بالبناء، وغير قابل للتحرير (يُعلَن ذلك في الواجهة).
-  /// - **Editable**: مسار Word الأصلي (نص + OMML + جداول) قابل للتحرير.
   Future<void> _exportWord({
     List<List<String>>? pageAssignments,
     bool? exact,
@@ -2173,7 +2185,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     } catch (error, stackTrace) {
       ExportFileService.logError('Wizard Word export failed', error, stackTrace);
       if (mounted) {
-        _showMessage('تعذر إنشاء ملف الـ Word. حاول مرة أخرى.', isError: true);
+        _showMessage(
+          error is ExportException
+              ? error.message
+              : 'تعذر إنشاء ملف الـ Word. حاول مرة أخرى.',
+          isError: true,
+        );
       }
     } finally {
       if (mounted) {
@@ -2595,9 +2612,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 document.formatNumber(controller.pagination.pageCount),
               ),
               const Divider(height: 20),
-              // نمط الإخراج: «مطابق للمعاينة» يصدّر صفحات المعاينة صوراً
-              // (تطابق بصري بالبناء، وWord غير قابل للتحرير)؛ و«نص/
-              // قابل للتحرير» يبقي المسار القديم (نص متجه + OMML).
+              // Exact اختياري ومطفأ افتراضياً: يصدّر صفحات المعاينة صوراً؛
+              // المسار الافتراضي يحافظ على النص المتجه وWord القابل للتحرير.
               SwitchListTile(
                 key: const ValueKey<String>('export-exact-mode'),
                 contentPadding: EdgeInsets.zero,
@@ -2610,10 +2626,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 title: const Text('مطابق للمعاينة (Exact)'),
                 subtitle: Text(
                   _exactExport
-                      ? 'PDF وWord = صور صفحات المعاينة نفسها دون أدوات '
-                          'التحرير. ملف Word في هذا النمط غير قابل للتحرير.'
-                      : 'PDF بنص متجه وWord قابل للتحرير (نص ومعادلات OMML) '
-                          '— التطابق البصري قريب لا مطابق.',
+                      ? 'عند تفعيله: PDF وWord = صور صفحات المعاينة نفسها دون '
+                          'أدوات التحرير؛ PDF بلا بحث/تحديد نصي وWord غير قابل للتحرير.'
+                      : 'الافتراضي: PDF نصي قابل للبحث وWord قابل للتحرير '
+                          '(نص ومعادلات OMML). فعّل Exact عندما تكون أولوية '
+                          'التطابق البصري التام.',
                 ),
               ),
             ],
@@ -3198,16 +3215,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                         ),
                       ),
                     ),
-                    if (_exactCaptureHostVisible)
-                      Positioned.fill(
-                        child: _buildExactCaptureHost(
-                          controller,
-                          layout,
-                          pagination,
-                          constraints.biggest,
-                        ),
-                      ),
-                    if (_exactCaptureHostVisible)
+                    if (_exactCaptureInProgress)
                       const Positioned.fill(
                         child: AbsorbPointer(
                           child: ColoredBox(
@@ -3224,62 +3232,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildExactCaptureHost(
-    ExamWizardController controller,
-    SubjectLayoutTemplate layout,
-    PaginationResult pagination,
-    Size availableSize,
-  ) {
-    const gap = 24.0;
-    final pages = pagination.pages;
-    if (pages.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    final columns = math.max(1, math.sqrt(pages.length).ceil());
-    final rows = (pages.length / columns).ceil();
-    final gridWidth =
-        columns * ExamCanvasGeometry.width + (columns - 1) * gap;
-    final gridHeight =
-        rows * ExamCanvasGeometry.height + (rows - 1) * gap;
-
-    return IgnorePointer(
-      child: Center(
-        child: SizedBox(
-          width: availableSize.width,
-          height: availableSize.height,
-          child: FittedBox(
-            fit: BoxFit.contain,
-            alignment: Alignment.topLeft,
-            child: SizedBox(
-              width: gridWidth,
-              height: gridHeight,
-              child: Wrap(
-                spacing: gap,
-                runSpacing: gap,
-                children: <Widget>[
-                  for (final page in pages)
-                    SizedBox(
-                      width: ExamCanvasGeometry.width,
-                      height: ExamCanvasGeometry.height,
-                      child: _buildPage(
-                        controller,
-                        layout,
-                        page,
-                        pagination.pageCount,
-                        snapshotKeys: _exactSnapshotKeys,
-                        interactive: false,
-                        showPreviewChrome: false,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -3309,6 +3261,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               pageCount,
               snapshotKeys: _pageSnapshotKeys,
               canvasKeys: _pageCanvasKeys,
+              interactive: !_exactCaptureInProgress,
+              showPreviewChrome: !_exactCaptureInProgress,
             ),
           ),
         ),
@@ -3342,12 +3296,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         );
       }
       if (blockId == PaperMetrics.headerBlockId) {
+        final header = _buildHeaderBlock(controller);
         blocks.add(
-          MeasureSize(
-            key: const ValueKey<String>('measure-header'),
-            onChange: (size) => controller.reportBlockHeight(blockId, size.height),
-            child: _buildHeaderBlock(controller),
-          ),
+          interactive
+              ? MeasureSize(
+                  key: const ValueKey<String>('measure-header'),
+                  onChange: (size) =>
+                      controller.reportBlockHeight(blockId, size.height),
+                  child: header,
+                )
+              : header,
         );
         previousBlockId = blockId;
         continue;
@@ -3358,11 +3316,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
       // بحث بالمعرف لا بالهوية: نسخ المستند تستبدل النسخ لا المعرفات.
       final questionIndex = questionData.index;
-      final measuredQuestion = MeasureSize(
-        key: ValueKey<String>('measure-$blockId'),
-        onChange: (size) => controller.reportBlockHeight(blockId, size.height),
-        child: _buildQuestionBlock(controller, layout, questionData),
-      );
+      final question = _buildQuestionBlock(controller, layout, questionData);
+      final measuredQuestion = interactive
+          ? MeasureSize(
+              key: ValueKey<String>('measure-$blockId'),
+              onChange: (size) =>
+                  controller.reportBlockHeight(blockId, size.height),
+              child: question,
+            )
+          : question;
       // إفلات سؤال مسحوب هنا يعيد ترتيبه (السؤال وحدة لا تتجزأ). في سطح
       // Exact لا نحتاج أي سلوك تفاعلي، فنرسم الكتلة نفسها بلا أهداف سحب.
       blocks.add(
@@ -3481,6 +3443,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               content,
               document,
               highlighted: highlighted,
+              interactive: interactive,
             ),
           ),
           for (final ref in pageAttachments) ..._buildPageElement(controller, ref),
@@ -3532,9 +3495,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             )
           : const BoxDecoration(color: Colors.white),
       child: KeyedSubtree(
-        key: ValueKey<String>(
-          '${interactive ? 'a4' : 'exact'}-page-${page.index}',
-        ),
+        key: ValueKey<String>('a4-page-${page.index}'),
         child: interactive
             ? DragTarget<FloatingElement>(
                 onWillAcceptWithDetails: (details) => !_locked,
@@ -3580,6 +3541,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     Widget content,
     ExamDocument document, {
     required bool highlighted,
+    required bool interactive,
   }) {
     final settings = document.settings;
     final margin = ExamCanvasGeometry.marginFor(settings.marginMm);
@@ -3610,7 +3572,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             left: margin,
             right: margin,
             bottom: margin,
-            child: _buildFooterBlock(controller),
+            child: _buildFooterBlock(controller, interactive: interactive),
           ),
       ],
     );
@@ -3646,35 +3608,43 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// تذييل آخر صفحة (للقراءة فقط): يُقاس ارتفاعه فيُحجز في التقسيم الورقي.
-  Widget _buildFooterBlock(ExamWizardController controller) {
+  /// تذييل آخر صفحة (للقراءة فقط): يُقاس ارتفاعه في وضع المعاينة فقط.
+  Widget _buildFooterBlock(
+    ExamWizardController controller, {
+    required bool interactive,
+  }) {
     final document = controller.document;
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onTap: _tapHeader,
-      child: MeasureSize(
+    Widget footer = Container(
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: _headerSelected
+              ? PaperStyles.primary.withOpacity(0.45)
+              : Colors.transparent,
+        ),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: PaperFooterView(
+        footer: controller.blueprint.footer,
+        style: document.header.style,
+        defaultFont: document.settings.defaultFont,
+        fontScale: _fontScale,
+        heightScale: _heightScale,
+      ),
+    );
+    if (interactive) {
+      footer = MeasureSize(
         key: const ValueKey<String>('measure-footer'),
         onChange: (size) =>
             controller.reportBlockHeight(PaperMetrics.footerBlockId, size.height),
-        child: Container(
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: _headerSelected
-                  ? PaperStyles.primary.withOpacity(0.45)
-                  : Colors.transparent,
-            ),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: PaperFooterView(
-            footer: controller.blueprint.footer,
-            style: document.header.style,
-            defaultFont: document.settings.defaultFont,
-            fontScale: _fontScale,
-            heightScale: _heightScale,
-          ),
-        ),
-      ),
-    );
+        child: footer,
+      );
+      return GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: _tapHeader,
+        child: footer,
+      );
+    }
+    return footer;
   }
 
   RenderBox? _pageRenderBox(int pageIndex) {
@@ -3974,35 +3944,44 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           behavior: HitTestBehavior.translucent,
           onTap: () => _tapQuestion(questionIndex),
           child: _titleRow(
-            dragHandle: _locked
-                ? Icon(Icons.drag_indicator, size: 18, color: Colors.grey.shade300)
-                : LongPressDraggable<int>(
-                    data: questionIndex,
-                    feedback: Material(
-                      elevation: 4,
-                      color: Colors.white,
-                      child: Container(
-                        width: 320,
-                        padding: const EdgeInsets.all(8),
-                        child: Text(
-                          data.title.line,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: _scaled(PaperStyles.question),
+            dragHandle: _exactCaptureInProgress
+                ? const SizedBox.shrink()
+                : _locked
+                    ? Icon(
+                        Icons.drag_indicator,
+                        size: 18,
+                        color: Colors.grey.shade300,
+                      )
+                    : LongPressDraggable<int>(
+                        data: questionIndex,
+                        feedback: Material(
+                          elevation: 4,
+                          color: Colors.white,
+                          child: Container(
+                            width: 320,
+                            padding: const EdgeInsets.all(8),
+                            child: Text(
+                              data.title.line,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: _scaled(PaperStyles.question),
+                            ),
+                          ),
+                        ),
+                        childWhenDragging: Icon(
+                          Icons.drag_indicator,
+                          size: 18,
+                          color: Colors.grey.shade300,
+                        ),
+                        child: Semantics(
+                          label: 'اضغط مطولاً واسحب لنقل السؤال كاملاً',
+                          child: Icon(
+                            Icons.drag_indicator,
+                            size: 18,
+                            color: Colors.grey.shade600,
+                          ),
                         ),
                       ),
-                    ),
-                    childWhenDragging: Icon(
-                      Icons.drag_indicator,
-                      size: 18,
-                      color: Colors.grey.shade300,
-                    ),
-                    child: Semantics(
-                      label: 'اضغط مطولاً واسحب لنقل السؤال كاملاً',
-                      child: Icon(Icons.drag_indicator,
-                          size: 18, color: Colors.grey.shade600),
-                    ),
-                  ),
             label: Tooltip(
               message: 'انقر لتعديل رقم السؤال',
               child: GestureDetector(
@@ -4031,31 +4010,34 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             ),
             marks: _marksTarget(
               marks: data.title.marks,
-              showPlaceholder: document.settings.showQuestionMarks,
+              showPlaceholder: !_exactCaptureInProgress &&
+                  document.settings.showQuestionMarks,
               style: titleStyle,
               onEdit: () => _editQuestionMarks(questionIndex),
             ),
-            actions: <Widget>[
-              IconButton(
-                tooltip: 'إضافة فرع',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.add, size: 16),
-                onPressed: () => controller.addBranch(questionIndex),
-              ),
-              IconButton(
-                tooltip: 'نسخ السؤال',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.copy_outlined, size: 16),
-                onPressed: () => controller.duplicateQuestion(questionIndex),
-              ),
-              if (controller.questions.length > 1)
-                IconButton(
-                  tooltip: 'حذف السؤال',
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.delete_outline, size: 16),
-                  onPressed: () => _confirmDeleteQuestion(questionIndex),
-                ),
-            ],
+            actions: _exactCaptureInProgress
+                ? const <Widget>[]
+                : <Widget>[
+                    IconButton(
+                      tooltip: 'إضافة فرع',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.add, size: 16),
+                      onPressed: () => controller.addBranch(questionIndex),
+                    ),
+                    IconButton(
+                      tooltip: 'نسخ السؤال',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.copy_outlined, size: 16),
+                      onPressed: () => controller.duplicateQuestion(questionIndex),
+                    ),
+                    if (controller.questions.length > 1)
+                      IconButton(
+                        tooltip: 'حذف السؤال',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.delete_outline, size: 16),
+                        onPressed: () => _confirmDeleteQuestion(questionIndex),
+                      ),
+                  ],
           ),
         ),
         // نص السؤال: يُحذف كلياً عند فراغه (يظهر للتحرير عند تحديد السؤال).
@@ -4095,7 +4077,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         ],
         if (directlySelected) _addPointButton(controller, owner),
         // السؤال الجديد يبدأ بلا فروع؛ تُنشأ فقط بطلب صريح (زر +).
-        if (question.branches.isEmpty)
+        if (question.branches.isEmpty && !_exactCaptureInProgress)
           Padding(
             padding: const EdgeInsetsDirectional.only(start: 44, top: 2, bottom: 2),
             child: Text(
@@ -4296,34 +4278,47 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
     // مقبض السحب وحده يبدأ السحب (حتى لا يتعارض مع تحديد النص في الحقول)؛
     // الهدف هو كتلة الفرع كاملة.
-    final dragHandle = _locked
-        ? Icon(Icons.drag_indicator, size: 16, color: Colors.grey.shade300)
-        : LongPressDraggable<BranchRef>(
-            data: ref,
-            feedback: Material(
-              elevation: 4,
-              color: Colors.white,
-              child: Container(
-                width: 320,
-                padding: const EdgeInsets.all(8),
-                // معاينة السحب تُعرض نصاً مقروءاً: لا كود LaTeX حتى في
-                // العنصر العائم أثناء السحب.
-                child: Text(
-                  '${data.title.number} ${_readableStatement(branch.content.statement)}',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: _scaled(PaperStyles.body(layout)),
+    final dragHandle = _exactCaptureInProgress
+        ? const SizedBox.shrink()
+        : _locked
+            ? Icon(
+                Icons.drag_indicator,
+                size: 16,
+                color: Colors.grey.shade300,
+              )
+            : LongPressDraggable<BranchRef>(
+                data: ref,
+                feedback: Material(
+                  elevation: 4,
+                  color: Colors.white,
+                  child: Container(
+                    width: 320,
+                    padding: const EdgeInsets.all(8),
+                    // معاينة السحب تُعرض نصاً مقروءاً: لا كود LaTeX حتى في
+                    // العنصر العائم أثناء السحب.
+                    child: Text(
+                      '${data.title.number} ${_readableStatement(branch.content.statement)}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: _scaled(PaperStyles.body(layout)),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            childWhenDragging:
-                Icon(Icons.drag_indicator, size: 16, color: Colors.grey.shade300),
-            // لا Tooltip هنا: مُعرِّف الضغط المطوّل الخاص به يتنافس مع بدء السحب.
-            child: Semantics(
-              label: 'اضغط مطولاً واسحب لنقل الفرع أو تبديل محتواه مع فرع آخر',
-              child: Icon(Icons.drag_indicator, size: 16, color: Colors.grey.shade600),
-            ),
-          );
+                childWhenDragging: Icon(
+                  Icons.drag_indicator,
+                  size: 16,
+                  color: Colors.grey.shade300,
+                ),
+                // لا Tooltip هنا: مُعرِّف الضغط المطوّل الخاص به يتنافس مع بدء السحب.
+                child: Semantics(
+                  label: 'اضغط مطولاً واسحب لنقل الفرع أو تبديل محتواه مع فرع آخر',
+                  child: Icon(
+                    Icons.drag_indicator,
+                    size: 16,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              );
 
     return DragTarget<BranchRef>(
       key: ValueKey<String>('branch-target-${branch.id}'),
@@ -4456,31 +4451,34 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
           marks: _marksTarget(
             marks: data.title.marks,
-            showPlaceholder: document.settings.showQuestionMarks,
+            showPlaceholder: !_exactCaptureInProgress &&
+                document.settings.showQuestionMarks,
             style: bodyStyle,
             onEdit: () => _editBranchMarks(ref),
           ),
-          actions: <Widget>[
-            IconButton(
-              tooltip: 'نسخ الفرع',
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.copy_outlined, size: 14),
-              onPressed: () => controller.duplicateBranch(ref),
-            ),
-            IconButton(
-              tooltip: 'إدراج/تحرير معادلة',
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.functions, size: 14),
-              onPressed: () => _editEquationInField(statementKey),
-            ),
-            // لا حد أدنى للفروع: يُحذف الأخير أيضاً ويبقى السؤال فارغاً.
-            IconButton(
-              tooltip: 'حذف الفرع',
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.delete_outline, size: 14),
-              onPressed: () => controller.removeBranch(ref),
-            ),
-          ],
+          actions: _exactCaptureInProgress
+              ? const <Widget>[]
+              : <Widget>[
+                  IconButton(
+                    tooltip: 'نسخ الفرع',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.copy_outlined, size: 14),
+                    onPressed: () => controller.duplicateBranch(ref),
+                  ),
+                  IconButton(
+                    tooltip: 'إدراج/تحرير معادلة',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.functions, size: 14),
+                    onPressed: () => _editEquationInField(statementKey),
+                  ),
+                  // لا حد أدنى للفروع: يُحذف الأخير أيضاً ويبقى السؤال فارغاً.
+                  IconButton(
+                    tooltip: 'حذف الفرع',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.delete_outline, size: 14),
+                    onPressed: () => controller.removeBranch(ref),
+                  ),
+                ],
         ),
         // نص الفرع: يُحذف كلياً عند فراغه (يظهر للتحرير عند تحديد الفرع).
         if (data.body != null || isSelected)
@@ -4558,7 +4556,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   ) {
     final item = point.item;
     final fieldKey = _itemKey(item.id);
-    final showActions = _activeItemFieldKey == fieldKey;
+    final showActions =
+        !_exactCaptureInProgress && _activeItemFieldKey == fieldKey;
     return Padding(
       padding: const EdgeInsetsDirectional.only(
         start: VisualMetrics.pointIndentPx,
@@ -4579,7 +4578,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       left: VisualMetrics.pointLabelGapPx,
                     ),
                     child: point.label.isEmpty
-                        ? const Icon(Icons.tag, size: 12, color: Colors.grey)
+                        ? _exactCaptureInProgress
+                            ? const SizedBox.shrink()
+                            : const Icon(Icons.tag, size: 12, color: Colors.grey)
                         : Text(
                             point.label,
                             style: bodyStyle.copyWith(fontWeight: FontWeight.bold),
@@ -4608,7 +4609,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 ),
               _marksTarget(
                 marks: point.marks,
-                showPlaceholder: controller.document.settings.showQuestionMarks,
+                showPlaceholder: !_exactCaptureInProgress &&
+                    controller.document.settings.showQuestionMarks,
                 style: bodyStyle,
                 onEdit: () => _editPointMarks(owner, item.id),
               ),
@@ -4659,8 +4661,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     TextAlign ownerAlign,
   ) {
     final document = controller.document;
-    final active = _activeItemFieldKey == _itemKey(item.id) ||
-        (_activeFieldKey?.startsWith('option-${item.id}-') ?? false);
+    final active = !_exactCaptureInProgress &&
+        (_activeItemFieldKey == _itemKey(item.id) ||
+            (_activeFieldKey?.startsWith('option-${item.id}-') ?? false));
     return Padding(
       padding: const EdgeInsetsDirectional.only(
         start: VisualMetrics.optionIndentPx,
@@ -4683,7 +4686,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       child: Padding(
                         padding: const EdgeInsets.only(top: 1),
                         child: document.displayOptionLabel(item.options[index], index).isEmpty
-                            ? const Icon(Icons.tag, size: 12, color: Colors.grey)
+                            ? _exactCaptureInProgress
+                                ? const SizedBox.shrink()
+                                : const Icon(Icons.tag, size: 12, color: Colors.grey)
                             : Text(
                                 document.displayOptionLabel(item.options[index], index),
                                 style: bodyStyle,
@@ -4714,14 +4719,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       hint: 'اكتب الخيار هنا...',
                     ),
                   ),
-                  // لا حد أدنى للخيارات: يُحذف الأخير أيضاً.
-                  InkWell(
-                    onTap: () => controller.removePointOption(owner, item.id, index),
-                    child: const Padding(
-                      padding: EdgeInsets.all(2),
-                      child: Icon(Icons.close, size: 12, color: Colors.grey),
+                  // أداة الحذف تخص وضع التحرير ولا تدخل صورة الورقة النهائية.
+                  if (!_exactCaptureInProgress)
+                    InkWell(
+                      onTap: () =>
+                          controller.removePointOption(owner, item.id, index),
+                      child: const Padding(
+                        padding: EdgeInsets.all(2),
+                        child: Icon(Icons.close, size: 12, color: Colors.grey),
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -5660,7 +5667,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       controller: controller,
       style: style,
       textAlign: textAlign,
-      hint: hint,
+      hint: _exactCaptureInProgress ? null : hint,
       onActivate: () => _activateField(fieldKey, controller),
       onEditFormula: () => _editEquationInField(fieldKey),
       // في وضع التحديد المتعدد لا يبتلع الحقل الضغط المطوّل: يمرّ إلى كتلة
