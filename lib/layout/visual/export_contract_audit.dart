@@ -262,7 +262,7 @@ abstract final class ExportContractAudit {
       evidence: 'FloatingElementsPdf.build + _buildTextBox + MathRasters/OMML',
     ),
     ExportContractEntry(
-      property: 'النص الغني ($...$ و﴿...﴾)',
+      property: r'النص الغني ($...$ و﴿...﴾)',
       effect: 'مقاطع نص/رياضيات/قرآن داخل السطر',
       surfaces: ExportSurface.values,
       evidence: 'RichContent.parse → لقطات PDF/Word ومحرك المعاينة',
