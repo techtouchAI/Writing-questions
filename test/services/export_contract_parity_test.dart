@@ -39,7 +39,7 @@ QuestionModel _question() => QuestionModel(
       category: 'Cat',
       statement: 'Stmt',
       body: 'BodyText',
-      marks: 10,
+      marksOverride: 10,
       items: <BranchItem>[
         BranchItem(
           id: 'p1',

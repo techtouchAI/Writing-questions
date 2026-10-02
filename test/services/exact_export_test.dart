@@ -47,11 +47,14 @@ void main() {
         isTrue,
         reason: 'مقاس A4 كامل: صورة الصفحة تغطي الورقة.',
       );
-      expect(
-        RegExp(r'/Subtype\s*/Image').allMatches(text).length,
-        3,
-        reason: 'لكل صفحة صورة الصفحة الملتقطة (XObject).',
-      );
+      // لكل صفحة صورة الصفحة الملتقطة. اللقطة الشفافة تُخزَّن صورةً وقناع
+      // شفافية (SMask) فيزداد العدد، فالفحص: لا تقل عن صفحة لكل لقطة،
+      // والعدد من مضاعفات عدد اللقطات (لا صور غريبة مضافة).
+      final images = RegExp(r'/Subtype\s*/Image').allMatches(text).length;
+      expect(images, greaterThanOrEqualTo(3),
+          reason: 'لكل صفحة صورة الصفحة الملتقطة (XObject).');
+      expect(images % 3, 0,
+          reason: 'عدد الصور مضاعف لعدد اللقطات (صورة + قناع لكل صفحة).');
     });
 
     test('لا صفحات ⇒ استثناء واضح لا ملف فارغ', () async {

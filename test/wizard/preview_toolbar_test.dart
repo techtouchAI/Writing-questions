@@ -109,7 +109,7 @@ void main() {
       final toolbar = find.byType(PreviewToolbar);
       final toolbarScroll = find.descendant(
         of: toolbar,
-        matching: find.byType(ListView),
+        matching: find.byType(SingleChildScrollView),
       );
       await tester.drag(toolbarScroll, const Offset(-1200, 0));
       await tester.pumpAndSettle();

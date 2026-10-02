@@ -30,7 +30,7 @@ import '../pdf_engine/pdf_content_probe.dart';
 
 ExamDocument _document() => ExamDocument(
       name: 'بنية',
-      header: ExamHeaderModel.initial(subject: 'Arabic'),
+      header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
       // أرقام لاتينية وتسميات صريحة: تُقرأ صريحةً من PDF أيضاً.
       settings: const PaperSettings(numerals: PaperNumerals.latin),
       questions: <QuestionModel>[
@@ -39,7 +39,7 @@ ExamDocument _document() => ExamDocument(
           questionNumber: 1,
           category: 'Cat',
           statement: 'Stmt',
-          marks: 12,
+          marksOverride: 12,
           items: <BranchItem>[
             BranchItem(
               id: 'p1',
@@ -83,16 +83,25 @@ void main() {
 
   group('Word: الأجزاء جريانات مستقلة', () {
     test('سطر العنوان: الرقم والمنطوق والدرجة في جريانات منفصلة', () async {
-      final xml = await _docxXml(_document());
+      final document = _document();
+      final question = document.questions.single;
+      final label = document.displayQuestionLabel(question);
+      final xml = await _docxXml(document);
       final title = _paragraphWith(xml, 'Stmt');
       expect(_runsIn(title), greaterThanOrEqualTo(3),
           reason: 'الرقم ← المنطوق ← الدرجة ثلاثة جريانات، لا نص واحد.');
-      expect(title.contains('>1-<') || title.contains('>1-'),
+      expect(title.contains('>$label</w:t>') || title.contains('>$label<'),
           isTrue,
-          reason: 'رقم السؤال جريان مستقل بترقيم لاتيني (Numerals.latin).');
-      expect(title.contains('(12 marks)') || title.contains('12'),
-          isTrue,
-          reason: 'الدرجة جريان مستقل «(١٢ درجة)».');
+          reason: 'رقم السؤال «$label» جريان مستقل.');
+      // مجمّع النص يعيد السطر كما في المعاينة (الأجزاء تفصلها مسافة واحدة).
+      final plain = RegExp(r'<w:t[^>]*>(.*?)</w:t>', dotAll: true)
+          .allMatches(title)
+          .map((match) => match.group(1))
+          .join();
+      // الأجزاء الثلاثة متتالية بمسافة واحدة، والدرجة في آخر السطر.
+      expect(plain, startsWith('$label Stmt '));
+      expect(plain, contains('12'));
+      expect(plain, endsWith(')'));
     });
 
     test('سطر النقطة: التسمية غامقة وحدها والنص غير غامق', () async {

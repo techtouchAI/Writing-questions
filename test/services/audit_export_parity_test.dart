@@ -182,9 +182,10 @@ void main() {
     // بمقدار [PaginatedPdfExamEngine.branchIndent] (كما تُزاح فقرة الفرع في
     // Word)؛ فمساحة نص الفرع تبدأ من حدّ المحتوى الأيسر وتنتهي عند الحدّ
     // الأيمن ناقص الإزاحة — وعليها تُقاس المحاذاة والضبط.
-    const branchRightEdge = rightEdge - PaginatedPdfExamEngine.branchIndent;
-    const branchWidth = branchRightEdge - leftEdge;
-    const branchCenterLine = (leftEdge + branchRightEdge) / 2;
+    // الإزاحة getter مشتق من العقد البصري (لا const قديم).
+    final branchRightEdge = rightEdge - PaginatedPdfExamEngine.branchIndent;
+    final branchWidth = branchRightEdge - leftEdge;
+    final branchCenterLine = (leftEdge + branchRightEdge) / 2;
 
     final body = _bodyLines(probe);
     expect(body.length, greaterThanOrEqualTo(7),

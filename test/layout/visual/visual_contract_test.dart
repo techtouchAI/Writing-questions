@@ -33,9 +33,11 @@ void main() {
       expect(_resolve(VisualRole.headerTitle).bold, isTrue);
       expect(_resolve(VisualRole.headerBody).fontSizePt, 10);
       expect(_resolve(VisualRole.headerBody).lineHeight, 1.6);
-      // التذييل بالدور نفسه حتى لا ينحرف عن الترويسة.
-      expect(_resolve(VisualRole.footer).fontSizePt, 10);
-      expect(_resolve(VisualRole.footer).lineHeight, 1.6);
+      // نص التذييل الصغير دوره `footer` (8.5/1.45)، أما سطور التوقيع
+      // والعبارة الختامية فتستعمل `headerBody` نفسه (10/1.6) — وهذا نص
+      // العقد صراحةً حتى لا ينحرف التذييل في أي راسم.
+      expect(_resolve(VisualRole.footer).fontSizePt, 8.5);
+      expect(_resolve(VisualRole.footer).lineHeight, 1.45);
     });
 
     test('البسملة والقسم والعنوان والنص', () {
@@ -172,9 +174,10 @@ void main() {
         VisualRunKind.quran,
         VisualRunKind.text,
       ]);
-      // الزخرفة تبقى في المقطع القرآني (هي التي تعرّفه للراسم)، والمجموع
-      // يعيد النص الأصلي كاملاً بلا فقد.
-      expect(content.plainText, r'قبل $$x^2$$ بين ﴿آية﴾ بعد');
+      // `plainText` نصّ المحتوى: زخرفة الآية تبقى (هي التي تعرّفه للراسم)،
+      // وعلامات الصيغة `$$` تُنزع لأن مقطع الرياضيات يحمل المحتوى وحده.
+      expect(content.plainText, 'قبل x^2 بين ﴿آية﴾ بعد');
+      expect(content.runs[1].text, r'$$x^2$$');
       expect(content.runs.every((run) => run.text.isNotEmpty), isTrue);
     });
 

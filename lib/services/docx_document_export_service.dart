@@ -1608,15 +1608,25 @@ class _DocxBuilder {
     int? size,
     String? color,
     String? font,
-  }) =>
-      <DocxRunSpec>[
-        if (title.number.trim().isNotEmpty)
-          DocxRunSpec(title.number, bold: bold, size: size, color: color, font: font),
-        if (title.hasStatement)
-          DocxRunSpec(title.statement, bold: bold, size: size, color: color, font: font),
-        if (title.marks != null)
-          DocxRunSpec(title.marks!, bold: bold, size: size, color: color, font: font),
-      ];
+  }) {
+    // الفصل بمسافة (لا دمج): الأجزاء جريانات مستقلة، والمسافة بينها هي
+    // مقابِل [VisualMetrics.titleGapPx] في المعاينة وPDF.
+    final parts = <String>[
+      if (title.number.trim().isNotEmpty) title.number,
+      if (title.hasStatement) title.statement,
+      if (title.marks != null) title.marks!,
+    ];
+    return <DocxRunSpec>[
+      for (var index = 0; index < parts.length; index++)
+        DocxRunSpec(
+          index == 0 ? parts[index] : ' ${parts[index]}',
+          bold: bold,
+          size: size,
+          color: color,
+          font: font,
+        ),
+    ];
+  }
 
   /// أجزاء سطر النقطة: الرقم (غامق) ← النص ← القوسان ← الدرجة.
   static List<DocxRunSpec> _pointRuns(
@@ -1625,17 +1635,26 @@ class _DocxBuilder {
     int? size,
     String? color,
     String? font,
-  }) =>
-      <DocxRunSpec>[
-        if (point.label.trim().isNotEmpty)
-          DocxRunSpec(point.label, bold: true, size: size, color: color, font: font),
-        if (point.text.trim().isNotEmpty)
-          DocxRunSpec(point.text, bold: bold, size: size, color: color, font: font),
-        if (point.trailer != null)
-          DocxRunSpec(point.trailer!, bold: bold, size: size, color: color, font: font),
-        if (point.marks != null)
-          DocxRunSpec(point.marks!, bold: bold, size: size, color: color, font: font),
-      ];
+  }) {
+    // التسمية غامقة وحدها، وبقية الأجزاء جريانات مستقلة تفصلها مسافة واحدة
+    // (مقابِل فراغ [VisualMetrics.pointLabelGapPx] في المعاينة).
+    final parts = <(String, bool)>[
+      if (point.label.trim().isNotEmpty) (point.label, true),
+      if (point.text.trim().isNotEmpty) (point.text, bold),
+      if (point.trailer != null) (point.trailer!, bold),
+      if (point.marks != null) (point.marks!, bold),
+    ];
+    return <DocxRunSpec>[
+      for (var index = 0; index < parts.length; index++)
+        DocxRunSpec(
+          index == 0 ? parts[index].$1 : ' ${parts[index].$1}',
+          bold: parts[index].$2,
+          size: size,
+          color: color,
+          font: font,
+        ),
+    ];
+  }
 
   /// أجزاء سطر الخيارات: تسمية كل خيار ثم نصه، وبين الخيارات فاصل من
   /// المسافات غير القابلة للقطع بقدر ما تفصله المعاينة أفقيًا.
@@ -1655,7 +1674,9 @@ class _DocxBuilder {
         runs.add(DocxRunSpec(option.label, bold: bold, size: size, color: color, font: font));
       }
       if (option.text.trim().isNotEmpty) {
-        runs.add(DocxRunSpec(option.text, bold: bold, size: size, color: color, font: font));
+        // مسافة بين التسمية والنص كما في المعاينة (`optionLabelGapPx`).
+        final text = option.label.trim().isEmpty ? option.text : ' ${option.text}';
+        runs.add(DocxRunSpec(text, bold: bold, size: size, color: color, font: font));
       }
     }
     return runs;
