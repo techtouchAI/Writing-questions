@@ -46,6 +46,7 @@ abstract final class FloatingElementsPdf {
           defaultFont: defaultFont,
           fontScale: fontScale,
           heightScale: heightScale,
+          mathRasters: mathRasters,
         );
       case FloatingElementType.formula:
         content = _buildFormula(element, widthPt, heightPt, mathRasters);
@@ -82,6 +83,7 @@ abstract final class FloatingElementsPdf {
     required PaperFont defaultFont,
     double fontScale = 1.0,
     double heightScale = 1.0,
+    PdfMathRasters? mathRasters,
   }) {
     final shape = element.shape ?? FloatingShapeType.square;
     if (shape == FloatingShapeType.textBox) {
@@ -93,6 +95,7 @@ abstract final class FloatingElementsPdf {
         defaultFont,
         fontScale: fontScale,
         heightScale: heightScale,
+        mathRasters: mathRasters,
       );
     }
     final svg = element.svgSource ??
@@ -117,6 +120,7 @@ abstract final class FloatingElementsPdf {
     PaperFont defaultFont, {
     double fontScale = 1.0,
     double heightScale = 1.0,
+    PdfMathRasters? mathRasters,
   }) {
     final style = PaperStyleResolver.apply(
       const pw.TextStyle(fontSize: 10.5, lineSpacing: 2),

@@ -503,6 +503,9 @@ void main() {
     _expectBalancedTags(xml);
     final path = await _writeSample('00-all-samples', allSamples,
         rasterizer: _fakeRasterizer);
+    // الاسم الذي طُلب للمراجعة: ملف واحد بكل الصيغ + المرفق الحر + المصفوفة.
+    await _writeSample('math-docx-samples', allSamples,
+        rasterizer: _fakeRasterizer);
     // ignore: avoid_print
     print('عينة Word كاملة: $path');
   });

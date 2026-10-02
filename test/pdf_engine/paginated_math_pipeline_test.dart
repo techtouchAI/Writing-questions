@@ -19,6 +19,8 @@
 //  3) مكانياً: سطر نص السؤال يحمل مِرساة ASCII على كل جانب من المعادلة؛
 //     المسافة الأفقية بين المِرساتين في ملف الصيغ يجب أن تتجاوز نظيرتها
 //     في الملف الضابط — دليل فراغ صورة المعادلة لا فراغ كلمة.
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
@@ -161,6 +163,15 @@ void main() {
         document: _document(withMath: true),
       );
       final probe = PdfContentProbe.fromBytes(bytes);
+
+      // ملف للمراجعة البشرية: هذا ملف المُصدِّر الحقيقي بأكمله (ورقة بصيغ في
+      // كل حقل). ملاحظة صادقة: في بيئة الاختبار لا شجرة ودجت، فاللقطات تأتي
+      // من المضيف الوهمي — أي أن مواضع المعادلات وأبعادها وطبقة النص حقيقية،
+      // وصور المعادلات نفسها مربعات سواد مكانية. الملف يُراجع للهيكل، وشكل
+      // المعادلة يُراجع بالتصدير من التطبيق نفسه.
+      final sample = File('build/math_samples/math-pdf-samples.pdf');
+      await sample.parent.create(recursive: true);
+      await sample.writeAsBytes(bytes);
 
       expectNoRawLatex(probe, surface: 'ورقة الأسئلة');
 
