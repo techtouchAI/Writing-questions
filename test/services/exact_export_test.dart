@@ -39,7 +39,7 @@ void main() {
       final pageObjects = RegExp(r'/Type\s*/Page[^s]').allMatches(text).length;
       expect(pageObjects, 3, reason: 'عدد صفحات PDF يجب أن يساوي عدد اللقطات.');
       expect(
-        RegExp(r'MediaBox \[0 0 595\.[0-9]+ 841\.[0-9]+\]').hasMatch(text),
+        RegExp(r'MediaBox\s*\[0 0 595\.[0-9]+ 841\.[0-9]+\]').hasMatch(text),
         isTrue,
         reason: 'مقاس الصفحة يجب أن يكون A4 كاملاً (595.28×841.89 نقطة).',
       );
@@ -75,7 +75,13 @@ void main() {
       // صورتان بحجم EMU الكامل لـ A4 (210×297 مم).
       final drawings = RegExp(r'<w:drawing>').allMatches(xml).length;
       expect(drawings, 2);
-      expect(RegExp(r'cx="7560000" cy="10692000"').allMatches(xml).length, 2);
+      // امتدادان لكل صفحة: `wp:extent` (الرسم) و`a:ext` (شكل الصورة) —
+      // وكلاهما بعرض/ارتفاع A4 كاملاً بـ EMU.
+      expect(RegExp(r'cx="7560000" cy="10692000"').allMatches(xml).length, 4);
+      expect(
+        RegExp(r'<wp:extent cx="7560000" cy="10692000"/>').allMatches(xml).length,
+        2,
+      );
       // الصور موجودة فعلاً في الحزمة.
       expect(archive.findFile('word/media/page1.png'), isNotNull);
       expect(archive.findFile('word/media/page2.png'), isNotNull);

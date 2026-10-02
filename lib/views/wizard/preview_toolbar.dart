@@ -183,10 +183,13 @@ class PreviewToolbar extends StatelessWidget {
       elevation: 2,
       child: SizedBox(
         height: 52,
-        child: ListView(
+        // SingleChildScrollView + Row (لا ListView): كل أزرار الشريط
+        // مبنية دائماً فيبقى كل زر موجوداً في الشجرة وقابلاً للنقر
+        // والوصول (ensureVisible) مهما كان موضع التمرير الأفقي.
+        child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-          children: <Widget>[
+          child: Row(children: <Widget>[
             _ToolButton(
               icon: Icons.undo,
               tooltip: 'تراجع',
@@ -334,7 +337,7 @@ class PreviewToolbar extends StatelessWidget {
               onTap: isBusy ? null : onExportWord,
             ),
             if (selectionLabel.isNotEmpty) _SelectionChip(label: selectionLabel),
-          ],
+          ]),
         ),
       ),
     );

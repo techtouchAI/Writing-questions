@@ -119,11 +119,23 @@ void main() {
 
   group('المسافات والإزاحات (VisualMetrics)', () {
     test('التحويل الموحّد بكسل ← نقطة ← تويب', () {
-      expect(PaperMetrics.twips(VisualMetrics.pointIndentPx), 540); // 36px→27pt
-      expect(PaperMetrics.twips(VisualMetrics.branchIndentPx), 390); // 26px
-      expect(PaperMetrics.twips(VisualMetrics.optionIndentPx), 300); // 20px
-      expect(PaperMetrics.pt(VisualMetrics.pointIndentPx), closeTo(27, 1e-9));
-      expect(PaperMetrics.pt(VisualMetrics.branchIndentPx), closeTo(19.5, 1e-9));
+      // معامل واحد ([PaperMetrics.pointsPerPixel]) يحمل البكسل إلى نقاط
+      // الطباعة: 794px = عرض A4 بالضبط (595.276pt)، فالإزاحة 36px تساوي
+      // 26.99pt لا 27pt — والفرق 0.01pt لا يُرى، والأهم أن التوينب يطابق
+      // ما يتوقعه Word (540 و390 و300) فلا ينحرف ملف عن آخر.
+      expect(PaperMetrics.twips(VisualMetrics.pointIndentPx), 540);
+      expect(PaperMetrics.twips(VisualMetrics.branchIndentPx), 390);
+      expect(PaperMetrics.twips(VisualMetrics.optionIndentPx), 300);
+      final perPixel = PaperMetrics.pointsPerPixel;
+      expect(PaperMetrics.pt(VisualMetrics.pointIndentPx),
+          closeTo(VisualMetrics.pointIndentPx * perPixel, 1e-9));
+      expect(PaperMetrics.pt(VisualMetrics.branchIndentPx),
+          closeTo(VisualMetrics.branchIndentPx * perPixel, 1e-9));
+      // ذهاب وعودة بلا فقد: النقاط تعود إلى البكسل نفسه.
+      expect(
+        PaperMetrics.px(PaperMetrics.pt(VisualMetrics.pointIndentPx)),
+        closeTo(VisualMetrics.pointIndentPx, 1e-9),
+      );
     });
 
     test('الفجوات المشتركة مشتقة من PaperMetrics لا مكررة', () {
@@ -146,7 +158,16 @@ void main() {
         VisualRunKind.quran,
         VisualRunKind.text,
       ]);
-      expect(content.plainText, 'قبل x^2 بين آية بعد');
+      // النص القرآني يبقى بزخرفته ﴿...﴾ في المقاطع: الزخرفة هي التي تعرّفه
+      // للراسم (فلا مُحلِّل ثانٍ)، ورسمها مسؤوليته في المعاينة وPDF وWord.
+      expect(content.plainText, 'قبل x^2 بين ﴿آية﴾ بعد');
+      expect(
+        content.runs
+            .firstWhere((run) => run.isQuran)
+            .text
+            .contains('آية'),
+        isTrue,
+      );
     });
 
     test('النص العادي بلا صيغ مقطع واحد', () {

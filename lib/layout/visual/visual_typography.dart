@@ -62,7 +62,11 @@ abstract final class ExamTypography {
     VisualRole.branchBody: VisualRoleSpec(sizePt: 10.5, lineHeight: 1.45),
     VisualRole.point: VisualRoleSpec(sizePt: 10.5, lineHeight: 1.5),
     VisualRole.option: VisualRoleSpec(sizePt: 10.5, lineHeight: 1.4),
-    VisualRole.verse: VisualRoleSpec(sizePt: 12, lineHeight: 1.65),
+    VisualRole.verse: VisualRoleSpec(
+      sizePt: 12,
+      lineHeight: 1.65,
+      font: PaperFont.amiri,
+    ),
     VisualRole.small:
         VisualRoleSpec(sizePt: 9, lineHeight: 1.45, color: mutedColor),
     VisualRole.note:

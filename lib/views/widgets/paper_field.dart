@@ -260,10 +260,6 @@ class _PaperFieldState extends State<PaperField> {
             maxLines: null,
             textAlign: widget.textAlign,
             style: effectiveStyle,
-            // التأشير متاح فقط حين يكون الحقل قيد التحرير (أو حقل معادلات
-            // صيغته خالصة): فيبقى الضغط المطوّل على بقية الورقة لكتلتها.
-            enableInteractiveSelection:
-                widget.allowTextSelection && _focusNode.hasFocus,
             decoration: InputDecoration.collapsed(
               hintText: widget.hint,
               hintStyle: effectiveStyle.copyWith(color: Colors.grey),
@@ -286,21 +282,28 @@ class _PaperFieldState extends State<PaperField> {
   /// مطفأ (وهو مطفأ في `TextField` دائماً)، ومُعرّف النص هذا يفوز على أي
   /// سلف. الطبقة العليا تُدخَل إلى الساحة قبله (الأعلى يُختبر أولاً) فتفوز
   /// بالضغط المطوّل، وبلا `onTap` فيها تمرّ النقرات إلى الحقل فيتركّز
-  /// ويظهر المؤشر كالمعتاد. وتُخفى الطبقة حين يكون الحقل مفعّلاً فيبقى
-  /// تأشير النص (تحديد كلمة/سحب المقابض) كما كان.
+  /// ويظهر المؤشر كالمعتاد.
+  ///
+  /// **شكل الشجرة ثابت** (`Stack` بطفلين دائماً حين يوجد `onLongPress`):
+  /// تغييره بين تركيز وتركيز يُعيد إنشاء `TextField` فينقطع اتصال الكتابة
+  /// (وهو ما كان يُسقط الكتابة الفورية في حقل الخيار). التعطيل يتمّ بإخلال
+  /// الاستدعاء نفسه (`onLongPress: null`) فلا يبقى للحقل أي مُعرّف ضغط
+  /// مطوّل، ويبقى تأشير النص داخل الحقل المفعّل كما كان.
   Widget _buildLongPressLayer(Widget field) {
     final onLongPress = widget.onLongPress;
-    final interactiveSelection = widget.allowTextSelection && _focusNode.hasFocus;
-    if (onLongPress == null || interactiveSelection) {
+    if (onLongPress == null) {
       return field;
     }
+    // التأشير المدمج متاح فقط حين يكون الحقل مفعّلاً قيد الكتابة (أو وضع
+    // التحديد المتعدد مغلقاً): عندها يُسلَّم الضغط المطوّل لمحرّك النص.
+    final handOverToText = widget.allowTextSelection && _focusNode.hasFocus;
     return Stack(
       children: <Widget>[
         field,
         Positioned.fill(
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
-            onLongPress: onLongPress,
+            onLongPress: handOverToText ? null : onLongPress,
           ),
         ),
       ],
