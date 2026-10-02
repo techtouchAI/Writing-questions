@@ -91,14 +91,18 @@ abstract final class ExactExportService {
         'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
         'Target="media/$fileName"/>',
       );
-      // سطر بارتفاع الصفحة نفسه (`exact` بتويب A4): لا تُضاف مسافة سطر
-      // فوق الصورة فتدفعها إلى صفحة ثانية، ولا يُقصّ الصفّ الصورة كما قد
-      // يفعل ارتفاع سطر صغير. الارتفاع من [_pageHeightTwips] لا رقم مكتوب.
+      // الصورة **مثبّتة على الصفحة** ([_pageDrawing]) لا سطرية: مكانها من
+      // إحداثيات الورقة لا من ارتفاع سطر أو خط أساس — وهذا ما قاسه التحقق
+      // البصري في CI (الصورة السطرية كانت تنزاح بضع بكسلات في LibreOffice).
+      // ولأن المثبّتة لا تدفع المحتوى، يُعلن فاصل صفحات صريح بين الصفحات.
       imageTags.add(
-        '<w:p><w:pPr><w:spacing w:before="0" w:after="0" '
-        'w:line="$_pageHeightTwips" w:lineRule="exact"/>'
-        '<w:jc w:val="center"/></w:pPr><w:r>${_pageDrawing(index + 1, relationId)}</w:r></w:p>',
+        '<w:p><w:pPr><w:spacing w:before="0" w:after="0"/>'
+        '<w:jc w:val="center"/></w:pPr>'
+        '<w:r>${_pageDrawing(index + 1, relationId)}</w:r></w:p>',
       );
+      if (index < snapshots.length - 1) {
+        imageTags.add('<w:p><w:r><w:br w:type="page"/></w:r></w:p>');
+      }
       final bytes = snapshots[index].pngBytes;
       archive.addFile(ArchiveFile('word/media/$fileName', bytes.length, bytes));
     }
@@ -179,19 +183,32 @@ abstract final class ExactExportService {
   static final int _pageWidthTwips = (210 / 25.4 * 1440).round();
   static final int _pageHeightTwips = (297 / 25.4 * 1440).round();
 
-  /// صورة الصفحة بحجم الورقة كاملة بوحدة EMU (1/914400 بوصة).
+  /// صورة الصفحة **مثبّتة على الورقة** بحجم A4 كامل بوحدة EMU (1/914400 بوصة).
+  ///
+  /// الموضع `posOffset = 0` نسبةً إلى **الصفحة** لا إلى الفقرة: فلا يدخل
+  /// ارتفاع السطر ولا خط الأساس ولا هوامش الخلية في مكان الصورة، بل تبدأ من
+  /// أصل الورقة تماماً كما تبدأ لقطة المعاينة. (`behindDoc` يمنعها من دفع أي
+  /// محتوى، ولذلك يفصل بين الصفحات فاصل صفحات صريح.)
   static String _pageDrawing(int id, String relationId) {
     final widthEmu = (210 / 25.4 * 914400).round();
     final heightEmu = (297 / 25.4 * 914400).round();
-    return '<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
+    return '<w:drawing>'
+        '<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" '
+        'relativeHeight="1" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1">'
+        '<wp:simplePos x="0" y="0"/>'
+        '<wp:positionH relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionH>'
+        '<wp:positionV relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionV>'
         '<wp:extent cx="$widthEmu" cy="$heightEmu"/>'
+        '<wp:effectExtent l="0" t="0" r="0" b="0"/>'
+        '<wp:wrapNone/>'
         '<wp:docPr id="$id" name="Page $id"/>'
+        '<wp:cNvGraphicFramePr/>'
         '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
         '<pic:pic><pic:nvPicPr><pic:cNvPr id="$id" name="Page $id"/><pic:cNvPicPr/></pic:nvPicPr>'
         '<pic:blipFill><a:blip r:embed="$relationId"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
         '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="$widthEmu" cy="$heightEmu"/></a:xfrm>'
         '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
-        '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>';
+        '</pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing>';
   }
 
   static void _addText(Archive archive, String path, String content) {

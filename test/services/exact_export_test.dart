@@ -113,6 +113,39 @@ void main() {
           reason: 'لا معادلات OMML في النمط الدقيق.');
     });
 
+    test('الصورة مثبّتة على الصفحة (anchor) لا سطرية: لا يزحزحها ارتفاع السطر', () {
+      final bytes = ExactExportService.buildDocxFromSnapshots(_snapshots(3));
+      final xml = utf8.decode(
+        ZipDecoder().decodeBytes(bytes).findFile('word/document.xml')!.content
+            as List<int>,
+      );
+      // القياس البصري في CI هو ما كشف انزياح الصورة السطرية في LibreOffice؛
+      // هذا الحارس يمنع العودة إلى `wp:inline` بلا قياس جديد.
+      expect(xml.contains('<wp:inline'), isFalse,
+          reason: 'الصورة السطرية تتأثر بارتفاع السطر وخط الأساس.');
+      expect(RegExp(r'<wp:anchor ').allMatches(xml).length, 3,
+          reason: 'صورة مثبّتة لكل صفحة.');
+      expect(
+        RegExp('<wp:positionH relativeFrom=\"page\">'
+                '<wp:posOffset>0</wp:posOffset></wp:positionH>')
+            .allMatches(xml)
+            .length,
+        3,
+        reason: 'الموضع الأفقي من أصل الصفحة (لا من الفقرة).',
+      );
+      expect(
+        RegExp('<wp:positionV relativeFrom=\"page\">'
+                '<wp:posOffset>0</wp:posOffset></wp:positionV>')
+            .allMatches(xml)
+            .length,
+        3,
+        reason: 'الموضع الرأسي من أصل الصفحة (لا من الفقرة).',
+      );
+      // الصورة المثبّتة لا تدفع محتوىً، فيلزم فاصل صريح بين الصفحات.
+      expect(RegExp(r'<w:br w:type="page"/>').allMatches(xml).length, 2);
+      expect(xml.contains('<w:t'), isFalse);
+    });
+
     test('لا صفحات ⇒ استثناء واضح', () {
       expect(
         () => ExactExportService.buildDocxFromSnapshots(const <PageSnapshot>[]),
