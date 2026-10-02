@@ -1,17 +1,26 @@
 import 'package:flutter/material.dart';
 
 import '../../layout/paper_metrics.dart';
+import '../../layout/visual/visual_flutter_style.dart';
+import '../../layout/visual/visual_style.dart';
+import '../../layout/visual/visual_typography.dart';
 import '../../models/exam_font.dart';
 import '../../models/paper_font.dart';
+import '../../models/paper_settings.dart';
 import '../../models/paper_text_style.dart';
 import '../../models/subject_layout.dart';
 
-/// أنماط نصوص ورقة المعاينة A4 — نفس مقاسات `ExamTextStyles` في محرك الـ PDF
-/// (بالنقاط) محوّلة إلى بكسل اللوحة، وبنفس الخطوط المضمّنة،
-/// حتى يتطابق التفاف الأسطر وارتفاع الكتل بين الشاشة والطباعة قدر الإمكان.
+/// أنماط نصوص لوحة المعاينة A4 — **مُلحِق عرض** لعقد الطباعة الوحيد
+/// [VisualTypography]، لا جدول أرقام مستقل.
 ///
-/// تنسيق أي عنصر يُحسم عبر [resolve] (نفس قرار `PaperStyleResolver.apply`
-/// في محرك الطباعة) فلا ينحرف ما يُرى عما يُطبع.
+/// كانت هذه الطبقة تحمل جدول أحجام موازياً لجدول محرك الـ PDF (`ExamTextStyles`)
+/// فتنحرف المقاسات بين الشاشة والملف عند أي تعديل. الآن كل نمط هنا يُبنى من
+/// دور في العقد ([VisualRole])، وقيمته النهائية تُحسب في
+/// [ExamTypography.resolve] مرة واحدة ثم تُترجم إلى بكسل اللوحة — فما تراه
+/// الشاشة هو نفسه ما يحسبه PDF وWord بالضبط.
+///
+/// [resolve]/[scale] تحافظان على التوقيع القديم (ولوحة الورقة وقوالب المواد
+/// تُمرَّر إليهما كما كانت)، لكن القرار صار من العقد.
 abstract final class PaperStyles {
   static const String fontFamily = ExamFont.arabicFamily;
 
@@ -27,46 +36,91 @@ abstract final class PaperStyles {
   static const Color accent = Color(0xFF2563EB);
   static const Color danger = Color(0xFFDC2626);
 
-  static TextStyle _style(
-    double points, {
-    bool bold = false,
-    Color color = Colors.black,
-    double height = 1.45,
+  /// إعدادات محايدة (معاملا قياس = 1.0) لبناء القيم المرجعية غير المقاسة.
+  static const PaperSettings _referenceSettings = PaperSettings();
+
+  /// نمط دور [role] المرجعي (بلا قياس عام) للقالب [layout].
+  ///
+  /// يُستعمل لبناء الأنماط المعروضة مباشرة (`PaperStyles.question`...)
+  /// ولقراءة القيمة المرجعية في [resolve]/[scale].
+  static PaperRoleTextStyle role(
+    VisualRole role, {
+    SubjectLayoutTemplate layout = SubjectLayoutTemplate.generic,
+    double? sizePt,
+    double? lineHeight,
+    bool? bold,
+    PaperFont? font,
+    int? color,
   }) {
-    return TextStyle(
-      fontFamily: fontFamily,
-      fontSize: PaperMetrics.px(points),
-      fontWeight: bold ? FontWeight.bold : FontWeight.normal,
-      color: color,
-      height: height,
+    return PaperRoleTextStyle(
+      role,
+      ExamTypography.resolve(
+        role,
+        settings: _referenceSettings,
+        layout: layout,
+        sizePt: sizePt,
+        lineHeight: lineHeight,
+        bold: bold,
+        font: font,
+        color: color,
+      ),
     );
   }
 
-  static TextStyle get headerLine => _style(10, height: 1.6);
-  static TextStyle get headerCenter => _style(10, bold: true, height: 1.6);
+  // ----------------------------- أدوار العقد -----------------------------
 
-  /// البسملة: أكبر من نص الترويسة (الخط الخطّي يُفرض عبر [resolve]).
-  static TextStyle get bismillah => _style(17, height: 1.5);
-  static TextStyle get category => _style(12.5, bold: true);
-  static TextStyle get question => _style(11, bold: true, height: 1.7);
-  static TextStyle get prompt => _style(11, height: 1.7);
-  static TextStyle get small => _style(9, color: muted);
-  static TextStyle get note => _style(9.5, color: muted);
-  static TextStyle get footer => _style(8.5, color: muted);
-  static TextStyle get option => _style(10.5, height: 1.4);
-  static TextStyle get item => _style(10.5, height: 1.5);
+  static PaperRoleTextStyle get headerLine => role(VisualRole.headerBody);
 
-  static TextStyle body(SubjectLayoutTemplate layout) =>
-      _style(10.5, height: layout.lineHeightFactor);
+  /// سطر منتصف الترويسة (اسم الامتحان): حجم نص الترويسة نفسه، غامقاً —
+  /// وهو قرار `PdfPaperBuilder.header` (‏`styles.headerBody` + غامق) وملف
+  /// Word (‏`w:b` على سطر الوسط) نفسه.
+  static PaperRoleTextStyle get headerCenter =>
+      role(VisualRole.headerBody, bold: true);
+
+  /// البسملة: أكبر من نص الترويسة (الخط الخطّي يُفرض عبر العقد).
+  static PaperRoleTextStyle get bismillah => role(VisualRole.bismillah);
+
+  static PaperRoleTextStyle get category => role(VisualRole.category);
+
+  static PaperRoleTextStyle get question => role(VisualRole.questionTitle);
+
+  static PaperRoleTextStyle get prompt => role(VisualRole.questionBody);
+
+  static PaperRoleTextStyle get small => role(VisualRole.small);
+
+  static PaperRoleTextStyle get note => role(VisualRole.note);
+
+  static PaperRoleTextStyle get footer => role(VisualRole.footer);
+
+  static PaperRoleTextStyle get option => role(VisualRole.option);
+
+  static PaperRoleTextStyle get item => role(VisualRole.point);
+
+  /// نمط متن الفرع/النقاط بحسب قالب المادة (ارتفاع السطر من القالب).
+  static PaperRoleTextStyle body(SubjectLayoutTemplate layout) =>
+      role(VisualRole.branchBody, layout: layout);
+
+  /// آية قرآنية قائمة بذاتها: خط قرآني وحجم أوضح وتوسيط (كما في المصحف).
+  static PaperRoleTextStyle verse(SubjectLayoutTemplate layout) =>
+      role(VisualRole.verse, layout: layout);
+
+  /// مقطع قرآني سطري داخل نص عادي: يبقى بمقاس النص ويتغيّر خطه فقط.
+  static TextStyle quranic(TextStyle base) =>
+      base.copyWith(fontFamily: quranicFamily);
+
+  static TextStyle hint(TextStyle base) => base.copyWith(color: Colors.grey);
+
+  // ----------------------------- القياس والتنسيق -----------------------------
 
   /// يطبّق تنسيق عنصر [override] فوق النمط الأساسي [base].
   ///
   /// [defaultFont] خط الورقة الافتراضي من إعداداتها. القيم الفارغة في
-  /// [override] ترث من الأساس — وهو نفس قرار محرك الطباعة حرفياً.
+  /// [override] ترث من الأساس.
   ///
-  /// [fontScale]/[heightScale] معاملا القياس العامّان من إعدادات الورقة
-  /// (حجم الخط الأساسي وتباعد الأسطر): يُطبَّقان على قيم الأساس فقط،
-  /// ويبقى التنسيق المخصص لعنصر بعينه (حجم/تباعد مطلق) متقدماً عليهما.
+  /// [fontScale]/[heightScale] معاملا القياس العامّان من إعدادات الورقة:
+  /// يُطبَّقان **مرة واحدة** على القيم المرجعية فقط، ويبقى التنسيق المخصص
+  /// لعنصر بعينه (حجم/تباعد مطلق) متقدماً عليهما — وهو قرار العقد نفسه
+  /// ([ExamTypography.resolve]).
   static TextStyle resolve(
     TextStyle base,
     PaperTextStyle? override, {
@@ -74,29 +128,45 @@ abstract final class PaperStyles {
     double fontScale = 1.0,
     double heightScale = 1.0,
   }) {
-    final family = override?.font ?? defaultFont;
-    final baseBold = base.fontWeight == FontWeight.bold;
-    final bold = override?.bold ?? baseBold;
-    final underline = override?.underline ?? false;
+    // نمط من العقد: تُشتق القيم النهائية من دوره مباشرة.
+    if (base is PaperRoleTextStyle) {
+      final s = base.reference;
+      return VisualFlutterStyle.from(
+        s.copyWith(
+          font: override?.font ?? defaultFont ?? s.font,
+          fontSizePt: override?.fontSize ?? s.fontSizePt * fontScale,
+          lineHeight: override?.lineHeight ?? s.lineHeight * heightScale,
+          bold: override?.bold ?? s.bold,
+          italic: override?.italic ?? s.italic,
+          underline: override?.underline ?? s.underline,
+          color: () => override?.color ?? s.color,
+          align: () => override?.align,
+        ),
+      );
+    }
+    // نمط خارج العقد (نص تحريري عابر): يُقاس كما كان، مع الحفاظ على الدلالة.
     return base.copyWith(
-      fontFamily: family.family,
+      fontFamily: (override?.font ?? defaultFont).family,
       fontSize: override?.fontSize != null
           ? PaperMetrics.px(override!.fontSize!)
           : (base.fontSize ?? 14) * fontScale,
-      fontWeight: bold ? FontWeight.bold : FontWeight.normal,
+      fontWeight: (override?.bold ?? base.fontWeight == FontWeight.bold)
+          ? FontWeight.bold
+          : FontWeight.normal,
       fontStyle:
           (override?.italic ?? false) ? FontStyle.italic : FontStyle.normal,
-      decoration: underline ? TextDecoration.underline : TextDecoration.none,
+      decoration: (override?.underline ?? false)
+          ? TextDecoration.underline
+          : TextDecoration.none,
       height: override?.lineHeight ?? (base.height ?? 1.45) * heightScale,
       color: override?.color != null ? Color(override!.color!) : base.color,
     );
   }
 
-  /// يقيس نمطاً أساسياً مباشراً (بلا تنسيق عنصر) بمعاملَي الورقة العامّين.
+  /// يقيس نمطاً من العقد بمعاملَي الورقة العامّين (بلا تنسيق عنصر).
   ///
-  /// يُستخدم للأنماط التي تُعرض كما هي دون [resolve] (الخيارات، النقاط،
-  /// الملاحظات...) حتى تكبر الورقة كلها وتصغر معاً من مكان واحد —
-  /// وهو نفس قرار محرك الطباعة حرفياً.
+  /// يُستخدم للأنماط التي تُعرض كما هي بلا [resolve] (الخيارات، النقاط،
+  /// الملاحظات...) حتى تكبر الورقة كلها وتصغر معاً من مكان واحد.
   static TextStyle scale(
     TextStyle base, {
     double fontScale = 1.0,
@@ -105,6 +175,15 @@ abstract final class PaperStyles {
     if (fontScale == 1.0 && heightScale == 1.0) {
       return base;
     }
+    if (base is PaperRoleTextStyle) {
+      final s = base.reference;
+      return VisualFlutterStyle.from(
+        s.copyWith(
+          fontSizePt: s.fontSizePt * fontScale,
+          lineHeight: s.lineHeight * heightScale,
+        ),
+      );
+    }
     return base.copyWith(
       fontSize: (base.fontSize ?? 14) * fontScale,
       height: (base.height ?? 1.45) * heightScale,
@@ -112,33 +191,9 @@ abstract final class PaperStyles {
   }
 
   /// يحوّل محاذاة الورقة إلى محاذاة Flutter (null = الافتراضي الممرّر).
-  static TextAlign toTextAlign(PaperAlign? align, [TextAlign fallback = TextAlign.start]) {
-    switch (align) {
-      case null:
-        return fallback;
-      case PaperAlign.start:
-        return TextAlign.start;
-      case PaperAlign.center:
-        return TextAlign.center;
-      case PaperAlign.end:
-        return TextAlign.end;
-      case PaperAlign.justify:
-        return TextAlign.justify;
-      case PaperAlign.left:
-        return TextAlign.left;
-      case PaperAlign.right:
-        return TextAlign.right;
-    }
-  }
-
-  /// آية قرآنية قائمة بذاتها: خط قرآني وحجم أوضح وتوسيط (كما في المصحف).
-  /// مقابله في الطباعة: نفس القرار داخل `PaginatedPdfExamEngine._renderText`.
-  static TextStyle verse(SubjectLayoutTemplate layout) =>
-      _style(12, height: layout.lineHeightFactor + 0.2)
-          .copyWith(fontFamily: quranicFamily);
-
-  /// مقطع قرآني سطري داخل نص عادي: يبقى بمقاس النص ويتغيّر خطه فقط.
-  static TextStyle quranic(TextStyle base) => base.copyWith(fontFamily: quranicFamily);
-
-  static TextStyle hint(TextStyle base) => base.copyWith(color: Colors.grey);
+  static TextAlign toTextAlign(
+    PaperAlign? align, [
+    TextAlign fallback = TextAlign.start,
+  ]) =>
+      VisualFlutterStyle.toTextAlign(align, fallback);
 }

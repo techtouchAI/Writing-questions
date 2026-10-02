@@ -1,6 +1,7 @@
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../layout/visual/visual_style.dart';
 import '../models/paper_font.dart';
 import '../models/paper_text_style.dart';
 import 'exam_fonts.dart';
@@ -48,6 +49,29 @@ abstract final class PaperStyleResolver {
           ? null
           : fontSize * (heightRatio - naturalLineRatio(font)),
       color: override?.color != null ? PdfColor.fromInt(override!.color!) : base.color,
+    );
+  }
+
+  /// يحوّل نمط العقد البصري [VisualTextStyle] إلى نمط pdf.
+  ///
+  /// القيم تصل **نهائية** من [ExamTypography] (بعد معاملَي الورقة مرة واحدة)،
+  /// فلا يُقاس شيء هنا: يبقى تحويل الوحدة وترجمة ارتفاع السطر إلى إزاحة
+  /// `lineSpacing` التي تفهمها مكتبة pdf (المنشود − الطبيعي).
+  static pw.TextStyle fromVisual(
+    VisualTextStyle style, {
+    required ExamFonts fonts,
+  }) {
+    final font = fonts.fontFor(style.font, bold: style.bold);
+    return pw.TextStyle(
+      font: font,
+      fontSize: style.fontSizePt,
+      fontWeight: style.bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+      fontStyle:
+          style.italic ? pw.FontStyle.italic : pw.FontStyle.normal,
+      decoration: style.underline ? pw.TextDecoration.underline : null,
+      color: style.color != null ? PdfColor.fromInt(style.color!) : null,
+      lineSpacing:
+          style.fontSizePt * (style.lineHeight - naturalLineRatio(font)),
     );
   }
 

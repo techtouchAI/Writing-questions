@@ -5,6 +5,9 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../layout/blueprint/exam_blueprint.dart';
 import '../layout/paper_metrics.dart';
+import '../layout/visual/visual_metrics.dart';
+import '../layout/visual/visual_style.dart';
+import '../layout/visual/visual_typography.dart';
 import '../models/exam_document.dart';
 import '../models/equation_model.dart';
 import '../models/paper_divider.dart';
@@ -48,23 +51,47 @@ class PdfPaperBuilder {
   /// معناها لا مضيف رسم: تُكتب الصيغ نصاً رياضياً مقروءاً بلا كود.
   final PdfMathRasters? mathRasters;
 
-  /// إزاحة بداية كتلة الفرع عن صندوق المحتوى (بنقاط PDF).
-  static const double branchIndent = 10;
+  /// إزاحة بداية كتلة الفرع عن صندوق المحتوى (نقاط PDF مشتقة من العقد
+  /// البصري: 26 بكسل في المعاينة = المعنى نفسه في Word).
+  static double get branchIndent => PaperMetrics.pt(VisualMetrics.branchIndentPx);
 
-  /// إزاحة نقاط السؤال/الفرع عن بداية كتلتها (بنقاط PDF).
-  static const double pointsIndent = 14;
+  /// إزاحة نقاط السؤال/الفرع عن بداية كتلتها (36 بكسل في المعاينة).
+  static double get pointsIndent => PaperMetrics.pt(VisualMetrics.pointIndentPx);
+
+  /// إزاحة صف الخيارات داخل النقطة (20 بكسل فوق إزاحة النقطة).
+  static double get optionIndent => PaperMetrics.pt(VisualMetrics.optionIndentPx);
 
   /// لون الحبر الوحيد للإطارات والفواصل (أسود: ورقة جاهزة للطباعة).
   static const PdfColor ink = PdfColors.black;
 
-  double get _heightScale => settings.heightScale;
-
-  pw.TextStyle _apply(pw.TextStyle base, PaperTextStyle? override) {
-    return PaperStyleResolver.apply(
-      base,
-      override,
+  /// نمط دور من **عقد الطباعة الوحيد** [ExamTypography].
+  ///
+  /// كل حجم خط وارتفاع سطر في هذا الملف يمرّ من هنا: القيم تُحسب مرة واحدة
+  /// في العقد (بمعاملَي الورقة: `fontScale`/`heightScale`)، ويحوّلها
+  /// [PaperStyleResolver.fromVisual] إلى نظام pdf. لا `copyWith(lineSpacing:)`
+  /// ولا ضرب ثانٍ بمعامل القياس في أي موضع.
+  pw.TextStyle styleOf(
+    VisualRole role, {
+    PaperTextStyle? override,
+    double? sizePt,
+    double? lineHeight,
+    bool? bold,
+    int? color,
+    PaperFont? font,
+  }) {
+    return PaperStyleResolver.fromVisual(
+      ExamTypography.resolve(
+        role,
+        settings: settings,
+        layout: layout,
+        override: override,
+        sizePt: sizePt,
+        lineHeight: lineHeight,
+        bold: bold,
+        color: color,
+        font: font,
+      ),
       fonts: fonts,
-      defaultFont: settings.defaultFont,
     );
   }
 
@@ -75,17 +102,9 @@ class PdfPaperBuilder {
   pw.Widget header() {
     final data = blueprint.header;
     final override = document.header.style;
-    final lineStyle = _apply(
-      styles.headerBody.copyWith(lineSpacing: 1.6 * _heightScale),
-      override,
-    );
-    final centerStyle = _apply(
-      styles.headerBody.copyWith(
-        fontWeight: pw.FontWeight.bold,
-        lineSpacing: 1.6 * _heightScale,
-      ),
-      override,
-    );
+    final lineStyle = styleOf(VisualRole.headerBody, override: override);
+    final centerStyle =
+        styleOf(VisualRole.headerBody, override: override, bold: true);
 
     // تخطيط الترويسة من إعداد المدرس نفسه الذي تقرأه المعاينة وWord:
     // المحاذاة تسود محاذاة العمود، ومسافة الفقرات بعد كل سطر (بكسل
@@ -117,13 +136,11 @@ class PdfPaperBuilder {
       );
     }
 
-    final bismillahStyle = _apply(
-      styles.headerBody.copyWith(
-        fontSize: 17 * settings.fontScale,
-        lineSpacing: 1.5 * _heightScale,
-      ),
-      // البسملة بخط خطّي أنيق مستقل عن خط الورقة؛ ويبقى لونها لون الترويسة.
-      PaperTextStyle(font: PaperFont.amiri, bold: false, color: override.color),
+    // البسملة بخط خطّي أنيق مستقل عن خط الورقة؛ ويبقى لونها لون الترويسة.
+    final bismillahStyle = styleOf(
+      VisualRole.bismillah,
+      override:
+          PaperTextStyle(font: PaperFont.amiri, bold: false, color: override.color),
     );
 
     final centerColumn = pw.Column(
@@ -188,12 +205,9 @@ class PdfPaperBuilder {
   pw.Widget footer() {
     final data = blueprint.footer;
     final override = document.header.style;
-    // ارتفاع سطر التذييل = 1.6× معامل الورقة — رقم الترويسة والمعاينة نفسه
-    // (كان 1.5 فينحرف التذييل المطبوع عن الشاشة).
-    final style = _apply(
-      styles.headerBody.copyWith(lineSpacing: 1.6 * _heightScale),
-      override,
-    );
+    // ارتفاع سطر التذييل = ارتفاع سطر الترويسة نفسه (1.6 × معامل الورقة)،
+    // ويأتي من العقد لا من رقم مكتوب هنا.
+    final style = styleOf(VisualRole.headerBody, override: override);
     final bold = style.copyWith(fontWeight: pw.FontWeight.bold);
 
     pw.Widget signature(SignatureBlueprint source) {
@@ -279,18 +293,16 @@ class PdfPaperBuilder {
     final titleOverride = question.style.copyWith(
       color: () => question.effectiveTitleColor,
     );
-    final titleStyle = _apply(styles.question, titleOverride);
+    final titleStyle =
+        styleOf(VisualRole.questionTitle, override: titleOverride);
     final titleAlign = PaperStyleResolver.toPdfAlign(
       question.titleAlign ?? question.style.align,
     );
-    final gap = PaperMetrics.pt(question.style.paragraphSpacing ?? 2);
-    final bodyStyle = _apply(
-      styles.body.copyWith(
-        fontSize: 11 * settings.fontScale,
-        lineSpacing: 1.7 * _heightScale,
-      ),
-      bodyOverride,
+    final gap = PaperMetrics.pt(
+      question.style.paragraphSpacing ?? VisualMetrics.elementGapPx,
     );
+    final bodyStyle =
+        styleOf(VisualRole.questionBody, override: bodyOverride);
 
     final printablePoints =
         data.points.where((point) => point.isPrintable).toList(growable: false);
@@ -301,7 +313,7 @@ class PdfPaperBuilder {
         // المعاينة وملف Word.
         _renderText(
           data.section!,
-          styles.category,
+          styleOf(VisualRole.category),
           fonts.quranic,
           align: PaperStyleResolver.toPdfAlign(question.categoryAlign),
         ),
@@ -344,7 +356,9 @@ class PdfPaperBuilder {
     if (question.showFrame) {
       body = pw.Container(
         decoration: pw.BoxDecoration(border: pw.Border.all(color: ink, width: 1)),
-        padding: const pw.EdgeInsets.all(5),
+        padding: pw.EdgeInsets.all(
+          PaperMetrics.pt(VisualMetrics.questionFramePaddingPx),
+        ),
         child: body,
       );
     }
@@ -366,15 +380,15 @@ class PdfPaperBuilder {
     final standalone = data.title.hasStatement &&
         layout.prefersQuranicFont &&
         QuranText.isStandaloneVerse(data.title.statement);
-    final base = standalone
-        ? styles.body.copyWith(
-            fontSize: 12 * settings.fontScale,
-            lineSpacing: (layout.lineHeightFactor + 1) * _heightScale,
-          )
-        : styles.body.copyWith(lineSpacing: layout.lineHeightFactor * _heightScale);
-    final bodyStyle = _apply(base, branch.style);
+    // الآية القائمة بذاتها لها دورها في العقد (خط قرآني وحجم 12pt وارتفاع
+    // `lineHeightFactor + 0.2`) — نفس ما تعرضه المعاينة حرفياً.
+    final bodyStyle = standalone
+        ? styleOf(VisualRole.verse, override: branch.style)
+        : styleOf(VisualRole.branchBody, override: branch.style);
     final align = PaperStyleResolver.toPdfAlign(branch.style.align);
-    final gap = PaperMetrics.pt(branch.style.paragraphSpacing ?? 1);
+    final gap = PaperMetrics.pt(
+      branch.style.paragraphSpacing ?? VisualMetrics.branchGapPx,
+    );
     final printablePoints =
         data.points.where((point) => point.isPrintable).toList(growable: false);
 
@@ -407,7 +421,9 @@ class PdfPaperBuilder {
     if (branch.showFrame) {
       body = pw.Container(
         decoration: pw.BoxDecoration(border: pw.Border.all(color: ink, width: 0.8)),
-        padding: const pw.EdgeInsets.all(4),
+        padding: pw.EdgeInsets.all(
+          PaperMetrics.pt(VisualMetrics.branchFramePaddingPx),
+        ),
         child: body,
       );
     }
@@ -435,7 +451,7 @@ class PdfPaperBuilder {
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: <pw.Widget>[
         pw.Text(title.number, style: numberStyle),
-        pw.SizedBox(width: 4),
+        pw.SizedBox(width: PaperMetrics.pt(VisualMetrics.titleGapPx)),
         pw.Expanded(
           child: title.hasStatement
               ? _renderText(
@@ -448,7 +464,7 @@ class PdfPaperBuilder {
               : pw.SizedBox(),
         ),
         if (title.marks != null) ...<pw.Widget>[
-          pw.SizedBox(width: 4),
+          pw.SizedBox(width: PaperMetrics.pt(VisualMetrics.titleGapPx)),
           pw.Text(title.marks!, style: statementStyle),
         ],
       ],
@@ -460,18 +476,23 @@ class PdfPaperBuilder {
   // ------------------------------------------------------------------
 
   pw.Widget _points(List<PointBlueprint> points, PaperTextStyle? owner) {
-    final style = _apply(
-      styles.body.copyWith(lineSpacing: 1.5 * _heightScale),
-      owner,
-    );
+    final style = styleOf(VisualRole.point, override: owner);
+    // الخيارات: دورها في العقد (10.5pt / 1.4) مع وراثة خط صاحبها ولونه
+    // وتنسيقه — بدل `copyWith(lineSpacing:)` الذي كان يلغي تباعد العنصر.
+    final optionStyle = styleOf(VisualRole.option, override: owner);
     final ownerAlign = PaperStyleResolver.toPdfAlign(owner?.align);
-    final gap = PaperMetrics.pt(owner?.paragraphSpacing ?? 0);
+    final gap = PaperMetrics.pt(owner?.paragraphSpacing ?? VisualMetrics.itemGapPx);
     final children = <pw.Widget>[];
     for (final point in points) {
       if (children.isNotEmpty && gap > 0) {
         children.add(pw.SizedBox(height: gap));
       }
-      children.add(_point(point, style, PaperStyleResolver.toPdfAlign(point.item.align) ?? ownerAlign));
+      children.add(_point(
+        point,
+        style,
+        optionStyle,
+        PaperStyleResolver.toPdfAlign(point.item.align) ?? ownerAlign,
+      ));
     }
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -480,24 +501,31 @@ class PdfPaperBuilder {
     );
   }
 
-  pw.Widget _point(PointBlueprint point, pw.TextStyle style, pw.TextAlign? align) {
+  pw.Widget _point(
+    PointBlueprint point,
+    pw.TextStyle style,
+    pw.TextStyle optionStyle,
+    pw.TextAlign? align,
+  ) {
     final line = point.line.trim().isEmpty
         ? pw.SizedBox()
         : _renderText(point.line, style, fonts.quranic, align: align);
     if (point.kind != PointKind.multipleChoice || point.options.isEmpty) {
       return line;
     }
-    final optionStyle = style.copyWith(lineSpacing: 1.4 * _heightScale);
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       mainAxisSize: pw.MainAxisSize.min,
       children: <pw.Widget>[
         line,
         pw.Padding(
-          padding: const pw.EdgeInsetsDirectional.only(start: pointsIndent, top: 1),
+          padding: pw.EdgeInsetsDirectional.only(
+            start: optionIndent,
+            top: PaperMetrics.pt(VisualMetrics.optionTopGapPx),
+          ),
           child: pw.Wrap(
-            spacing: 14,
-            runSpacing: 2,
+            spacing: PaperMetrics.pt(VisualMetrics.optionWrapSpacingPx),
+            runSpacing: PaperMetrics.pt(VisualMetrics.optionRunSpacingPx),
             children: <pw.Widget>[
               for (final option in point.options)
                 _renderText(

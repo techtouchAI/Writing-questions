@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import '../../layout/blueprint/exam_blueprint.dart';
 import '../../layout/pagination_engine.dart';
 import '../../layout/paper_metrics.dart';
+import '../../layout/visual/visual_metrics.dart';
 import '../../models/branch_item.dart';
 import '../../models/exam_canvas_geometry.dart';
 import '../../models/exam_document.dart';
@@ -31,6 +32,8 @@ import '../../services/docx_document_export_service.dart';
 import '../../services/export_file_service.dart';
 import '../../services/math_image_renderer.dart';
 import '../../services/page_frame_store.dart';
+import '../../services/exact_export_service.dart';
+import '../../services/page_snapshot_service.dart';
 import '../../services/pdf_export_service.dart';
 import '../../services/shape_image_renderer.dart';
 import '../widgets/floating_element_view.dart';
@@ -176,6 +179,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   final ScrollController _vScroll = ScrollController();
   final ScrollController _hScroll = ScrollController();
   final Map<int, GlobalKey> _pageCanvasKeys = <int, GlobalKey>{};
+
+  /// جذور اللقط (RepaintBoundary) لكل صفحة — أساس التصدير الدقيق (Exact):
+  /// تُلتقط الصفحة كما رسمها Flutter نفسه، فلا يعيد PDF/Word حساب layout.
+  final Map<int, GlobalKey> _pageSnapshotKeys = <int, GlobalKey>{};
+
+  /// عدد الصفحات المعروضة فعلاً على اللوحة (مصدر التصدير الدقيق).
+  int _renderedPageCount = 1;
+
+  /// نمط التصدير: مطابق للمعاينة (لقطات الصفحات) افتراضاً — وهو ما يحقق
+  /// التطابق البصري المطلوب؛ و«متجه/قابل للتحرير» يبقى متاحاً كما كان.
+  bool _exactExport = true;
   ExamWizardController? _controller;
   _AttachmentRef? _selectedAttachment;
   String? _selectedDividerKey;
@@ -995,7 +1009,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     // المعاينة وPDF وWord — لا تبقى في خريطة الشاشة وحدها.
     if (fieldKey.startsWith('category-')) {
       final question = doc.questionById(fieldKey.substring('category-'.length));
-      return question == null ? null : question.categoryAlign;
+      return question?.categoryAlign;
     }
     for (final prefix in const <String>['branch-statement-', 'branch-body-']) {
       if (fieldKey.startsWith(prefix)) {
@@ -1885,21 +1899,52 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
   }
 
-  Future<void> _exportPdf({List<List<String>>? pageAssignments}) async {
+  /// يلتقط صفحات المعاينة كما تُرى (Exact) بالدقة المطلوبة.
+  ///
+  /// يفشل برسالة واضحة تحمل رقم الصفحة عند تعذّر اللقط، ولا يبتلع السبب.
+  Future<List<PageSnapshot>> _capturePreviewPages() async {
+    final keys = _pageSnapshotKeys.keys.toList()..sort();
+    final snapshots = <PageSnapshot>[];
+    for (var index = 0; index < keys.length; index++) {
+      try {
+        snapshots.add(
+          await PageSnapshotService.capturePage(keys[index], pageIndex: index),
+        );
+      } catch (error, stackTrace) {
+        PageSnapshotService.logCaptureFailure(error, stackTrace, index);
+        throw StateError(
+          'تعذّر التقاط الصفحة ${index + 1} من المعاينة. '
+          'تأكد من ظهور الصفحة كاملة ثم أعد المحاولة.',
+        );
+      }
+    }
+    return snapshots;
+  }
+
+  Future<void> _exportPdf({
+    List<List<String>>? pageAssignments,
+    bool? exact,
+  }) async {
     if (_isBusy) {
       return;
     }
     final controller = _controller!;
     final document = controller.document;
+    final useExact = exact ?? _exactExport;
     setState(() => _isBusy = true);
     try {
-      final printAssignments = pageAssignments ??
-          await PdfExportService.resolvePageAssignments(document: document);
-      final bytes = await PdfExportService.buildDocumentPdfBytes(
-        document: document,
-        // القياس من محتوى الطباعة فقط؛ ارتفاع أدوات التحرير لا يترك فراغاً.
-        pageAssignments: printAssignments,
-      );
+      final bytes = useExact
+          ? await ExactExportService.buildPdfFromSnapshots(
+              await _capturePreviewPages(),
+            )
+          : await PdfExportService.buildDocumentPdfBytes(
+              document: document,
+              // القياس من محتوى الطباعة فقط؛ ارتفاع أدوات التحرير لا يترك فراغاً.
+              pageAssignments: pageAssignments ??
+                  await PdfExportService.resolvePageAssignments(
+                    document: document,
+                  ),
+            );
       if (!mounted) {
         return;
       }
@@ -1928,14 +1973,38 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
   }
 
-  Future<void> _exportWord({List<List<String>>? pageAssignments}) async {
+  /// تصدير Word:
+  /// - **Exact** (افتراضي): كل صفحة صورة صفحتها النهائية — مطابق للمعاينة
+  ///   بالبناء، وغير قابل للتحرير (يُعلَن ذلك في الواجهة).
+  /// - **Editable**: مسار Word الأصلي (نص + OMML + جداول) قابل للتحرير.
+  Future<void> _exportWord({
+    List<List<String>>? pageAssignments,
+    bool? exact,
+  }) async {
     if (_isBusy) {
       return;
     }
     final controller = _controller!;
     final document = controller.document;
+    final useExact = exact ?? _exactExport;
     setState(() => _isBusy = true);
     try {
+      if (useExact) {
+        final file = await ExactExportService.exportDocxFile(
+          snapshots: await _capturePreviewPages(),
+          baseName: '${document.name}_ورقة_الامتحان',
+        );
+        if (!mounted) {
+          return;
+        }
+        await _saveToLibrary();
+        if (!mounted) {
+          return;
+        }
+        _showMessage('تم إنشاء ملف Word مطابق للمعاينة (الصفحات صور).');
+        await DocxDocumentExportService.shareDocxFile(file);
+        return;
+      }
       final printAssignments = pageAssignments ??
           await PdfExportService.resolvePageAssignments(document: document);
       if (!mounted) return;
@@ -2343,7 +2412,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
         title: const Text('مراجعة الورقة'),
         content: SingleChildScrollView(
           child: Column(
@@ -2374,6 +2444,32 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 'تباعد الأسطر',
                 document.settings.lineSpacing.toStringAsFixed(2),
               ),
+              _reviewRow(
+                'صفحات المعاينة',
+                document.formatNumber(_renderedPageCount),
+              ),
+              const Divider(height: 20),
+              // نمط الإخراج: «مطابق للمعاينة» يصدّر صفحات المعاينة صوراً
+              // (تطابق بصري بالبناء، وWord غير قابل للتحرير)؛ و«نص/
+              // قابل للتحرير» يبقي المسار القديم (نص متجه + OMML).
+              SwitchListTile(
+                key: const ValueKey<String>('export-exact-mode'),
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                value: _exactExport,
+                onChanged: (value) {
+                  setDialogState(() => _exactExport = value);
+                  setState(() {});
+                },
+                title: const Text('مطابق للمعاينة (Exact)'),
+                subtitle: Text(
+                  _exactExport
+                      ? 'PDF وWord = صور صفحات المعاينة نفسها. '
+                          'ملف Word في هذا النمط غير قابل للتحرير.'
+                      : 'PDF بنص متجه وWord قابل للتحرير (نص ومعادلات OMML) '
+                          '— التطابق البصري قريب لا مطابق.',
+                ),
+              ),
             ],
           ),
         ),
@@ -2385,7 +2481,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           FilledButton.icon(
             onPressed: () {
               Navigator.of(dialogContext).pop();
-              _exportPdf(pageAssignments: pageAssignments);
+              _exportPdf(
+                pageAssignments: pageAssignments,
+                exact: _exactExport,
+              );
             },
             icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
             label: const Text('تصدير PDF'),
@@ -2393,12 +2492,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           FilledButton.tonalIcon(
             onPressed: () {
               Navigator.of(dialogContext).pop();
-              _exportWord(pageAssignments: pageAssignments);
+              _exportWord(
+                pageAssignments: pageAssignments,
+                exact: _exactExport,
+              );
             },
             icon: const Icon(Icons.description_outlined, size: 18),
             label: const Text('تصدير Word'),
           ),
         ],
+      ),
       ),
     );
   }
@@ -2955,6 +3058,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     PaginatedPage page,
     int pageCount,
   ) {
+    // عدّاد صفحات المعاينة: مصدر عدّ التصدير الدقيق (نفس البيانات المعروضة).
+    _renderedPageCount = pageCount;
     // FittedBox بنفس نسبة الأبعاد = تكبير تخطيطي صحيح (القياس الداخلي
     // يبقى بالمقاس الحقيقي، والتفاعل مع الحقول يعمل تحت كل تكبير).
     return Container(
@@ -3119,7 +3224,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
     return Directionality(
       textDirection: layout.textDirection,
-      child: Container(
+      // جذر اللقط يلفّ الورقة كاملة (بحدودها وظلها) كما تُرى بالضبط.
+      child: RepaintBoundary(
+        key: _pageSnapshotKeys.putIfAbsent(
+          page.index,
+          () => GlobalKey(debugLabel: 'a4-page-snapshot-${page.index}'),
+        ),
+        child: Container(
         key: _pageCanvasKeys.putIfAbsent(
           page.index,
           () => GlobalKey(debugLabel: 'a4-page-canvas-${page.index}'),
@@ -3181,6 +3292,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               return body;
             },
           ),
+        ),
         ),
       ),
     );
@@ -3525,7 +3637,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               constraints: BoxConstraints(maxWidth: width * 0.34),
               child: label,
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: VisualMetrics.titleGapPx),
             Expanded(child: statement),
             ConstrainedBox(
               constraints: BoxConstraints(maxWidth: width * 0.26),
@@ -3567,8 +3679,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       heightScale: _heightScale,
     );
     final paragraphSpacing = question.style.paragraphSpacing;
-    final blockSpacing = paragraphSpacing ?? 2;
-    final itemSpacing = paragraphSpacing ?? 0;
+    // الفجوات من العقد البصري الوحيد (لا أرقام محلية تُنحرف عن PDF وWord).
+    final blockSpacing = paragraphSpacing ?? VisualMetrics.elementGapPx;
+    final itemSpacing = paragraphSpacing ?? VisualMetrics.itemGapPx;
     final owner = PointsOwner.question(questionIndex);
     final statementKey = _statementKey(question.id);
     final bodyKey = _bodyKey(question.id);
@@ -3756,7 +3869,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     // Inserting wrappers here used to dispose PaperField's FocusNode while
     // a tap was opening rich text or the keyboard was entering text.
     block = Container(
-      padding: EdgeInsets.all(question.showFrame ? 4 : 0),
+      padding: EdgeInsets.all(
+        question.showFrame ? VisualMetrics.questionFramePaddingPx : 0,
+      ),
       decoration: BoxDecoration(
         border: Border.all(
           color: question.showFrame ? PaperStyles.ink : Colors.transparent,
@@ -3834,7 +3949,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// زر «إضافة نقطة» (أداة تحرير تظهر عند تحديد صاحب النقاط فقط).
   Widget _addPointButton(ExamWizardController controller, PointsOwner owner) {
     return Padding(
-      padding: const EdgeInsetsDirectional.only(start: 36),
+      padding: const EdgeInsetsDirectional.only(
+        start: VisualMetrics.pointIndentPx,
+      ),
       child: Align(
         alignment: AlignmentDirectional.centerStart,
         child: Tooltip(
@@ -3964,8 +4081,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           onLongPress: () => _longPressBranch(ref),
           child: Container(
             margin: const EdgeInsets.only(top: 2),
-            padding:
-                const EdgeInsetsDirectional.only(start: 4, end: 4, top: 2, bottom: 2),
+            // إزاحة الفرع عن بداية السؤال من العقد البصري (26px): تُطبَّق
+            // مرة واحدة هنا فيحاذي عنوان الفرع ونصه ونقاطه ما يطبعه PDF
+            // وWord بنفس الرقم — لا 4px حشوةً تُضاف فوقها.
+            padding: const EdgeInsetsDirectional.only(
+              start: VisualMetrics.branchIndentPx,
+              end: 4,
+              top: 2,
+              bottom: 2,
+            ),
             decoration: BoxDecoration(
               color: highlighted ? const Color(0x1A2563EB) : null,
               border: Border.all(
@@ -3990,7 +4114,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         );
         body = Container(
           margin: EdgeInsets.only(top: branch.showFrame ? 2 : 0),
-          padding: EdgeInsets.all(branch.showFrame ? 3 : 0),
+          padding: EdgeInsets.all(
+            branch.showFrame ? VisualMetrics.branchFramePaddingPx : 0,
+          ),
           decoration: BoxDecoration(
             border: Border.all(
               color: branch.showFrame ? PaperStyles.ink : Colors.transparent,
@@ -4026,8 +4152,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       heightScale: _heightScale,
     );
     final paragraphSpacing = branch.style.paragraphSpacing;
-    final firstItemSpacing = paragraphSpacing ?? 1;
-    final itemSpacing = paragraphSpacing ?? 0;
+    final firstItemSpacing = paragraphSpacing ?? VisualMetrics.branchGapPx;
+    final itemSpacing = paragraphSpacing ?? VisualMetrics.itemGapPx;
     final statementKey = _branchStatementKey(branch.id);
     final bodyKey = _branchBodyKey(branch.id);
     final owner = PointsOwner.branch(ref);
@@ -4094,7 +4220,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         // نص الفرع: يُحذف كلياً عند فراغه (يظهر للتحرير عند تحديد الفرع).
         if (data.body != null || isSelected)
           Padding(
-            padding: EdgeInsetsDirectional.only(start: 26, top: firstItemSpacing),
+            // لا إزاحة إضافية: كتلة الفرع نفسها مُزاحة عن السؤال بمقدار
+            // `branchIndentPx`، ونص الفرع يأخذ الإزاحة نفسها في PDF وWord.
+            padding: EdgeInsetsDirectional.only(top: firstItemSpacing),
             child: _paperField(
               fieldKey: bodyKey,
               onLongPress: () => _longPressBranch(ref),
@@ -4167,7 +4295,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final fieldKey = _itemKey(item.id);
     final showActions = _activeItemFieldKey == fieldKey;
     return Padding(
-      padding: const EdgeInsetsDirectional.only(start: 36),
+      padding: const EdgeInsetsDirectional.only(
+        start: VisualMetrics.pointIndentPx,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -4264,10 +4394,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final active = _activeItemFieldKey == _itemKey(item.id) ||
         (_activeFieldKey?.startsWith('option-${item.id}-') ?? false);
     return Padding(
-      padding: const EdgeInsetsDirectional.only(start: 20, top: 2),
+      padding: const EdgeInsetsDirectional.only(
+        start: VisualMetrics.optionIndentPx,
+        top: VisualMetrics.optionTopGapPx,
+      ),
       child: Wrap(
-        spacing: 14,
-        runSpacing: 2,
+        spacing: VisualMetrics.optionWrapSpacingPx,
+        runSpacing: VisualMetrics.optionRunSpacingPx,
         children: <Widget>[
           for (var index = 0; index < item.options.length; index++)
             SizedBox(
@@ -4290,7 +4423,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: VisualMetrics.optionLabelGapPx),
                   Expanded(
                     child: _paperField(
                       fieldKey: _optionKey(item.id, index),

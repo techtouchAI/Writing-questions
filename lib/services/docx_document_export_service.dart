@@ -8,6 +8,9 @@ import 'package:archive/archive.dart';
 import '../docx/omml_from_equation.dart';
 import '../layout/blueprint/exam_blueprint.dart';
 import '../layout/paper_metrics.dart';
+import '../layout/visual/visual_metrics.dart';
+import '../layout/visual/visual_style.dart';
+import '../layout/visual/visual_typography.dart';
 import '../models/exam_canvas_geometry.dart';
 import '../models/exam_document.dart';
 import '../models/equation_model.dart';
@@ -700,14 +703,13 @@ class _DocxBuilder {
         _headerParagraph(
           data.bismillah,
           alignment: 'center',
-          size: 34,
-          font: PaperFont.amiri,
+          // الدور `bismillah` في العقد يحمل خط Amiri وحجم 17pt وارتفاع
+          // السطر 1.5× معامل الورقة، ولا يرث تنسيق الترويسة — لكنه يحفظ
+          // لون الترويسة (المعاينة والـ PDF نفسهما).
+          role: VisualRole.bismillah,
           applyHeaderStyle: false,
           applyHeaderLayout: false,
-          // البسملة تحفظ لون الترويسة (كالمعاينة والـ PDF) وارتفاع سطرها
-          // المستقل 1.5× معامل الورقة — لا تباعد الورقة العام.
           colorHex: document.header.style.colorHex,
-          lineRatio: 1.5 * document.settings.heightScale,
         ),
       );
     }
@@ -739,45 +741,42 @@ class _DocxBuilder {
   String _headerParagraph(
     String text, {
     required String alignment,
+    VisualRole role = VisualRole.headerBody,
     bool bold = false,
-    int size = 20,
     PaperFont? font,
     bool applyHeaderStyle = true,
     bool applyHeaderLayout = true,
     String? colorHex,
-    double? lineRatio,
   }) {
-    final style = applyHeaderStyle ? document.header.style : PaperTextStyle.empty;
-    final effectiveBold = style.bold ?? bold;
-    final effectiveSize = style.fontSize != null
-        ? (style.fontSize! * 2).round().clamp(12, 96)
-        : (size * document.settings.fontScale).round().clamp(12, 96);
-    final fontName = DocxDocumentExportService._fontName(
-      font ?? style.font ?? document.settings.defaultFont,
+    final style = applyHeaderStyle ? document.header.style : null;
+    // الحجم/الوزن/الميل/التسطير/الخط/ارتفاع السطر من عقد الطباعة الوحيد:
+    // تنسيق الترويسة الذي اختاره المدرس ([style]) يتقدم، ثم الاستبدال
+    // الموضعي (البسملة بخطها، عمود الوسط الغامق)، ثم قيمة الدور المرجعية
+    // مضروبة بمعامل الورقة مرة واحدة.
+    final resolved = _roleStyle(
+      role,
+      override: style,
+      bold: role == VisualRole.headerBody ? bold : null,
+      font: font,
+      color: colorHex,
     );
-    // اللون: لون الترويسة الذي اختاره المدرس، أو لون صريح لعنصر يبقى على
-    // خطه وحجمه (البسملة) ولا يفقد لون الورقة — كما في المعاينة والـ PDF.
-    final color = colorHex ?? style.colorHex;
-    // تباعد الأسطر: إعداد المدرس للترويسة يسود، وإلا أساس الترويسة
-    // (1.6 × معامل ارتفاع الورقة — كما في المعاينة والـ PDF حرفياً)،
-    // أو التباعد العام للورقة في التذييل والبسملة.
-    final baseLineRatio = lineRatio ??
-        (applyHeaderLayout
-            ? 1.6 * document.settings.heightScale
-            : document.settings.lineSpacing);
-    final line = (240 * (style.lineHeight ?? baseLineRatio)).round();
+    final effectiveBold = resolved.bold;
+    final effectiveSize = resolved.halfPoints;
+    final fontName = DocxDocumentExportService._fontName(resolved.font);
+    final color = _paragraphColor(resolved, explicit: colorHex, style: style);
+    final line = resolved.lineTwips;
     // المسافة بعد كل سطر ترويسة (إعداد المدرس: بكسل منطقي ← تويب).
-    final spacingAfter = !applyHeaderLayout || style.paragraphSpacing == null
+    final spacingAfter = !applyHeaderLayout || style?.paragraphSpacing == null
         ? null
-        : (PaperMetrics.pt(style.paragraphSpacing!) * 20).round();
+        : PaperMetrics.twips(style!.paragraphSpacing!);
     // المحاذاة: إعداد المدرس يتجاوز محاذاة العمود — و«بداية السطر» في
     // مستند RTL هي اليمين، كما في المعاينة والـ PDF.
-    final effectiveAlign = !applyHeaderLayout || style.align == null
+    final effectiveAlign = !applyHeaderLayout || style?.align == null
         ? alignment
-        : _wordAlign(style.align);
+        : _wordAlign(style!.align);
     final runProperties = '<w:rPr><w:rtl/>${effectiveBold ? '<w:b/>' : ''}'
-        '${style.italic == true ? '<w:i/>' : ''}'
-        '${style.underline == true ? '<w:u w:val="single"/>' : ''}'
+        '${resolved.italic ? '<w:i/>' : ''}'
+        '${resolved.underline ? '<w:u w:val="single"/>' : ''}'
         '${color == null ? '' : '<w:color w:val="$color"/>'}'
         '<w:sz w:val="$effectiveSize"/><w:szCs w:val="$effectiveSize"/>'
         '<w:rFonts w:ascii="$fontName" w:hAnsi="$fontName" w:cs="$fontName"/></w:rPr>';
@@ -804,22 +803,18 @@ class _DocxBuilder {
         return '<w:p/>';
       }
       // سطر التذييل يأخذ تنسيق نص الترويسة (خط/حجم/لون/تباعد أسطر) لكن
-      // لا محاذاة الترويسة ولا مسافة فقراتها — كالمعاينة والـ PDF.
-      // ارتفاع سطر التذييل = 1.6× معامل الورقة (رقم الترويسة والمعاينة
-      // نفسه) مع احتفاظه بتنسيق نص الترويسة (خط/حجم/لون).
-      final footerLineRatio = 1.6 * document.settings.heightScale;
+      // لا محاذاة الترويسة ولا مسافة فقراتها — كالمعاينة والـ PDF. ودور
+      // `headerBody` في العقد يحمل ارتفاع السطر 1.6× معامل الورقة نفسه.
       final title = _headerParagraph(
         source.title,
         alignment: 'center',
         bold: true,
         applyHeaderLayout: false,
-        lineRatio: footerLineRatio,
       );
       final nameLine = _headerParagraph(
         source.nameLine,
         alignment: 'center',
         applyHeaderLayout: false,
-        lineRatio: footerLineRatio,
       );
       return '$title$nameLine';
     }
@@ -846,6 +841,48 @@ class _DocxBuilder {
     );
   }
 
+  /// نمط الدور من **عقد الطباعة الوحيد** [ExamTypography] — نفس الجدول الذي
+  /// تقرأه المعاينة ومحرك PDF، بمعاملَي الورقة مطبَّقين مرة واحدة فيه.
+  VisualTextStyle _roleStyle(
+    VisualRole role, {
+    PaperTextStyle? override,
+    bool? bold,
+    double? sizePt,
+    double? lineHeight,
+    int? color,
+    PaperFont? font,
+  }) {
+    return ExamTypography.resolve(
+      role,
+      settings: document.settings,
+      layout: document.layout,
+      override: override,
+      bold: bold,
+      sizePt: sizePt,
+      lineHeight: lineHeight,
+      color: color,
+      font: font,
+    );
+  }
+
+  /// اللون النهائي لفقرة: لون صريح، أو لون العنصر، أو لون الدور من العقد
+  /// (`null` = لون النص الافتراضي في Word).
+  String? _paragraphColor(
+    VisualTextStyle resolved, {
+    String? explicit,
+    PaperTextStyle? style,
+  }) {
+    final hex = explicit ?? style?.colorHex;
+    if (hex != null) {
+      return hex;
+    }
+    final argb = resolved.color;
+    if (argb == null) {
+      return null;
+    }
+    return (argb & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase();
+  }
+
   // ------------------------------- الأسئلة -------------------------------
 
   Future<void> _buildQuestion(StringBuffer body, QuestionBlueprint data) async {
@@ -861,12 +898,11 @@ class _DocxBuilder {
       // سطر القسم: 12.5pt ومحاذاته من النموذج (`categoryAlign`) — نفس مقاس
       // المعاينة ومحرك PDF ونفس قرار المحاذاة، وبلا فجوة قبله أو بعده
       // (المعاينة تلصقه بسطر العنوان).
-      _writeParagraph(
+      _writeStyledParagraph(
         body,
         data.section!,
-        bold: true,
-        size: 25,
-        alignment: DocxDocumentExportService._wordAlign(question.categoryAlign),
+        role: VisualRole.category,
+        alignmentOverride: _wordAlign(question.categoryAlign),
         before: 0,
         after: 0,
       );
@@ -874,26 +910,25 @@ class _DocxBuilder {
     _writeStyledParagraph(
       body,
       data.title.line,
+      // الدور يحمل الحجم (11pt) والعرض (غامق) وارتفاع السطر (1.7) من
+      // العقد — لا رقم مكتوب هنا.
+      role: VisualRole.questionTitle,
       style: titleStyle,
-      bold: true,
-      // 11pt = مقاس سطر عنوان السؤال في المعاينة وPDF حرفياً.
-      size: 22,
       color: titleStyle.colorHex,
       before: 0,
-      after: PaperMetrics.twips(PaperMetrics.elementGapPx),
+      after: PaperMetrics.twips(VisualMetrics.elementGapPx),
       border: question.showFrame,
     );
     if (data.body != null) {
       _writeStyledParagraph(
         body,
         data.body!,
+        role: VisualRole.questionBody,
         style: bodyStyle.copyWith(
           align: () => question.bodyAlign ?? question.style.align,
         ),
-        // 11pt = مقاس نص السؤال في المعاينة وPDF (كان 12pt فينحرف الملف).
-        size: 22,
         before: question.style.paragraphSpacing == null
-            ? PaperMetrics.twips(PaperMetrics.elementGapPx)
+            ? PaperMetrics.twips(VisualMetrics.elementGapPx)
             : 0,
         after: 0,
       );
@@ -902,8 +937,8 @@ class _DocxBuilder {
       body,
       data.points,
       style: bodyStyle,
-      indent: 800,
-      firstGapPx: PaperMetrics.elementGapPx,
+      indent: _pointIndentTwips,
+      firstGapPx: VisualMetrics.elementGapPx,
     );
     for (final branch in data.branches) {
       await _buildBranch(
@@ -920,6 +955,15 @@ class _DocxBuilder {
 
   /// نقاط مرقَّمة (داخل سؤال أو فرع) بتسلسلها المتصل — وتحت كل نقطة
   /// «اختيار من متعدد» سطر خياراتها. الفارغة تماماً تُحذف.
+  /// إزاحة صف النقطة عن بداية الكتلة (تويب مشتق من العقد البصري).
+  int get _pointIndentTwips => PaperMetrics.twips(VisualMetrics.pointIndentPx);
+
+  /// إزاحة صف الخيارات داخل النقطة (تويب).
+  int get _optionIndentTwips => PaperMetrics.twips(VisualMetrics.optionIndentPx);
+
+  /// إزاحة كتلة الفرع عن بداية السؤال (تويب).
+  int get _branchIndentTwips => PaperMetrics.twips(VisualMetrics.branchIndentPx);
+
   void _writePoints(
     StringBuffer body,
     List<PointBlueprint> points, {
@@ -942,14 +986,13 @@ class _DocxBuilder {
           ? 0
           : (written == 0
               ? PaperMetrics.twips(firstGapPx)
-              : PaperMetrics.twips(PaperMetrics.itemGapPx));
+              : PaperMetrics.twips(VisualMetrics.itemGapPx));
       if (point.line.trim().isNotEmpty) {
         _writeStyledParagraph(
           body,
           point.line,
+          role: VisualRole.point,
           style: pointStyle,
-          // 10.5pt = مقاس النقطة في المعاينة وPDF (كان 11pt).
-          size: 21,
           indent: indent,
           before: before,
           after: customSpacing == null ? 0 : _paragraphSpacingTwips(customSpacing),
@@ -960,9 +1003,9 @@ class _DocxBuilder {
         _writeStyledParagraph(
           body,
           point.optionsLine,
+          role: VisualRole.option,
           style: pointStyle,
-          size: 21,
-          indent: indent + 400,
+          indent: indent + _optionIndentTwips,
           before: 0,
           after: customSpacing == null ? 0 : _paragraphSpacingTwips(customSpacing),
         );
@@ -985,25 +1028,24 @@ class _DocxBuilder {
     _writeStyledParagraph(
       body,
       data.title.line,
+      role: VisualRole.branchTitle,
       style: branch.style,
-      // 10.5pt = مقاس نص الفرع في المعاينة وPDF (كان 11pt).
-      size: 21,
-      indent: 400,
+      indent: _branchIndentTwips,
       before: questionParagraphSpacing == null
-          ? PaperMetrics.twips(PaperMetrics.elementGapPx)
+          ? PaperMetrics.twips(VisualMetrics.elementGapPx)
           : _paragraphSpacingTwips(questionParagraphSpacing),
-      after: PaperMetrics.twips(PaperMetrics.branchGapPx),
+      after: PaperMetrics.twips(VisualMetrics.branchGapPx),
       border: branch.showFrame,
     );
     if (data.body != null) {
       _writeStyledParagraph(
         body,
         data.body!,
+        role: VisualRole.branchBody,
         style: branch.style,
-        size: 21,
-        indent: 400,
+        indent: _branchIndentTwips,
         before: branch.style.paragraphSpacing == null
-            ? PaperMetrics.twips(PaperMetrics.branchGapPx)
+            ? PaperMetrics.twips(VisualMetrics.branchGapPx)
             : 0,
         after: 0,
       );
@@ -1012,8 +1054,8 @@ class _DocxBuilder {
       body,
       data.points,
       style: branch.style,
-      indent: 800,
-      firstGapPx: PaperMetrics.branchGapPx,
+      indent: _pointIndentTwips,
+      firstGapPx: VisualMetrics.branchGapPx,
     );
     await _buildAttachments(body, branch.attachments);
     _buildDivider(body, branch.dividerAfter);
@@ -1321,41 +1363,47 @@ class _DocxBuilder {
   int _paragraphSpacingTwips(double logicalPixels) =>
       (PaperMetrics.pt(logicalPixels) * 20).round();
 
+  /// فقرة منسّقة بدور من العقد البصري.
+  ///
+  /// الحجم (أنصاف النقاط) والوزن والميل والتسطير والخط وارتفاع السطر كلها
+  /// تأتي **نهائية** من [ExamTypography] — فما يُكتب في Word هو ما تراه
+  /// المعاينة وما يطبعه PDF بالضبط. تنسيق العنصر المخصص (`style.fontSize`
+  /// و`style.lineHeight`) مطلق ويتقدم على القيم المرجعية، كما في العقد.
+  ///
+  /// [alignmentOverride] يسمح لمحاذاة خاصة بالسياق (سطر القسم
+  /// `categoryAlign`) أن تسود على تنسيق العنصر.
   void _writeStyledParagraph(
     StringBuffer body,
     String text, {
+    required VisualRole role,
     PaperTextStyle? style,
-    bool bold = false,
-    int size = 22,
+    String? alignmentOverride,
     String? color,
     int? indent,
     int? before,
     int? after,
     bool border = false,
   }) {
+    final resolved = _roleStyle(role, override: style);
     _writeParagraph(
       body,
       text,
-      bold: style?.bold ?? bold,
-      italic: style?.italic ?? false,
-      underline: style?.underline ?? false,
-      size: style?.fontSize != null
-          ? (style!.fontSize! * 2).round().clamp(12, 96)
-          : size,
-      // الحجم المخصص لعنصر بعينه مطلق، وحجم الأساس يُقاس بمعامل الورقة.
-      scaleSize: style?.fontSize == null,
+      bold: resolved.bold,
+      italic: resolved.italic,
+      underline: resolved.underline,
+      size: resolved.halfPoints,
+      // الحجم نهائي من العقد: لا ضرب ثانٍ بمعامل الورقة هنا.
+      scaleSize: false,
       border: border,
-      color: color ?? style?.colorHex,
+      color: _paragraphColor(resolved, explicit: color, style: style),
       indent: indent,
       before: before,
       after: style?.paragraphSpacing == null
           ? after
           : _paragraphSpacingTwips(style!.paragraphSpacing!),
-      lineHeight: style?.lineHeight,
-      alignment: _wordAlign(style?.align),
-      font: DocxDocumentExportService._fontName(
-        style?.font ?? document.settings.defaultFont,
-      ),
+      lineHeight: resolved.lineHeight,
+      alignment: alignmentOverride ?? _wordAlign(style?.align),
+      font: DocxDocumentExportService._fontName(resolved.font),
     );
   }
 
