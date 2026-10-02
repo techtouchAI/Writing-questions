@@ -38,6 +38,13 @@ abstract final class VisualMetrics {
   /// الفجوة بين تسمية الخيار («أ)») ونصه (المعاينة: `SizedBox(width: 6)`).
   static const double optionLabelGapPx = 6;
 
+  /// عرض صندوق الخيار الواحد: صفّ الخيارات يقسم السطر إلى صناديق ثابتة
+  /// العرض (المعاينة وPDF وWord) فلا ينكسر الصف من راسم إلى آخر.
+  static const double optionBoxWidthPx = 190;
+
+  /// الفجوة بين تسمية النقطة («١-») ونصها في الصف نفسه.
+  static const double pointLabelGapPx = 6;
+
   /// المسافة الأفقية بين خيارين متجاورين في صف واحد.
   static const double optionWrapSpacingPx = 14;
 

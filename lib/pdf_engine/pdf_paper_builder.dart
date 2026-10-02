@@ -507,9 +507,38 @@ class PdfPaperBuilder {
     pw.TextStyle optionStyle,
     pw.TextAlign? align,
   ) {
-    final line = point.line.trim().isEmpty
+    // أجزاء النقطة كتلاً مستقلة كما تعرضها المعاينة عناصر منفصلة:
+    // الرقم (غامق) ← النص ← القوسان ← الدرجة — لا نصاً مدموجاً يفقد وزن
+    // الرقم وموضع الدرجة عند حافة السطر.
+    final labelStyle = style.copyWith(fontWeight: pw.FontWeight.bold);
+    final hasLine = point.label.isNotEmpty ||
+        point.text.isNotEmpty ||
+        point.trailer != null ||
+        point.marks != null;
+    final line = !hasLine
         ? pw.SizedBox()
-        : _renderText(point.line, style, fonts.quranic, align: align);
+        : pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: <pw.Widget>[
+              if (point.label.isNotEmpty) ...<pw.Widget>[
+                pw.Text(point.label, style: labelStyle),
+                pw.SizedBox(
+                  width: PaperMetrics.pt(VisualMetrics.pointLabelGapPx),
+                ),
+              ],
+              pw.Expanded(
+                child: point.text.isEmpty
+                    ? pw.SizedBox()
+                    : _renderText(point.text, style, fonts.quranic, align: align),
+              ),
+              if (point.trailer != null)
+                pw.Text(point.trailer!, style: style),
+              if (point.marks != null) ...<pw.Widget>[
+                pw.SizedBox(width: PaperMetrics.pt(VisualMetrics.titleGapPx)),
+                pw.Text(point.marks!, style: style),
+              ],
+            ],
+          );
     if (point.kind != PointKind.multipleChoice || point.options.isEmpty) {
       return line;
     }
@@ -528,19 +557,50 @@ class PdfPaperBuilder {
             runSpacing: PaperMetrics.pt(VisualMetrics.optionRunSpacingPx),
             children: <pw.Widget>[
               for (final option in point.options)
-                _renderText(
-                  option.line,
+                _optionBox(
+                  option,
                   optionStyle,
-                  fonts.quranic,
-                  align: PaperStyleResolver.toPdfAlign(option.option.align) ?? align,
-                  // الخيار عنصر داخل Wrap: يأخذ عرضه الطبيعي لتتشارك
-                  // الخيارات السطر الواحد كما في الشاشة.
-                  fillWidth: false,
+                  PaperStyleResolver.toPdfAlign(option.option.align) ?? align,
                 ),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  /// خيار واحد في **صندوق ثابت العرض** ([VisualMetrics.optionBoxWidthPx])
+  /// يحمل تسميته ونصه: نفس تقسيم المعاينة (صندوق لكل خيار في `Wrap`)، فلا
+  /// يتغيّر عدد الخيارات في السطر بين الشاشة والطباعة.
+  pw.Widget _optionBox(
+    OptionBlueprint option,
+    pw.TextStyle style,
+    pw.TextAlign? align,
+  ) {
+    return pw.SizedBox(
+      width: PaperMetrics.pt(VisualMetrics.optionBoxWidthPx),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: <pw.Widget>[
+          if (option.label.trim().isNotEmpty) ...<pw.Widget>[
+            pw.Text(option.label, style: style),
+            pw.SizedBox(
+              width: PaperMetrics.pt(VisualMetrics.optionLabelGapPx),
+            ),
+          ],
+          pw.Expanded(
+            child: option.text.isEmpty
+                ? pw.SizedBox()
+                : _renderText(
+                    option.text,
+                    style,
+                    fonts.quranic,
+                    align: align,
+                    fillWidth: false,
+                  ),
+          ),
+        ],
+      ),
     );
   }
 

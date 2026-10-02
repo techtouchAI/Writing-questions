@@ -4312,7 +4312,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 child: GestureDetector(
                   onTap: () => _editPointLabel(owner, item.id),
                   child: Padding(
-                    padding: const EdgeInsets.only(top: 2, left: 6),
+                    padding: const EdgeInsets.only(
+                      top: VisualMetrics.optionTopGapPx,
+                      left: VisualMetrics.pointLabelGapPx,
+                    ),
                     child: point.label.isEmpty
                         ? const Icon(Icons.tag, size: 12, color: Colors.grey)
                         : Text(
@@ -4381,7 +4384,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   /// عرض حقل الخيار الواحد على اللوحة (بكسل منطقي) — قريب من توزيع
   /// الخيارات في الورقة المطبوعة مع إبقائها قابلة للتحرير في مكانها.
-  static const double _optionFieldWidth = 190;
+  static const double _optionFieldWidth = VisualMetrics.optionBoxWidthPx;
 
   /// خيارات نقطة «اختيار من متعدد»: كل خيار حقل كتابة مباشر بعرض ثابت، تحت
   /// نص النقطة، والخيارات الفارغة تبقى ظاهرة ليُكتب فيها (الطباعة تستثني

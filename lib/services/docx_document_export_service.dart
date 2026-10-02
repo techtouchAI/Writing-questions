@@ -34,6 +34,40 @@ typedef ShapeRasterizer = Future<Uint8List?> Function(
   double heightPx,
 );
 
+/// جريان نصّي واحد داخل فقرة Word: نصّه وتنسيقه الخاص.
+///
+/// الفرق الجوهري عن تمرير نص واحد: أجزاء العنصر (رقم السؤال ← منطوقه ←
+/// درجته، أو تسمية النقطة ← نصها ← قوساها ← درجتها، أو تسمية الخيار ←
+/// نصه) تُكتب **جريانات مستقلة**، فيستطيع Word أن يعطي كلاً منها تنسيقه
+/// (التسمية غامقة مثلاً) — وهو ما لا يمكن أن يحدث حين تُدمج الأجزاء في
+/// نص واحد. هذا هو مقابِل «العناصر المتعددة» في المعاينة وPDF.
+class DocxRunSpec {
+  const DocxRunSpec(
+    this.text, {
+    this.bold,
+    this.italic,
+    this.underline,
+    this.size,
+    this.color,
+    this.font,
+  });
+
+  final String text;
+
+  /// `null` = يتبع تنسيق الفقرة (الغامق/الميل/التسطير/الحجم/اللون/الخط).
+  final bool? bold;
+  final bool? italic;
+  final bool? underline;
+
+  /// الحجم بأنصاف النقاط (`w:sz`)؛ `null` = حجم الفقرة.
+  final int? size;
+
+  /// لون hex بلا `#`؛ `null` = لون الفقرة.
+  final String? color;
+
+  final String? font;
+}
+
 /// مخصّص تحويل صيغة LaTeX إلى صورة نقطية (يُمرَّر من الواجهة حيث يتوفر
 /// مسجّل الرسم؛ انظر `MathImageRenderer`).
 ///
@@ -906,6 +940,8 @@ class _DocxBuilder {
         after: 0,
       );
     }
+    // سطر العنوان: الرقم ← المنطوق ← الدرجة **جريانات مستقلة** (لا نص
+    // مدموج) بفجوات المسافات نفسها التي تفصل عناصر المعاينة.
     _writeStyledParagraph(
       body,
       data.title.line,
@@ -917,6 +953,11 @@ class _DocxBuilder {
       before: 0,
       after: PaperMetrics.twips(VisualMetrics.elementGapPx),
       border: question.showFrame,
+      runs: _titleRuns(
+        data.title,
+        bold: true,
+        color: titleStyle.colorHex,
+      ),
     );
     if (data.body != null) {
       _writeStyledParagraph(
@@ -987,6 +1028,8 @@ class _DocxBuilder {
               ? PaperMetrics.twips(firstGapPx)
               : PaperMetrics.twips(VisualMetrics.itemGapPx));
       if (point.line.trim().isNotEmpty) {
+        // أجزاء النقطة (الرقم/النص/القوسان/الدرجة) جريانات مستقلة:
+        // الرقم غامق وحده، وهو تفريق لا تعبّر عنه الفقرة المدموجة.
         _writeStyledParagraph(
           body,
           point.line,
@@ -995,6 +1038,7 @@ class _DocxBuilder {
           indent: indent,
           before: before,
           after: customSpacing == null ? 0 : _paragraphSpacingTwips(customSpacing),
+          runs: _pointRuns(point),
         );
         written++;
       }
@@ -1005,8 +1049,9 @@ class _DocxBuilder {
           role: VisualRole.option,
           style: pointStyle,
           indent: indent + _optionIndentTwips,
-          before: 0,
+          before: PaperMetrics.twips(VisualMetrics.optionTopGapPx),
           after: customSpacing == null ? 0 : _paragraphSpacingTwips(customSpacing),
+          runs: _optionRuns(point.options),
         );
       }
     }
@@ -1035,6 +1080,7 @@ class _DocxBuilder {
           : _paragraphSpacingTwips(questionParagraphSpacing),
       after: PaperMetrics.twips(VisualMetrics.branchGapPx),
       border: branch.showFrame,
+      runs: _titleRuns(data.title, bold: true),
     );
     if (data.body != null) {
       _writeStyledParagraph(
@@ -1362,6 +1408,46 @@ class _DocxBuilder {
   int _paragraphSpacingTwips(double logicalPixels) =>
       (PaperMetrics.pt(logicalPixels) * 20).round();
 
+  /// جريان نصّي واحد داخل فقرة Word: نصّه وتنسيقه الخاص.
+  ///
+  /// وجود هذا النوع هو ما يمنع «دمج» أجزاء العنصر (رقم ← منطوق ← درجة،
+  /// أو تسمية نقطة ← نصها ← قوساها ← درجتها، أو تسمية خيار ← نصه) في نص
+  /// واحد لا يعرف Word أجزاءه: كل جزء جريان مستقل بـ`<w:r>` خاصة به —
+  /// تماماً كما تفصل المعاينة عناصرها ويطبع PDF كتلته.
+  static String _runPropertiesXml({
+    required bool bold,
+    required bool italic,
+    required bool underline,
+    required bool highlight,
+    required String? color,
+    required int size,
+    required String font,
+    required bool rtl,
+  }) {
+    final buffer = StringBuffer('<w:rPr>${rtl ? '<w:rtl/>' : ''}');
+    if (bold) {
+      buffer.write('<w:b/>');
+    }
+    if (italic) {
+      buffer.write('<w:i/>');
+    }
+    if (underline) {
+      buffer.write('<w:u w:val="single"/>');
+    }
+    if (highlight) {
+      buffer.write('<w:highlight w:val="yellow"/>');
+    }
+    if (color != null) {
+      buffer.write('<w:color w:val="$color"/>');
+    }
+    buffer.write(
+      '<w:sz w:val="$size"/><w:szCs w:val="$size"/>'
+      '<w:rFonts w:ascii="$font" w:hAnsi="$font" w:cs="$font"/>'
+      '</w:rPr>',
+    );
+    return buffer.toString();
+  }
+
   /// فقرة منسّقة بدور من العقد البصري.
   ///
   /// الحجم (أنصاف النقاط) والوزن والميل والتسطير والخط وارتفاع السطر كلها
@@ -1382,11 +1468,13 @@ class _DocxBuilder {
     int? before,
     int? after,
     bool border = false,
+    List<DocxRunSpec>? runs,
   }) {
     final resolved = _roleStyle(role, override: style);
     _writeParagraph(
       body,
       text,
+      runs: runs,
       bold: resolved.bold,
       italic: resolved.italic,
       underline: resolved.underline,
@@ -1441,6 +1529,7 @@ class _DocxBuilder {
     int? after,
     String alignment = 'right',
     String? font,
+    List<DocxRunSpec>? runs,
   }) {
     final effectiveSize = scaleSize
         ? (size * document.settings.fontScale).round().clamp(12, 96)
@@ -1463,36 +1552,122 @@ class _DocxBuilder {
     body.write(
       '<w:spacing${before == null ? '' : ' w:before="$before"'}${after == null ? '' : ' w:after="$after"'} w:line="$line" w:lineRule="auto"/>',
     );
-    final runProperties = StringBuffer('<w:rPr>${document.layout.isLtr ? '' : '<w:rtl/>'}');
-    if (bold) {
-      runProperties.write('<w:b/>');
-    }
-    if (italic) {
-      runProperties.write('<w:i/>');
-    }
-    if (underline) {
-      runProperties.write('<w:u w:val="single"/>');
-    }
-    if (highlight) {
-      runProperties.write('<w:highlight w:val="yellow"/>');
-    }
-    if (color != null) {
-      runProperties.write('<w:color w:val="$color"/>');
-    }
     // مقاس ASCII والعربي معاً (`w:sz` + `w:szCs`) وخط المجموعة والخط
     // اللاتيني معاً: Word يستعمل `w:szCs` لنص المجموعة العربية، وبدونه لا
     // يظهر أي تغيير في الحجم على الورقة العربية مهما ضبطه المدرس.
     final fontName =
         font ?? DocxDocumentExportService._fontName(document.settings.defaultFont);
-    runProperties.write(
-      '<w:sz w:val="$effectiveSize"/><w:szCs w:val="$effectiveSize"/>'
-      '<w:rFonts w:ascii="$fontName" w:hAnsi="$fontName" w:cs="$fontName"/>'
-      '</w:rPr>',
-    );
+    final rtl = !document.layout.isLtr;
     body.write('</w:pPr>');
-    body.write(_runsXml(text, runProperties.toString(), effectiveSize / 2));
+    if (runs == null) {
+      body.write(
+        _runsXml(
+          text,
+          _runPropertiesXml(
+            bold: bold,
+            italic: italic,
+            underline: underline,
+            highlight: highlight,
+            color: color,
+            size: effectiveSize,
+            font: fontName,
+            rtl: rtl,
+          ),
+          effectiveSize / 2,
+        ),
+      );
+    } else {
+      // كل جزء جريان مستقل: تنسيقه الخاص يتقدم، وما لم يحدده يتبع الفقرة.
+      for (final run in runs) {
+        final runSize = (run.size ?? effectiveSize).clamp(12, 96);
+        body.write(
+          _runsXml(
+            run.text,
+            _runPropertiesXml(
+              bold: run.bold ?? bold,
+              italic: run.italic ?? italic,
+              underline: run.underline ?? underline,
+              highlight: highlight,
+              color: run.color ?? color,
+              size: runSize,
+              font: run.font ?? fontName,
+              rtl: rtl,
+            ),
+            runSize / 2,
+          ),
+        );
+      }
+    }
     body.write('</w:p>');
   }
+
+  /// جريان نصّي واحد داخل فقرة Word (النص وتنسيقه الخاص).
+  static List<DocxRunSpec> _titleRuns(
+    TitleLineBlueprint title, {
+    bool bold = true,
+    int? size,
+    String? color,
+    String? font,
+  }) =>
+      <DocxRunSpec>[
+        if (title.number.trim().isNotEmpty)
+          DocxRunSpec(title.number, bold: bold, size: size, color: color, font: font),
+        if (title.hasStatement)
+          DocxRunSpec(title.statement, bold: bold, size: size, color: color, font: font),
+        if (title.marks != null)
+          DocxRunSpec(title.marks!, bold: bold, size: size, color: color, font: font),
+      ];
+
+  /// أجزاء سطر النقطة: الرقم (غامق) ← النص ← القوسان ← الدرجة.
+  static List<DocxRunSpec> _pointRuns(
+    PointBlueprint point, {
+    bool bold = false,
+    int? size,
+    String? color,
+    String? font,
+  }) =>
+      <DocxRunSpec>[
+        if (point.label.trim().isNotEmpty)
+          DocxRunSpec(point.label, bold: true, size: size, color: color, font: font),
+        if (point.text.trim().isNotEmpty)
+          DocxRunSpec(point.text, bold: bold, size: size, color: color, font: font),
+        if (point.trailer != null)
+          DocxRunSpec(point.trailer!, bold: bold, size: size, color: color, font: font),
+        if (point.marks != null)
+          DocxRunSpec(point.marks!, bold: bold, size: size, color: color, font: font),
+      ];
+
+  /// أجزاء سطر الخيارات: تسمية كل خيار ثم نصه، وبين الخيارات فاصل من
+  /// المسافات غير القابلة للقطع بقدر ما تفصله المعاينة أفقيًا.
+  static List<DocxRunSpec> _optionRuns(
+    List<OptionBlueprint> options, {
+    bool bold = false,
+    int? size,
+    String? color,
+    String? font,
+  }) {
+    final runs = <DocxRunSpec>[];
+    for (final option in options) {
+      if (runs.isNotEmpty) {
+        runs.add(DocxRunSpec(_optionSeparator + _optionSeparator));
+      }
+      if (option.label.trim().isNotEmpty) {
+        runs.add(DocxRunSpec(option.label, bold: bold, size: size, color: color, font: font));
+      }
+      if (option.text.trim().isNotEmpty) {
+        runs.add(DocxRunSpec(option.text, bold: bold, size: size, color: color, font: font));
+      }
+    }
+    return runs;
+  }
+
+  /// فاصل الخيارات في Word: Word لا يضع خيارات الصف الواحد في سطر كالمعاينة
+  /// وPDF (لا Wrap فيه)، فيُفصل بينها بمسافات غير قابلة للقطع بعدد يقارب
+  /// الفجوة الأفقية نفسها — وهذا قيد معلن في تدقيق عقد التصدير لا ادّعاء
+  /// تطابق.
+  static const String _optionSeparator = '\u00A0\u00A0';
+
+  /// فقرة منسّقة بدور من العقد البصري.
 
   /// يبني مقاطع الفقرة: نص عادي ككتلة `<w:r>` واحدة أو أكثر، وصيغ LaTeX
   /// **معادلات Word أصلية** `<m:oMath>` داخل الفقرة نفسها (تُحرَّر في Word
