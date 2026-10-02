@@ -292,6 +292,21 @@ jobs:
           failure="$(grep -m 1 -A 14 -F -e '[E]' -e 'Expected:' -e 'Actual:' -e 'Exception' -e 'assertion' "$log" || true)"
           [ -z "$failure" ] || annotate "$failure" "سبب فشل الركيزة"
 
+      # مقاييس التشغيل تُنشر دائماً (نجاحاً وفشلاً): الرقم هو الدليل، ولا يُترك
+      # في مرفق لا يُقرأ — عند النجاح يظهر في تعليقات التشغيل بلا فتح سجلات.
+      - name: Summarize visual parity measurements
+        if: always()
+        shell: bash
+        run: |
+          file=build/visual_parity/report.txt
+          [ -f "$file" ] || exit 0
+          summary="$(grep -E 'RMSE|البكسلات المضمّنة|النتيجة' "$file" | tail -n 12 || true)"
+          [ -n "$summary" ] || exit 0
+          summary="${summary//%/%25}"
+          summary="${summary//$'\r'/%0D}"
+          summary="${summary//$'\n'/%0A}"
+          echo "::notice title=مقاييس التحقق البصري::$summary"
+
       - name: Upload visual parity artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
