@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 
@@ -149,6 +150,32 @@ class _TextInputDialogState extends State<_TextInputDialog> {
   }
 }
 
+class _PreviewUiSnapshot {
+  const _PreviewUiSnapshot({
+    required this.multiSelect,
+    required this.selectedQuestions,
+    required this.selectedBranches,
+    required this.headerSelected,
+    required this.selectedAttachment,
+    required this.selectedDividerKey,
+    required this.activeItemFieldKey,
+    required this.activeFieldKey,
+    required this.stagedFormula,
+    required this.stagedFormulaIsBlock,
+  });
+
+  final bool multiSelect;
+  final Set<String> selectedQuestions;
+  final Set<BranchRef> selectedBranches;
+  final bool headerSelected;
+  final _AttachmentRef? selectedAttachment;
+  final String? selectedDividerKey;
+  final String? activeItemFieldKey;
+  final String? activeFieldKey;
+  final String? stagedFormula;
+  final bool stagedFormulaIsBlock;
+}
+
 /// الخطوة 3: محرك المعاينة والتحرير البصري (WYSIWYG A4 Engine).
 ///
 /// - **التقسيم الورقي الديناميكي**: كل كتلة (الترويسة/السؤال الكامل) تُقاس
@@ -180,12 +207,19 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   final ScrollController _hScroll = ScrollController();
   final Map<int, GlobalKey> _pageCanvasKeys = <int, GlobalKey>{};
 
-  /// جذور اللقط (RepaintBoundary) لكل صفحة — أساس التصدير الدقيق (Exact):
-  /// تُلتقط الصفحة كما رسمها Flutter نفسه، فلا يعيد PDF/Word حساب layout.
+  /// جذور اللقط (RepaintBoundary) لكل صفحة في المعاينة الحية.
   final Map<int, GlobalKey> _pageSnapshotKeys = <int, GlobalKey>{};
 
-  /// عدد الصفحات المعروضة فعلاً على اللوحة (مصدر التصدير الدقيق).
-  int _renderedPageCount = 1;
+  /// جذور لقطٍ مستقلة لمسار Exact: تُبنى خارج شجرة التحرير وتُرسم كلها دفعةً
+  /// واحدة، فلا تتأثر بالصفحات غير المرئية ولا بزخارف التحديد والتحرير.
+  final Map<int, GlobalKey> _exactSnapshotKeys = <int, GlobalKey>{};
+
+  /// يُظهر سطح لقطٍ داخلياً أثناء تجهيز التصدير الدقيق فقط.
+  bool _exactCaptureHostVisible = false;
+
+  /// يكبح زخارف التحديد/التحرير في أثناء بناء سطح Exact حتى لا تدخل إلى
+  /// الملف (إطارات التحديد، مقابض العناصر، المؤشرات...).
+  bool _suppressSelectionChrome = false;
 
   /// نمط التصدير: مطابق للمعاينة (لقطات الصفحات) افتراضاً — وهو ما يحقق
   /// التطابق البصري المطلوب؛ و«متجه/قابل للتحرير» يبقى متاحاً كما كان.
@@ -268,6 +302,81 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _vScroll.dispose();
     _hScroll.dispose();
     super.dispose();
+  }
+
+  void _trimPageKeys(Iterable<PaginatedPage> pages) {
+    final valid = pages.map((page) => page.index).toSet();
+    _pageCanvasKeys.removeWhere((key, _) => !valid.contains(key));
+    _pageSnapshotKeys.removeWhere((key, _) => !valid.contains(key));
+  }
+
+  _PreviewUiSnapshot _snapshotUiState() => _PreviewUiSnapshot(
+        multiSelect: _multiSelect,
+        selectedQuestions: Set<String>.from(_selectedQuestions),
+        selectedBranches: Set<BranchRef>.from(_selectedBranches),
+        headerSelected: _headerSelected,
+        selectedAttachment: _selectedAttachment,
+        selectedDividerKey: _selectedDividerKey,
+        activeItemFieldKey: _activeItemFieldKey,
+        activeFieldKey: _activeFieldKey,
+        stagedFormula: _stagedFormula,
+        stagedFormulaIsBlock: _stagedFormulaIsBlock,
+      );
+
+  void _restoreUiState(_PreviewUiSnapshot snapshot) {
+    _multiSelect = snapshot.multiSelect;
+    _selectedQuestions
+      ..clear()
+      ..addAll(snapshot.selectedQuestions);
+    _selectedBranches
+      ..clear()
+      ..addAll(snapshot.selectedBranches);
+    _headerSelected = snapshot.headerSelected;
+    _selectedAttachment = snapshot.selectedAttachment;
+    _selectedDividerKey = snapshot.selectedDividerKey;
+    _activeItemFieldKey = snapshot.activeItemFieldKey;
+    _activeFieldKey = snapshot.activeFieldKey;
+    _stagedFormula = snapshot.stagedFormula;
+    _stagedFormulaIsBlock = snapshot.stagedFormulaIsBlock;
+  }
+
+  Future<void> _awaitStablePreviewLayout() async {
+    final controller = _controller!;
+    var previousPageCount = controller.pagination.pageCount;
+    for (var attempt = 0; attempt < 12; attempt++) {
+      await SchedulerBinding.instance.endOfFrame;
+      final pageCount = controller.pagination.pageCount;
+      if (controller.isFullyMeasured && pageCount == previousPageCount) {
+        return;
+      }
+      previousPageCount = pageCount;
+    }
+    throw StateError(
+      'لم يكتمل قياس صفحات المعاينة بعد. انتظر لحظة ثم أعد المحاولة.',
+    );
+  }
+
+  Future<void> _awaitExactCaptureSurface(int pageCount) async {
+    for (var attempt = 0; attempt < 12; attempt++) {
+      await SchedulerBinding.instance.endOfFrame;
+      final indexes = _exactSnapshotKeys.keys.toList()..sort();
+      if (indexes.length != pageCount) {
+        continue;
+      }
+      final allPainted = indexes.every((pageIndex) {
+        final renderObject =
+            _exactSnapshotKeys[pageIndex]?.currentContext?.findRenderObject();
+        return renderObject is RenderRepaintBoundary &&
+            renderObject.attached &&
+            !renderObject.debugNeedsPaint;
+      });
+      if (allPainted) {
+        return;
+      }
+    }
+    throw StateError(
+      'تعذّر تجهيز صفحات التصدير المطابق للمعاينة. حاول مرة أخرى.',
+    );
   }
 
   // ------------------------------------------------------------------
@@ -644,6 +753,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   /// هل الفرع [ref] محدد حالياً (منفرداً أو ضمن متعدد)؟
   bool _isBranchSelected(BranchRef ref) {
+    if (_suppressSelectionChrome) {
+      return false;
+    }
     if (_selectedBranches.contains(ref)) {
       return true;
     }
@@ -652,6 +764,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   /// هل السؤال [index] محدد؟
   bool _isQuestionSelected(int index) {
+    if (_suppressSelectionChrome) {
+      return false;
+    }
     final questions = _controller!.questions;
     // حارس أمان: فهرس قديم أثناء إعادة بناء متداخلة = غير محدد لا عطل.
     if (index < 0 || index >= questions.length) {
@@ -1899,29 +2014,57 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
   }
 
-  /// يلتقط صفحات المعاينة كما تُرى (Exact) بالدقة المطلوبة.
+  /// يلتقط صفحات Exact من سطحٍ داخلي نظيف مستقل عن شجرة التحرير.
   ///
-  /// يفشل برسالة واضحة تحمل رقم الصفحة عند تعذّر اللقط، ولا يبتلع السبب.
+  /// هذا يمنع ثلاث علل جوهرية في اللقط المباشر من الشاشة:
+  /// 1) الصفحات الخارجة عن نافذة التمرير قد لا تكون مرسومة بعد؛
+  /// 2) زخارف التحديد وأدوات التحرير قد تتسرّب إلى الملف؛
+  /// 3) إطار/ظل المعاينة يخص الواجهة لا الورقة المطبوعة.
   Future<List<PageSnapshot>> _capturePreviewPages() async {
-    final keys = _pageSnapshotKeys.keys.toList()..sort();
-    final snapshots = <PageSnapshot>[];
-    for (var index = 0; index < keys.length; index++) {
-      try {
-        snapshots.add(
-          await PageSnapshotService.capturePage(
-            _pageSnapshotKeys[keys[index]]!,
-            pageIndex: index,
-          ),
-        );
-      } catch (error, stackTrace) {
-        PageSnapshotService.logCaptureFailure(error, stackTrace, index);
-        throw StateError(
-          'تعذّر التقاط الصفحة ${index + 1} من المعاينة. '
-          'تأكد من ظهور الصفحة كاملة ثم أعد المحاولة.',
-        );
+    final controller = _controller!;
+    FocusManager.instance.primaryFocus?.unfocus();
+    await _awaitStablePreviewLayout();
+
+    final uiSnapshot = _snapshotUiState();
+    _exactSnapshotKeys.clear();
+    setState(() {
+      _suppressSelectionChrome = true;
+      _exactCaptureHostVisible = true;
+      _clearSelection();
+      _stagedFormula = null;
+      _stagedFormulaIsBlock = false;
+    });
+
+    try {
+      final pages = controller.pagination.pages;
+      await _awaitExactCaptureSurface(pages.length);
+      final snapshots = <PageSnapshot>[];
+      for (final page in pages) {
+        try {
+          snapshots.add(
+            await PageSnapshotService.capturePage(
+              _exactSnapshotKeys[page.index]!,
+              pageIndex: page.index,
+            ),
+          );
+        } catch (error, stackTrace) {
+          PageSnapshotService.logCaptureFailure(error, stackTrace, page.index);
+          throw StateError(
+            'تعذّر التقاط الصفحة ${page.index + 1} للتصدير المطابق للمعاينة.',
+          );
+        }
+      }
+      return snapshots;
+    } finally {
+      _exactSnapshotKeys.clear();
+      if (mounted) {
+        setState(() {
+          _exactCaptureHostVisible = false;
+          _suppressSelectionChrome = false;
+          _restoreUiState(uiSnapshot);
+        });
       }
     }
-    return snapshots;
   }
 
   Future<void> _exportPdf({
@@ -2449,7 +2592,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               ),
               _reviewRow(
                 'صفحات المعاينة',
-                document.formatNumber(_renderedPageCount),
+                document.formatNumber(controller.pagination.pageCount),
               ),
               const Divider(height: 20),
               // نمط الإخراج: «مطابق للمعاينة» يصدّر صفحات المعاينة صوراً
@@ -2467,8 +2610,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 title: const Text('مطابق للمعاينة (Exact)'),
                 subtitle: Text(
                   _exactExport
-                      ? 'PDF وWord = صور صفحات المعاينة نفسها. '
-                          'ملف Word في هذا النمط غير قابل للتحرير.'
+                      ? 'PDF وWord = صور صفحات المعاينة نفسها دون أدوات '
+                          'التحرير. ملف Word في هذا النمط غير قابل للتحرير.'
                       : 'PDF بنص متجه وWord قابل للتحرير (نص ومعادلات OMML) '
                           '— التطابق البصري قريب لا مطابق.',
                 ),
@@ -2875,6 +3018,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final controller = context.watch<ExamWizardController>();
     final layout = controller.layout;
     final pagination = controller.pagination;
+    _trimPageKeys(pagination.pages);
     final document = controller.document;
     final activeStyle = _activeStyle();
 
@@ -3028,29 +3172,114 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                         ? _viewportWidth
                         : ExamCanvasGeometry.width * _zoom + 24)
                     .toDouble();
-                return SingleChildScrollView(
-                  key: const ValueKey<String>('paper-v-scroll'),
-                  controller: _vScroll,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: SingleChildScrollView(
-                    key: const ValueKey<String>('paper-h-scroll'),
-                    controller: _hScroll,
-                    scrollDirection: Axis.horizontal,
-                    child: SizedBox(
-                      width: contentWidth,
-                      child: Column(
-                        children: <Widget>[
-                          for (final page in pagination.pages)
-                            _buildZoomedPage(controller, layout, page, pagination.pageCount),
-                        ],
+                return Stack(
+                  children: <Widget>[
+                    SingleChildScrollView(
+                      key: const ValueKey<String>('paper-v-scroll'),
+                      controller: _vScroll,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: SingleChildScrollView(
+                        key: const ValueKey<String>('paper-h-scroll'),
+                        controller: _hScroll,
+                        scrollDirection: Axis.horizontal,
+                        child: SizedBox(
+                          width: contentWidth,
+                          child: Column(
+                            children: <Widget>[
+                              for (final page in pagination.pages)
+                                _buildZoomedPage(
+                                  controller,
+                                  layout,
+                                  page,
+                                  pagination.pageCount,
+                                ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                    if (_exactCaptureHostVisible)
+                      Positioned.fill(
+                        child: _buildExactCaptureHost(
+                          controller,
+                          layout,
+                          pagination,
+                          constraints.biggest,
+                        ),
+                      ),
+                    if (_exactCaptureHostVisible)
+                      const Positioned.fill(
+                        child: AbsorbPointer(
+                          child: ColoredBox(
+                            color: Colors.white,
+                            child: Center(
+                              child: CircularProgressIndicator(),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 );
               },
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildExactCaptureHost(
+    ExamWizardController controller,
+    SubjectLayoutTemplate layout,
+    PaginationResult pagination,
+    Size availableSize,
+  ) {
+    const gap = 24.0;
+    final pages = pagination.pages;
+    if (pages.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final columns = math.max(1, math.sqrt(pages.length).ceil());
+    final rows = (pages.length / columns).ceil();
+    final gridWidth =
+        columns * ExamCanvasGeometry.width + (columns - 1) * gap;
+    final gridHeight =
+        rows * ExamCanvasGeometry.height + (rows - 1) * gap;
+
+    return IgnorePointer(
+      child: Center(
+        child: SizedBox(
+          width: availableSize.width,
+          height: availableSize.height,
+          child: FittedBox(
+            fit: BoxFit.contain,
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: gridWidth,
+              height: gridHeight,
+              child: Wrap(
+                spacing: gap,
+                runSpacing: gap,
+                children: <Widget>[
+                  for (final page in pages)
+                    SizedBox(
+                      width: ExamCanvasGeometry.width,
+                      height: ExamCanvasGeometry.height,
+                      child: _buildPage(
+                        controller,
+                        layout,
+                        page,
+                        pagination.pageCount,
+                        snapshotKeys: _exactSnapshotKeys,
+                        interactive: false,
+                        showPreviewChrome: false,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -3061,8 +3290,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     PaginatedPage page,
     int pageCount,
   ) {
-    // عدّاد صفحات المعاينة: مصدر عدّ التصدير الدقيق (نفس البيانات المعروضة).
-    _renderedPageCount = pageCount;
     // FittedBox بنفس نسبة الأبعاد = تكبير تخطيطي صحيح (القياس الداخلي
     // يبقى بالمقاس الحقيقي، والتفاعل مع الحقول يعمل تحت كل تكبير).
     return Container(
@@ -3075,7 +3302,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           child: SizedBox(
             width: ExamCanvasGeometry.width,
             height: ExamCanvasGeometry.height,
-            child: _buildPage(controller, layout, page, pageCount),
+            child: _buildPage(
+              controller,
+              layout,
+              page,
+              pageCount,
+              snapshotKeys: _pageSnapshotKeys,
+              canvasKeys: _pageCanvasKeys,
+            ),
           ),
         ),
       ),
@@ -3086,8 +3320,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
     PaginatedPage page,
-    int pageCount,
-  ) {
+    int pageCount, {
+    required Map<int, GlobalKey> snapshotKeys,
+    Map<int, GlobalKey>? canvasKeys,
+    bool interactive = true,
+    bool showPreviewChrome = true,
+  }) {
     final document = controller.document;
     final blueprint = controller.blueprint;
     final blocks = <Widget>[];
@@ -3120,29 +3358,35 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
       // بحث بالمعرف لا بالهوية: نسخ المستند تستبدل النسخ لا المعرفات.
       final questionIndex = questionData.index;
-      // إفلات سؤال مسحوب هنا يعيد ترتيبه (السؤال وحدة لا تتجزأ).
+      final measuredQuestion = MeasureSize(
+        key: ValueKey<String>('measure-$blockId'),
+        onChange: (size) => controller.reportBlockHeight(blockId, size.height),
+        child: _buildQuestionBlock(controller, layout, questionData),
+      );
+      // إفلات سؤال مسحوب هنا يعيد ترتيبه (السؤال وحدة لا تتجزأ). في سطح
+      // Exact لا نحتاج أي سلوك تفاعلي، فنرسم الكتلة نفسها بلا أهداف سحب.
       blocks.add(
-        DragTarget<int>(
-          onWillAcceptWithDetails: (details) => !_locked && details.data != questionIndex,
-          onAcceptWithDetails: (details) => controller.moveQuestion(details.data, questionIndex),
-          builder: (context, candidates, _) {
-            final highlighted = candidates.isNotEmpty;
-            return Container(
-              decoration: highlighted
-                  ? BoxDecoration(
-                      color: const Color(0x1A2563EB),
-                      border: Border.all(color: PaperStyles.accent, width: 1.4),
-                      borderRadius: BorderRadius.circular(4),
-                    )
-                  : null,
-              child: MeasureSize(
-                key: ValueKey<String>('measure-$blockId'),
-                onChange: (size) => controller.reportBlockHeight(blockId, size.height),
-                child: _buildQuestionBlock(controller, layout, questionData),
-              ),
-            );
-          },
-        ),
+        interactive
+            ? DragTarget<int>(
+                onWillAcceptWithDetails: (details) =>
+                    !_locked && details.data != questionIndex,
+                onAcceptWithDetails: (details) =>
+                    controller.moveQuestion(details.data, questionIndex),
+                builder: (context, candidates, _) {
+                  final highlighted = candidates.isNotEmpty;
+                  return Container(
+                    decoration: highlighted
+                        ? BoxDecoration(
+                            color: const Color(0x1A2563EB),
+                            border: Border.all(color: PaperStyles.accent, width: 1.4),
+                            borderRadius: BorderRadius.circular(4),
+                          )
+                        : null,
+                    child: measuredQuestion,
+                  );
+                },
+              )
+            : measuredQuestion,
       );
       previousBlockId = blockId;
     }
@@ -3225,78 +3469,96 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
     }
 
+    Widget buildBody({required bool highlighted}) {
+      Widget body = Stack(
+        clipBehavior: Clip.hardEdge,
+        children: <Widget>[
+          Positioned.fill(
+            child: _buildPageStack(
+              controller,
+              page,
+              pageCount,
+              content,
+              document,
+              highlighted: highlighted,
+            ),
+          ),
+          for (final ref in pageAttachments) ..._buildPageElement(controller, ref),
+          // Controls are siblings in the page-sized hit-test area and painted
+          // last so other attachments cannot cover them. Exact render bypasses
+          // them entirely because they are editor chrome, not paper content.
+          if (interactive)
+            for (final ref in pageAttachments)
+              if (!_locked && _selectedAttachment?.elementId == ref.elementId)
+                _buildAttachmentToolbar(ref, _findAttachment(document, ref)!),
+        ],
+      );
+      if (interactive && _stagedFormula != null && !_locked) {
+        body = GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTapUp: (details) => _placeStagedFormula(
+            details.localPosition,
+            pageIndex: page.index,
+          ),
+          child: body,
+        );
+      }
+      return body;
+    }
+
+    final pageShell = Container(
+      key: canvasKeys?.putIfAbsent(
+        page.index,
+        () => GlobalKey(
+          debugLabel: interactive
+              ? 'a4-page-canvas-${page.index}'
+              : 'exact-page-canvas-${page.index}',
+        ),
+      ),
+      width: ExamCanvasGeometry.width,
+      height: ExamCanvasGeometry.height,
+      clipBehavior: Clip.antiAlias,
+      decoration: showPreviewChrome
+          ? BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+              boxShadow: const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x22000000),
+                  blurRadius: 12,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            )
+          : const BoxDecoration(color: Colors.white),
+      child: KeyedSubtree(
+        key: ValueKey<String>(
+          '${interactive ? 'a4' : 'exact'}-page-${page.index}',
+        ),
+        child: interactive
+            ? DragTarget<FloatingElement>(
+                onWillAcceptWithDetails: (details) => !_locked,
+                onAcceptWithDetails: (details) =>
+                    _acceptFormulaDrop(page.index, details),
+                builder: (context, candidates, _) =>
+                    buildBody(highlighted: candidates.isNotEmpty),
+              )
+            : buildBody(highlighted: false),
+      ),
+    );
+
     return Directionality(
       textDirection: layout.textDirection,
-      // جذر اللقط يلفّ الورقة كاملة (بحدودها وظلها) كما تُرى بالضبط.
       child: RepaintBoundary(
-        key: _pageSnapshotKeys.putIfAbsent(
+        key: snapshotKeys.putIfAbsent(
           page.index,
-          () => GlobalKey(debugLabel: 'a4-page-snapshot-${page.index}'),
-        ),
-        child: Container(
-        key: _pageCanvasKeys.putIfAbsent(
-          page.index,
-          () => GlobalKey(debugLabel: 'a4-page-canvas-${page.index}'),
-        ),
-        width: ExamCanvasGeometry.width,
-        height: ExamCanvasGeometry.height,
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(color: const Color(0xFFE5E7EB)),
-          boxShadow: const <BoxShadow>[
-            BoxShadow(color: Color(0x22000000), blurRadius: 12, offset: Offset(0, 4)),
-          ],
-        ),
-        // هدف إسقاط المعادلات المسحوبة من الشريط يغطي **الورقة كلها** (بما
-        // فيها الهوامش) فتُقام المعادلة حيث أُفلتت بالضبط، وطبقة المعادلات
-        // فوق كل شيء بالإحداثيات المطلقة نفسها.
-        child: KeyedSubtree(
-          key: ValueKey<String>('a4-page-${page.index}'),
-          child: DragTarget<FloatingElement>(
-            onWillAcceptWithDetails: (details) => !_locked,
-            onAcceptWithDetails: (details) =>
-                _acceptFormulaDrop(page.index, details),
-            builder: (context, candidates, _) {
-              Widget body = Stack(
-                clipBehavior: Clip.hardEdge,
-                children: <Widget>[
-                  Positioned.fill(
-                    child: _buildPageStack(
-                      controller,
-                      page,
-                      pageCount,
-                      content,
-                      document,
-                      highlighted: candidates.isNotEmpty,
-                    ),
-                  ),
-                  for (final ref in pageAttachments)
-                    ..._buildPageElement(controller, ref),
-                  // Controls are siblings in the page-sized hit-test area and
-                  // painted last so other attachments cannot cover them.
-                  for (final ref in pageAttachments)
-                    if (!_locked && _selectedAttachment?.elementId == ref.elementId)
-                      _buildAttachmentToolbar(ref, _findAttachment(document, ref)!),
-                ],
-              );
-              // معادلة جاهزة تنتظر موضعها: أي نقرة على الورقة تُقيمها في
-              // الموضع المنقور (والإحداثيات محلية للورقة كلها بالهوامش).
-              if (_stagedFormula != null && !_locked) {
-                body = GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTapUp: (details) => _placeStagedFormula(
-                    details.localPosition,
-                    pageIndex: page.index,
-                  ),
-                  child: body,
-                );
-              }
-              return body;
-            },
+          () => GlobalKey(
+            debugLabel: interactive
+                ? 'a4-page-snapshot-${page.index}'
+                : 'exact-page-snapshot-${page.index}',
           ),
         ),
-        ),
+        child: pageShell,
       ),
     );
   }
