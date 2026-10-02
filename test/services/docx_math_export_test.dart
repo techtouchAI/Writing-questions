@@ -12,6 +12,8 @@ import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/services/docx_document_export_service.dart';
+import 'package:writing_questions_app/services/math_snapshot_renderer.dart'
+    show MathRaster;
 
 /// صورة PNG حقيقية صغيرة (1×1) تُستعمل بدل رسم المعادلة في الاختبارات،
 /// لأن الرسم نفسه يحتاج محرّك Flutter (يُختبر في الواجهة).

@@ -41,6 +41,11 @@ class FakeMathHost {
   void attach() {
     assert(!_attached, 'المضيف الوهمي مسجَّل مسبقاً');
     _attached = true;
+    // الاختبارات تتشارك النسخة نفسها (setUp واحد): السجل يبدأ نظيفاً وإلا
+    // تسرّبت طلبات اختبار سابق إلى `requests.single` في الاختبار التالي.
+    requests.clear();
+    failingLatex = null;
+    lastDensity = 0;
     MathSnapshotRenderer.attach(_registeredProvider);
   }
 
@@ -93,12 +98,13 @@ Future<ui.Image> _solidImage(int widthPx, int heightPx) async {
   return image;
 }
 
-/// كم صورة مضمَّنة فعلاً في ملف PDF: قاموس كل كائن صورة يحمل
-/// `/Subtype /Image` غير مضغوط في بنية الملف، فعدّه عدّ لصور حقيقية
-/// وصلت إلى الصفحة — لا افتراض على عدد المقاطع.
+/// كم صورة مضمَّنة فعلاً في ملف PDF: قاموس كل كائن صورة يحمل `/Subtype`
+/// قيمته `/Image`، ومكتبة pdf تكتب قواميس الكائنات بلا مسافة بين المفتاح
+/// والقيمة (`/Subtype/Image`) — فتُزال المسافات أولاً ليعمل العدّ على
+/// الصيغتين. لا يعتمد على أي افتراض عن عدد المقاطع: صورة = كائن صورة.
 int imagesInPdf(List<int> bytes) {
-  final text = String.fromCharCodes(bytes);
-  const marker = '/Subtype /Image';
+  final text = String.fromCharCodes(bytes).replaceAll(' ', '');
+  const marker = '/Subtype/Image';
   var count = 0;
   for (var cursor = text.indexOf(marker);
       cursor >= 0;
