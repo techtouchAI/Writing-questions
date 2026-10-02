@@ -149,7 +149,11 @@ abstract final class ExactExportService {
       '</w:sectPr>'
       '</w:body></w:document>',
     );
-    return Uint8List.fromList(ZipEncoder().encode(archive));
+    final encoded = ZipEncoder().encode(archive);
+    if (encoded == null) {
+      throw StateError('تعذّر ترميز حزمة Word الدقيقة.');
+    }
+    return Uint8List.fromList(encoded);
   }
 
   /// يكتب ملف Word الدقيق على القرص ويعيد الملف.

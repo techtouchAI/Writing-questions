@@ -46,8 +46,8 @@ class PaginatedPdfExamEngine {
   static double get contentWidth =>
       PdfPageFormat.a4.width - 2 * pageMarginMillimeters * PdfPageFormat.mm;
 
-  /// إزاحة بداية كتلة الفرع عن صندوق المحتوى (بنقاط PDF).
-  static const double branchIndent = PdfPaperBuilder.branchIndent;
+  /// إزاحة بداية كتلة الفرع عن صندوق المحتوى (بنقاط PDF) — مشتقة من العقد.
+  static double get branchIndent => PdfPaperBuilder.branchIndent;
 
   /// ارتفاع المحتوى الافتراضي (للهامش الافتراضي).
   static double get pageContentHeight =>

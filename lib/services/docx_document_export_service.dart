@@ -758,7 +758,6 @@ class _DocxBuilder {
       override: style,
       bold: role == VisualRole.headerBody ? bold : null,
       font: font,
-      color: colorHex,
     );
     final effectiveBold = resolved.bold;
     final effectiveSize = resolved.halfPoints;

@@ -1908,7 +1908,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     for (var index = 0; index < keys.length; index++) {
       try {
         snapshots.add(
-          await PageSnapshotService.capturePage(keys[index], pageIndex: index),
+          await PageSnapshotService.capturePage(
+            _pageSnapshotKeys[keys[index]]!,
+            pageIndex: index,
+          ),
         );
       } catch (error, stackTrace) {
         PageSnapshotService.logCaptureFailure(error, stackTrace, index);

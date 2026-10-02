@@ -41,7 +41,7 @@ class VisualRoleSpec {
 ///    ولا يتأثر بالمعامل العام (كما في المعاينة الحالية).
 /// 3. لا يكتب أي راسم (Preview/PDF/DOCX) حجم خط أو تباعد أسطر بنفسه؛ يطلب
 ///    الدور من هنا ثم يحوّل الوحدة فقط.
-abstract final class VisualTypography {
+abstract final class ExamTypography {
   /// لون الملاحظات (يحلّ محل الرمادي القديم المكتوب في ثلاثة أماكن).
   static const int mutedColor = 0xFF4B5563;
 

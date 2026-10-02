@@ -1,4 +1,4 @@
-import 'paper_metrics.dart';
+import '../paper_metrics.dart';
 
 /// المسافات والإزاحات في العقد البصري — **المصدر الوحيد** لكل رقم هندسي
 /// تتفق عليه المعاينة وPDF وWord.

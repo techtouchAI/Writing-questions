@@ -57,7 +57,7 @@ abstract final class VisualFlutterStyle {
 /// نمط نصّي للعرض المباشر **يحمل دوره من العقد البصري** وقيمه المرجعية
 /// غير المقاسة.
 ///
-/// يُنشئه `PaperStyles` من [VisualTypography]، ثم يقرأ `PaperStyles.resolve`
+/// يُنشئه `PaperStyles` من [ExamTypography]، ثم يقرأ `PaperStyles.resolve`
 /// دوره ليعيد اشتقاق القيم النهائية من العقد نفسه الذي يقرأه PDF وWord —
 /// فلا توجد ثلاثة جداول أحجام، ويبقى كل من يستعمل النمط للرسم المباشر يرى
 /// القيم الافتراضية نفسها السابقة حرفياً.
