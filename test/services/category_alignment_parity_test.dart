@@ -1,0 +1,168 @@
+// محاذاة سطر القسم (`QuestionModel.categoryAlign`) في الثلاثة.
+//
+// الميزة تمرّ: Model ← Controller ← المعاينة/PDF/Word. والاختبار يقيس الأثر
+// الفعلي لا وجود الشيفرة:
+//   * المعاينة: `TextAlign` الفعلي لحقل القسم في الشاشة.
+//   * PDF: موضع كلمة القسم المرسومة بالنسبة لحدود صندوق المحتوى.
+//   * Word: قيمة `w:jc` في فقرة القسم وحدها.
+// ويُعاد للعربية (RTL) والإنجليزية (LTR) لأن `start/end` يتبعان الاتجاه.
+import 'dart:convert';
+
+import 'package:archive/archive.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+
+import 'package:writing_questions_app/models/branch_model.dart';
+import 'package:writing_questions_app/models/exam_document.dart';
+import 'package:writing_questions_app/models/exam_header_model.dart';
+import 'package:writing_questions_app/models/paper_settings.dart';
+import 'package:writing_questions_app/models/paper_text_style.dart';
+import 'package:writing_questions_app/models/question_model.dart';
+import 'package:writing_questions_app/pdf_engine/paginated_pdf_exam_engine.dart';
+import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
+import 'package:writing_questions_app/services/docx_document_export_service.dart';
+import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
+
+import '../pdf_engine/pdf_content_probe.dart';
+
+/// حدود صندوق المحتوى في PDF لهامش 15مم (الافتراضي).
+const double _leftEdge = 42.52;
+const double _rightEdge = 552.76;
+
+ExamDocument _document({
+  required PaperAlign? align,
+  required String subject,
+}) =>
+    ExamDocument(
+      name: 'محاذاة القسم',
+      header: ExamHeaderModel.initial(subject: subject),
+      settings: const PaperSettings(),
+      questions: <QuestionModel>[
+        QuestionModel(
+          id: 'q1',
+          questionNumber: 1,
+          category: 'Cat',
+          categoryAlign: align,
+          statement: 'Stmt',
+          branches: <BranchModel>[
+            BranchModel(id: 'b1', content: BranchContent(statement: 'Branch')),
+          ],
+        ),
+      ],
+    );
+
+/// فقرة Word التي تحوي «Cat» (سطر القسم).
+Future<String> _wordCategoryParagraph(ExamDocument document) async {
+  final bytes = await DocxDocumentExportService.buildDocumentDocxBytes(
+    document: document,
+  );
+  final xml = utf8.decode(
+    ZipDecoder().decodeBytes(bytes).findFile('word/document.xml')!.content
+        as List<int>,
+  );
+  for (final match in RegExp('<w:p>.*?</w:p>', dotAll: true).allMatches(xml)) {
+    if (match.group(0)!.contains('Cat')) {
+      return match.group(0)!;
+    }
+  }
+  fail('لم أجد فقرة القسم في Word.');
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('PDF: موضع سطر القسم يتبع المحاذاة', () {
+    Future<ProbedWord> categoryWord(PaperAlign align) async {
+      final bytes = await PaginatedPdfExamEngine().generate(
+        document: _document(align: align, subject: 'Arabic'),
+      );
+      return PdfContentProbe.fromBytes(bytes)
+          .words
+          .firstWhere((word) => word.text.contains('Cat'));
+    }
+
+    test('يسار: الكلمة تبدأ من حدّ المحتوى الأيسر', () async {
+      final word = await categoryWord(PaperAlign.left);
+      expect(word.x, closeTo(_leftEdge, 3),
+          reason: 'المحاذاة «يسار» تُلصق القسم بحدّ الصندوق الأيسر.');
+    });
+
+    test('يمين: الكلمة تنتهي عند حدّ المحتوى الأيمن', () async {
+      final word = await categoryWord(PaperAlign.right);
+      expect(word.x + word.advanceWidth, closeTo(_rightEdge, 3),
+          reason: 'المحاذاة «يمين» تُلصق القسم بحدّ الصندوق الأيمن.');
+    });
+
+    test('وسط: مركز الكلمة في منتصف الصندوق', () async {
+      final word = await categoryWord(PaperAlign.center);
+      expect(word.x + word.advanceWidth / 2,
+          closeTo((_leftEdge + _rightEdge) / 2, 4),
+          reason: 'المحاذاة «وسط» توسّط سطر القسم في صندوق المحتوى.');
+    });
+  });
+
+  group('Word: w:jc في فقرة القسم وحدها', () {
+    Future<String> categoryJc(PaperAlign align,
+        {String subject = 'Arabic'}) async {
+      final paragraph = await _wordCategoryParagraph(
+        _document(align: align, subject: subject),
+      );
+      return RegExp(r'w:jc w:val="([a-z]+)"').firstMatch(paragraph)!.group(1)!;
+    }
+
+    test('left/center/right تُكتب حرفياً في الفقرة', () async {
+      expect(await categoryJc(PaperAlign.left), 'left');
+      expect(await categoryJc(PaperAlign.center), 'center');
+      expect(await categoryJc(PaperAlign.right), 'right');
+    });
+
+    test('start/end يتبعان اتجاه الورقة (RTL مقابل LTR)', () async {
+      expect(await categoryJc(PaperAlign.start), 'right');
+      expect(await categoryJc(PaperAlign.end), 'left');
+      // القالب الإنجليزي هو مسار LTR الفعلي في التطبيق.
+      expect(await categoryJc(PaperAlign.start, subject: 'English'),
+          'left',
+          reason: 'في ورقة LTR يبدأ السطر من اليسار.');
+      expect(await categoryJc(PaperAlign.end, subject: 'English'), 'right');
+    });
+  });
+
+  group('المعاينة: TextAlign الفعلي لحقل القسم', () {
+    Future<TextAlign> previewAlign(
+      WidgetTester tester,
+      PaperAlign align,
+    ) async {
+      tester.view.physicalSize = const Size(1500, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final controller = ExamWizardController(
+        document: _document(align: align, subject: 'اللغة العربية'),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ChangeNotifierProvider<ExamWizardController>.value(
+            value: controller,
+            child: ExamPreviewScreen(onBackToQuestions: () {}),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final field = tester.widget<TextField>(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('category-q1')),
+          matching: find.byType(TextField),
+        ),
+      );
+      return field.textAlign;
+    }
+
+    testWidgets('left/center/right تصل إلى حقل القسم في الشاشة',
+        (tester) async {
+      expect(await previewAlign(tester, PaperAlign.left), TextAlign.left);
+      expect(await previewAlign(tester, PaperAlign.center), TextAlign.center);
+      expect(await previewAlign(tester, PaperAlign.right), TextAlign.right);
+    });
+  });
+}

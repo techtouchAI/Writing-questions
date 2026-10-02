@@ -40,6 +40,7 @@ class QuestionModel {
     this.dividerAfter,
     this.titleAlign,
     this.bodyAlign,
+    this.categoryAlign,
   })  : id = id ?? const Uuid().v4(),
         // السؤال الجديد يبدأ بلا فروع؛ تُنشأ فقط بطلب صريح من المدرس.
         branches = List<BranchModel>.unmodifiable(
@@ -111,6 +112,10 @@ class QuestionModel {
   /// محاذاة خاصة لنص السؤال (null = وراثة من نمط السؤال).
   final PaperAlign? bodyAlign;
 
+  /// محاذاة خاصة لسطر القسم (`category`) — مثل [titleAlign] و[bodyAlign]
+  /// تُحفظ في النموذج فتصل إلى المعاينة وPDF وWord معاً.
+  final PaperAlign? categoryAlign;
+
   /// فاصل بعد السؤال كاملاً.
   final PaperDivider? dividerAfter;
 
@@ -175,6 +180,7 @@ class QuestionModel {
     PaperDivider? Function()? dividerAfter,
     PaperAlign? Function()? titleAlign,
     PaperAlign? Function()? bodyAlign,
+    PaperAlign? Function()? categoryAlign,
   }) {
     return QuestionModel(
       id: id,
@@ -194,6 +200,7 @@ class QuestionModel {
       dividerAfter: dividerAfter != null ? dividerAfter() : this.dividerAfter,
       titleAlign: titleAlign != null ? titleAlign() : this.titleAlign,
       bodyAlign: bodyAlign != null ? bodyAlign() : this.bodyAlign,
+      categoryAlign: categoryAlign != null ? categoryAlign() : this.categoryAlign,
     );
   }
 
@@ -307,6 +314,7 @@ class QuestionModel {
       dividerAfter: dividerAfter,
       titleAlign: titleAlign,
       bodyAlign: bodyAlign,
+      categoryAlign: categoryAlign,
     );
   }
 
@@ -333,6 +341,7 @@ class QuestionModel {
       if (dividerAfter != null) 'dividerAfter': dividerAfter!.toMap(),
       if (titleAlign != null) 'titleAlign': titleAlign!.name,
       if (bodyAlign != null) 'bodyAlign': bodyAlign!.name,
+      if (categoryAlign != null) 'categoryAlign': categoryAlign!.name,
     };
   }
 
@@ -378,6 +387,7 @@ class QuestionModel {
     final rawNumberOverride = map['numberOverride']?.toString().trim();
     final rawTitleAlign = map['titleAlign'];
     final rawBodyAlign = map['bodyAlign'];
+    final rawCategoryAlign = map['categoryAlign'];
     return QuestionModel(
       id: map['id'] is String && (map['id'] as String).trim().isNotEmpty
           ? map['id'] as String
@@ -403,6 +413,8 @@ class QuestionModel {
       dividerAfter: PaperDivider.fromValue(map['dividerAfter']),
       titleAlign: rawTitleAlign != null ? PaperAlign.parse(rawTitleAlign) : null,
       bodyAlign: rawBodyAlign != null ? PaperAlign.parse(rawBodyAlign) : null,
+      categoryAlign:
+          rawCategoryAlign != null ? PaperAlign.parse(rawCategoryAlign) : null,
     );
   }
 }

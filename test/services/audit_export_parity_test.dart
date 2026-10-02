@@ -182,9 +182,10 @@ void main() {
     // بمقدار [PaginatedPdfExamEngine.branchIndent] (كما تُزاح فقرة الفرع في
     // Word)؛ فمساحة نص الفرع تبدأ من حدّ المحتوى الأيسر وتنتهي عند الحدّ
     // الأيمن ناقص الإزاحة — وعليها تُقاس المحاذاة والضبط.
-    const branchRightEdge = rightEdge - PaginatedPdfExamEngine.branchIndent;
-    const branchWidth = branchRightEdge - leftEdge;
-    const branchCenterLine = (leftEdge + branchRightEdge) / 2;
+    // الإزاحة getter مشتق من العقد البصري (لا const قديم).
+    final branchRightEdge = rightEdge - PaginatedPdfExamEngine.branchIndent;
+    final branchWidth = branchRightEdge - leftEdge;
+    final branchCenterLine = (leftEdge + branchRightEdge) / 2;
 
     final body = _bodyLines(probe);
     expect(body.length, greaterThanOrEqualTo(7),
@@ -227,7 +228,7 @@ void main() {
 
     // الأسطر الملتفّة: يمتد كل سطر متوسط حتى حافة مساحة نص الفرع
     // (MSO: الضبط يملأ السطر من الحافة إلى الحافة).
-    const contentWidth = branchWidth;
+    final contentWidth = branchWidth;
     for (final line in justifyLines.sublist(0, justifyLines.length - 1)) {
       final minLeft = line.words
           .map((word) => word.x)
@@ -551,7 +552,10 @@ void main() {
             xml.contains('<w:u w:val="single"/>'),
         'color DC2600': xml.contains('<w:color w:val="DC2600"/>'),
         'size 13pt→<w:sz w:val="26"/>': xml.contains('<w:sz w:val="26"/>'),
-        'font Tajawal': xml.contains('<w:rFonts w:cs="Tajawal"/>'),
+        // الخط يصل للخط اللاتيني (ascii/hAnsi) ولنص المجموعة العربية (cs)
+        // معاً: Word يستعمل cs للعربية وascii للأرقام/اللاتينية.
+        'font Tajawal (ascii)': xml.contains('w:ascii="Tajawal"'),
+        'font Tajawal (cs)': xml.contains('w:cs="Tajawal"'),
         'justify→jc both': xml.contains('w:jc w:val="both"'),
         'lineHeight 2.0→w:line=480': xml.contains('w:line="480"'),
         'paragraphSpacing 12→w:after=180':
@@ -562,7 +566,8 @@ void main() {
         'underline <w:u w:val="single"/>': true,
         'color DC2600': true,
         'size 13pt→<w:sz w:val="26"/>': true,
-        'font Tajawal': true,
+        'font Tajawal (ascii)': true,
+        'font Tajawal (cs)': true,
         'justify→jc both': true,
         'lineHeight 2.0→w:line=480': true,
         'paragraphSpacing 12→w:after=180': true,

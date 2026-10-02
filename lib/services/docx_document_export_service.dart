@@ -8,6 +8,10 @@ import 'package:archive/archive.dart';
 import '../docx/omml_from_equation.dart';
 import '../layout/blueprint/exam_blueprint.dart';
 import '../layout/paper_metrics.dart';
+import '../layout/visual/visual_metrics.dart';
+import '../layout/visual/visual_content.dart';
+import '../layout/visual/visual_style.dart';
+import '../layout/visual/visual_typography.dart';
 import '../models/exam_canvas_geometry.dart';
 import '../models/exam_document.dart';
 import '../models/equation_model.dart';
@@ -15,7 +19,6 @@ import '../models/floating_element.dart';
 import '../models/paper_divider.dart';
 import '../models/paper_font.dart';
 import '../models/paper_text_style.dart';
-import '../models/tex_content.dart';
 import '../pdf_engine/paginated_pdf_exam_engine.dart';
 import 'export_file_service.dart';
 import 'math_snapshot_renderer.dart' show MathRaster;
@@ -30,6 +33,40 @@ typedef ShapeRasterizer = Future<Uint8List?> Function(
   double widthPx,
   double heightPx,
 );
+
+/// جريان نصّي واحد داخل فقرة Word: نصّه وتنسيقه الخاص.
+///
+/// الفرق الجوهري عن تمرير نص واحد: أجزاء العنصر (رقم السؤال ← منطوقه ←
+/// درجته، أو تسمية النقطة ← نصها ← قوساها ← درجتها، أو تسمية الخيار ←
+/// نصه) تُكتب **جريانات مستقلة**، فيستطيع Word أن يعطي كلاً منها تنسيقه
+/// (التسمية غامقة مثلاً) — وهو ما لا يمكن أن يحدث حين تُدمج الأجزاء في
+/// نص واحد. هذا هو مقابِل «العناصر المتعددة» في المعاينة وPDF.
+class DocxRunSpec {
+  const DocxRunSpec(
+    this.text, {
+    this.bold,
+    this.italic,
+    this.underline,
+    this.size,
+    this.color,
+    this.font,
+  });
+
+  final String text;
+
+  /// `null` = يتبع تنسيق الفقرة (الغامق/الميل/التسطير/الحجم/اللون/الخط).
+  final bool? bold;
+  final bool? italic;
+  final bool? underline;
+
+  /// الحجم بأنصاف النقاط (`w:sz`)؛ `null` = حجم الفقرة.
+  final int? size;
+
+  /// لون hex بلا `#`؛ `null` = لون الفقرة.
+  final String? color;
+
+  final String? font;
+}
 
 /// مخصّص تحويل صيغة LaTeX إلى صورة نقطية (يُمرَّر من الواجهة حيث يتوفر
 /// مسجّل الرسم؛ انظر `MathImageRenderer`).
@@ -183,6 +220,10 @@ class DocxDocumentExportService {
       <w:rPr>
         <w:rFonts w:ascii="$font" w:hAnsi="$font" w:cs="$font"/>
         <w:sz w:val="22"/>
+        <!-- مقاس النص العربي (Complex Script): بدونه يتجاهل Word حجم المجموعة
+             نفسه ويستعمل مقاس المحرك الافتراضي، فلا يتغير حجم الخط العربي
+             في الملف مهما ضبطه المدرس في المعاينة. -->
+        <w:szCs w:val="22"/>
         <w:lang w:val="ar-SA" w:bidi="ar-SA"/>
       </w:rPr>
     </w:rPrDefault>
@@ -196,6 +237,10 @@ class DocxDocumentExportService {
 </w:styles>''';
   }
 
+  /// لون Word: ست خانات سداسية بلا قناة ألفا.
+  static String _hexColor(int argb) =>
+      (argb & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase();
+
   static String _fontName(PaperFont font) {
     switch (font) {
       case PaperFont.naskh:
@@ -208,6 +253,70 @@ class DocxDocumentExportService {
         return 'Rakkas';
     }
   }
+}
+
+/// خصائص جريان Word **كقيم** لا كنص XML: تُبنى مرّة من الفقرة، ثم يُدمج
+/// فيها تنسيق المقطع المعلن في العقد ([VisualRunStyle])، ثم تُولَّد مرّة
+/// واحدة. فلا جراحة نصية على XML ولا خاصية تُكتب مرتين بقيمتين متضادتين.
+class _RunProperties {
+  const _RunProperties({
+    this.bold = false,
+    this.italic = false,
+    this.underline = false,
+    this.highlight = false,
+    this.color,
+    required this.size,
+    required this.font,
+    required this.rtl,
+  });
+
+  final bool bold;
+  final bool italic;
+  final bool underline;
+  final bool highlight;
+  final String? color;
+
+  /// الحجم بأنصاف النقاط كما يكتبه Word.
+  final int size;
+
+  /// اسم عائلة الخط كما يعرفه Word.
+  final String font;
+
+  final bool rtl;
+
+  /// يدمج تنسيق مقطع من العقد فوق خصائص الفقرة: المعلَن يستبدل الموروث،
+  /// و`null` يعني «اتبع الفقرة».
+  _RunProperties merge(VisualRunStyle? style) {
+    if (style == null || style.isEmpty) {
+      return this;
+    }
+    final fontSizePt = style.fontSizePt;
+    return _RunProperties(
+      bold: style.bold ?? bold,
+      italic: style.italic ?? italic,
+      underline: style.underline ?? underline,
+      highlight: highlight,
+      color: style.colorArgb == null
+          ? color
+          : DocxDocumentExportService._hexColor(style.colorArgb!),
+      size: fontSizePt == null ? size : (fontSizePt * 2).round(),
+      font: style.font == null
+          ? font
+          : DocxDocumentExportService._fontName(style.font!),
+      rtl: rtl,
+    );
+  }
+
+  String toXml() => _DocxBuilder._runPropertiesXml(
+        bold: bold,
+        italic: italic,
+        underline: underline,
+        highlight: highlight,
+        color: color,
+        size: size,
+        font: font,
+        rtl: rtl,
+      );
 }
 
 /// بانِي مستند Word الداخلي (يجمع الصور أثناء بناء XML).
@@ -696,10 +805,13 @@ class _DocxBuilder {
         _headerParagraph(
           data.bismillah,
           alignment: 'center',
-          size: 34,
-          font: PaperFont.amiri,
+          // الدور `bismillah` في العقد يحمل خط Amiri وحجم 17pt وارتفاع
+          // السطر 1.5× معامل الورقة، ولا يرث تنسيق الترويسة — لكنه يحفظ
+          // لون الترويسة (المعاينة والـ PDF نفسهما).
+          role: VisualRole.bismillah,
           applyHeaderStyle: false,
           applyHeaderLayout: false,
+          colorHex: document.header.style.colorHex,
         ),
       );
     }
@@ -731,43 +843,47 @@ class _DocxBuilder {
   String _headerParagraph(
     String text, {
     required String alignment,
+    VisualRole role = VisualRole.headerBody,
     bool bold = false,
-    int size = 20,
     PaperFont? font,
     bool applyHeaderStyle = true,
     bool applyHeaderLayout = true,
+    String? colorHex,
   }) {
-    final style = applyHeaderStyle ? document.header.style : PaperTextStyle.empty;
-    final effectiveBold = style.bold ?? bold;
-    final effectiveSize = style.fontSize != null
-        ? (style.fontSize! * 2).round().clamp(12, 96)
-        : (size * document.settings.fontScale).round().clamp(12, 96);
-    final fontName = DocxDocumentExportService._fontName(
-      font ?? style.font ?? document.settings.defaultFont,
+    final style = applyHeaderStyle ? document.header.style : null;
+    // الحجم/الوزن/الميل/التسطير/الخط/ارتفاع السطر من عقد الطباعة الوحيد:
+    // تنسيق الترويسة الذي اختاره المدرس ([style]) يتقدم، ثم الاستبدال
+    // الموضعي (البسملة بخطها، عمود الوسط الغامق)، ثم قيمة الدور المرجعية
+    // مضروبة بمعامل الورقة مرة واحدة.
+    final resolved = _roleStyle(
+      role,
+      override: style,
+      bold: role == VisualRole.headerBody ? bold : null,
+      font: font,
     );
-    final color = style.colorHex;
-    // تباعد الأسطر: إعداد المدرس للترويسة يسود، وإلا أساس الترويسة
-    // (1.6 × معامل ارتفاع الورقة — كما في المعاينة والـ PDF حرفياً)،
-    // أو التباعد العام للورقة في التذييل والبسملة.
-    final baseLineRatio = applyHeaderLayout
-        ? 1.6 * document.settings.heightScale
-        : document.settings.lineSpacing;
-    final line = (240 * (style.lineHeight ?? baseLineRatio)).round();
+    final effectiveBold = resolved.bold;
+    final effectiveSize = resolved.halfPoints;
+    final fontName = DocxDocumentExportService._fontName(resolved.font);
+    final color = _paragraphColor(resolved, explicit: colorHex, style: style);
+    final line = resolved.lineTwips;
     // المسافة بعد كل سطر ترويسة (إعداد المدرس: بكسل منطقي ← تويب).
-    final spacingAfter = !applyHeaderLayout || style.paragraphSpacing == null
+    final spacingAfter = !applyHeaderLayout || style?.paragraphSpacing == null
         ? null
-        : (PaperMetrics.pt(style.paragraphSpacing!) * 20).round();
+        : PaperMetrics.twips(style!.paragraphSpacing!);
     // المحاذاة: إعداد المدرس يتجاوز محاذاة العمود — و«بداية السطر» في
     // مستند RTL هي اليمين، كما في المعاينة والـ PDF.
-    final effectiveAlign = !applyHeaderLayout || style.align == null
+    final effectiveAlign = !applyHeaderLayout || style?.align == null
         ? alignment
-        : _wordAlign(style.align);
-    final runProperties = '<w:rPr><w:rtl/>${effectiveBold ? '<w:b/>' : ''}'
-        '${style.italic == true ? '<w:i/>' : ''}'
-        '${style.underline == true ? '<w:u w:val="single"/>' : ''}'
-        '${color == null ? '' : '<w:color w:val="$color"/>'}'
-        '<w:sz w:val="$effectiveSize"/>'
-        '<w:rFonts w:ascii="$fontName" w:hAnsi="$fontName" w:cs="$fontName"/></w:rPr>';
+        : _wordAlign(style!.align);
+    final runProperties = _RunProperties(
+      bold: effectiveBold,
+      italic: resolved.italic,
+      underline: resolved.underline,
+      color: color,
+      size: effectiveSize,
+      font: fontName,
+      rtl: true,
+    );
     return '<w:p><w:pPr><w:bidi/><w:jc w:val="$effectiveAlign"/>'
         '<w:spacing${spacingAfter == null ? '' : ' w:before="0" w:after="$spacingAfter"'} w:line="$line" w:lineRule="auto"/></w:pPr>'
         '${_runsXml(text, runProperties, effectiveSize / 2)}'
@@ -791,7 +907,8 @@ class _DocxBuilder {
         return '<w:p/>';
       }
       // سطر التذييل يأخذ تنسيق نص الترويسة (خط/حجم/لون/تباعد أسطر) لكن
-      // لا محاذاة الترويسة ولا مسافة فقراتها — كالمعاينة والـ PDF.
+      // لا محاذاة الترويسة ولا مسافة فقراتها — كالمعاينة والـ PDF. ودور
+      // `headerBody` في العقد يحمل ارتفاع السطر 1.6× معامل الورقة نفسه.
       final title = _headerParagraph(
         source.title,
         alignment: 'center',
@@ -828,6 +945,48 @@ class _DocxBuilder {
     );
   }
 
+  /// نمط الدور من **عقد الطباعة الوحيد** [ExamTypography] — نفس الجدول الذي
+  /// تقرأه المعاينة ومحرك PDF، بمعاملَي الورقة مطبَّقين مرة واحدة فيه.
+  VisualTextStyle _roleStyle(
+    VisualRole role, {
+    PaperTextStyle? override,
+    bool? bold,
+    double? sizePt,
+    double? lineHeight,
+    int? color,
+    PaperFont? font,
+  }) {
+    return ExamTypography.resolve(
+      role,
+      settings: document.settings,
+      layout: document.layout,
+      override: override,
+      bold: bold,
+      sizePt: sizePt,
+      lineHeight: lineHeight,
+      color: color,
+      font: font,
+    );
+  }
+
+  /// اللون النهائي لفقرة: لون صريح، أو لون العنصر، أو لون الدور من العقد
+  /// (`null` = لون النص الافتراضي في Word).
+  String? _paragraphColor(
+    VisualTextStyle resolved, {
+    String? explicit,
+    PaperTextStyle? style,
+  }) {
+    final hex = explicit ?? style?.colorHex;
+    if (hex != null) {
+      return hex;
+    }
+    final argb = resolved.color;
+    if (argb == null) {
+      return null;
+    }
+    return (argb & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase();
+  }
+
   // ------------------------------- الأسئلة -------------------------------
 
   Future<void> _buildQuestion(StringBuffer body, QuestionBlueprint data) async {
@@ -840,39 +999,58 @@ class _DocxBuilder {
     // الترتيب مطابق للوحة المعاينة ومحرك الـ PDF حرفياً:
     // القسم ← سطر العنوان ← النص ← نقاط السؤال ← الفروع.
     if (data.section != null) {
-      _writeParagraph(
+      // سطر القسم: 12.5pt ومحاذاته من النموذج (`categoryAlign`) — نفس مقاس
+      // المعاينة ومحرك PDF ونفس قرار المحاذاة، وبلا فجوة قبله أو بعده
+      // (المعاينة تلصقه بسطر العنوان).
+      _writeStyledParagraph(
         body,
         data.section!,
-        bold: true,
-        size: 24,
-        before: 40,
-        after: 40,
+        role: VisualRole.category,
+        alignmentOverride: _wordAlign(question.categoryAlign),
+        before: 0,
+        after: 0,
       );
     }
+    // سطر العنوان: الرقم ← المنطوق ← الدرجة **جريانات مستقلة** (لا نص
+    // مدموج) بفجوات المسافات نفسها التي تفصل عناصر المعاينة.
     _writeStyledParagraph(
       body,
       data.title.line,
+      // الدور يحمل الحجم (11pt) والعرض (غامق) وارتفاع السطر (1.7) من
+      // العقد — لا رقم مكتوب هنا.
+      role: VisualRole.questionTitle,
       style: titleStyle,
-      bold: true,
-      size: 26,
       color: titleStyle.colorHex,
-      before: 180,
-      after: 60,
+      before: 0,
+      after: PaperMetrics.twips(VisualMetrics.elementGapPx),
       border: question.showFrame,
+      runs: _titleRuns(
+        data.title,
+        bold: true,
+        color: titleStyle.colorHex,
+      ),
     );
     if (data.body != null) {
       _writeStyledParagraph(
         body,
         data.body!,
+        role: VisualRole.questionBody,
         style: bodyStyle.copyWith(
           align: () => question.bodyAlign ?? question.style.align,
         ),
-        size: 24,
-        before: question.style.paragraphSpacing == null ? 40 : 0,
-        after: 40,
+        before: question.style.paragraphSpacing == null
+            ? PaperMetrics.twips(VisualMetrics.elementGapPx)
+            : 0,
+        after: 0,
       );
     }
-    _writePoints(body, data.points, style: bodyStyle, indent: 800);
+    _writePoints(
+      body,
+      data.points,
+      style: bodyStyle,
+      indent: _pointIndentTwips,
+      firstGapPx: VisualMetrics.elementGapPx,
+    );
     for (final branch in data.branches) {
       await _buildBranch(
         body,
@@ -888,39 +1066,63 @@ class _DocxBuilder {
 
   /// نقاط مرقَّمة (داخل سؤال أو فرع) بتسلسلها المتصل — وتحت كل نقطة
   /// «اختيار من متعدد» سطر خياراتها. الفارغة تماماً تُحذف.
+  /// إزاحة صف النقطة عن بداية الكتلة (تويب مشتق من العقد البصري).
+  int get _pointIndentTwips => PaperMetrics.twips(VisualMetrics.pointIndentPx);
+
+  /// إزاحة صف الخيارات داخل النقطة (تويب).
+  int get _optionIndentTwips => PaperMetrics.twips(VisualMetrics.optionIndentPx);
+
+  /// إزاحة كتلة الفرع عن بداية السؤال (تويب).
+  int get _branchIndentTwips => PaperMetrics.twips(VisualMetrics.branchIndentPx);
+
   void _writePoints(
     StringBuffer body,
     List<PointBlueprint> points, {
     required PaperTextStyle? style,
     required int indent,
+    required double firstGapPx,
   }) {
+    var written = 0;
     for (final point in points) {
       if (!point.isPrintable) {
         continue;
       }
       final pointStyle =
           point.item.align != null ? style?.copyWith(align: () => point.item.align) : style;
-      final before = style?.paragraphSpacing == null ? 30 : 0;
+      final customSpacing = style?.paragraphSpacing;
+      // الفجوة قبل أول نقطة = فجوة الكتلة (سؤال: 2px، فرع: 1px)، وبين
+      // نقطتين = فجوة المسافة بين الفقرات (صفر افتراضاً) — كما في
+      // المعاينة ومحرك PDF بالبكسل المنطقي نفسه.
+      final before = customSpacing != null
+          ? 0
+          : (written == 0
+              ? PaperMetrics.twips(firstGapPx)
+              : PaperMetrics.twips(VisualMetrics.itemGapPx));
       if (point.line.trim().isNotEmpty) {
+        // أجزاء النقطة (الرقم/النص/القوسان/الدرجة) جريانات مستقلة:
+        // الرقم غامق وحده، وهو تفريق لا تعبّر عنه الفقرة المدموجة.
         _writeStyledParagraph(
           body,
           point.line,
+          role: VisualRole.point,
           style: pointStyle,
-          size: 22,
           indent: indent,
           before: before,
-          after: 30,
+          after: customSpacing == null ? 0 : _paragraphSpacingTwips(customSpacing),
+          runs: _pointRuns(point),
         );
+        written++;
       }
       if (point.optionsLine.isNotEmpty) {
         _writeStyledParagraph(
           body,
           point.optionsLine,
+          role: VisualRole.option,
           style: pointStyle,
-          size: 22,
-          indent: indent + 400,
-          before: 0,
-          after: 30,
+          indent: indent + _optionIndentTwips,
+          before: PaperMetrics.twips(VisualMetrics.optionTopGapPx),
+          after: customSpacing == null ? 0 : _paragraphSpacingTwips(customSpacing),
+          runs: _optionRuns(point.options),
         );
       }
     }
@@ -941,27 +1143,36 @@ class _DocxBuilder {
     _writeStyledParagraph(
       body,
       data.title.line,
+      role: VisualRole.branchTitle,
       style: branch.style,
-      size: 22,
-      indent: 400,
+      indent: _branchIndentTwips,
       before: questionParagraphSpacing == null
-          ? 40
+          ? PaperMetrics.twips(VisualMetrics.elementGapPx)
           : _paragraphSpacingTwips(questionParagraphSpacing),
-      after: 40,
+      after: PaperMetrics.twips(VisualMetrics.branchGapPx),
       border: branch.showFrame,
+      runs: _titleRuns(data.title, bold: true),
     );
     if (data.body != null) {
       _writeStyledParagraph(
         body,
         data.body!,
+        role: VisualRole.branchBody,
         style: branch.style,
-        size: 22,
-        indent: 400,
-        before: 0,
-        after: 40,
+        indent: _branchIndentTwips,
+        before: branch.style.paragraphSpacing == null
+            ? PaperMetrics.twips(VisualMetrics.branchGapPx)
+            : 0,
+        after: 0,
       );
     }
-    _writePoints(body, data.points, style: branch.style, indent: 800);
+    _writePoints(
+      body,
+      data.points,
+      style: branch.style,
+      indent: _pointIndentTwips,
+      firstGapPx: VisualMetrics.branchGapPx,
+    );
     await _buildAttachments(body, branch.attachments);
     _buildDivider(body, branch.dividerAfter);
   }
@@ -1061,12 +1272,14 @@ class _DocxBuilder {
         element.textStyle.fontSize ?? 11 * document.settings.fontScale;
     final size = (baseSize * 2).round().clamp(16, 72);
     final line = (240 * document.settings.lineSpacing).round();
-    final runProperties =
-        '<w:rPr>${document.layout.isLtr ? '' : '<w:rtl/>'}'
-        '${element.textStyle.bold == true ? '<w:b/>' : ''}'
-        '${element.textStyle.italic == true ? '<w:i/>' : ''}'
-        '${element.textStyle.underline == true ? '<w:u w:val="single"/>' : ''}'
-        '<w:sz w:val="$size"/><w:rFonts w:cs="$font"/></w:rPr>';
+    final runProperties = _RunProperties(
+      bold: element.textStyle.bold == true,
+      italic: element.textStyle.italic == true,
+      underline: element.textStyle.underline == true,
+      size: size,
+      font: font,
+      rtl: !document.layout.isLtr,
+    );
     final widthTwips = (PaperMetrics.pt(element.width) * 20).round();
     final heightTwips = (PaperMetrics.pt(element.height) * 20).round();
     final referenceWidth = pageAnchored
@@ -1268,53 +1481,107 @@ class _DocxBuilder {
   int _paragraphSpacingTwips(double logicalPixels) =>
       (PaperMetrics.pt(logicalPixels) * 20).round();
 
+  /// جريان نصّي واحد داخل فقرة Word: نصّه وتنسيقه الخاص.
+  ///
+  /// وجود هذا النوع هو ما يمنع «دمج» أجزاء العنصر (رقم ← منطوق ← درجة،
+  /// أو تسمية نقطة ← نصها ← قوساها ← درجتها، أو تسمية خيار ← نصه) في نص
+  /// واحد لا يعرف Word أجزاءه: كل جزء جريان مستقل بـ`<w:r>` خاصة به —
+  /// تماماً كما تفصل المعاينة عناصرها ويطبع PDF كتلته.
+  static String _runPropertiesXml({
+    required bool bold,
+    required bool italic,
+    required bool underline,
+    required bool highlight,
+    required String? color,
+    required int size,
+    required String font,
+    required bool rtl,
+  }) {
+    final buffer = StringBuffer('<w:rPr>${rtl ? '<w:rtl/>' : ''}');
+    if (bold) {
+      buffer.write('<w:b/>');
+    }
+    if (italic) {
+      buffer.write('<w:i/>');
+    }
+    if (underline) {
+      buffer.write('<w:u w:val="single"/>');
+    }
+    if (highlight) {
+      buffer.write('<w:highlight w:val="yellow"/>');
+    }
+    if (color != null) {
+      buffer.write('<w:color w:val="$color"/>');
+    }
+    buffer.write(
+      '<w:sz w:val="$size"/><w:szCs w:val="$size"/>'
+      '<w:rFonts w:ascii="$font" w:hAnsi="$font" w:cs="$font"/>'
+      '</w:rPr>',
+    );
+    return buffer.toString();
+  }
+
+  /// فقرة منسّقة بدور من العقد البصري.
+  ///
+  /// الحجم (أنصاف النقاط) والوزن والميل والتسطير والخط وارتفاع السطر كلها
+  /// تأتي **نهائية** من [ExamTypography] — فما يُكتب في Word هو ما تراه
+  /// المعاينة وما يطبعه PDF بالضبط. تنسيق العنصر المخصص (`style.fontSize`
+  /// و`style.lineHeight`) مطلق ويتقدم على القيم المرجعية، كما في العقد.
+  ///
+  /// [alignmentOverride] يسمح لمحاذاة خاصة بالسياق (سطر القسم
+  /// `categoryAlign`) أن تسود على تنسيق العنصر.
   void _writeStyledParagraph(
     StringBuffer body,
     String text, {
+    required VisualRole role,
     PaperTextStyle? style,
-    bool bold = false,
-    int size = 22,
+    String? alignmentOverride,
     String? color,
     int? indent,
     int? before,
     int? after,
     bool border = false,
+    List<DocxRunSpec>? runs,
   }) {
+    final resolved = _roleStyle(role, override: style);
     _writeParagraph(
       body,
       text,
-      bold: style?.bold ?? bold,
-      italic: style?.italic ?? false,
-      underline: style?.underline ?? false,
-      size: style?.fontSize != null
-          ? (style!.fontSize! * 2).round().clamp(12, 96)
-          : size,
-      // الحجم المخصص لعنصر بعينه مطلق، وحجم الأساس يُقاس بمعامل الورقة.
-      scaleSize: style?.fontSize == null,
+      runs: runs,
+      bold: resolved.bold,
+      italic: resolved.italic,
+      underline: resolved.underline,
+      size: resolved.halfPoints,
+      // الحجم نهائي من العقد: لا ضرب ثانٍ بمعامل الورقة هنا.
+      scaleSize: false,
       border: border,
-      color: color ?? style?.colorHex,
+      color: _paragraphColor(resolved, explicit: color, style: style),
       indent: indent,
       before: before,
       after: style?.paragraphSpacing == null
           ? after
           : _paragraphSpacingTwips(style!.paragraphSpacing!),
-      lineHeight: style?.lineHeight,
-      alignment: _wordAlign(style?.align),
-      font: DocxDocumentExportService._fontName(
-        style?.font ?? document.settings.defaultFont,
-      ),
+      lineHeight: resolved.lineHeight,
+      alignment: alignmentOverride ?? _wordAlign(style?.align),
+      font: DocxDocumentExportService._fontName(resolved.font),
     );
   }
 
-  static String _wordAlign(PaperAlign? align) {
+  /// محاذاة Word من محاذاة النموذج — بمراعاة **اتجاه الورقة**: `start`/`end`
+  /// يتبعان اتجاه المستند كما يتبعهما `TextAlign.start/end` في المعاينة و
+  /// `pw.TextAlign` في PDF، فلا تنحرف ورقة LTR عن ورقة RTL.
+  String _wordAlign(PaperAlign? align) {
+    final isLtr = document.layout.isLtr;
     switch (align) {
       case null:
-      case PaperAlign.start:
+        // الافتراضي القائم (يمين) لم يتغيّر: ورقات العربية هي الغالبة.
         return 'right';
+      case PaperAlign.start:
+        return isLtr ? 'left' : 'right';
+      case PaperAlign.end:
+        return isLtr ? 'right' : 'left';
       case PaperAlign.center:
         return 'center';
-      case PaperAlign.end:
-        return 'left';
       case PaperAlign.justify:
         return 'both';
       case PaperAlign.left:
@@ -1341,6 +1608,7 @@ class _DocxBuilder {
     int? after,
     String alignment = 'right',
     String? font,
+    List<DocxRunSpec>? runs,
   }) {
     final effectiveSize = scaleSize
         ? (size * document.settings.fontScale).round().clamp(12, 96)
@@ -1363,27 +1631,143 @@ class _DocxBuilder {
     body.write(
       '<w:spacing${before == null ? '' : ' w:before="$before"'}${after == null ? '' : ' w:after="$after"'} w:line="$line" w:lineRule="auto"/>',
     );
-    final runProperties = StringBuffer('<w:rPr>${document.layout.isLtr ? '' : '<w:rtl/>'}');
-    if (bold) {
-      runProperties.write('<w:b/>');
-    }
-    if (italic) {
-      runProperties.write('<w:i/>');
-    }
-    if (underline) {
-      runProperties.write('<w:u w:val="single"/>');
-    }
-    if (highlight) {
-      runProperties.write('<w:highlight w:val="yellow"/>');
-    }
-    if (color != null) {
-      runProperties.write('<w:color w:val="$color"/>');
-    }
-    runProperties.write('<w:sz w:val="$effectiveSize"/><w:rFonts w:cs="${font ?? DocxDocumentExportService._fontName(document.settings.defaultFont)}"/></w:rPr>');
+    // مقاس ASCII والعربي معاً (`w:sz` + `w:szCs`) وخط المجموعة والخط
+    // اللاتيني معاً: Word يستعمل `w:szCs` لنص المجموعة العربية، وبدونه لا
+    // يظهر أي تغيير في الحجم على الورقة العربية مهما ضبطه المدرس.
+    final fontName =
+        font ?? DocxDocumentExportService._fontName(document.settings.defaultFont);
+    final rtl = !document.layout.isLtr;
     body.write('</w:pPr>');
-    body.write(_runsXml(text, runProperties.toString(), effectiveSize / 2));
+    if (runs == null) {
+      body.write(
+        _runsXml(
+          text,
+          _RunProperties(
+            bold: bold,
+            italic: italic,
+            underline: underline,
+            highlight: highlight,
+            color: color,
+            size: effectiveSize,
+            font: fontName,
+            rtl: rtl,
+          ),
+          effectiveSize / 2,
+        ),
+      );
+    } else {
+      // كل جزء جريان مستقل: تنسيقه الخاص يتقدم، وما لم يحدده يتبع الفقرة.
+      for (final run in runs) {
+        final runSize = (run.size ?? effectiveSize).clamp(12, 96);
+        body.write(
+          _runsXml(
+            run.text,
+            _RunProperties(
+              bold: run.bold ?? bold,
+              italic: run.italic ?? italic,
+              underline: run.underline ?? underline,
+              highlight: highlight,
+              color: run.color ?? color,
+              size: runSize,
+              font: run.font ?? fontName,
+              rtl: rtl,
+            ),
+            runSize / 2,
+          ),
+        );
+      }
+    }
     body.write('</w:p>');
   }
+
+  /// جريان نصّي واحد داخل فقرة Word (النص وتنسيقه الخاص).
+  static List<DocxRunSpec> _titleRuns(
+    TitleLineBlueprint title, {
+    bool bold = true,
+    int? size,
+    String? color,
+    String? font,
+  }) {
+    // الفصل بمسافة (لا دمج): الأجزاء جريانات مستقلة، والمسافة بينها هي
+    // مقابِل [VisualMetrics.titleGapPx] في المعاينة وPDF.
+    final parts = <String>[
+      if (title.number.trim().isNotEmpty) title.number,
+      if (title.hasStatement) title.statement,
+      if (title.marks != null) title.marks!,
+    ];
+    return <DocxRunSpec>[
+      for (var index = 0; index < parts.length; index++)
+        DocxRunSpec(
+          index == 0 ? parts[index] : ' ${parts[index]}',
+          bold: bold,
+          size: size,
+          color: color,
+          font: font,
+        ),
+    ];
+  }
+
+  /// أجزاء سطر النقطة: الرقم (غامق) ← النص ← القوسان ← الدرجة.
+  static List<DocxRunSpec> _pointRuns(
+    PointBlueprint point, {
+    bool bold = false,
+    int? size,
+    String? color,
+    String? font,
+  }) {
+    // التسمية غامقة وحدها، وبقية الأجزاء جريانات مستقلة تفصلها مسافة واحدة
+    // (مقابِل فراغ [VisualMetrics.pointLabelGapPx] في المعاينة).
+    final parts = <(String, bool)>[
+      if (point.label.trim().isNotEmpty) (point.label, true),
+      if (point.text.trim().isNotEmpty) (point.text, bold),
+      if (point.trailer != null) (point.trailer!, bold),
+      if (point.marks != null) (point.marks!, bold),
+    ];
+    return <DocxRunSpec>[
+      for (var index = 0; index < parts.length; index++)
+        DocxRunSpec(
+          index == 0 ? parts[index].$1 : ' ${parts[index].$1}',
+          bold: parts[index].$2,
+          size: size,
+          color: color,
+          font: font,
+        ),
+    ];
+  }
+
+  /// أجزاء سطر الخيارات: تسمية كل خيار ثم نصه، وبين الخيارات فاصل من
+  /// المسافات غير القابلة للقطع بقدر ما تفصله المعاينة أفقيًا.
+  static List<DocxRunSpec> _optionRuns(
+    List<OptionBlueprint> options, {
+    bool bold = false,
+    int? size,
+    String? color,
+    String? font,
+  }) {
+    final runs = <DocxRunSpec>[];
+    for (final option in options) {
+      if (runs.isNotEmpty) {
+        runs.add(const DocxRunSpec(_optionSeparator + _optionSeparator));
+      }
+      if (option.label.trim().isNotEmpty) {
+        runs.add(DocxRunSpec(option.label, bold: bold, size: size, color: color, font: font));
+      }
+      if (option.text.trim().isNotEmpty) {
+        // مسافة بين التسمية والنص كما في المعاينة (`optionLabelGapPx`).
+        final text = option.label.trim().isEmpty ? option.text : ' ${option.text}';
+        runs.add(DocxRunSpec(text, bold: bold, size: size, color: color, font: font));
+      }
+    }
+    return runs;
+  }
+
+  /// فاصل الخيارات في Word: Word لا يضع خيارات الصف الواحد في سطر كالمعاينة
+  /// وPDF (لا Wrap فيه)، فيُفصل بينها بمسافات غير قابلة للقطع بعدد يقارب
+  /// الفجوة الأفقية نفسها — وهذا قيد معلن في تدقيق عقد التصدير لا ادّعاء
+  /// تطابق.
+  static const String _optionSeparator = '\u00A0\u00A0';
+
+  /// فقرة منسّقة بدور من العقد البصري.
 
   /// يبني مقاطع الفقرة: نص عادي ككتلة `<w:r>` واحدة أو أكثر، وصيغ LaTeX
   /// **معادلات Word أصلية** `<m:oMath>` داخل الفقرة نفسها (تُحرَّر في Word
@@ -1394,42 +1778,66 @@ class _DocxBuilder {
   /// مؤقتة يستبدلها [_resolveMath] بالرسم بعد رسمه (فتبقى في مكانها من
   /// السطر وبالترتيب نفسه). وبدون مرسّم تُكتب نصاً رياضياً مقروءاً، وهو
   /// آخر ارتداد: لا يظهر كود LaTeX الخام في أي ملف.
-  String _runsXml(String text, String runProperties, double fontSizePt) {
-    if (!TexContent.containsMath(text)) {
+  /// يبني جريانات الفقرة من **عقد المحتوى** نفسه ([RichContent.parse]) الذي
+  /// تقرؤه المعاينة — لا بتحليل نصي ثانٍ.
+  ///
+  /// لكل مقطع تنسيقه المعلن في العقد (خط الآية القرآني مثلاً)، والصيغ تُبنى
+  /// **معادلات Word أصلية** `<m:oMath>` داخل الفقرة نفسها (تُحرَّر في Word
+  /// كما تُحرَّر من أداتها، بلا صورة) — انظر [OmmlFromEquation]. وعند تعذّر
+  /// تمثيل صيغة بُنيةً (مصفوفة، أسطر متعددة…) تُرسَم تلك الصيغة وحدها بمعامل
+  /// [mathRasterizer] — أي بمحرك المعاينة نفسه — بعلامة موضع مؤقتة يستبدلها
+  /// [_resolveMath] بالرسم بعد رسمه (فتبقى في مكانها من السطر وبالترتيب
+  /// نفسه). وبدون مرسّم تُكتب نصاً رياضياً مقروءاً، وهو آخر ارتداد: لا يظهر
+  /// كود LaTeX الخام في أي ملف.
+  String _runsXml(String text, _RunProperties properties, double fontSizePt) {
+    final content = RichContent.parse(text);
+    final runProperties = properties.toXml();
+    // مسار سريع حين لا يغيّر العقد شيئاً: نص واحد يطابق الأصل حرفياً.
+    // (وهو أيضاً ما يجعل الدولار المهروب `\$` يُكتب `$` كما في المعاينة، بلا
+    // شرطة مائلة لا أصل لها على الورقة.)
+    if (content.runs.length == 1 &&
+        content.runs.single.isText &&
+        content.runs.single.text == text) {
       return '<w:r>$runProperties<w:t xml:space="preserve">${_escapeXml(text)}</w:t></w:r>';
     }
     final mathRunProperties = _mathRunProperties(runProperties);
     final buffer = StringBuffer();
-    for (final segment in TexContent.split(text)) {
-      if (segment.isMath && segment.text.trim().isNotEmpty) {
+    for (final run in content.runs) {
+      if (run.text.isEmpty) {
+        continue;
+      }
+      if (run.isMath) {
+        if (run.text.trim().isEmpty) {
+          continue;
+        }
         final math = OmmlFromEquation.mathZoneXml(
-          segment.text,
+          run.text,
           fontSizePt: fontSizePt,
           extraRunProperties: mathRunProperties,
         );
         if (math != null) {
           // المنطقة الرياضية ابن مباشر للفقرة (لا داخل <w:r>): تُدرج كما هي
-          // بجانب الجريانات، فتنزل حيث نزلت $...$ في الجملة تماماً.
+          // بجانب الجريانات، فتنزل حيث نزل $...$ في الجملة تماماً.
           buffer.write(math);
           continue;
         }
         if (mathRasterizer != null) {
           final index = _mathQueue.length;
-          _mathQueue.add(_MathPlaceholder(segment.text, fontSizePt));
+          _mathQueue.add(_MathPlaceholder(run.text, fontSizePt));
           buffer.write('<w:r>$runProperties${_mathMarker(index)}</w:r>');
           continue;
         }
         buffer.write(
           '<w:r>$runProperties<w:t xml:space="preserve">'
-          '${_escapeXml(EquationModel.readableText(segment.text))}</w:t></w:r>',
+          '${_escapeXml(EquationModel.readableText(run.text))}</w:t></w:r>',
         );
         continue;
       }
-      if (segment.text.isEmpty) {
-        continue;
-      }
+      // تنسيق المقطع المعلن في العقد (خط الآية مثلاً) يتقدم على تنسيق
+      // الفقرة — ومنه تصل الآية إلى Word بالخط القرآني نفسه الذي في المعاينة.
+      final runXmlProperties = properties.merge(run.style).toXml();
       buffer.write(
-        '<w:r>$runProperties<w:t xml:space="preserve">${_escapeXml(segment.text)}</w:t></w:r>',
+        '<w:r>$runXmlProperties<w:t xml:space="preserve">${_escapeXml(run.text)}</w:t></w:r>',
       );
     }
     return buffer.toString();

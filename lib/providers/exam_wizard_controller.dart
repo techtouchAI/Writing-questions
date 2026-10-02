@@ -484,6 +484,19 @@ class ExamWizardController extends ChangeNotifier {
     ));
   }
 
+  /// محاذاة سطر القسم (`category`) — تُحفظ في النموذج فيصل التغيير إلى
+  /// المعاينة وPDF وWord معاً (كانت محاذاة القسم حيّة على الشاشة وحدها).
+  void updateQuestionCategoryAlign(int index, PaperAlign? align) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    if (questions[index].categoryAlign == align) {
+      return;
+    }
+    _commit(_document.withQuestionAt(
+      index,
+      questions[index].copyWith(categoryAlign: () => align),
+    ));
+  }
+
   void updateQuestionTitleAlign(int index, PaperAlign? align) {
     RangeError.checkValidIndex(index, questions, 'index');
     if (questions[index].titleAlign == align) {

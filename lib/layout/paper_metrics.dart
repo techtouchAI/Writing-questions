@@ -15,9 +15,27 @@ abstract final class PaperMetrics {
 
   static double pt(double pixels) => pixels * pointsPerPixel;
 
+  /// توينب Word للبكسل المنطقي (1pt = 20 تويب): المصدر الوحيد لتحويل أي
+  /// مسافة في نموذج الورقة إلى `w:spacing` في ملف Word — فلا تُكتب أرقام
+  /// توينب يدوياً في أي مكان (كانت 30/40/60/180 مكتوبة يدوياً فتنحرف عن
+  /// المعاينة والـ PDF).
+  static int twips(double pixels) => (pt(pixels) * 20).round();
+
   /// المسافة الرأسية بين كتلتين متتاليتين (سؤالين أو الترويسة وأول سؤال)،
   /// وبين آخر سؤال والتذييل.
   static const double blockSpacingPx = 10;
+
+  /// الفجوة الافتراضية بين عناصر الكتلة الواحدة (سطر العنوان ← النص ←
+  /// النقاط ← الفروع) عندما لا يخصّص المدرس `paragraphSpacing` — القيمة
+  /// نفسها في المعاينة والـ PDF وWord.
+  static const double elementGapPx = 2;
+
+  /// الفجوة الافتراضية بين فرع وآخر داخل السؤال نفسه (وبين نقطتين) — صفر
+  /// يعني تلاصقاً كاملاً كما في Word/MSO.
+  static const double itemGapPx = 0;
+
+  /// الفجوة الافتراضية بين سطر الفرع ونصه/نقاطه.
+  static const double branchGapPx = 1;
 
   /// عرض المحتوى على لوحة بالهامش الافتراضي.
   static double get contentWidthPx => ExamCanvasGeometry.contentWidth;

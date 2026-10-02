@@ -27,6 +27,11 @@ class PreviewToolbar extends StatelessWidget {
     required this.onCenter,
     required this.multiSelect,
     required this.onToggleMultiSelect,
+    required this.onToggleSelectAll,
+    required this.allBlocksSelected,
+    required this.selectedBlockCount,
+    required this.totalBlockCount,
+    required this.formatCount,
     required this.activeFont,
     required this.onFontChanged,
     required this.activeFontSize,
@@ -83,6 +88,18 @@ class PreviewToolbar extends StatelessWidget {
 
   final bool multiSelect;
   final VoidCallback onToggleMultiSelect;
+
+  /// زر «تحديد الكل» الملاصق لزر التحديد المتعدد: يحدد أسئلة الورقة
+  /// وفروعها دفعة واحدة، ويتحول «إلغاء تحديد الكل» عندما تكون محددة.
+  final VoidCallback onToggleSelectAll;
+  final bool allBlocksSelected;
+
+  /// عدّاد التحديد المعروض في الشريط أثناء وضع التحديد المتعدد.
+  final int selectedBlockCount;
+  final int totalBlockCount;
+
+  /// تنسيق الأعداد بأرقام الورقة نفسها (`document.formatNumber`).
+  final String Function(num) formatCount;
 
   /// تنسيق التحديد الحالي (`null` = مختلط/بلا تحديد).
   final PaperFont? activeFont;
@@ -166,10 +183,13 @@ class PreviewToolbar extends StatelessWidget {
       elevation: 2,
       child: SizedBox(
         height: 52,
-        child: ListView(
+        // SingleChildScrollView + Row (لا ListView): كل أزرار الشريط
+        // مبنية دائماً فيبقى كل زر موجوداً في الشجرة وقابلاً للنقر
+        // والوصول (ensureVisible) مهما كان موضع التمرير الأفقي.
+        child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-          children: <Widget>[
+          child: Row(children: <Widget>[
             _ToolButton(
               icon: Icons.undo,
               tooltip: 'تراجع',
@@ -202,6 +222,19 @@ class PreviewToolbar extends StatelessWidget {
               onTap: onToggleMultiSelect,
               selected: multiSelect,
             ),
+            _ToolButton(
+              key: const ValueKey<String>('select-all-blocks'),
+              icon: allBlocksSelected ? Icons.deselect : Icons.select_all,
+              tooltip: allBlocksSelected ? 'إلغاء تحديد الكل' : 'تحديد الكل',
+              onTap: isBusy ? null : onToggleSelectAll,
+              selected: allBlocksSelected,
+            ),
+            if (multiSelect)
+              _SelectionCounter(
+                selected: selectedBlockCount,
+                total: totalBlockCount,
+                formatCount: formatCount,
+              ),
             const _Divider(),
             _FontMenu(
               activeFont: activeFont,
@@ -304,7 +337,7 @@ class PreviewToolbar extends StatelessWidget {
               onTap: isBusy ? null : onExportWord,
             ),
             if (selectionLabel.isNotEmpty) _SelectionChip(label: selectionLabel),
-          ],
+          ]),
         ),
       ),
     );
@@ -326,6 +359,7 @@ class _Divider extends StatelessWidget {
 
 class _ToolButton extends StatelessWidget {
   const _ToolButton({
+    super.key,
     required this.icon,
     required this.tooltip,
     required this.onTap,
@@ -810,6 +844,39 @@ class _ExportButton extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// عدّاد «المحدد ٣ من ١٢» — يُبنى من عدّاد الكتل القابل للتحديد (أسئلة
+/// وفروع) فيظهر فوراً أثر «تحديد الكل» وأثر أي نقرة إضافة/إزالة.
+class _SelectionCounter extends StatelessWidget {
+  const _SelectionCounter({
+    required this.selected,
+    required this.total,
+    required this.formatCount,
+  });
+
+  final int selected;
+  final int total;
+  final String Function(num) formatCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      key: const ValueKey<String>('preview-selection-count'),
+      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        'المحدد ${formatCount(selected)} من ${formatCount(total)}',
+        style: TextStyle(fontSize: 11, color: colorScheme.onSecondaryContainer),
       ),
     );
   }

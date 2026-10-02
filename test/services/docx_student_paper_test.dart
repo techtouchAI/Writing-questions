@@ -101,6 +101,26 @@ ExamDocument _document({PaperSettings? settings}) => ExamDocument(
       ],
     );
 
+
+/// نصّ الفقرة التي تحوي [needle] **كما يقرؤه Word**: مقاطع `<w:t>` بترتيبها
+/// مجمّعة. الأجزاء صارت جريانات مستقلة (رقم ← منطوق ← درجة)، فيُتحقَّق من
+/// النص المجمّع لا من سلسلة XML متصلة — وهو ما يراه القارئ فعلاً.
+String _paragraphText(String xml, String needle) {
+  for (final match in RegExp('<w:p>.*?</w:p>', dotAll: true).allMatches(xml)) {
+    final paragraph = match.group(0)!;
+    if (!paragraph.contains(needle)) {
+      continue;
+    }
+    final buffer = StringBuffer();
+    for (final text in RegExp(r'<w:t[^>]*>(.*?)</w:t>', dotAll: true)
+        .allMatches(paragraph)) {
+      buffer.write(text.group(1));
+    }
+    return buffer.toString();
+  }
+  fail('لا فقرة تحوي «$needle» في مستند Word.');
+}
+
 Future<Archive> _archive(
   ExamDocument document, {
   List<List<String>>? pageAssignments,
@@ -135,22 +155,45 @@ void main() {
     final xml = await _documentXml(document);
 
     // سطر العنوان: الرقم التلقائي + المنطوق + الدرجة الخام مطبوعة «(١٠ درجة)».
-    expect(xml.contains('السؤال الأول/ ما ناتج ٢ + ٢؟ (١٠ درجة)'), isTrue);
-    expect(xml.contains('أ) اختر الإجابة (٥ درجة)'), isTrue);
+    // النص يُقرأ مجمّعاً من جريانات الفقرة (رقم ← منطوق ← درجة) كما يراه Word.
+    expect(
+      _paragraphText(xml, 'ما ناتج ٢ + ٢؟'),
+      'السؤال الأول/ ما ناتج ٢ + ٢؟ (١٠ درجة)',
+    );
+    expect(
+      _paragraphText(xml, 'اختر الإجابة'),
+      'أ) اختر الإجابة (٥ درجة)',
+    );
 
     // نقاط السؤال داخل السؤال مع الترقيم التلقائي من نموذج المستند نفسه.
-    expect(xml.contains('${document.autoItemLabel(0)} نقطة السؤال الأولى'), isTrue);
-    expect(xml.contains('${document.autoItemLabel(1)} نقطة السؤال الثانية'), isTrue);
+    expect(
+      _paragraphText(xml, 'نقطة السؤال الأولى'),
+      '${document.autoItemLabel(0)} نقطة السؤال الأولى',
+    );
+    expect(
+      _paragraphText(xml, 'نقطة السؤال الثانية'),
+      '${document.autoItemLabel(1)} نقطة السؤال الثانية',
+    );
     // ونقاط الفرع بالترقيم المتصل نفسه (الاختيار من متعدد نقطتها الثانية).
-    expect(xml.contains('${document.autoItemLabel(0)} نص الفرع بعنصر'), isTrue);
-    expect(xml.contains('${document.autoItemLabel(1)} سؤال الخيارات'), isTrue);
+    expect(
+      _paragraphText(xml, 'نص الفرع بعنصر'),
+      '${document.autoItemLabel(0)} نص الفرع بعنصر',
+    );
+    expect(
+      _paragraphText(xml, 'سؤال الخيارات'),
+      '${document.autoItemLabel(1)} سؤال الخيارات',
+    );
 
-    // خيارات «اختيار من متعدد» تحت نقطتها بتسمياتها.
-    expect(xml.contains('( أ ) أربعة'), isTrue);
-    expect(xml.contains('( ب ) خمسة'), isTrue);
+    // خيارات «اختيار من متعدد» تحت نقطتها بتسمياتها — كل خيار جرياناته
+    // الخاصة (تسمية ثم نص)، والنص المجمّع يعيد السطر كما كان.
+    expect(_paragraphText(xml, 'أربعة'), contains('( أ ) أربعة'));
+    expect(_paragraphText(xml, 'خمسة'), contains('( ب ) خمسة'));
 
     // عبارات صح/خطأ يليها قوسا الإجابة الفارغان.
-    expect(xml.contains('١- ١ + ١ = ٢ ${ExamCatalog.trueFalseSlot}'), isTrue);
+    expect(
+      _paragraphText(xml, ExamCatalog.trueFalseSlot),
+      '١- ١ + ١ = ٢ ${ExamCatalog.trueFalseSlot}',
+    );
 
     // الترتيب: القسم ثم العنوان ثم نقطة السؤال تسبق الفرع.
     final section = xml.indexOf('القسم الأول');
@@ -340,7 +383,15 @@ void main() {
     final questionSpacingTwips = (PaperMetrics.pt(6) * 20).round();
     final optionSpacingTwips = (PaperMetrics.pt(12) * 20).round();
 
-    expect(RegExp('w:color w:val="12AB34"').allMatches(xml), hasLength(1));
+    // اللون على فقرات العنوان وحدها: أجزاء العنوان جريانات متعددة، فيُعدّ
+    // ما يحمل اللون من **فقرات** (لا من جريانات) — وهو المقصود: تلوين
+    // العنوان لا غيره.
+    expect(
+      RegExp(r'<w:p>(?:(?!</w:p>).)*w:color w:val="12AB34"(?:(?!</w:p>).)*</w:p>',
+              dotAll: true)
+          .allMatches(xml),
+      hasLength(1),
+    );
     expect(xml.contains('متن السؤال غير الملوّن'), isTrue);
     expect(xml.contains('نقطة السؤال'), isTrue);
     expect(xml.contains('w:line="360"'), isTrue);

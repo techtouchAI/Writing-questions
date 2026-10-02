@@ -217,6 +217,105 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # --------------------------------------------------------------------------
+  # التحقق البصري الخارجي: يُصيّر ملفَّي النمط الدقيق (Exact) بمحرّكات مستقلة
+  # ويقارن كل صفحة بلقطة المعاينة المقابلة بمقياس RMSE (انظر
+  # tool/verify_visual_parity.sh). مهمة منفصلة حتى لا تُثقل مسار البناء، لكن
+  # فشلها يُظهر التشغيل فاشلاً — فالطابقة البصرية شرط قبول لا إضافة تجميلية.
+  # --------------------------------------------------------------------------
+  visual-parity:
+    name: Visual regression (Exact PDF/DOCX vs preview)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.22.3'
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      # poppler لتصيير PDF، ImageMagick للمقارنة، وLibreOffice لتصيير Word
+      # (ثم يُحوَّل ناتجه إلى PDF بالـpoppler نفسه).
+      - name: Install rendering tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            poppler-utils imagemagick libreoffice-writer
+
+      # ناتج الركيزة يُحفظ ويُنشر عند الفشل: مرفقات CI أنفع عند قراءتها،
+      # وفشل الاختبار يجب أن يظهر سببه لا رقم خروجه فقط.
+      - name: Produce comparison artifacts (preview snapshots + Exact files)
+        shell: bash
+        run: |
+          mkdir -p build/visual_parity
+          set -o pipefail
+          flutter test test/visual/visual_parity_fixture_test.dart 2>&1 \
+            | tee build/visual_parity/fixture_test.log
+
+      - name: Compare rendered files against the preview (RMSE)
+        run: bash tool/verify_visual_parity.sh build/visual_parity
+
+      # سبب الفشل يُنشر كتعليق على التشغيل: سجلات CI قد لا تكون مقروءة من كل
+      # بيئة، والملخّص يجب أن يحمل السبب لا رقم الخروج وحده.
+      - name: Publish visual parity report
+        if: failure()
+        shell: bash
+        run: |
+          annotate() { # <العنوان> <النص>
+            local text="$1"
+            text="${text//%/%25}"
+            text="${text//$'\r'/%0D}"
+            text="${text//$'\n'/%0A}"
+            echo "::error title=$2::$text"
+          }
+
+          report=build/visual_parity/report.txt
+          if [ -f "$report" ]; then
+            annotate "$(tail -n 25 "$report")" "الطابقة البصرية"
+          fi
+
+          log=build/visual_parity/fixture_test.log
+          [ -f "$log" ] || exit 0
+          # (1) مراحل الركيزة: آخر ما وصلت إليه قبل الفشل.
+          stages="$(grep -F '[fixture]' "$log" | tail -n 8 || true)"
+          [ -z "$stages" ] || annotate "$stages" "مسار الركيزة"
+          # (2) رسالة الفشل نفسها (توقّع/استثناء) بأسطرها التالية.
+          failure="$(grep -m 1 -A 14 -F -e '[E]' -e 'Expected:' -e 'Actual:' -e 'Exception' -e 'assertion' "$log" || true)"
+          [ -z "$failure" ] || annotate "$failure" "سبب فشل الركيزة"
+
+      # مقاييس التشغيل تُنشر دائماً (نجاحاً وفشلاً): الرقم هو الدليل، ولا يُترك
+      # في مرفق لا يُقرأ — عند النجاح يظهر في تعليقات التشغيل بلا فتح سجلات.
+      - name: Summarize visual parity measurements
+        if: always()
+        shell: bash
+        run: |
+          file=build/visual_parity/report.txt
+          [ -f "$file" ] || exit 0
+          summary="$(grep -E 'RMSE|البكسلات المضمّنة|النتيجة' "$file" | tail -n 12 || true)"
+          [ -n "$summary" ] || exit 0
+          summary="${summary//%/%25}"
+          summary="${summary//$'\r'/%0D}"
+          summary="${summary//$'\n'/%0A}"
+          echo "::notice title=مقاييس التحقق البصري::$summary"
+
+      - name: Upload visual parity artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: visual-parity
+          path: build/visual_parity
+          if-no-files-found: warn
+          retention-days: 14
+
   release:
     name: Attach APK to GitHub release
     needs: build
