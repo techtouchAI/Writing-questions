@@ -147,14 +147,16 @@ Future<_PreviewCapture> _capturePreviewPage(WidgetTester tester) async {
 
   final capture = await tester.runAsync(() async {
     final image = await pageBoundary!.toImage(pixelRatio: 1);
+    final width = image.width;
+    final height = image.height;
     final png = await image.toByteData(format: ui.ImageByteFormat.png);
     final rgba = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
     image.dispose();
     return _PreviewCapture(
       pngBytes: png!.buffer.asUint8List(),
       rgba: rgba!.buffer.asUint8List(),
-      width: rgba.width,
-      height: rgba.height,
+      width: width,
+      height: height,
     );
   });
   expect(capture, isNotNull);

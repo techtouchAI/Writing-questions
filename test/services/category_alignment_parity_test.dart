@@ -120,10 +120,11 @@ void main() {
     test('start/end يتبعان اتجاه الورقة (RTL مقابل LTR)', () async {
       expect(await categoryJc(PaperAlign.start), 'right');
       expect(await categoryJc(PaperAlign.end), 'left');
-      expect(await categoryJc(PaperAlign.start, subject: 'Mathematics'),
+      // القالب الإنجليزي هو مسار LTR الفعلي في التطبيق.
+      expect(await categoryJc(PaperAlign.start, subject: 'English'),
           'left',
           reason: 'في ورقة LTR يبدأ السطر من اليسار.');
-      expect(await categoryJc(PaperAlign.end, subject: 'Mathematics'), 'right');
+      expect(await categoryJc(PaperAlign.end, subject: 'English'), 'right');
     });
   });
 
