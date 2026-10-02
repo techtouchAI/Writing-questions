@@ -13,6 +13,7 @@ import 'dart:convert';
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:writing_questions_app/layout/blueprint/exam_blueprint.dart';
 import 'package:writing_questions_app/layout/paper_metrics.dart';
 import 'package:writing_questions_app/layout/visual/visual_metrics.dart';
 import 'package:writing_questions_app/layout/visual/visual_typography.dart';
@@ -78,14 +79,40 @@ String _paragraphWith(String xml, String needle) {
 
 int _runsIn(String paragraph) => RegExp('<w:r>').allMatches(paragraph).length;
 
+/// جريان Word واحد: نصّه (مقاطع `<w:t>` مجمّعة) وهل هو غامق.
+class _Run {
+  const _Run(this.text, this.bold);
+  final String text;
+  final bool bold;
+}
+
+/// جريانات فقرة Word بترتيبها وبخصائص كل جريان.
+List<_Run> _runs(String paragraph) {
+  final runs = <_Run>[];
+  for (final match
+      in RegExp(r'<w:r>(.*?)</w:r>', dotAll: true).allMatches(paragraph)) {
+    final run = match.group(1)!;
+    final rPr = RegExp(r'<w:rPr>(.*?)</w:rPr>', dotAll: true)
+        .firstMatch(run)
+        ?.group(1);
+    final text = RegExp(r'<w:t[^>]*>(.*?)</w:t>', dotAll: true)
+        .allMatches(run)
+        .map((piece) => piece.group(1))
+        .join();
+    runs.add(_Run(text, rPr?.contains('<w:b/>') ?? false));
+  }
+  return runs;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('Word: الأجزاء جريانات مستقلة', () {
     test('سطر العنوان: الرقم والمنطوق والدرجة في جريانات منفصلة', () async {
       final document = _document();
-      final question = document.questions.single;
-      final label = document.displayQuestionLabel(question);
+      // الرقم من نفس البناء الدلالي الذي يقرؤه الراسمون (لا صياغة في الاختبار).
+      final titleLine = ExamBlueprint.from(document).questions.single.title;
+      final label = titleLine.number;
       final xml = await _docxXml(document);
       final title = _paragraphWith(xml, 'Stmt');
       expect(_runsIn(title), greaterThanOrEqualTo(3),
@@ -107,20 +134,22 @@ void main() {
     test('سطر النقطة: التسمية غامقة وحدها والنص غير غامق', () async {
       final xml = await _docxXml(_document());
       final point = _paragraphWith(xml, 'PointOne');
-      expect(_runsIn(point), greaterThanOrEqualTo(3),
+      final runs = _runs(point);
+      expect(runs.length, greaterThanOrEqualTo(3),
           reason: 'الرقم ← النص ← الدرجة ثلاثة جريانات.');
-      // جريان التسمية وحده يحمل <w:b/> داخل خصائصه.
-      final labelRun = RegExp(r'<w:r><w:rPr>(?:(?!</w:rPr>).)*<w:b/>'
-              r'(?:(?!</w:rPr>).)*</w:rPr><w:t[^>]*>[^<]*</w:t></w:r>')
-          .firstMatch(point);
-      expect(labelRun, isNotNull, reason: 'التسمية جريان غامق مستقل.');
-      // وجريان النص نفسه (الذي يحمل «PointOne») ليس غامقاً.
-      final textRun = RegExp(r'<w:r><w:rPr>((?:(?!</w:rPr>).)*)</w:rPr>'
-              r'<w:t[^>]*>PointOne</w:t></w:r>')
-          .firstMatch(point);
-      expect(textRun, isNotNull);
-      expect(textRun!.group(1)!.contains('<w:b/>'), isFalse,
-          reason: 'نص النقطة ليس غامقاً: الغامق للتسمية وحدها.');
+
+      // الجريان الذي يحوي نص النقطة ليس غامقاً…
+      final textRun = runs.firstWhere(
+        (run) => run.text.contains('PointOne'),
+        orElse: () => fail('لا جريان يحوي نص النقطة.'),
+      );
+      expect(textRun.bold, isFalse,
+          reason: 'نص النقطة ليس غامقاً (كانت النقطة المدموجة تُطبعه غامقاً).');
+
+      // …وجريان التسمية (الرقم) غامق وحده.
+      final others = runs.where((run) => !run.text.contains('PointOne')).toList();
+      expect(others.any((run) => run.bold), isTrue,
+          reason: 'تسمية النقطة جريان غامق مستقل عن نصها.');
     });
 
     test('صف الخيارات: لكل خيار تسمية ونص جريانين مستقلين', () async {
@@ -201,10 +230,14 @@ void main() {
       expect(b.x, greaterThan(c.x));
 
       // المسافة بين صندوقين متجاورين = عرض الصندوق + الفجوة (من العقد).
+      // تُقاس من **تسميتي** الخيارين (وكلتاهما في أول صندوقها) فلا يتداخل
+      // عرض التسمية مع نص الخيار في القياس.
+      final labelA = probe.words.firstWhere((word) => word.text.contains('A)'));
+      final labelB = probe.words.firstWhere((word) => word.text.contains('B)'));
       final step = PaperMetrics.pt(
         VisualMetrics.optionBoxWidthPx + VisualMetrics.optionWrapSpacingPx,
       );
-      expect((a.x - b.x).abs(), closeTo(step, 1.0),
+      expect((labelA.x - labelB.x).abs(), closeTo(step, 1.0),
           reason: 'عرض صندوق الخيار وفجوته من العقد لا من قياس النص الحر.');
       expect(
         probe.words.any((word) => word.text.contains('PointOne')),

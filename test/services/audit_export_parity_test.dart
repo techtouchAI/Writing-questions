@@ -228,7 +228,7 @@ void main() {
 
     // الأسطر الملتفّة: يمتد كل سطر متوسط حتى حافة مساحة نص الفرع
     // (MSO: الضبط يملأ السطر من الحافة إلى الحافة).
-    const contentWidth = branchWidth;
+    final contentWidth = branchWidth;
     for (final line in justifyLines.sublist(0, justifyLines.length - 1)) {
       final minLeft = line.words
           .map((word) => word.x)

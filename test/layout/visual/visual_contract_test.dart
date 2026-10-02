@@ -177,7 +177,8 @@ void main() {
       // `plainText` نصّ المحتوى: زخرفة الآية تبقى (هي التي تعرّفه للراسم)،
       // وعلامات الصيغة `$$` تُنزع لأن مقطع الرياضيات يحمل المحتوى وحده.
       expect(content.plainText, 'قبل x^2 بين ﴿آية﴾ بعد');
-      expect(content.runs[1].text, r'$$x^2$$');
+      // مقطع الرياضيات يحمل المحتوى وحده (العلامات `$` ليست جزءاً من LaTeX).
+      expect(content.runs[1].text, 'x^2');
       expect(content.runs.every((run) => run.text.isNotEmpty), isTrue);
     });
 
