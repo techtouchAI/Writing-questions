@@ -133,7 +133,7 @@ abstract final class PaperStyles {
       final s = base.reference;
       return VisualFlutterStyle.from(
         s.copyWith(
-          font: override?.font ?? defaultFont ?? s.font,
+          font: override?.font ?? defaultFont,
           fontSizePt: override?.fontSize ?? s.fontSizePt * fontScale,
           lineHeight: override?.lineHeight ?? s.lineHeight * heightScale,
           bold: override?.bold ?? s.bold,

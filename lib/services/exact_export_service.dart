@@ -6,7 +6,6 @@ import 'package:archive/archive.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
-import '../layout/paper_metrics.dart';
 import 'export_file_service.dart';
 import 'page_snapshot_service.dart';
 
@@ -78,7 +77,6 @@ abstract final class ExactExportService {
     final archive = Archive();
     final media = StringBuffer();
     final relationships = StringBuffer();
-    final body = StringBuffer();
     final imageTags = <String>[];
 
     for (var index = 0; index < snapshots.length; index++) {
@@ -142,7 +140,7 @@ abstract final class ExactExportService {
       '<w:body>'
       '${imageTags.join()}'
       '<w:sectPr>'
-      '<w:pgSz w:w="${_pageWidthTwips}" w:h="${_pageHeightTwips}"/>'
+      '<w:pgSz w:w="$_pageWidthTwips" w:h="$_pageHeightTwips"/>'
       '<w:pgMar w:top="0" w:right="0" w:bottom="0" w:left="0" '
       'w:header="0" w:footer="0" w:gutter="0"/>'
       '<w:bidi/>'
