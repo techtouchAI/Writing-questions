@@ -56,6 +56,43 @@ REPORT="$ARTIFACTS/report.txt"
 rm -rf "$RENDERED"
 mkdir -p "$RENDERED/pdf" "$RENDERED/docx" "$RENDERED/docx_pdf" "$RENDERED/norm"
 
+# التقرير يُفتح هنا (لا بعد التصيير): لو فشل أمر خارجي يبقى سببه مكتوباً
+# وقابلاً للنشر بدل أن يضيع مع رقم الخروج.
+{
+  echo "التحقق البصري — مقارنة الملفات المصيَّرة بلقطات المعاينة"
+  echo "السقوف: PDF ≤ $PDF_THRESHOLD، Word ≤ $DOCX_THRESHOLD"
+  echo "الأدوات: $(pdftoppm -v 2>&1 | head -n 1)"
+  echo "         $("$SOFFICE" --version 2>&1 | head -n 1)"
+  echo
+} >"$REPORT"
+
+# ينفّذ أمراً ويسجّل مخرجه ورمزه في التقرير؛ وعند الفشل ينشر سببه كتعليق.
+run_tool() { # <وصف> <أمر...>
+  local label="$1"
+  shift
+  local output status=0
+  output="$("$@" 2>&1)" || status=$?
+  {
+    echo "[$label] exit=$status"
+    printf '%s\n' "$output"
+  } >>"$REPORT"
+  if [ "$status" -ne 0 ]; then
+    echo "::error title=$label::فشل تنفيذ الأمر (exit $status): $(printf '%s' "$output" | head -c 600 | tr '\n' ' ')"
+    return 1
+  fi
+  return 0
+}
+
+# تصيير صفحات PDF: pdftoppm أولاً، ثم pdftocairo (من poppler نفسه) بديلاً
+# مكافئاً إن رفض البناء الحالي وسائط pdftoppm.
+render_pdf() { # <ملف PDF> <بادئة المخرجات> <وسم>
+  local pdf="$1" prefix="$2" label="$3"
+  if run_tool "$label (pdftoppm)" pdftoppm -r 96 -png "$pdf" "$prefix"; then
+    return 0
+  fi
+  run_tool "$label (pdftocairo)" pdftocairo -r 96 -png "$pdf" "$prefix"
+}
+
 # أبعاد الصفحة وعددها من الـmanifest نفسه (لا أرقام مكرّرة في السكربت).
 read -r PAGES WIDTH HEIGHT < <(
   python3 - "$ARTIFACTS/manifest.json" <<'PY'
@@ -72,20 +109,29 @@ echo "الصفحات: $PAGES، المقاس المرجعي: ${WIDTH}x${HEIGHT} (
 # ------------------------------ التصيير ------------------------------
 
 # PDF: poppler يصيّر صفحات الملف بدقة 96dpi (بكسل لوحة المعاينة نفسه).
-pdftoppm -r 96 -png -quiet "$ARTIFACTS/exact.pdf" "$RENDERED/pdf/page"
+if ! render_pdf "$ARTIFACTS/exact.pdf" "$RENDERED/pdf/page" "تصيير PDF"; then
+  echo "::error title=تصيير PDF::تعذّر تصيير exact.pdf بأدوات poppler — انظر $REPORT."
+  exit 1
+fi
 
 # Word: LibreOffice يحوّل DOCX إلى PDF ثم poppler يصيّره. ملف تعريف
 # LibreOffice في /tmp حتى لا يحتاج مجلد المستخدم في بيئة نظيفة.
-"$SOFFICE" --headless --norestore --nolockcheck \
+soffice_output="$("$SOFFICE" --headless --norestore --nolockcheck \
   -env:UserInstallation="file:///tmp/lo-visual-parity" \
   --convert-to pdf --outdir "$RENDERED/docx_pdf" \
-  "$ARTIFACTS/exact.docx" >"$RENDERED/soffice.log" 2>&1 || true
+  "$ARTIFACTS/exact.docx" 2>&1)" || true
+{
+  echo '[تحويل Word (LibreOffice)]'
+  printf '%s\n' "$soffice_output"
+} >>"$REPORT"
 if [ ! -f "$RENDERED/docx_pdf/exact.pdf" ]; then
-  sed -n '1,20p' "$RENDERED/soffice.log" >&2 || true
-  echo "::error title=تحويل Word::تعذّر على LibreOffice إنتاج PDF من exact.docx."
+  echo "::error title=تحويل Word::تعذّر على LibreOffice إنتاج PDF من exact.docx: $(printf '%s' "$soffice_output" | head -c 600 | tr '\n' ' ')"
   exit 1
 fi
-pdftoppm -r 96 -png -quiet "$RENDERED/docx_pdf/exact.pdf" "$RENDERED/docx/page"
+if ! render_pdf "$RENDERED/docx_pdf/exact.pdf" "$RENDERED/docx/page" "تصيير Word"; then
+  echo "::error title=تصيير Word::تعذّر تصيير PDF الناتج من LibreOffice — انظر $REPORT."
+  exit 1
+fi
 
 # ------------------------------ المقارنة ------------------------------
 
@@ -101,11 +147,7 @@ rmse_between() { # <أ> <ب>
 }
 
 failures=0
-{
-  echo "التحقق البصري — مقارنة الملفات المصيَّرة بلقطات المعاينة"
-  echo "السقوف: PDF ≤ $PDF_THRESHOLD، Word ≤ $DOCX_THRESHOLD"
-  echo
-} >"$REPORT"
+echo >>"$REPORT"
 
 check_track() { # <وسم> <مجلد التصيير> <سقف>
   local label="$1" dir="$2" threshold="$3"
