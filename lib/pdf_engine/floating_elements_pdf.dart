@@ -4,7 +4,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../models/exam_canvas_geometry.dart';
 import '../models/floating_element.dart';
-import '../models/latex_plain_text.dart';
+import '../models/equation_model.dart';
 import '../models/paper_font.dart';
 import '../models/tex_content.dart';
 import 'exam_fonts.dart';
@@ -192,7 +192,7 @@ abstract final class FloatingElementsPdf {
       final raster = mathRasters?.lookup(segment.text, fontSize);
       if (raster == null) {
         inline.add(
-          pw.Text(LatexPlainText.of(segment.text), style: style, textAlign: align),
+          pw.Text(EquationModel.readableText(segment.text), style: style, textAlign: align),
         );
         continue;
       }
@@ -333,7 +333,7 @@ abstract final class FloatingElementsPdf {
             ? pw.Center(
                 child: pw.Text(
                   // معادلة قديمة تعذّر ترسيمها: نص رياضي مقروء بلا كود.
-                  LatexPlainText.of(element.label),
+                  EquationModel.readableText(element.label),
                   style: const pw.TextStyle(fontSize: 10.5),
                   textAlign: pw.TextAlign.center,
                 ),

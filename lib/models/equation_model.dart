@@ -203,7 +203,258 @@ class EquationModel {
       return EquationModel(nodes: <EqNode>[EqText(latex)]);
     }
   }
+
+  /// نص مقروء لصيغة مخزَّنة — **آخر ارتداد** عندما يعجز محرك الرسم نفسه
+  /// (`flutter_math_fork`) عن ترسيم صيغة (صيغة تالفة أو قديمة غير مدعومة):
+  /// عرض خطي من شجرة العقد نفسها ([parse] لا يرمي أبداً) بلا أي رمز LaTeX
+  /// (`\` و`$` و`{` و`}` لا تظهر) وبلا فقد محتوى.
+  ///
+  /// المسارات الطبيعية لا تصل إلى هنا إطلاقاً: المعاينة والـ PDF وWord
+  /// ترتد كلها إلى المحرك نفسه (ودجت أو لقطة عالية الدقة) أو إلى OMML.
+  static String readableText(String latex) => parse(latex).toDisplayText();
+
+  /// عرض خطي مقروء لعقد المعادلة (انظر [readableText]).
+  String toDisplayText() {
+    final buffer = StringBuffer();
+    for (final node in nodes) {
+      _writeDisplayText(buffer, node);
+    }
+    return _tidyDisplayText(buffer.toString());
+  }
 }
+
+/// يكتب العرض المقروء لعقدة واحدة (قواعد الخط الواحد في [EquationModel]).
+void _writeDisplayText(StringBuffer buffer, EqNode node) {
+  if (node is EqText) {
+    buffer.write(_displayTextOfRaw(node.text));
+    return;
+  }
+  if (node is EqGroup) {
+    for (final child in node.children) {
+      _writeDisplayText(buffer, child);
+    }
+    return;
+  }
+  if (node is EqFraction) {
+    buffer.write('(');
+    for (final child in node.numerator) {
+      _writeDisplayText(buffer, child);
+    }
+    buffer.write(')/(');
+    for (final child in node.denominator) {
+      _writeDisplayText(buffer, child);
+    }
+    buffer.write(')');
+    return;
+  }
+  if (node is EqSqrt) {
+    if (node.root.isNotEmpty) {
+      final root = _displayOfNodes(node.root);
+      buffer.write(
+        MathSymbols.hasSuperscriptForm(root)
+            ? MathSymbols.toSuperscript(root)
+            : '($root)',
+      );
+    }
+    buffer.write('√(${_displayOfNodes(node.body)})');
+    return;
+  }
+  if (node is EqSup) {
+    buffer.write(_displayOfNodes(node.base));
+    final exponent = _displayOfNodes(node.exponent);
+    buffer.write(
+      MathSymbols.hasSuperscriptForm(exponent)
+          ? MathSymbols.toSuperscript(exponent)
+          : '($exponent)',
+    );
+    return;
+  }
+  if (node is EqSub) {
+    buffer.write(_displayOfNodes(node.base));
+    final subscript = _displayOfNodes(node.subscript);
+    buffer.write(
+      MathSymbols.hasSubscriptForm(subscript)
+          ? MathSymbols.toSubscript(subscript)
+          : '($subscript)',
+    );
+    return;
+  }
+  if (node is EqFence) {
+    buffer
+      ..write(_displayDelimiter(node.left))
+      ..write(_displayOfNodes(node.body))
+      ..write(_displayDelimiter(node.right));
+    return;
+  }
+  if (node is EqAccent) {
+    // العلامة (سهم/قبعة/خط) لا صورة خطية لها: المحتوى وحده يُعرض كاملاً.
+    buffer.write(_displayOfNodes(node.body));
+    return;
+  }
+}
+
+String _displayOfNodes(List<EqNode> nodes) {
+  final buffer = StringBuffer();
+  for (final node in nodes) {
+    _writeDisplayText(buffer, node);
+  }
+  return buffer.toString();
+}
+
+/// محدد أقواس للعرض المقروء: `\left`/`\right` تُنزع، والمهروب `\{` محرف
+/// حرفي، و`.` غير المرئي يُحذف — وبلا أي شرطة مائلة في الناتج.
+String _displayDelimiter(String raw) {
+  var value = raw.trim();
+  for (final prefix in <String>[r'\left', r'\right']) {
+    if (value.startsWith(prefix)) {
+      value = value.substring(prefix.length).trim();
+    }
+  }
+  if (value == '.') {
+    return '';
+  }
+  return _displayTextOfRaw(value);
+}
+
+/// عرض نص حر: الأوامر من سجلّ [MathSymbols] (المعروف ← محرفه، والمجهول ←
+/// اسمه بلا شرطة)، والبنى التي قد تصل خاماً داخل مقطع محفوظ حرفياً
+/// (`\frac`/`\sqrt` داخل `\left` بلا `\right` مثلاً) تُعرض بنيتها نفسها،
+/// والمحارف البنائية (`{` `}` `$` `\`) تُنزع، والأسس/الدلالات الشاردة
+/// تُحوَّل صورها يونيكود عند القدرة — فلا يظهر كود LaTeX أبداً.
+String _displayTextOfRaw(String raw) {
+  if (raw.isEmpty) {
+    return '';
+  }
+  final buffer = StringBuffer();
+  var index = 0;
+
+  // وسيط واحد من المقطع الخام: مجموعة {...} متوازنة (أو ما بقي من غير
+  // المغلقة) أو محرف واحد — ويُعرض داخلها عادياً.
+  String readArgument() {
+    while (index < raw.length && raw[index] == ' ') {
+      index++;
+    }
+    if (index >= raw.length) {
+      return '';
+    }
+    if (raw[index] != '{') {
+      final char = raw[index];
+      index++;
+      return _displayTextOfRaw(char);
+    }
+    final start = index;
+    var depth = 0;
+    while (index < raw.length) {
+      final char = raw[index];
+      if (char == '{') {
+        depth++;
+      } else if (char == '}') {
+        depth--;
+        if (depth == 0) {
+          index++;
+          break;
+        }
+      }
+      index++;
+    }
+    final inner = depth == 0
+        ? raw.substring(start + 1, index - 1)
+        : raw.substring(start + 1);
+    return _displayTextOfRaw(inner);
+  }
+
+  while (index < raw.length) {
+    final char = raw[index];
+    final match = MathSymbols.commandPattern.matchAsPrefix(raw, index);
+    if (match != null) {
+      index = match.end;
+      final command = match.group(0)!;
+      final escaped = MathSymbols.escapedCharacters[command];
+      if (escaped != null) {
+        // `\{` و`\$`... محارف حرفية كتبها المدرس فتبقى كما هي.
+        buffer.write(escaped);
+        continue;
+      }
+      final name = command.substring(1);
+      if (name == 'left' || name == 'right') {
+        // المحدد بعد `\left`/`\right` محرف عادي يليهما، و`.` غير المرئي يُحذف.
+        if (index < raw.length && raw[index] == '.') {
+          index++;
+        }
+        continue;
+      }
+      if (name == 'frac' || name == 'dfrac' || name == 'tfrac') {
+        buffer.write('(${readArgument()})/(${readArgument()})');
+        continue;
+      }
+      if (name == 'sqrt') {
+        while (index < raw.length && raw[index] == ' ') {
+          index++;
+        }
+        if (index < raw.length && raw[index] == '[') {
+          final close = raw.indexOf(']', index);
+          final root = close == -1
+              ? raw.substring(index + 1)
+              : raw.substring(index + 1, close);
+          index = close == -1 ? raw.length : close + 1;
+          final rootText = _displayTextOfRaw(root);
+          buffer.write(
+            MathSymbols.hasSuperscriptForm(rootText)
+                ? MathSymbols.toSuperscript(rootText)
+                : '($rootText)',
+          );
+        }
+        buffer.write('√(${readArgument()})');
+        continue;
+      }
+      final spacing = MathSymbols.spaceCommands[name];
+      if (spacing != null) {
+        if (spacing > -0.05) {
+          buffer.write(spacing > 0.6 ? '  ' : ' ');
+        }
+        continue;
+      }
+      if (MathSymbols.textCommands.contains(name)) {
+        // محتوى `\text{...}` نص حر يليها في المقطع نفسه.
+        continue;
+      }
+      final glyph = MathSymbols.glyphFor(command);
+      if (glyph != null) {
+        buffer.write(glyph);
+        continue;
+      }
+      // أمر مجهول: اسمه مقروءاً (`\foo` ← `foo`)، و`\` و`\\` فراغ.
+      buffer.write(RegExp(r'^[A-Za-z]+$').hasMatch(name) ? name : ' ');
+      continue;
+    }
+    index++;
+    if (char == '{' || char == '}' || char == r'$' || char == r'\') {
+      continue;
+    }
+    if (char == '^' || char == '_') {
+      // أسّ/دليل شارد (من مقطع حرفي محفوظ): صورته يونيكود إن قُدر، وإلا
+      // يبقى المحتوى وحده بلا علامة خام.
+      if (index < raw.length) {
+        final next = raw[index];
+        final mapped = char == '^'
+            ? MathSymbols.superscriptOf(next)
+            : MathSymbols.subscriptOf(next);
+        if (mapped != null) {
+          buffer.write(mapped);
+          index++;
+          continue;
+        }
+      }
+      continue;
+    }
+    buffer.write(char);
+  }
+  return buffer.toString();
+}
+
+/// تطبيع نهائي للعرض المقروء: فراغات مفردة وبلا أطراف.
+String _tidyDisplayText(String value) =>
+    value.replaceAll(RegExp(r'\s+'), ' ').trim();
 
 /// محلل LaTeX تنازلي متساهل — يحفظ حرفياً كل ما لا يمثّله تركيبياً.
 class _EqParser {

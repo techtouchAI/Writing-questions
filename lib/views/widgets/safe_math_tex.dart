@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 
-import '../../models/latex_plain_text.dart';
+import '../../models/equation_model.dart';
 
 /// يعرض صيغة رياضية مرئية — وإن تعذّر ترسيمها لأي سبب (صيغة قديمة غير
 /// مدعومة) عرضها **نصاً رياضياً مقروءاً** بلا أي كود LaTeX.
@@ -34,7 +34,7 @@ class SafeMathTex extends StatelessWidget {
       return Math.tex(trimmed, mathStyle: mathStyle, textStyle: textStyle);
     } catch (_) {
       return Text(
-        LatexPlainText.of(trimmed),
+        EquationModel.readableText(trimmed),
         style: fallbackTextStyle ?? textStyle,
         textDirection: TextDirection.ltr,
       );

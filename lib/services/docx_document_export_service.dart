@@ -10,7 +10,7 @@ import '../layout/blueprint/exam_blueprint.dart';
 import '../layout/paper_metrics.dart';
 import '../models/exam_canvas_geometry.dart';
 import '../models/exam_document.dart';
-import '../models/latex_plain_text.dart';
+import '../models/equation_model.dart';
 import '../models/floating_element.dart';
 import '../models/paper_divider.dart';
 import '../models/paper_font.dart';
@@ -457,6 +457,7 @@ class _DocxBuilder {
       return;
     }
     final seenIds = <String>{};
+    final formulas = <FloatingElement>[];
     for (final element in document.floatingElements) {
       // العناصر المرتبطة بسؤال تُصدَّر مع فقرات سؤالها لا في طبقة الصفحة،
       // فتبقى معه عند تحريكه في Word أيضاً.
@@ -467,22 +468,56 @@ class _DocxBuilder {
       if (assignedPage != pageIndex || !seenIds.add(element.id)) {
         continue;
       }
+      if (element.isFormula) {
+        // المعادلة لا تُعوَّم أبداً: فقرة في تدفق النص بترتيبها البصري،
+        // فلا تداخل ولا تجاوز ولا ترتيب متغير داخل Word.
+        formulas.add(element);
+        continue;
+      }
       await _buildFloatingElement(body, element, pageAnchored: true);
+    }
+    for (final element in _formulaFlowOrder(formulas)) {
+      await _buildFormulaElement(body, element);
     }
   }
 
-  /// يُصدّر العناصر المرتبطة بالسؤال [questionId] داخل فقرات السؤال نفسه
-  /// (مرساة نسبية للفقرة) — فيبقى كل عنصر مع سؤاله.
+  /// ترتيب المعادلات كما يراها المدرس على اللوحة: من الأعلى إلى الأسفل ثم
+  /// من اليمين إلى اليسار — ترتيب ثابت داخل الملف لا يعتمد على ترتيب
+  /// الإضافة، فتخرج الصيغ ١ ثم ٢ ثم ٣ تحت سؤالها كما في المعاينة.
+  static List<FloatingElement> _formulaFlowOrder(
+    Iterable<FloatingElement> elements,
+  ) {
+    return elements.toList()..sort((a, b) {
+        final byRow = a.dy.compareTo(b.dy);
+        return byRow != 0 ? byRow : a.dx.compareTo(b.dx);
+      });
+  }
+
+  /// يُصدّر العناصر المرتبطة بالسؤال [questionId] داخل فقرات السؤال نفسه —
+  /// فيبقى كل عنصر مع سؤاله. المعادلات تُكتب **فقرات في التدفق** أسفل
+  /// السؤال بترتيبها البصري (لا تعويم ولا تداخل)، وبقية العناصر تحافظ على
+  /// مراسيها النسبية للفقرة.
   Future<void> _buildOwnedElements(StringBuffer body, String questionId) async {
+    final formulas = <FloatingElement>[];
     for (final element in document.floatingElements) {
       if (element.ownerQuestionId != questionId) {
         continue;
       }
+      if (element.isFormula) {
+        formulas.add(element);
+        continue;
+      }
       await _buildFloatingElement(body, element, pageAnchored: false);
+    }
+    for (final element in _formulaFlowOrder(formulas)) {
+      await _buildFormulaElement(body, element);
     }
   }
 
-  /// يصدّر عنصراً عائماً واحداً: مربع نص / معادلة / صورة / شكل.
+  /// يصدّر عنصراً عائماً واحداً: مربع نص / صورة / شكل.
+  ///
+  /// المعادلة لا تُعوَّم أبداً: حتى لو وصلت إلى هنا تُصدَّر فقرةً في تدفق
+  /// النص عبر [_buildFormulaElement] (فلا تداخل ولا خروج عن الترتيب).
   ///
   /// [pageAnchored]: مرساة بترتيب الصفحة (عنصر حر) أو نسبةً لفقرة السؤال
   /// (عنصر مرتبط بسؤال).
@@ -501,59 +536,7 @@ class _DocxBuilder {
       return;
     }
     if (element.isFormula) {
-      final label = element.label.trim();
-      if (label.isEmpty) {
-        return;
-      }
-      final mathZone = _formulaMathZone(element);
-      if (mathZone != null) {
-        // معادلة Word أصلية داخل الإطار العائم نفسه: حدّ الصندوق وموضعه
-        // وحجم خطّه كما هي، والمعادلة داخله قابلة للتحرير بلا صورة.
-        _buildTextBox(
-          body,
-          element,
-          floatingOnPage: true,
-          pageAnchored: pageAnchored,
-          mathOverride: mathZone,
-        );
-        return;
-      }
-      final boxWidthPt = PaperMetrics.pt(element.width);
-      final boxHeightPt = PaperMetrics.pt(element.height);
-      final raster = await _rasterizeMath(_MathPlaceholder(label, boxHeightPt));
-      if (raster == null || raster.pngBytes.isEmpty) {
-        // تعذّر ترسيم المعادلة: تُكتب نصاً رياضياً مقروءاً بدل كودها.
-        _buildTextBox(
-          body,
-          element,
-          floatingOnPage: true,
-          pageAnchored: pageAnchored,
-          textOverride: LatexPlainText.of(label),
-        );
-        return;
-      }
-      var widthPt = boxWidthPt;
-      var heightPt = boxHeightPt;
-      if (raster.widthPt > 0 && raster.heightPt > 0 && widthPt > 0 && heightPt > 0) {
-        final scale = math.min(
-          math.min(widthPt / raster.widthPt, heightPt / raster.heightPt),
-          2.0,
-        );
-        widthPt = raster.widthPt * scale;
-        heightPt = raster.heightPt * scale;
-      }
-      final widthPx = PaperMetrics.px(widthPt);
-      final heightPx = PaperMetrics.px(heightPt);
-      _writeAnchoredImageParagraph(
-        body,
-        raster.pngBytes,
-        widthPt,
-        heightPt,
-        dx: element.dx + (element.width - widthPx) / 2,
-        dy: element.dy + (element.height - heightPx) / 2,
-        rotationDegrees: element.rotationDegrees,
-        pageAnchored: pageAnchored,
-      );
+      await _buildFormulaElement(body, element);
       return;
     }
     if (element.isImage) {
@@ -716,6 +699,7 @@ class _DocxBuilder {
           size: 34,
           font: PaperFont.amiri,
           applyHeaderStyle: false,
+          applyHeaderLayout: false,
         ),
       );
     }
@@ -737,14 +721,21 @@ class _DocxBuilder {
   }
 
   /// فقرة عربية (RTL دائماً) في الترويسة أو التذييل: تنسيق الترويسة الذي
-  /// اختاره المدرس (خط/حجم/عريض/مائل/تسطير/لون) يُطبَّق ما لم يُطلب غيره.
+  /// اختاره المدرس (خط/حجم/عريض/مائل/تسطير/لون/تباعد أسطر) يُطبَّق ما لم
+  /// يُطلب غيره — فإعداد الترويسة في الواجهة مصدر وحيد يصل إلى الملف.
+  ///
+  /// [applyHeaderLayout] يضيف إعدادات التخطيط الخاصة بسطور الترويسة
+  /// (المحاذاة، والمسافة بعد الفقرة، وارتفاع السطر الأساسي 1.6× معامل
+  /// الورقة — الرقم نفسه في المعاينة والـ PDF): تُستثنى منه البسملة
+  /// والتذييل. والحجم الافتراضي 10pt مطابقةً لهما أيضاً.
   String _headerParagraph(
     String text, {
     required String alignment,
     bool bold = false,
-    int size = 22,
+    int size = 20,
     PaperFont? font,
     bool applyHeaderStyle = true,
+    bool applyHeaderLayout = true,
   }) {
     final style = applyHeaderStyle ? document.header.style : PaperTextStyle.empty;
     final effectiveBold = style.bold ?? bold;
@@ -755,15 +746,30 @@ class _DocxBuilder {
       font ?? style.font ?? document.settings.defaultFont,
     );
     final color = style.colorHex;
-    final line = (240 * document.settings.lineSpacing).round();
+    // تباعد الأسطر: إعداد المدرس للترويسة يسود، وإلا أساس الترويسة
+    // (1.6 × معامل ارتفاع الورقة — كما في المعاينة والـ PDF حرفياً)،
+    // أو التباعد العام للورقة في التذييل والبسملة.
+    final baseLineRatio = applyHeaderLayout
+        ? 1.6 * document.settings.heightScale
+        : document.settings.lineSpacing;
+    final line = (240 * (style.lineHeight ?? baseLineRatio)).round();
+    // المسافة بعد كل سطر ترويسة (إعداد المدرس: بكسل منطقي ← تويب).
+    final spacingAfter = !applyHeaderLayout || style.paragraphSpacing == null
+        ? null
+        : (PaperMetrics.pt(style.paragraphSpacing!) * 20).round();
+    // المحاذاة: إعداد المدرس يتجاوز محاذاة العمود — و«بداية السطر» في
+    // مستند RTL هي اليمين، كما في المعاينة والـ PDF.
+    final effectiveAlign = !applyHeaderLayout || style.align == null
+        ? alignment
+        : _wordAlign(style.align);
     final runProperties = '<w:rPr><w:rtl/>${effectiveBold ? '<w:b/>' : ''}'
         '${style.italic == true ? '<w:i/>' : ''}'
         '${style.underline == true ? '<w:u w:val="single"/>' : ''}'
         '${color == null ? '' : '<w:color w:val="$color"/>'}'
         '<w:sz w:val="$effectiveSize"/>'
         '<w:rFonts w:ascii="$fontName" w:hAnsi="$fontName" w:cs="$fontName"/></w:rPr>';
-    return '<w:p><w:pPr><w:bidi/><w:jc w:val="$alignment"/>'
-        '<w:spacing w:line="$line" w:lineRule="auto"/></w:pPr>'
+    return '<w:p><w:pPr><w:bidi/><w:jc w:val="$effectiveAlign"/>'
+        '<w:spacing${spacingAfter == null ? '' : ' w:before="0" w:after="$spacingAfter"'} w:line="$line" w:lineRule="auto"/></w:pPr>'
         '${_runsXml(text, runProperties, effectiveSize / 2)}'
         '</w:p>';
   }
@@ -784,8 +790,20 @@ class _DocxBuilder {
       if (source == null) {
         return '<w:p/>';
       }
-      return '${_headerParagraph(source.title, alignment: 'center', bold: true)}'
-          '${_headerParagraph(source.nameLine, alignment: 'center')}';
+      // سطر التذييل يأخذ تنسيق نص الترويسة (خط/حجم/لون/تباعد أسطر) لكن
+      // لا محاذاة الترويسة ولا مسافة فقراتها — كالمعاينة والـ PDF.
+      final title = _headerParagraph(
+        source.title,
+        alignment: 'center',
+        bold: true,
+        applyHeaderLayout: false,
+      );
+      final nameLine = _headerParagraph(
+        source.nameLine,
+        alignment: 'center',
+        applyHeaderLayout: false,
+      );
+      return '$title$nameLine';
     }
 
     String cell(int cellWidth, String content) =>
@@ -802,7 +820,7 @@ class _DocxBuilder {
       '<w:tblGrid><w:gridCol w:w="$side"/><w:gridCol w:w="$middle"/><w:gridCol w:w="$side"/></w:tblGrid>'
       '<w:tr>'
       '${cell(side, signature(data.secondary))}'
-      '${cell(middle, phrase == null ? '<w:p/>' : _headerParagraph(phrase, alignment: 'center', bold: true))}'
+      '${cell(middle, phrase == null ? '<w:p/>' : _headerParagraph(phrase, alignment: 'center', bold: true, applyHeaderLayout: false))}'
       '${cell(side, signature(data.primary))}'
       '</w:tr></w:tbl>'
       // فقرة مرساة صغيرة تتبع الجدول العائم (لا تأخذ مساحة تُذكر).
@@ -977,7 +995,7 @@ class _DocxBuilder {
         continue;
       }
       if (element.isFormula) {
-        await _buildFormulaAttachment(body, element);
+        await _buildFormulaElement(body, element);
         continue;
       }
       if (element.type == FloatingElementType.image) {
@@ -1019,7 +1037,6 @@ class _DocxBuilder {
     bool floatingOnPage = false,
     bool pageAnchored = true,
     String? textOverride,
-    String? mathOverride,
   }) {
     final text = textOverride ??
         (element.label.trim().isEmpty ? ' ' : element.label.trim());
@@ -1084,7 +1101,7 @@ class _DocxBuilder {
       '$grid<w:tr>$rowProperties<w:tc><w:tcPr>$cellWidth</w:tcPr>'
       '<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:jc w:val="$align"/>'
       '<w:spacing w:line="$line" w:lineRule="auto"/></w:pPr>'
-      '${mathOverride ?? _runsXml(text, runProperties, size / 2)}</w:p></w:tc></w:tr></w:tbl>',
+      '${_runsXml(text, runProperties, size / 2)}</w:p></w:tc></w:tr></w:tbl>',
     );
   }
 
@@ -1144,12 +1161,17 @@ class _DocxBuilder {
     );
   }
 
-  /// يضيف فقرة معادلة حرة ([FloatingElementType.formula]) إلى المرفقات:
-  /// تُصدَّر أولاً **معادلة Word أصلية** (`m:oMathPara` في فقرة موسَّطة؛
-  /// انظر [_formulaMathZone]) — فإن تعذّر تمثيلها بُنيةً رُسمت بمحرك المعاينة
-  /// بمقاسها على الورقة (تصغير فقط حتى لا تتشوّه ولا تفقد الحدّة)، وإن تعذّر
-  /// رسمها كُتبت نصاً رياضياً مقروءاً.
-  Future<void> _buildFormulaAttachment(
+  /// الممرّ الوحيد لعناصر المعادلات ([FloatingElementType.formula]) في
+  /// الملف — مرفقاتٍ كانت أو مرتبطة بسؤال أو حرّة على الصفحة:
+  /// **فقرة في تدفق النص** (موسَّطة) لا عنصراً عائماً، فلا تتراكب المعادلات
+  /// ولا يتغير ترتيبها داخل Word أبداً.
+  ///
+  /// تُصدَّر أولاً **معادلة Word أصلية** (`m:oMathPara` قابلة للتحرير؛
+  /// انظر [_formulaMathZone]) — فإن تعذّر تمثيلها بُنيةً (مصفوفة…) رُسمت
+  /// بمحرك المعاينة نفسه (لقطة `flutter_math_fork` عالية الدقة) بمقاسها على
+  /// الورقة (تصغير فقط حتى لا تتشوّه ولا تفقد الحدّة)، وإن تعذّر رسمها
+  /// كُتبت نصاً رياضياً مقروءاً — ولا يظهر كود LaTeX الخام في أي حالة.
+  Future<void> _buildFormulaElement(
     StringBuffer body,
     FloatingElement element,
   ) async {
@@ -1173,9 +1195,10 @@ class _DocxBuilder {
     // فلا يحتاج تكبيراً يُفقد الحدّة.
     final raster = await _rasterizeMath(_MathPlaceholder(label, boxHeightPt));
     if (raster == null || raster.pngBytes.isEmpty) {
+      // تعذّر ترسيم المعادلة: تُكتب نصاً رياضياً مقروءاً بدل كودها.
       _writeParagraph(
         body,
-        '\$$label\$',
+        EquationModel.readableText(label),
         italic: true,
         color: '6B7280',
         alignment: 'center',
@@ -1398,7 +1421,7 @@ class _DocxBuilder {
         }
         buffer.write(
           '<w:r>$runProperties<w:t xml:space="preserve">'
-          '${_escapeXml(LatexPlainText.of(segment.text))}</w:t></w:r>',
+          '${_escapeXml(EquationModel.readableText(segment.text))}</w:t></w:r>',
         );
         continue;
       }
@@ -1464,7 +1487,7 @@ class _DocxBuilder {
         marker,
         raster == null
             ? '<w:t xml:space="preserve">'
-                '${_escapeXml(LatexPlainText.of(placeholder.latex))}</w:t>'
+                '${_escapeXml(EquationModel.readableText(placeholder.latex))}</w:t>'
             : _drawingXml(raster.pngBytes, raster.widthPt, raster.heightPt),
       );
     }

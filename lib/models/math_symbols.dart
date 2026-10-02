@@ -346,6 +346,52 @@ abstract final class MathSymbols {
     'ₛ': 's', 'ₜ': 't',
   };
 
+  /// الصورة العليا يونيكود لمحرف عادي واحد (`2` ← `²`) — `null` إن لا صورة.
+  ///
+  /// الجدول العكسي لـ[_superscriptChars]: يُستعمل في العرض النصي المقروء
+  /// (آخر ارتداد عندما يعجز محرك الرسم نفسه) فلا يظهر `^` ولا `_` خامتين.
+  static final Map<String, String> _toSuperscript = <String, String>{
+    for (final entry in _superscriptChars.entries) entry.value: entry.key,
+  };
+
+  /// الصورة السفلى يونيكود لمحرف عادي واحد (`1` ← `₁`) — `null` إن لا صورة.
+  static final Map<String, String> _toSubscript = <String, String>{
+    for (final entry in _subscriptChars.entries) entry.value: entry.key,
+  };
+
+  /// هل لكل محرف من [value] صورة علوية يونيكود؟ (فارغ ← `false`).
+  static bool hasSuperscriptForm(String value) =>
+      value.isNotEmpty && value.runes.every(
+            (rune) => _toSuperscript.containsKey(String.fromCharCode(rune)),
+          );
+
+  /// هل لكل محرف من [value] صورة سفلية يونيكود؟ (فارغ ← `false`).
+  static bool hasSubscriptForm(String value) =>
+      value.isNotEmpty && value.runes.every(
+            (rune) => _toSubscript.containsKey(String.fromCharCode(rune)),
+          );
+
+  /// الصورة العليا يونيكود لمحرف واحد — `null` إن لا صورة له.
+  static String? superscriptOf(String char) => _toSuperscript[char];
+
+  /// الصورة السفلى يونيكود لمحرف واحد — `null` إن لا صورة له.
+  static String? subscriptOf(String char) => _toSubscript[char];
+
+  /// يحوّل [value] إلى صورته العلوية يونيكود محرفاً محرفاً.
+  static String toSuperscript(String value) => _mapScript(value, _toSuperscript);
+
+  /// يحوّل [value] إلى صورته السفلية يونيكود محرفاً محرفاً.
+  static String toSubscript(String value) => _mapScript(value, _toSubscript);
+
+  static String _mapScript(String value, Map<String, String> table) {
+    final buffer = StringBuffer();
+    for (final rune in value.runes) {
+      final char = String.fromCharCode(rune);
+      buffer.write(table[char] ?? char);
+    }
+    return buffer.toString();
+  }
+
   /// متتالية محارف أسس/دلالات متجاورة ← بنية واحدة (`x²³` ← `x^{23}`).
   static String _expandScripts(String source) {
     if (!_hasScriptChar(source)) {
