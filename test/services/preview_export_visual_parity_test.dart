@@ -87,7 +87,13 @@ class _PreviewCapture {
   final int width;
   final int height;
 
+  /// هل البكسل حبر؟ تُستثنى حلقة الإطار الخارجية (2px): لوحة المعاينة ترسم
+  /// حداً رمادياً وظلاً حول الورقة، وليست جزءاً من المحتوى المطبوع.
   bool isInkAt(int x, int y) {
+    const frame = 2;
+    if (x < frame || y < frame || x >= width - frame || y >= height - frame) {
+      return false;
+    }
     final index = (y * width + x) * 4;
     final r = rgba[index];
     final g = rgba[index + 1];
