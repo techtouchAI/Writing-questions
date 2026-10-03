@@ -1268,28 +1268,34 @@ void main() {
           }
         }
 
-        // LayoutDocument paints semantic number/separator runs independently;
-        // the PDF probe therefore may expose `١` and `-` as separate text
-        // operators instead of one word. Rejoin only geometrically adjacent
-        // fragments, preserving their emitted (logical-run) order.
-        for (var index = 0; index + 1 < line.words.length; index++) {
-          final first = line.words[index];
-          final second = line.words[index + 1];
-          final gap = first.x <= second.x
-              ? second.x - (first.x + first.advanceWidth)
-              : first.x - (second.x + second.advanceWidth);
-          if (gap < -1 || gap > 2) continue;
-          if (digitRun.hasMatch(first.text) && separatorRun.hasMatch(second.text)) {
-            if (first.x > second.x) {
-              drawnLabels.add('ص${drawnPage.index + 1}:${first.text}${second.text}');
-            } else {
-              invertedLabels.add(
-                  'ص${drawnPage.index + 1}:visual-${first.text}${second.text}');
-            }
-          } else if (separatorRun.hasMatch(first.text) &&
-              digitRun.hasMatch(second.text)) {
-            invertedLabels.add('ص${drawnPage.index + 1}:${first.text}${second.text}');
+      }
+
+      // LayoutDocument paints semantic number/separator runs independently;
+      // bold digits and regular separators can receive slightly different PDF
+      // baselines, so they may land in adjacent probe lines. Rejoin only
+      // adjacent emitted text operators whose geometry is contiguous and whose
+      // baselines still belong to the same typographic line.
+      final pageWords = drawnPage.words;
+      for (var index = 0; index + 1 < pageWords.length; index++) {
+        final first = pageWords[index];
+        final second = pageWords[index + 1];
+        final baselineTolerance =
+            (first.fontSize > second.fontSize ? first.fontSize : second.fontSize) * 0.25;
+        if ((first.y - second.y).abs() > baselineTolerance) continue;
+        final gap = first.x <= second.x
+            ? second.x - (first.x + first.advanceWidth)
+            : first.x - (second.x + second.advanceWidth);
+        if (gap < -1 || gap > 2) continue;
+        if (digitRun.hasMatch(first.text) && separatorRun.hasMatch(second.text)) {
+          if (first.x > second.x) {
+            drawnLabels.add('ص${drawnPage.index + 1}:${first.text}${second.text}');
+          } else {
+            invertedLabels.add(
+                'ص${drawnPage.index + 1}:visual-${first.text}${second.text}');
           }
+        } else if (separatorRun.hasMatch(first.text) &&
+            digitRun.hasMatch(second.text)) {
+          invertedLabels.add('ص${drawnPage.index + 1}:${first.text}${second.text}');
         }
       }
     }
