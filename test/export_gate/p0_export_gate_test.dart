@@ -381,6 +381,28 @@ class _PreviewCapture {
 }
 
 /// أول فقرة في شجرة المعاينة يحوي نصّها [marker]، بقياساتها.
+/// كل فقرات النص في الشجرة — من `RichText` ومن `EditableText` معاً.
+///
+/// `RenderEditable` وارث `RenderParagraph`، وحقول المعاينة تُرسم عبره؛ لذا كان
+/// الحصر بـ`find.byType(RichText)` يُسقط فقرات المتن كلها ويُبقي الترويسة
+/// والتذييل فقط (قياس CI: 12 وسماً من 45 «غير مقاسة» وهي في الشجرة فعلاً).
+/// المشي على العناصر بالـ`renderObject` يجمع الاثنين بلا افتراض عن نوع الودجت.
+List<RenderParagraph> _paragraphsInTree(WidgetTester tester) {
+  final result = <RenderParagraph>[];
+  for (final element in find
+      .byElementPredicate(
+        (candidate) => candidate.renderObject is RenderParagraph,
+        skipOffstage: false,
+      )
+      .evaluate()) {
+    final renderObject = element.renderObject;
+    if (renderObject is RenderParagraph) {
+      result.add(renderObject);
+    }
+  }
+  return result;
+}
+
 /// يقيس وسوم المعاينة في جولة واحدة على الشجرة.
 ///
 /// المشي لكل وسم على حدة (45 وسماً × شجرة خمس صفحات + `getBoxesForSelection`
@@ -388,17 +410,14 @@ class _PreviewCapture {
 /// `TimeoutException after 0:10:00`. القياسات نفسها بلا تغيير — عدد الأسطر من
 /// `getBoxesForSelection`، والموضع من `localToGlobal`، وصناديق السطور مشتركة
 /// بين الوسوم التي تسقط في الفقرة نفسها.
-({Map<String, _PreviewText> found, List<String> missing})
+({Map<String, _PreviewText> found, List<String> missing, int richTextCount})
     _measurePreviewMarkers(
   WidgetTester tester,
   List<String> markers,
 ) {
-  final finder = find.byType(RichText, skipOffstage: false);
-  final widgets = tester.widgetList<RichText>(finder).toList();
-  final paragraphs =
-      tester.renderObjectList<RenderParagraph>(finder).toList();
-  final plain = widgets
-      .map((rich) => rich.text.toPlainText())
+  final paragraphs = _paragraphsInTree(tester);
+  final plain = paragraphs
+      .map((paragraph) => paragraph.text.toPlainText())
       .toList(growable: false);
   final lineCounts = <int, int>{};
   final found = <String, _PreviewText>{};
@@ -425,7 +444,7 @@ class _PreviewCapture {
       return tops.isEmpty ? 1 : tops.length;
     });
     final origin = paragraph.localToGlobal(Offset.zero);
-    final span = widgets[hit].text;
+    final span = paragraph.text;
     found[marker] = _PreviewText(
       marker: marker,
       text: plain[hit],
@@ -437,7 +456,7 @@ class _PreviewCapture {
       fontFamilies: _fontFamiliesOf(span),
     );
   }
-  return (found: found, missing: missing);
+  return (found: found, missing: missing, richTextCount: paragraphs.length);
 }
 
 double? _firstWordSpacing(InlineSpan span) {
@@ -572,12 +591,13 @@ Future<_PreviewCapture> _capturePreviewOf(
   final texts = measurement.found;
   if (measurement.missing.isNotEmpty) {
     // القائمة لا العدد فقط: «وسوم مقاسة 12/45» وحده لا يقول ما الناقص.
+    // وحجم الشجرة يُفرّق «وسماً غائباً» عن «لا نصوص في الشجرة أصلاً».
     _stage('${document.name}: وسوم لم تُقَس في المعاينة '
-        '(${measurement.missing.length}): ${measurement.missing.join(', ')}');
+        '(${measurement.missing.length}): ${measurement.missing.join(', ')}؛ '
+        ' فقرات في الشجرة=${measurement.richTextCount}');
   }
-  final treeParts = tester
-      .widgetList<RichText>(find.byType(RichText, skipOffstage: false))
-      .map((rich) => rich.text.toPlainText())
+  final treeParts = _paragraphsInTree(tester)
+      .map((paragraph) => paragraph.text.toPlainText())
       .toList();
   final markerOrder = _markerOrderInParts(treeParts, known)
       .where((marker) => !excluded.contains(marker))
@@ -762,19 +782,39 @@ void main() {
     _gate.requirePreview();
     final rtl = _gate.rtlCapture!;
 
-    // PDF المتجه و Word القابل للتحرير: محركاهما الخاصّان (لا Exact).
-    _gate.rtlVectorPdf =
-        await PaginatedPdfExamEngine().generate(document: rtlDocument);
-    _gate.rtlEditableDocx =
-        await DocxDocumentExportService.buildDocumentDocxBytes(
-      document: rtlDocument,
-    );
+    // التوليد يمسّ I/O حقيقياً (تحميل خطوط من الأصول، فكّ صور، لقطة
+    // المعادلات). داخل testWidgets يعمل كل await في منطقة FakeAsync فلا يكتمل
+    // إطلاقاً: CI أجهض الحالتين بـ«TimeoutException after 0:10:00» بلا تقدّم
+    // مقيس. runAsync يُرجع I/O إلى العزلة الحقيقية، والزمن يُقاس لكل ممرّ حتى
+    // لا يبقى الثقل — إن وُجد — مبهماً.
+    final watch = Stopwatch();
+    await tester.runAsync(() async {
+      watch.start();
+      _gate.rtlVectorPdf =
+          await PaginatedPdfExamEngine().generate(document: rtlDocument);
+      _stage('توليد vector.pdf عربي: ${watch.elapsedMilliseconds}ms، '
+          '${_gate.rtlVectorPdf!.length} بايت');
+      watch
+        ..reset()
+        ..start();
+      _gate.rtlEditableDocx =
+          await DocxDocumentExportService.buildDocumentDocxBytes(
+        document: rtlDocument,
+      );
+      _stage('توليد editable.docx عربي: ${watch.elapsedMilliseconds}ms، '
+          '${_gate.rtlEditableDocx!.length} بايت');
+      watch
+        ..reset()
+        ..start();
+      // Exact: لقطات المعاينة نفسها، في مسار منفصل عن الفحوص البنيوية.
+      _gate.rtlExactPdf =
+          await ExactExportService.buildPdfFromSnapshots(rtl.snapshots);
+      _gate.rtlExactDocx =
+          ExactExportService.buildDocxFromSnapshots(rtl.snapshots);
+      _stage('توليد exact.* عربي: ${watch.elapsedMilliseconds}ms');
+      watch.stop();
+    });
     _gate.mathRequests = mathHost.requests.length;
-
-    // Exact: لقطات المعاينة نفسها، في مسار منفصل عن الفحوص البنيوية.
-    _gate.rtlExactPdf =
-        await ExactExportService.buildPdfFromSnapshots(rtl.snapshots);
-    _gate.rtlExactDocx = ExactExportService.buildDocxFromSnapshots(rtl.snapshots);
 
     // القطع على القرص.
     for (var index = 0; index < _gate.rtlPreviewPages.length; index++) {
@@ -841,16 +881,31 @@ void main() {
     _gate.requirePreview();
     final ltr = _gate.ltrCapture!;
 
-    _gate.ltrVectorPdf =
-        await PaginatedPdfExamEngine().generate(document: ltrDocument);
-    _gate.ltrEditableDocx =
-        await DocxDocumentExportService.buildDocumentDocxBytes(
-      document: ltrDocument,
-    );
-    _gate.ltrExactPdf =
-        await ExactExportService.buildPdfFromSnapshots(ltr.snapshots);
-    _gate.ltrExactDocx =
-        ExactExportService.buildDocxFromSnapshots(ltr.snapshots);
+    final watch = Stopwatch();
+    await tester.runAsync(() async {
+      watch.start();
+      _gate.ltrVectorPdf =
+          await PaginatedPdfExamEngine().generate(document: ltrDocument);
+      _stage('توليد vector_ltr.pdf: ${watch.elapsedMilliseconds}ms، '
+          '${_gate.ltrVectorPdf!.length} بايت');
+      watch
+        ..reset()
+        ..start();
+      _gate.ltrEditableDocx =
+          await DocxDocumentExportService.buildDocumentDocxBytes(
+        document: ltrDocument,
+      );
+      _stage('توليد editable_ltr.docx: ${watch.elapsedMilliseconds}ms');
+      watch
+        ..reset()
+        ..start();
+      _gate.ltrExactPdf =
+          await ExactExportService.buildPdfFromSnapshots(ltr.snapshots);
+      _gate.ltrExactDocx =
+          ExactExportService.buildDocxFromSnapshots(ltr.snapshots);
+      _stage('توليد exact_ltr.*: ${watch.elapsedMilliseconds}ms');
+      watch.stop();
+    });
 
     for (var index = 0; index < _gate.ltrPreviewPages.length; index++) {
       await _writeArtifact(
