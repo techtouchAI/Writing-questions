@@ -88,6 +88,38 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # بوابة P0 (test/export_gate) تكتب القطع الأربعة + المصفوفة إلى
+      # build/export_gate؛ تُرفع دائماً لأن الدليل هو غرض البوابة لا رقم
+      # الخروج: من راجع الانحدار يريد vector.pdf وeditable.docx وخريطة
+      # 15×4، لا رسالة «1 test failed».
+      - name: Upload P0 export-gate artifacts
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: p0-export-gate
+          path: build/export_gate/*
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Publish P0 export-gate matrix
+        if: always()
+        shell: bash
+        run: |
+          [ -f build/export_gate/matrix.txt ] || exit 0
+          {
+            echo '### بوابة P0 — مصفوفة الانحدار (15 ميزة × 4 ممرّات)'
+            echo ''
+            echo '```'
+            cat build/export_gate/matrix.txt
+            echo '```'
+            echo ''
+            if [ -f build/export_gate/summary.txt ]; then
+              echo '```'
+              tail -n 12 build/export_gate/summary.txt
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Publish analyzer and test diagnostics
         if: failure() && (steps.analyze.outcome == 'failure' || steps.test.outcome == 'failure')
         shell: bash
