@@ -5,8 +5,59 @@ import 'package:writing_questions_app/layout/canonical/font_metrics.dart';
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/document_direction.dart';
 import 'package:writing_questions_app/models/paper_font.dart';
+import 'package:writing_questions_app/models/paper_text_style.dart';
 
 void main() {
+  testWidgets(
+    'alignment offsets are part of canonical run geometry for Preview and PDF',
+    (_) async {
+      final fontLoader = FontLoader(PaperFont.naskh.family)
+        ..addFont(rootBundle.load(PaperFont.naskh.regularAsset));
+      await fontLoader.load();
+
+      const metrics = FlutterTextMetrics();
+      const width = 300.0;
+      const style = LayoutTextStyle(
+        font: PaperFont.naskh,
+        fontSizePt: 12,
+        lineHeightFactor: 1.2,
+      );
+      MeasuredRunFragment measure(PaperAlign alignment) =>
+          metrics
+              .layoutParagraph(
+                spans: const <MetricSpan>[
+                  MetricSpan(
+                    semanticNodeId: 'category',
+                    semanticNode: null,
+                    text: 'Cat',
+                    contentKind: LayoutContentKind.text,
+                    semanticRole: LayoutSemanticRole.text,
+                    style: style,
+                    direction: DocumentDirection.rtl,
+                    logicalIndex: 0,
+                  ),
+                ],
+                width: width,
+                direction: DocumentDirection.rtl,
+                alignment: alignment,
+                resolveJustification: false,
+              )
+              .lines
+              .single
+              .fragments
+              .single;
+
+      final left = measure(PaperAlign.left);
+      final center = measure(PaperAlign.center);
+      final right = measure(PaperAlign.right);
+      final start = measure(PaperAlign.start);
+      expect(left.x, closeTo(0, 0.1));
+      expect(center.x + center.width / 2, closeTo(width / 2, 0.25));
+      expect(right.x + right.width, closeTo(width, 0.25));
+      expect(start.x + start.width, closeTo(width, 0.25));
+    },
+  );
+
   testWidgets(
     'mixed Arabic and Latin words map each visual box to its own source run',
     (_) async {

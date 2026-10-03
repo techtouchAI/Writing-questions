@@ -321,6 +321,31 @@ class FlutterTextMetrics implements FontMetricsProvider {
                 .clamp(0.0, double.infinity)
                 .toDouble()
             : 0.0;
+        final alignmentOffset = _alignmentOffsetPt(
+          alignment: alignment,
+          direction: direction,
+          paragraphWidthPt: width,
+          lineWidthPt: resolvedWidth,
+          justified: isJustified,
+        );
+        final positionedFragments = alignmentOffset == 0
+            ? fragments
+            : <MeasuredRunFragment>[
+                for (final fragment in fragments)
+                  MeasuredRunFragment(
+                    spanIndex: fragment.spanIndex,
+                    text: fragment.text,
+                    startOffset: fragment.startOffset,
+                    endOffset: fragment.endOffset,
+                    x: fragment.x + alignmentOffset,
+                    width: fragment.width,
+                    direction: fragment.direction,
+                    baselineOffset: fragment.baselineOffset,
+                    height: fragment.height,
+                    mathBox: fragment.mathBox,
+                    fixedAdvancePt: fragment.fixedAdvancePt,
+                  ),
+              ];
         lines.add(
           MeasuredLine(
             index: index,
@@ -337,7 +362,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
             isJustified: isJustified,
             justificationOpportunityCount: isJustified ? opportunities : 0,
             extraSpacePerOpportunity: extra,
-            fragments: List<MeasuredRunFragment>.unmodifiable(fragments),
+            fragments: List<MeasuredRunFragment>.unmodifiable(positionedFragments),
           ),
         );
       }
@@ -561,6 +586,32 @@ class FlutterTextMetrics implements FontMetricsProvider {
       PaperAlign.right => TextAlign.right,
       PaperAlign.justify || PaperAlign.start || null => TextAlign.start,
     };
+  }
+
+  /// Selection boxes returned by TextPainter are line-relative; unlike paint(),
+  /// they do not include the free-space offset for a centered/right-aligned
+  /// paragraph. Add that renderer-neutral offset here, before LayoutDocument
+  /// is produced, so Preview and PDF consume the same resolved x positions.
+  double _alignmentOffsetPt({
+    required PaperAlign? alignment,
+    required DocumentDirection direction,
+    required double paragraphWidthPt,
+    required double lineWidthPt,
+    required bool justified,
+  }) {
+    if (justified) return 0;
+    final remaining =
+        (paragraphWidthPt - lineWidthPt).clamp(0.0, double.infinity).toDouble();
+    final alignRight = switch (alignment) {
+      PaperAlign.left => false,
+      PaperAlign.right => true,
+      PaperAlign.center => null,
+      PaperAlign.end => direction != DocumentDirection.rtl,
+      PaperAlign.start || PaperAlign.justify || null =>
+        direction == DocumentDirection.rtl,
+    };
+    if (alignment == PaperAlign.center) return remaining / 2;
+    return alignRight == true ? remaining : 0;
   }
 }
 
