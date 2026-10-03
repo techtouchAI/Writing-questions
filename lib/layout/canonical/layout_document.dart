@@ -3,6 +3,7 @@ import '../../models/paper_text_style.dart';
 import '../document_direction.dart';
 import '../document_ir.dart';
 import '../semantic/inline_nodes.dart';
+import 'layout_units.dart';
 
 /// Why a page boundary was introduced. `explicitBreak` is reserved for a
 /// semantic page-break block should that feature be added to DocumentIR.

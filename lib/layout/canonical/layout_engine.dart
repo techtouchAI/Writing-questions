@@ -237,7 +237,7 @@ class _LayoutBuilder {
     final right = buildColumn('header/right', header.rightColumn, rightX, rightWidth);
     final left = buildColumn('header/left', header.leftColumn, leftX, leftWidth);
     final center = _FlowBuilder(x: centerX, width: centerWidth);
-    if (header.showBismillah && !header.bismillah.content.isEmpty) {
+    if (header.showBismillah && header.bismillah.content.isNotEmpty) {
       center.add(
         _contentBlock(
           id: 'header/bismillah',
@@ -376,7 +376,7 @@ class _LayoutBuilder {
         ? _FlowBuilder(x: rightX, width: sideWidth)
         : signatureFlow('footer/secondary', footer.secondary!, rightX, sideWidth);
     final center = _FlowBuilder(x: centerX, width: centerWidth);
-    if (footer.closingPhrase != null && !footer.closingPhrase!.content.isEmpty) {
+    if (footer.closingPhrase != null && footer.closingPhrase!.content.isNotEmpty) {
       final phrase = footer.closingPhrase!;
       center.add(
         _contentBlock(
@@ -430,7 +430,7 @@ class _LayoutBuilder {
       bodyOverride?.paragraphSpacing ?? VisualMetrics.elementGapPx,
     );
 
-    if (question.category != null && !question.category!.content.isEmpty) {
+    if (question.category != null && question.category!.content.isNotEmpty) {
       final category = question.category!;
       flow.add(
         _contentBlock(
@@ -465,7 +465,7 @@ class _LayoutBuilder {
       ),
     );
 
-    if (question.body != null && !question.body!.content.isEmpty) {
+    if (question.body != null && question.body!.content.isNotEmpty) {
       final body = question.body!;
       flow.add(
         _contentBlock(
@@ -585,7 +585,7 @@ class _LayoutBuilder {
         centerVerse: standaloneVerse,
       ),
     );
-    if (branch.body != null && !branch.body!.content.isEmpty) {
+    if (branch.body != null && branch.body!.content.isNotEmpty) {
       final body = branch.body!;
       flow.add(
         _contentBlock(

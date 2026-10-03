@@ -122,10 +122,9 @@ class FlutterTextMetrics implements FontMetricsProvider {
     List<MeasuredLine>? naturalLines,
   }) {
     final children = <InlineSpan>[];
-    final placeholderDimensions = <ui.PlaceholderDimensions>[];
+    final placeholderDimensions = <PlaceholderDimensions>[];
     final spanRanges = <({int start, int end, int spanIndex})>[];
     var offset = 0;
-    var placeholderCount = 0;
 
     for (var index = 0; index < spans.length; index++) {
       final span = spans[index];
@@ -155,14 +154,13 @@ class FlutterTextMetrics implements FontMetricsProvider {
           ),
         );
         placeholderDimensions.add(
-          ui.PlaceholderDimensions(
+          PlaceholderDimensions(
             size: ui.Size(widthPx, heightPx),
             alignment: ui.PlaceholderAlignment.baseline,
             baseline: ui.TextBaseline.alphabetic,
             baselineOffset: baselinePx,
           ),
         );
-        placeholderCount++;
         offset += 1; // TextPainter's object-replacement character.
       } else {
         children.add(TextSpan(text: span.text, style: style));
@@ -362,7 +360,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
     return span.text.substring(relativeStart, relativeEnd);
   }
 
-  int _lineForBox(List<ui.LineMetrics> lines, ui.TextBox box) {
+  int _lineForBox(ui.TextBox box, List<ui.LineMetrics> lines) {
     final centerY = (box.top + box.bottom) * 0.5;
     var nearest = 0;
     var distance = double.infinity;

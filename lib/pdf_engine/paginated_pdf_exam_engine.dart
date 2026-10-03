@@ -66,7 +66,7 @@ class PaginatedPdfExamEngine {
         );
     final mathRasters = await _rasterStoreFor(layout);
     final pdf = _newDocument(document);
-    final painter = const CanonicalLayoutPdfPainter();
+    const painter = CanonicalLayoutPdfPainter();
     final direction = layout.direction == DocumentDirection.ltr
         ? pw.TextDirection.ltr
         : pw.TextDirection.rtl;

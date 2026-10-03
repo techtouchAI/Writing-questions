@@ -5,7 +5,6 @@ import '../document_ir.dart';
 import 'exam_document_layout_adapter.dart';
 import 'flutter_text_metrics.dart';
 import 'font_metrics.dart';
-import 'layout_configuration.dart';
 import 'layout_document.dart';
 import 'layout_engine.dart';
 import 'layout_math_metrics_resolver.dart';
