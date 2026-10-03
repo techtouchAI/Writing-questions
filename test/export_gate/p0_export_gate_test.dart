@@ -1461,30 +1461,41 @@ void main() {
     // (جزء header أو متن document.xml)، لا لوجودها العام: لا يكفي أن وصلت
     // «بعض» الحقول لتُسمى الترويسة مقيسة.
     final headerPartText = headerParts.map(probe.part).join(' ');
-    final missingHeaderMarkers = P0GateFixture.headerMarkers
+    // المعيار «جزء الترويسة» لا document.xml:HDRV قيمة صفٍّ تُطبع في المتن
+    // أيضاً، فحسابُ حضورها العام وصولاً إلى الترويسة يُبيضّ انحداراً موجوداً.
+    // لذلك يُقاس الموضعان معاً ويسقطان إلى الخلية كما هما.
+    final missingInHeaderPart = P0GateFixture.headerMarkers
+        .where((marker) => !headerPartText.contains(marker))
+        .toList();
+    final missingAnywhere = P0GateFixture.headerMarkers
         .where((marker) =>
             !probe.flatText.contains(marker) &&
             !headerPartText.contains(marker))
         .toList();
-    if (missingHeaderMarkers.isNotEmpty) {
+    if (missingInHeaderPart.isNotEmpty) {
       debugPrint('::error title=p0-gate DOCX header fields (DEFERRED_TO_P1)::'
-          'حقول ترويسة وصلت PDF ولم تصل editable.docx: '
-          '$missingHeaderMarkers (أجزاء: ${headerParts.isEmpty ? 'لا header*.xml' : headerParts.join(', ')}) '
-          '— انحدار حقيقي في المنتج، مسجَّل لا مُصلَح (P0.5 مغلق على A–F)');
-      _stage('DOCX: ${missingHeaderMarkers.length} وسم ترويسة غائب عن Word '
-          '($missingHeaderMarkers) — مُسجَّل DEFERRED_TO_P1 بالدليل، ولا '
-          'تخفيف فحص ولا حذف وسم من الركيزة؛ الترويسة معروضة في المتن '
-          'للوسوم الأخرى (headerInBody=$headerInBody).');
+          'جزء ترويسة في editable.docx: '
+          '${headerParts.isEmpty ? 'لا header*.xml إطلاقاً' : headerParts.join(",")}؛ '
+          'وسوم لا تصل إلى الترويسة: $missingInHeaderPart (منها $missingAnywhere '
+          'لا يظهر في document.xml أصلاً) — انحدار حقيقي في المنتج، مسجَّل لا '
+          'مُصلَح (P0.5 مغلق على A–F)');
+      _stage('DOCX: ${missingInHeaderPart.length}'
+          '/${P0GateFixture.headerMarkers.length} وسم ترويسة لا يصل إلى جزء '
+          'الترويسة — مُسجَّل DEFERRED_TO_P1 بالدليل، ولا تخفيف فحص ولا حذف '
+          'وسم من الركيزة.');
       _matrix.record('header-footer', P0Path.editableDocx,
           P0Status.deferredToP1,
-          evidence: 'من ${P0GateFixture.headerMarkers.length} وسم ترويسة، '
-              'لم يظهر في Word إلا '
-              '${P0GateFixture.headerMarkers.length - missingHeaderMarkers.length}: '
-              'ناقص $missingHeaderMarkers (الترويسة كاملة في vector.pdf)',
-          reason: 'جدول الترويسة في مولّد OOXML يطبع حقولاً أقل مما يطبعه '
-              'PdfPaperBuilder: حقل مفقود في ممرّ وموجود في آخر انحدار '
-              'مقيس، ولا يُلمَّع بحذف الوسم من الركيزة ولا بتخفيف الفحص. '
-              'توحيد الحقول عقدُ محتوى واحد (P1 BLOCKERS بند 1).');
+          evidence: '${missingInHeaderPart.length}'
+              '/${P0GateFixture.headerMarkers.length} وسم ترويسة غائب عن جزء '
+              'الترويسة (${headerParts.isEmpty ? 'لا header*.xml' : headerParts.join(",")})، '
+              'ومنها ${missingAnywhere.length} غائب عن document.xml أيضاً '
+              '$missingInHeaderPart؛ الترويسة كاملة في vector.pdf، وكل الحقول '
+              'في المتن: $headerInBody',
+          reason: 'جزء header*.xml مشروط بصورة إطار + `pageBorder` في '
+              'docx_document_export_service.dart:365/396، فالترويسة كلها تُطبع '
+              'فقراتٍ في المتن وتفقد الوسوم '
+              '${P0GateFixture.headerMarkers.join("/")} موضعَها عند الطباعة. '
+              'توحيد الحقول عقدُ محتوى واحد بين PDF وOOXML (P1 BLOCKERS بند 1).');
     }
     _stage(headerParts.isEmpty
         ? 'DOCX عربي: لا جزء header*.xml — الترويسة فقرات في المتن '
@@ -1496,9 +1507,12 @@ void main() {
     // فتُغلق خلاياها UNMEASURED — أي أن الصرامة كانت تُعمي البوابة لا تُبصرها.
     // اليوم: الوسوم تُقاس وتُطبع وتُسجَّل في الخلية، وGATE-99 تُفشِل البوابة
     // إن ضاع التسجيل أو لم يسمِّ الوسوم الخمسة، فالبند لا يُمحى ولا يُنعَّم.
-    _stage('DOCX: وصلت Word ${P0GateFixture.headerMarkers.length - missingHeaderMarkers.length}'
-        '/${P0GateFixture.headerMarkers.length} وسم ترويسة؛ الغائب '
-        '$missingHeaderMarkers (مقيس، مُسجَّل، ومسمّى في GATE-99).');
+    _stage('DOCX: الترويسة في جزء الترويسة '
+        '${P0GateFixture.headerMarkers.length - missingInHeaderPart.length}'
+        '/${P0GateFixture.headerMarkers.length}، وفي document.xml '
+        '${P0GateFixture.headerMarkers.length - missingAnywhere.length}'
+        '/${P0GateFixture.headerMarkers.length}؛ الغائب عن الجزء '
+        '$missingInHeaderPart (مقيس، مُسجَّل، ومسمّى في GATE-99).');
 
     // تسلسل `w:t` المنطقي == ترتيب العقد (منع تغيير تسلسل المحتوى).
     final expectedOrder = P0GateFixture.bodyMarkerSequence(document);
@@ -1936,24 +1950,66 @@ void main() {
     // وتذييل LTR) لا بوسوم الورقة العربية: الترويسة/التذييل في ورقة LTR
     // جداول تُرسم RTL بقرار المنتج، وهي مُسجَّلة انحرافاً قائماً بذاتها أدناه
     // — فلا هي تُفسد فحص المتن ولا تُحذف منه بصمت.
-    final lines = report.pages
-        .expand((page) => page.multiWordLines)
-        .where((line) =>
-            !RegExp(r'[\u0600-\u06FF\uFE70-\uFEFF]').hasMatch(
-                line.words.map((w) => w.text).join(' ')) &&
-            !excluded.any(
-                (m) => textMentions(line.words.map((w) => w.text).join(' '), m)))
-        .toList();
-    expect(lines.length, greaterThan(1),
-        reason: 'لا سطور لاتينية بحتة متعددة الكلمات في ورقة LTR بعد استثناء '
-            'ما يحمل عربية أو يقع في الترويسة/التذييل — الفحص بلا عيّنة.');
-    final notLtr = <String>[
-      for (final line in lines)
-        if (PdfPageStructure.orderOfLine(line) == 'rtl') line.describe(),
-    ];
-    expect(notLtr, isEmpty,
-        reason: 'أسطر إنجليزية تُرسم من اليمين (تسرّب RTL إلى LTR): '
-            '$notLtr');
+    // العيّنة «جريان لاتيني» لا «سطر لاتيني خالص»: ورقة LTR في الركيزة تسمياتها
+    // عربية وقيمها إنجليزية في السطر نفسه، فاشتراط سطر خالص كان يترك الفحص بلا
+    // عيّنة (قياس الجولة السابقة: 0 سطور). الخطر المُراد كشفه — جريان لاتيني
+    // يُرسم من اليمين — لا يتعلق بنقاء السطر بل بترتيب مواضع الكلمات.
+    var bodyLines = 0;
+    var latinRuns = 0;
+    final mirroredRuns = <String>[];
+    for (final page in report.pages) {
+      for (final line in page.lines) {
+        final joined = line.words.map((word) => word.text).join(' ');
+        if (excluded.any((marker) => textMentions(joined, marker))) {
+          continue; // الترويسة/التذييل: انحرافهما مُسجَّل أسفله لا هنا.
+        }
+        bodyLines++;
+        final words = line.words;
+        final latinOnly = <bool>[
+          for (final word in words)
+            !RegExp('[\u0600-\u06FF\uFE70-\uFEFF]').hasMatch(word.text) &&
+                RegExp('[A-Za-z]').hasMatch(word.text),
+        ];
+        var i = 0;
+        while (i < words.length) {
+          if (!latinOnly[i]) {
+            i++;
+            continue;
+          }
+          var j = i;
+          while (j + 1 < words.length && latinOnly[j + 1]) {
+            j++;
+          }
+          // الأزواج المتجاورة في المقطع نفسه فقط: قفزة تخطيط بين عنصرين على
+          // خط قاعدة واحد ليست انعكاساً، وحكم ذلك `areAdjacentInRun` نفسه.
+          var pairs = 0;
+          for (var k = i; k < j; k++) {
+            if (!line.areAdjacentInRun(k)) {
+              continue;
+            }
+            pairs++;
+            if (words[k + 1].x < words[k].x - 0.5) {
+              mirroredRuns.add('ص${page.index + 1}: '
+                  '${words.sublist(i, j + 1).map((word) => word.text).join(" ")} '
+                  '— ${line.describe()}');
+              break;
+            }
+          }
+          if (pairs > 0) {
+            latinRuns++;
+          }
+          i = j + 1;
+        }
+      }
+    }
+    expect(latinRuns, greaterThan(1),
+        reason: 'لا جريانات لاتينية في متن ورقة LTR ($bodyLines سطراً مقيسة) — '
+            'الفحص بلا عيّنة، فلا يُثبت به أن الاتجاه سليم.');
+    expect(mirroredRuns, isEmpty,
+        reason: 'جريان لاتيني يتقدّم من اليمين في وثيقة إنجليزية (تسرّب RTL '
+            'إلى LTR): ${mirroredRuns.take(3).toList()}');
+    _stage('ورقة LTR: $latinRuns جريانا لاتينية في $bodyLines سطراً تتقدّم '
+        'يساراً بلا انعكاس (مقيسة من مواضع الكلمات في الملف).');
 
     // الترويسة في المنتج ثنائية اللغة بقصد (تسميات عربية وقيم إنجليزية)،
     // والركيزة تحمل عمداً فقرة عربية داخل الورقة الإنجليزية (قياس الاتجاه
@@ -2125,6 +2181,17 @@ void main() {
         reason: 'انحدار حقول الترويسة في Word حُذف من المصفوفة أو خُفِّف إلى '
             '${headerCell.status}؛ الصواب قياسه وتسجيله DEFERRED_TO_P1 ما دام '
             'المصدر يفقده.');
+    // التسجيل يجب أن يبقى مبنياً على معياره: جزء الترويسة. لو استُبدل لاحقاً
+    // بـ«هل يظهر النص في الملف؟» لصارت الترويسة «مقيسة ناجحة» بلا ترويسة.
+    expect(headerCell.evidence.contains('header*.xml') ||
+            headerCell.evidence.contains('word/header'),
+        isTrue,
+        reason: 'خلية الترويسة لم تعد تسمّي المعيار (جزء header*.xml): '
+            '${headerCell.evidence}');
+    expect(headerCell.reason.contains('docx_document_export_service.dart'),
+        isTrue,
+        reason: 'سبب التأجيل لا يسمّي الموضع في المصدر فيضيع تشخيص P1: '
+            '${headerCell.reason}');
     for (final marker in <String>[
       'HDRV',
       'HDC1',
