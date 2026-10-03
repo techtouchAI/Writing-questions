@@ -1147,6 +1147,14 @@ void main() {
       shaped += p.presentationFormLetters;
       unshaped += p.unshapedArabicLetters;
     }
+    final unshapedWords = <ProbedWord>[
+      for (final pdfPage in report.pages)
+        for (final word in pdfPage.words)
+          if (word.text.runes.any((rune) => rune >= 0x0621 && rune <= 0x064A))
+            word,
+    ];
+    _stage('[p0-gate] unshaped words=${unshapedWords.take(12).map((word) =>
+        '${word.text}[${word.text.runes.map((rune) => rune.toRadixString(16)).join(",")}]@${word.x.toStringAsFixed(1)},${word.y.toStringAsFixed(1)}:${word.baseFont}').join(' | ')}');
     expect(shaped, greaterThan(100),
         reason: 'صور تقديمية عربية أقلّ من المتوقع في الملف كله: $shaped');
     expect(unshaped, 0,
