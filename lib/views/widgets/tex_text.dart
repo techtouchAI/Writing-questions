@@ -6,16 +6,29 @@ import '../../layout/visual/visual_flutter_style.dart';
 import '../../models/exam_font.dart';
 import 'safe_math_tex.dart';
 
-/// نص علمي يعرض مقاطع LaTeX ($...$ سطرية، $$...$$ منفردة) بجانب النص العادي،
-/// ويُبرز آيات القرآن الموسومة بـ `﴿ ... ﴾` بالخط القرآني (Amiri).
+/// Rich text renderer for legacy source strings or already-segmented
+/// RichContent supplied by DocumentIR.
 ///
-/// يعتمد على حزمة flutter_math_fork (Math.tex) لعرض الجذور والكسور
-/// والتكاملات والدوال الفرعية/العليا.
-///
-/// **قطع النص ليس هنا**: يُقرأ من عقد المحتوى [RichContent.parse] نفسه الذي
-/// يقرأه مصدِّر Word، فلا يوجد تحليلان للنص يفترقان مع الزمن — ومن يعدّل
-/// قواعد القطع يعدّلها في العقد فيسري التغيير على الثلاثة.
+/// Preview's canonical path uses [TexText.fromRichContent], so it does not
+/// rebuild text/math/Quran semantics from a flattened string. The legacy
+/// constructor remains for edit-only surfaces and compatibility callers.
 class TexText extends StatelessWidget {
+  static String _measurementText(RichContent content) {
+    final buffer = StringBuffer();
+    for (final run in content.runs) {
+      if (run.isMath) {
+        final delimiter = run.isBlockMath ? r'$$' : r'$';
+        buffer
+          ..write(delimiter)
+          ..write(run.text)
+          ..write(delimiter);
+      } else {
+        buffer.write(run.text);
+      }
+    }
+    return buffer.toString();
+  }
+
   const TexText(
     this.text, {
     super.key,
@@ -23,18 +36,29 @@ class TexText extends StatelessWidget {
     this.mathTextStyle,
     this.quranStyle,
     this.textAlign = TextAlign.start,
-  });
+    this.expandToWidth = true,
+  }) : richContent = null;
+
+  const TexText.fromRichContent(
+    this.richContent, {
+    super.key,
+    this.style,
+    this.mathTextStyle,
+    this.quranStyle,
+    this.textAlign = TextAlign.start,
+    this.expandToWidth = true,
+  }) : text = '';
 
   final String text;
+  final RichContent? richContent;
+
   final TextStyle? style;
   final TextStyle? mathTextStyle;
 
-  /// نمط الآيات القرآنية؛ عند غيابه يُشتق من [style] بعائلة الخط القرآني
-  /// المعلنة في المقطع نفسه ([VisualRunStyle.font])، فإن لم تُعلن فبعائلة
-  /// الخط القرآني في التطبيق.
+  /// Quran style; when absent it follows the font intent on each VisualRun.
   final TextStyle? quranStyle;
-
   final TextAlign textAlign;
+  final bool expandToWidth;
 
   TextStyle? _resolvedQuranStyle(VisualRun run) {
     if (quranStyle != null) {
@@ -46,23 +70,21 @@ class TexText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // المقاطع تأتي من عقد المحتوى لا من تحليل محلي (انظر توثيق الصنف).
-    final content = RichContent.parse(text);
+    final content = richContent ?? RichContent.parse(text);
     if (content.isEmpty) {
       return Text('', style: style, textAlign: textAlign);
     }
 
+    final measureText = richContent == null ? text : _measurementText(content);
     return LayoutBuilder(
       builder: (context, constraints) {
         final blocks = <Widget>[];
         final inlineSpans = <InlineSpan>[];
 
-        // قرار الضبط (justify) مشترك مع `PaperField` في العقد نفسه: لا يمدّ
-        // `TexText` فقرةً من سطر واحد كما كان، فلا يفترق سطحان للفقرة نفسها.
         TextStyle? effectiveStyle = style;
         if (textAlign == TextAlign.justify && constraints.hasBoundedWidth) {
           final addedSpacing = VisualFlutterStyle.justifyWordSpacing(
-            text: text,
+            text: measureText,
             style: style,
             maxWidth: constraints.maxWidth,
             direction: Directionality.maybeOf(context) ?? TextDirection.rtl,
@@ -126,10 +148,12 @@ class TexText extends StatelessWidget {
         flushInline();
 
         return SizedBox(
-          width: double.infinity,
+          width: expandToWidth ? double.infinity : null,
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            crossAxisAlignment: expandToWidth
+                ? CrossAxisAlignment.stretch
+                : CrossAxisAlignment.start,
             children: blocks,
           ),
         );

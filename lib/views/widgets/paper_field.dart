@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../layout/semantic/inline_nodes.dart';
 import '../../layout/visual/visual_flutter_style.dart';
 import '../../models/quran_text.dart';
 import '../../models/tex_content.dart';
@@ -24,6 +25,7 @@ class PaperField extends StatefulWidget {
     required this.controller,
     required this.style,
     required this.renderBuilder,
+    this.semanticContent,
     this.textAlign = TextAlign.start,
     this.hint,
     this.onActivate,
@@ -40,6 +42,10 @@ class PaperField extends StatefulWidget {
 
   /// يبني الشكل النهائي المعروض (TexText — نفس محرك الطباعة).
   final Widget Function(String text) renderBuilder;
+
+  /// Canonical rich content from DocumentIR when this field is paper output.
+  /// `null` keeps the legacy/edit-only source parsing path.
+  final InlineContent? semanticContent;
 
   final TextAlign textAlign;
 
@@ -159,6 +165,10 @@ class _PaperFieldState extends State<PaperField> {
   }
 
   bool get _isRenderable {
+    final semantic = widget.semanticContent;
+    if (semantic != null) {
+      return semantic.hasMath || semantic.hasQuran;
+    }
     final text = widget.controller.text;
     return TexContent.containsMath(text) || QuranText.containsQuran(text);
   }
@@ -166,6 +176,18 @@ class _PaperFieldState extends State<PaperField> {
   /// هل النص صيغة خالصة (لا شيء حولها سوى الفراغات)؟ — النقر يفتح المحرر
   /// المرئي مباشرة بدلاً من تحرير المصدر.
   bool get _isPureFormula {
+    final semantic = widget.semanticContent;
+    if (semantic != null) {
+      var hasMath = false;
+      for (final run in semantic.richContent.runs) {
+        if (run.isMath) {
+          hasMath = true;
+        } else if (run.text.trim().isNotEmpty) {
+          return false;
+        }
+      }
+      return hasMath;
+    }
     final text = widget.controller.text;
     final spans = TexContent.findSpans(text);
     if (spans.isEmpty) {
@@ -188,7 +210,8 @@ class _PaperFieldState extends State<PaperField> {
       return;
     }
     // أي نص يحوي معادلة يُفتح في محرر المحتوى المختلط (نص + معادلات مرئية).
-    if (TexContent.containsMath(widget.controller.text)) {
+    if (widget.semanticContent?.hasMath ??
+        TexContent.containsMath(widget.controller.text)) {
       _openRichEditor();
       return;
     }

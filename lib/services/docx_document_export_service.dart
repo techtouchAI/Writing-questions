@@ -6,7 +6,9 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 
 import '../docx/omml_from_equation.dart';
+import '../layout/adapters/legacy_docx_adapter.dart';
 import '../layout/blueprint/exam_blueprint.dart';
+import '../layout/document_ir.dart';
 import '../layout/paper_metrics.dart';
 import '../layout/visual/visual_metrics.dart';
 import '../layout/visual/visual_content.dart';
@@ -321,15 +323,43 @@ class _RunProperties {
 
 /// بانِي مستند Word الداخلي (يجمع الصور أثناء بناء XML).
 class _DocxBuilder {
-  _DocxBuilder({
+  factory _DocxBuilder({
+    required ExamDocument document,
+    required ShapeRasterizer? shapeRasterizer,
+    required MathRasterizer? mathRasterizer,
+    required List<List<String>>? pageAssignments,
+    required Uint8List? frameImage,
+  }) {
+    final documentIr = DocumentIR.fromBlueprint(
+      blueprint: ExamBlueprint.from(document),
+      document: document,
+    );
+    return _DocxBuilder._(
+      document: document,
+      documentIr: documentIr,
+      blueprint: LegacyDocxAdapter.adapt(
+        documentIr: documentIr,
+        sourceDocument: document,
+      ),
+      shapeRasterizer: shapeRasterizer,
+      mathRasterizer: mathRasterizer,
+      pageAssignments: pageAssignments,
+      frameImage: frameImage,
+    );
+  }
+
+  _DocxBuilder._({
     required this.document,
+    required this.documentIr,
+    required this.blueprint,
     required this.shapeRasterizer,
     required this.mathRasterizer,
     required this.pageAssignments,
     required this.frameImage,
-  }) : blueprint = ExamBlueprint.from(document);
+  });
 
   final ExamDocument document;
+  final DocumentIR documentIr;
   final ExamBlueprint blueprint;
   final ShapeRasterizer? shapeRasterizer;
   final MathRasterizer? mathRasterizer;
@@ -340,6 +370,12 @@ class _DocxBuilder {
 
   final List<_EmbeddedImage> images = <_EmbeddedImage>[];
   int _drawingId = 1;
+
+  FloatingElement _legacyFloatingElement(FloatingElement source) =>
+      LegacyDocxAdapter.adaptFloatingElement(
+        documentIr: documentIr,
+        sourceElement: source,
+      );
 
   /// صيغ LaTeX المكتشفة في النصوص عند كتابة الفقرات، بترتيب ظهورها — تُرسم
   /// وتُستبدل علاماتها بعد اكتمال النص (انظر [_resolveMath]).
@@ -583,10 +619,14 @@ class _DocxBuilder {
         formulas.add(element);
         continue;
       }
-      await _buildFloatingElement(body, element, pageAnchored: true);
+      await _buildFloatingElement(
+        body,
+        _legacyFloatingElement(element),
+        pageAnchored: true,
+      );
     }
     for (final element in _formulaFlowOrder(formulas)) {
-      await _buildFormulaElement(body, element);
+      await _buildFormulaElement(body, _legacyFloatingElement(element));
     }
   }
 
@@ -616,10 +656,14 @@ class _DocxBuilder {
         formulas.add(element);
         continue;
       }
-      await _buildFloatingElement(body, element, pageAnchored: false);
+      await _buildFloatingElement(
+        body,
+        _legacyFloatingElement(element),
+        pageAnchored: false,
+      );
     }
     for (final element in _formulaFlowOrder(formulas)) {
-      await _buildFormulaElement(body, element);
+      await _buildFormulaElement(body, _legacyFloatingElement(element));
     }
   }
 
@@ -1197,10 +1241,11 @@ class _DocxBuilder {
   ) async {
     final globalElementIds =
         document.floatingElements.map((element) => element.id).toSet();
-    for (final element in attachments) {
-      if (globalElementIds.contains(element.id)) {
+    for (final sourceElement in attachments) {
+      if (globalElementIds.contains(sourceElement.id)) {
         continue;
       }
+      final element = _legacyFloatingElement(sourceElement);
       if (element.isTextBox) {
         _buildTextBox(body, element);
         continue;

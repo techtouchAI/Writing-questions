@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../layout/semantic/inline_nodes.dart';
 import '../../models/exam_canvas_geometry.dart';
 import '../../models/floating_element.dart';
 import '../../models/paper_font.dart';
@@ -21,12 +22,14 @@ class FloatingElementView extends StatelessWidget {
   const FloatingElementView({
     super.key,
     required this.element,
+    this.semanticLabel,
     this.defaultFont,
     this.fontScale = 1.0,
     this.heightScale = 1.0,
   });
 
   final FloatingElement element;
+  final InlineContent? semanticLabel;
 
   /// خط الورقة الافتراضي (لمربعات النص).
   final PaperFont? defaultFont;
@@ -76,6 +79,13 @@ class FloatingElementView extends StatelessWidget {
   /// معادلة حرة: تُرسم معادلةً (Math) بحجم أساس ثابت ثم تُقاس داخل الصندوق
   /// بنسبة ثابتة — فتكبير الصندوق يكبّر المعادلة كما في PDF و Word.
   Widget _buildFormula() {
+    var source = element.label;
+    for (final node in semanticLabel?.nodes ?? const <InlineNode>[]) {
+      if (node is MathNode) {
+        source = node.source;
+        break;
+      }
+    }
     return Container(
       decoration: element.framed
           ? BoxDecoration(
@@ -86,7 +96,7 @@ class FloatingElementView extends StatelessWidget {
       child: FittedBox(
         fit: BoxFit.contain,
         child: SafeMathTex(
-          element.label,
+          source,
           textStyle: const TextStyle(
             fontSize: ExamCanvasGeometry.formulaBaseFontSize,
           ),
@@ -115,17 +125,30 @@ class FloatingElementView extends StatelessWidget {
       alignment: Alignment.topRight,
       // الصيغ (`$...$`) في مربع النص تُعرض معادلاتٍ كاملة لا أكواداً خامة،
       // بنفس ودجت النص العلمي المستخدم على الورقة ([TexText]).
-      child: isEmpty || !TexContent.containsMath(text)
+      child: isEmpty
           ? Text(
               text,
-              style: isEmpty ? PaperStyles.hint(style) : style,
+              style: PaperStyles.hint(style),
               textAlign: PaperStyles.toTextAlign(element.textStyle.align),
             )
-          : TexText(
-              text,
-              style: style,
-              textAlign: PaperStyles.toTextAlign(element.textStyle.align),
-            ),
+          : semanticLabel != null
+              ? TexText.fromRichContent(
+                  semanticLabel!.richContent,
+                  style: style,
+                  mathTextStyle: style,
+                  textAlign: PaperStyles.toTextAlign(element.textStyle.align),
+                )
+              : !TexContent.containsMath(text)
+                  ? Text(
+                      text,
+                      style: style,
+                      textAlign: PaperStyles.toTextAlign(element.textStyle.align),
+                    )
+                  : TexText(
+                      text,
+                      style: style,
+                      textAlign: PaperStyles.toTextAlign(element.textStyle.align),
+                    ),
     );
   }
 }

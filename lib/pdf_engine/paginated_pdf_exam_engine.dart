@@ -3,15 +3,15 @@ import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../layout/adapters/legacy_pdf_adapter.dart';
 import '../layout/blueprint/exam_blueprint.dart';
+import '../layout/document_ir.dart';
 import '../layout/pagination_engine.dart';
 import '../layout/paper_metrics.dart';
-import '../models/branch_item.dart';
 import '../models/exam_canvas_geometry.dart';
 import '../models/exam_document.dart';
 import '../models/floating_element.dart';
 import '../models/question_model.dart';
-import '../models/quran_text.dart';
 import 'exam_fonts.dart';
 import 'pdf_math_rasters.dart';
 import 'exam_strategy.dart' show ExamTextStyles;
@@ -64,114 +64,32 @@ class PaginatedPdfExamEngine {
   static double _pageContentHeightFor(ExamDocument document) =>
       PdfPageFormat.a4.height - 2 * _marginFor(document);
 
+  /// Builds the renderer-neutral semantic document from the business
+  /// blueprint. PDF-specific structures are projected only at the adapter
+  /// boundary below.
+  static DocumentIR _documentIr(ExamDocument document) =>
+      DocumentIR.fromBlueprint(
+        blueprint: ExamBlueprint.from(document),
+        document: document,
+      );
+
+  static ExamBlueprint _legacyBlueprint(
+    DocumentIR documentIr,
+    ExamDocument document,
+  ) =>
+      LegacyPdfAdapter.adapt(
+        documentIr: documentIr,
+        sourceDocument: document,
+      );
+
+  static bool _needsQuranicFont(DocumentIR documentIr) =>
+      documentIr.header.showBismillah || documentIr.hasQuranContent;
+
   /// هل تحتاج الورقة الخط القرآني (Amiri)؟
-  ///
-  /// يستقصي **كل سطح يُطبع على الورقة**: أسطر الترويسة (بما فيها اسم المدرسة
-  /// ونوع الامتحان والعام والصف والزمن والبسملة)، والتذييل (العبارة الختامية
-  /// ولقبي الموقّع واسميهما)، وسطر القسم، وتسميات السؤال والفرع والنقطة
-  /// والخيار — تلقائية كانت أو يدوية — والنصوص (منطوقاً ومتناً ونقاطاً
-  /// وخيارات)، وملحقات السؤال والفرع والعناصر الحرة.
-  ///
-  /// كان الفحص يدوياً وناقصاً: لا يرى القسم ولا الترويسة ولا التذييل ولا
-  /// التسميات اليدوية، فتُطبع آيةٌ هناك بخط النسخ بدل Amiri (خطأ محدد
-  /// مُثبَت بالكود). الفحص هنا قراءة حقول في النموذج وحدها: لا إعادة بناء
-  /// لـ IR ولا للطباعة، ولا تبديل لسلوك أي فقرة غير قرآنية.
-  static bool needsQuranicFont(ExamDocument document) {
-    if (document.header.showBismillah) {
-      return true;
-    }
-    final header = document.header;
-    if (_anyVerse(<String>[
-      header.schoolName,
-      header.examType,
-      header.academicYear,
-      header.subject,
-      header.grade,
-      header.time,
-      header.schoolGender.label,
-      header.session.label,
-    ])) {
-      return true;
-    }
-    final footer = document.footer;
-    if (_anyVerse(<String>[
-      footer.closingPhrase,
-      footer.primary.title.label,
-      footer.primary.name,
-      footer.secondary?.title.label ?? '',
-      footer.secondary?.name ?? '',
-    ])) {
-      return true;
-    }
-    for (final element in document.floatingElements) {
-      if (_elementHasVerse(element)) {
-        return true;
-      }
-    }
-    for (final question in document.questions) {
-      // سطر القسم وتسمية السؤال اليدوية: سطحان كان الفحص يغفلهما.
-      if (_anyVerse(<String>[
-        question.category,
-        question.numberOverride ?? '',
-        question.statement,
-        question.body,
-      ])) {
-        return true;
-      }
-      if (_itemsContainVerse(question.items)) {
-        return true;
-      }
-      for (final element in question.attachments) {
-        if (_elementHasVerse(element)) {
-          return true;
-        }
-      }
-      for (final branch in question.branches) {
-        final content = branch.content;
-        if (_anyVerse(<String>[
-          branch.labelOverride ?? '',
-          content.statement,
-          content.body,
-        ])) {
-          return true;
-        }
-        if (_itemsContainVerse(content.items)) {
-          return true;
-        }
-        for (final element in branch.attachments) {
-          if (_elementHasVerse(element)) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-
-  /// هل في أي نص من [parts] آية موسومة؟
-  static bool _anyVerse(Iterable<String> parts) =>
-      parts.any(QuranText.containsQuran);
-
-  /// عنصر حرّ (ملحق سؤال/فرع أو عنصر ورقة): مربع النص يحمل تسمته.
-  static bool _elementHasVerse(FloatingElement element) =>
-      QuranText.containsQuran(element.label);
-
-  /// نقاط مرقّمة: نص النقطة، وتسميتها اليدوية، وخياراتها بنصها وتسميتها.
-  static bool _itemsContainVerse(List<BranchItem> items) {
-    for (final item in items) {
-      if (QuranText.containsQuran(item.text) ||
-          QuranText.containsQuran(item.labelOverride ?? '')) {
-        return true;
-      }
-      for (final option in item.options) {
-        if (QuranText.containsQuran(option.text) ||
-            QuranText.containsQuran(option.labelOverride ?? '')) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
+  /// يمر الفحص عبر DocumentIR نفسه، بما في ذلك الحقول التي كانت تُغفل عند
+  /// البحث اليدوي في النصوص.
+  static bool needsQuranicFont(ExamDocument document) =>
+      _needsQuranicFont(_documentIr(document));
 
   /// يولّد ملف PDF متعدد الصفحات بحجم A4.
   ///
@@ -185,8 +103,10 @@ class PaginatedPdfExamEngine {
     ExamFonts? fonts,
     Uint8List? frameImage,
   }) async {
-    final loadedFonts =
-        fonts ?? await ExamFonts.load(loadQuranic: needsQuranicFont(document));
+    final documentIr = _documentIr(document);
+    final blueprint = _legacyBlueprint(documentIr, document);
+    final loadedFonts = fonts ??
+        await ExamFonts.load(loadQuranic: _needsQuranicFont(documentIr));
     // مرحلتان: جولة تبني الورقة كاملةً وتسجّل كل معادلة يحتاجها الرسم — متن
     // وفروع ومربعات نص وبطاقات معادلة حرّة — ثم تُلتقط كلها دفعة واحدة بمحرك
     // المعاينة، ثم تُبنى الورقة ثانيةً والمخزون خلف كل طلب. والسبب أن بناء
@@ -199,6 +119,8 @@ class PaginatedPdfExamEngine {
       fonts: loadedFonts,
       frameImage: frameImage,
       mathRasters: collected,
+      blueprint: blueprint,
+      documentIr: documentIr,
     );
     if (collected.isEmpty) {
       return probe;
@@ -209,6 +131,8 @@ class PaginatedPdfExamEngine {
       fonts: loadedFonts,
       frameImage: frameImage,
       mathRasters: await collected.resolve(),
+      blueprint: blueprint,
+      documentIr: documentIr,
     );
   }
 
@@ -220,6 +144,8 @@ class PaginatedPdfExamEngine {
     required ExamFonts fonts,
     required Uint8List? frameImage,
     required PdfMathRasters mathRasters,
+    required ExamBlueprint blueprint,
+    required DocumentIR documentIr,
   }) async {
     final loadedFonts = fonts;
     final layout = document.layout;
@@ -234,7 +160,6 @@ class PaginatedPdfExamEngine {
       fontScale: settings.fontScale,
       heightScale: settings.heightScale,
     );
-    final blueprint = ExamBlueprint.from(document);
     final builder = PdfPaperBuilder(
       document: document,
       blueprint: blueprint,
@@ -358,7 +283,10 @@ class PaginatedPdfExamEngine {
                     right: layout.isLtr ? null : placement.edge,
                     top: placement.top,
                     child: FloatingElementsPdf.build(
-                      placement.element,
+                      LegacyPdfAdapter.adaptFloatingElement(
+                        documentIr: documentIr,
+                        sourceElement: placement.element,
+                      ),
                       widthPt: placement.element.width * _canvasScale,
                       heightPt: placement.element.height * _canvasScale,
                       fonts: loadedFonts,
@@ -385,8 +313,10 @@ class PaginatedPdfExamEngine {
     required ExamDocument document,
     ExamFonts? fonts,
   }) async {
-    final loadedFonts =
-        fonts ?? await ExamFonts.load(loadQuranic: needsQuranicFont(document));
+    final documentIr = _documentIr(document);
+    final blueprint = _legacyBlueprint(documentIr, document);
+    final loadedFonts = fonts ??
+        await ExamFonts.load(loadQuranic: _needsQuranicFont(documentIr));
     final settings = document.settings;
     final contentWidth = _contentWidthFor(document);
     final direction =
@@ -396,7 +326,6 @@ class PaginatedPdfExamEngine {
       fontScale: settings.fontScale,
       heightScale: settings.heightScale,
     );
-    final blueprint = ExamBlueprint.from(document);
     final pdf = _newDocument(document);
 
     List<List<String>> assign(PdfPaperBuilder paperBuilder) => _resolvePages(

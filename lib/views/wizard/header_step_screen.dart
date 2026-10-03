@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../layout/blueprint/exam_blueprint.dart';
+import '../../layout/document_ir.dart';
 import '../../models/exam_document.dart';
 import '../../models/exam_footer_model.dart';
 import '../../models/exam_header_model.dart';
@@ -276,13 +277,15 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
   /// معاينة حية لشكل الترويسة والتذييل بعرض الورقة نفسه قبل المتابعة.
   Widget _buildLivePreview() {
     final settings = _collectSettings();
-    final blueprint = ExamBlueprint.from(
-      ExamDocument(
-        name: _nameController.text,
-        header: _header,
-        footer: _footer,
-        settings: settings,
-      ),
+    final document = ExamDocument(
+      name: _nameController.text,
+      header: _header,
+      footer: _footer,
+      settings: settings,
+    );
+    final documentIr = DocumentIR.fromBlueprint(
+      blueprint: ExamBlueprint.from(document),
+      document: document,
     );
     return Card(
       elevation: 0,
@@ -315,7 +318,7 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
               child: Column(
                 children: <Widget>[
                   PaperHeaderView(
-                    header: blueprint.header,
+                    semanticHeader: documentIr.header,
                     style: _header.style,
                     defaultFont: settings.defaultFont,
                     fontScale: 1,
