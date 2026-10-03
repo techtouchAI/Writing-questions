@@ -161,6 +161,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
             baselineOffset: baselinePx,
           ),
         );
+        // Keep UTF-16 offsets aligned with toPlainText(includePlaceholders: true).
         offset += 1; // TextPainter's object-replacement character.
       } else {
         children.add(TextSpan(text: span.text, style: style));
@@ -291,7 +292,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
 
   List<({int start, int end})> _wordRanges(TextPainter painter, int start, int end) {
     final ranges = <({int start, int end})>[];
-    final plainText = painter.text!.toPlainText();
+    final plainText = painter.text!.toPlainText(includePlaceholders: true);
     var cursor = start;
     while (cursor < end) {
       final boundary = painter.getWordBoundary(TextPosition(offset: cursor));
