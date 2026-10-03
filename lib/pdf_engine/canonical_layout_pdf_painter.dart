@@ -142,6 +142,13 @@ class CanonicalLayoutPdfPainter {
       print('[p0-gate] canonical header direction=${run.direction} '
           'run=${run.text} id=${run.semanticNodeId}');
     }
+    if (line.id.contains('/category/')) {
+      // ignore: avoid_print
+      print('[canonical-category] align=${line.alignment} '
+          'lineDirection=${line.direction} runDirection=${run.direction} '
+          'x=${run.x.toStringAsFixed(2)} width=${run.width.toStringAsFixed(2)} '
+          'text=${run.text}');
+    }
     if (run.advance <= 0 || (run.text.isEmpty && !run.isMath)) return null;
     final left = run.x - originX;
     final top = line.baseline - run.baselineOffset - originY;

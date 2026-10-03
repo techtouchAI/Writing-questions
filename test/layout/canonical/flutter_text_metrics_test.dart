@@ -59,6 +59,81 @@ void main() {
   );
 
   testWidgets(
+    'adjacent full stops remain one measured dotted placeholder run',
+    (_) async {
+      final fontLoader = FontLoader(PaperFont.naskh.family)
+        ..addFont(rootBundle.load(PaperFont.naskh.regularAsset));
+      await fontLoader.load();
+
+      const dotted = '....................';
+      const style = LayoutTextStyle(
+        font: PaperFont.naskh,
+        fontSizePt: 10,
+        lineHeightFactor: 1.45,
+      );
+      final paragraph = const FlutterTextMetrics().layoutParagraph(
+        spans: const <MetricSpan>[
+          MetricSpan(
+            semanticNodeId: 'blank-field',
+            semanticNode: null,
+            text: dotted,
+            contentKind: LayoutContentKind.text,
+            semanticRole: LayoutSemanticRole.text,
+            style: style,
+            direction: DocumentDirection.rtl,
+            logicalIndex: 0,
+          ),
+        ],
+        width: 300,
+        direction: DocumentDirection.rtl,
+        alignment: PaperAlign.center,
+        resolveJustification: false,
+      );
+      expect(paragraph.lines, hasLength(1));
+      expect(paragraph.lines.single.fragments, hasLength(1));
+      expect(paragraph.lines.single.fragments.single.text, dotted);
+    },
+  );
+
+  testWidgets(
+    'all text fragments on a line share the measured natural baseline',
+    (_) async {
+      final fontLoader = FontLoader(PaperFont.naskh.family)
+        ..addFont(rootBundle.load(PaperFont.naskh.regularAsset));
+      await fontLoader.load();
+
+      const style = LayoutTextStyle(
+        font: PaperFont.naskh,
+        fontSizePt: 10.5,
+        lineHeightFactor: 1.45,
+      );
+      final paragraph = const FlutterTextMetrics().layoutParagraph(
+        spans: const <MetricSpan>[
+          MetricSpan(
+            semanticNodeId: 'item-body',
+            semanticNode: null,
+            text: 'البند الأول قصير',
+            contentKind: LayoutContentKind.text,
+            semanticRole: LayoutSemanticRole.text,
+            style: style,
+            direction: DocumentDirection.rtl,
+            logicalIndex: 0,
+          ),
+        ],
+        width: 300,
+        direction: DocumentDirection.rtl,
+        alignment: null,
+        resolveJustification: false,
+      );
+      final fragments = paragraph.lines.single.fragments;
+      expect(fragments.length, greaterThan(2));
+      for (final fragment in fragments.skip(1)) {
+        expect(fragment.baselineOffset, closeTo(fragments.first.baselineOffset, 0.01));
+      }
+    },
+  );
+
+  testWidgets(
     'mixed Arabic and Latin words map each visual box to its own source run',
     (_) async {
       final fontLoader = FontLoader(PaperFont.naskh.family)

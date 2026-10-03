@@ -198,6 +198,22 @@ class FlutterTextMetrics implements FontMetricsProvider {
         lineMetrics.length,
         (_) => <MeasuredRunFragment>[],
       );
+      final baselineOffsets = <(int, DocumentDirection), double>{};
+      double runBaselineOffset(int spanIndex, DocumentDirection runDirection) {
+        final key = (spanIndex, runDirection);
+        return baselineOffsets.putIfAbsent(key, () {
+          final span = spans[spanIndex];
+          // PDF paints every canonical run as a one-line text widget. Measure
+          // that widget's natural baseline centrally, then align it to the
+          // paragraph baseline. Selection-box tops vary with glyph bounds and
+          // are not a stable per-run baseline (notably across Arabic words).
+          return measureText(
+            span.text,
+            span.style.copyWith(lineHeightFactor: 1),
+            runDirection,
+          ).baseline;
+        });
+      }
       for (final range in spanRanges) {
         final span = spans[range.spanIndex];
         if (range.end <= range.start) continue;
@@ -220,7 +236,6 @@ class FlutterTextMetrics implements FontMetricsProvider {
             if (!splitVisualRuns) {
               final box = boxes.single;
               final lineIndex = _lineForBox(box, lineMetrics);
-              final metric = lineMetrics[lineIndex];
               fragmentsByLine[lineIndex].add(
                 MeasuredRunFragment(
                   spanIndex: range.spanIndex,
@@ -230,7 +245,10 @@ class FlutterTextMetrics implements FontMetricsProvider {
                   x: LayoutUnits.pxToPt(box.left),
                   width: LayoutUnits.pxToPt(box.right - box.left),
                   direction: _documentDirection(box.direction),
-                  baselineOffset: LayoutUnits.pxToPt(metric.baseline - box.top),
+                  baselineOffset: runBaselineOffset(
+                    range.spanIndex,
+                    _documentDirection(box.direction),
+                  ),
                   height: LayoutUnits.pxToPt(box.bottom - box.top),
                   mathBox: span.mathBox,
                 ),
@@ -250,7 +268,6 @@ class FlutterTextMetrics implements FontMetricsProvider {
               textRange.end,
               lineMetrics,
             )) {
-              final metric = lineMetrics[fragment.lineIndex];
               fragmentsByLine[fragment.lineIndex].add(
                 MeasuredRunFragment(
                   spanIndex: range.spanIndex,
@@ -264,7 +281,10 @@ class FlutterTextMetrics implements FontMetricsProvider {
                   x: LayoutUnits.pxToPt(fragment.left),
                   width: LayoutUnits.pxToPt(fragment.right - fragment.left),
                   direction: fragment.direction,
-                  baselineOffset: LayoutUnits.pxToPt(metric.baseline - fragment.top),
+                  baselineOffset: runBaselineOffset(
+                    range.spanIndex,
+                    fragment.direction,
+                  ),
                   height: LayoutUnits.pxToPt(fragment.bottom - fragment.top),
                   mathBox: span.mathBox,
                 ),
@@ -399,7 +419,40 @@ class FlutterTextMetrics implements FontMetricsProvider {
       ranges.add((start: rangeStart, end: rangeEnd));
       cursor = rangeEnd;
     }
-    return _coalesceNonbreakingSpaceRanges(ranges, plainText);
+    return _coalesceNonbreakingSpaceRanges(
+      _coalescePeriodRanges(ranges, plainText),
+      plainText,
+    );
+  }
+
+  /// Keep generated dotted blanks as a single unbreakable visual token. ICU
+  /// may report each adjacent full stop as its own word boundary; splitting
+  /// them would produce a column of one-dot runs and make the placeholder
+  /// wrap despite having no legal break opportunity.
+  List<({int start, int end})> _coalescePeriodRanges(
+    List<({int start, int end})> ranges,
+    String text,
+  ) {
+    if (ranges.length < 2) return ranges;
+    bool isPeriodRun(({int start, int end}) range) =>
+        text.substring(range.start, range.end).runes.every((rune) => rune == 0x2e);
+
+    final merged = <({int start, int end})>[];
+    for (final range in ranges) {
+      if (merged.isEmpty) {
+        merged.add(range);
+        continue;
+      }
+      final previous = merged.last;
+      if (previous.end == range.start &&
+          isPeriodRun(previous) &&
+          isPeriodRun(range)) {
+        merged[merged.length - 1] = (start: previous.start, end: range.end);
+      } else {
+        merged.add(range);
+      }
+    }
+    return merged;
   }
 
   List<({int start, int end})> _coalesceNonbreakingSpaceRanges(

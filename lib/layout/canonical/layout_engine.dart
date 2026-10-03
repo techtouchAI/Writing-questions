@@ -561,7 +561,9 @@ class _LayoutBuilder {
     final framePadding = branch.container.framed
         ? LayoutUnits.pxToPt(VisualMetrics.branchFramePaddingPx)
         : 0.0;
-    final branchX = parentX + indent;
+    final branchX = _resolveDirection(branch.direction) == DocumentDirection.rtl
+        ? parentX
+        : parentX + indent;
     final branchWidth = (parentWidth - indent).clamp(0.0, parentWidth).toDouble();
     final contentX = branchX + framePadding;
     final contentWidth = (branchWidth - 2 * framePadding)
