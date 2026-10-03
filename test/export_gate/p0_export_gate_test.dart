@@ -459,6 +459,14 @@ Future<_PreviewCapture> _capturePreviewOf(
       'قيست ${measuredHeights.values.where((h) => h != null).length}/'
       '${measuredHeights.length} كتلة، '
       'الكتل=${measuredHeights.map((k, v) => MapEntry<String, String>(k, v?.toStringAsFixed(1) ?? 'null'))}');
+  if (pageCount <= 1) {
+    // السجل وحده لا يكفي عند الفشل: تعليق CI يحمل الأرقام كما هي.
+    debugPrint('::error title=p0-gate pagination::'
+        '${document.name}: صفحات=$pageCount، '
+        'مجموع الارتفاعات=${heightSum.toStringAsFixed(1)}px، '
+        'صفحة=${PaperMetrics.pageContentHeightFor(document.settings.marginMm)}px، '
+        'الكتل=${measuredHeights}');
+  }
   expect(pageCount, greaterThan(1),
       reason: 'التركيبة يجب أن تتعدّى صفحة واحدة لتغطية التقسيم: '
           'الارتفاعات المقاسة = $measuredHeights.');

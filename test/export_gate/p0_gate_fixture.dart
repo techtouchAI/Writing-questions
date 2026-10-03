@@ -180,12 +180,14 @@ const List<P0Feature> kP0MatrixFeatures = <P0Feature>[
   P0Feature(
     key: 'pagination',
     title: 'التقسيم الورقي (أكثر من صفحة) وخطة الأسئلة',
-    fixtureEvidence: 'PG5..PG8 (متون طويلة) + فاصل Q2 (`PaperDivider`)',
+    fixtureEvidence:
+        'PG5..PG12 (8 متون طويلة، 12 سؤالاً) + فاصل Q2 (`PaperDivider`)',
   ),
   P0Feature(
     key: 'justification',
     title: 'ضبط الفقرة (justify) وقاعدة «لا يُمَدّ سطر واحد»',
-    fixtureEvidence: 'bodyAlign=justify لمتن Q1 (MIX1/BODY1) ولفقرات PG5..PG8',
+    fixtureEvidence:
+        'bodyAlign=justify لمتن Q1 (MIX1/BODY1) ولفقرات PG5..PG12',
   ),
   P0Feature(
     key: 'floating',
@@ -446,7 +448,9 @@ abstract final class P0GateFixture {
           ],
         ),
         // (5) نص طويل يضمن أكثر من صفحة + ضبط السطر في فقرة بلا رياضيات.
-        for (var index = 5; index <= 8; index++)
+        // الكتلة تُضخَّم عمداً: شرط «أكثر من صفحة» في P0.1 يجب أن يكون محكوماً
+        // بالارتفاع المقاس لا بعدّ الأسئلة، وإلا قيس التقسيم على صفحة واحدة.
+        for (var index = 5; index <= 12; index++)
           QuestionModel(
             id: 'p0q$index',
             questionNumber: index,
@@ -566,6 +570,20 @@ abstract final class P0GateFixture {
           body: longParagraph('LTRPG1'),
           marksOverride: 5,
         ),
+        // تدفّق إنجليزي مقيس: نفس شرط «أكثر من صفحة» في ورقة LTR كي يقاس
+        // الانحدار لا يُفترض.
+        for (var index = 4; index <= 7; index++)
+          QuestionModel(
+            id: 'p0lq$index',
+            questionNumber: index,
+            statement: 'Flow question LTRPG$index',
+            body: List<String>.filled(
+              6,
+              'This passage is long enough to force wrapping and a page break '
+              'in every path, keeping word order identical LTRPG$index.',
+            ).join(' '),
+            marksOverride: 5,
+          ),
       ],
     );
   }
@@ -618,6 +636,10 @@ abstract final class P0GateFixture {
     'PG6',
     'PG7',
     'PG8',
+    'PG9',
+    'PG10',
+    'PG11',
+    'PG12',
   };
 
   /// وسوم المتن في الوثيقة الإنجليزية LTR.
@@ -636,6 +658,10 @@ abstract final class P0GateFixture {
     'LTRMATH1',
     'JUSTL1',
     'LTRPG1',
+    'LTRPG4',
+    'LTRPG5',
+    'LTRPG6',
+    'LTRPG7',
   };
 
   /// تسلسل وسوم المتن كما يولّده العقد (ترتيب الكتلة المنطقية نفسها).
@@ -732,6 +758,6 @@ abstract final class P0GateFixture {
   static const List<String> floatingMarkers = <String>['FLOAT2'];
 
   /// عدد الأسئلة في كل وثيقة (يُستعمل لربط خطة الترقيم بالصفحات).
-  static const int rtlQuestionCount = 8;
-  static const int ltrQuestionCount = 3;
+  static const int rtlQuestionCount = 12;
+  static const int ltrQuestionCount = 7;
 }
