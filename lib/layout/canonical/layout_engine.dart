@@ -1173,7 +1173,7 @@ class _LayoutBuilder {
               ? LayoutSemanticRole.marks
               : LayoutSemanticRole.number,
           style: style,
-          direction: _nodeDirection(node.direction, direction),
+          direction: _spanDirection(node.direction, direction),
         ),
       ];
     }
@@ -1186,7 +1186,7 @@ class _LayoutBuilder {
           kind: LayoutContentKind.separator,
           role: semanticRole,
           style: style,
-          direction: _nodeDirection(node.direction, direction),
+          direction: _spanDirection(node.direction, direction),
         ),
       ];
     }
@@ -1209,7 +1209,7 @@ class _LayoutBuilder {
           kind: kind,
           role: semanticRole,
           style: runStyle,
-          direction: _nodeDirection(node.direction, direction),
+          direction: _spanDirection(node.direction, direction),
           mathBox: mathBox,
           isBlockMath: node.run.isBlockMath,
         ),
@@ -1231,7 +1231,7 @@ class _LayoutBuilder {
         kind: runKind,
         role: semanticRole,
         style: runStyle,
-        direction: _nodeDirection(node.direction, direction),
+        direction: _spanDirection(node.direction, direction),
         mathBox: run.isMath ? mathMetrics['$path/run/${index - 1}'] : null,
         isBlockMath: run.isBlockMath,
       ));
@@ -1843,6 +1843,15 @@ class _LayoutBuilder {
       source == DocumentDirection.auto || source == DocumentDirection.inherit
           ? fallback
           : source;
+
+  /// Preserve `auto` on inline atoms for the measurement backend to resolve
+  /// from their actual bidi content; only `inherit` is replaced by the block
+  /// direction at this boundary.
+  DocumentDirection _spanDirection(
+    DocumentDirection source,
+    DocumentDirection fallback,
+  ) =>
+      source == DocumentDirection.inherit ? fallback : source;
 
   List<LayoutLine> _flattenLines(Iterable<LayoutBlock> blocks) => <LayoutLine>[
         for (final block in blocks) ...block.lines,

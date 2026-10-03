@@ -46,7 +46,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
   }
 
   @override
-  String get backendId => 'flutter-text-painter-pt-v2';
+  String get backendId => 'flutter-text-painter-pt-v3';
 
   @override
   FontRunMetrics measureText(
@@ -115,10 +115,16 @@ class FlutterTextMetrics implements FontMetricsProvider {
       return MeasuredParagraph(width: width, height: 0, lines: const <MeasuredLine>[]);
     }
 
+    // Auto-direction inline content can be an all-LTR paragraph inside an RTL
+    // document (for example, an English identifier around an equation). Use
+    // its strong text to resolve shaping order, while preserving the block
+    // direction for start/end alignment and pagination.
+    final bidiDirection = _bidiDirectionFor(spans, direction);
     final natural = _layoutOnce(
       spans: spans,
       width: width,
       direction: direction,
+      bidiDirection: bidiDirection,
       alignment: alignment,
       justify: false,
     );
@@ -134,6 +140,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
       spans: spans,
       width: width,
       direction: direction,
+      bidiDirection: bidiDirection,
       alignment: alignment,
       justify: true,
       naturalLines: natural.lines,
@@ -144,6 +151,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
     required List<MetricSpan> spans,
     required double width,
     required DocumentDirection direction,
+    required DocumentDirection bidiDirection,
     required PaperAlign? alignment,
     required bool justify,
     List<MeasuredLine>? naturalLines,
@@ -203,7 +211,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
 
     final painter = TextPainter(
       text: TextSpan(children: children),
-      textDirection: _textDirection(direction),
+      textDirection: _textDirection(bidiDirection),
       textAlign: _textAlign(alignment, justify: justify),
       textScaler: TextScaler.noScaling,
       textHeightBehavior: const TextHeightBehavior(
@@ -357,7 +365,8 @@ class FlutterTextMetrics implements FontMetricsProvider {
             : null;
         final fragments = fragmentsByLine[index]
           ..sort((a, b) => a.x.compareTo(b.x));
-        final opportunities = _breakableSpaceCount(fragments);
+        final opportunities =
+            _breakableSpaceCount(fragments, plainText, spanRanges);
         final isJustified = justify &&
             index < lineMetrics.length - 1 &&
             opportunities > 0;
@@ -517,7 +526,42 @@ class FlutterTextMetrics implements FontMetricsProvider {
       codePoint == 0xFEFF ||
       codePoint == 0x2060;
 
+  DocumentDirection _bidiDirectionFor(
+    List<MetricSpan> spans,
+    DocumentDirection fallback,
+  ) {
+    final explicit = spans
+        .map((span) => span.direction)
+        .where((direction) =>
+            direction == DocumentDirection.ltr ||
+            direction == DocumentDirection.rtl)
+        .toSet();
+    if (explicit.isNotEmpty) {
+      final hasAutomatic = spans.any((span) =>
+          span.direction == DocumentDirection.auto ||
+          span.direction == DocumentDirection.inherit);
+      if (explicit.length == 1 && !hasAutomatic) return explicit.single;
+      return fallback;
+    }
+
+    final sourceText = spans
+        .where((span) => !span.isMath && !span.isFixedAdvance)
+        .map((span) => span.text)
+        .join();
+    if (_containsArabic(sourceText)) return fallback;
+    if (_containsStrongLtr(sourceText)) return DocumentDirection.ltr;
+    return fallback;
+  }
+
+  bool _containsStrongLtr(String text) => text.runes.any((rune) =>
+      (rune >= 0x0030 && rune <= 0x0039) ||
+      (rune >= 0x0041 && rune <= 0x005A) ||
+      (rune >= 0x0061 && rune <= 0x007A) ||
+      (rune >= 0x00C0 && rune <= 0x02FF) ||
+      (rune >= 0x0370 && rune <= 0x058F));
+
   bool _containsArabic(String text) => text.runes.any((rune) =>
+      (rune >= 0x0590 && rune <= 0x05FF) ||
       (rune >= 0x0600 && rune <= 0x08FF) ||
       (rune >= 0xFB50 && rune <= 0xFEFF) ||
       (rune >= 0x10E60 && rune <= 0x10E7F) ||
@@ -609,15 +653,33 @@ class FlutterTextMetrics implements FontMetricsProvider {
     return nearest;
   }
 
-  int _breakableSpaceCount(Iterable<MeasuredRunFragment> fragments) {
-    var count = 0;
+  int _breakableSpaceCount(
+    Iterable<MeasuredRunFragment> fragments,
+    String plainText,
+    List<({int start, int end, int spanIndex})> spanRanges,
+  ) {
+    final rangesBySpan = <int, ({int start, int end, int spanIndex})>{
+      for (final range in spanRanges) range.spanIndex: range,
+    };
+    var lineStart = plainText.length;
+    var lineEnd = 0;
     for (final fragment in fragments) {
-      if (fragment.fixedAdvancePt != null) continue;
-      for (final rune in fragment.text.runes) {
-        // Unicode White_Space characters that are explicitly nonbreaking are
-        // not justification/break opportunities.
-        if (_isJustifiableSpace(rune)) count++;
-      }
+      final range = rangesBySpan[fragment.spanIndex];
+      if (range == null) continue;
+      final start = range.start + fragment.startOffset;
+      final end = range.start + fragment.endOffset;
+      if (end <= start) continue;
+      if (start < lineStart) lineStart = start;
+      if (end > lineEnd) lineEnd = end;
+    }
+    if (lineEnd <= lineStart) return 0;
+
+    var count = 0;
+    for (final rune in plainText.substring(lineStart, lineEnd).runes) {
+      // Count opportunities from source text rather than recovered glyph
+      // boxes: TextPainter may omit a zero-width box for an ordinary space.
+      // Explicit nonbreaking spaces never become justification opportunities.
+      if (_isJustifiableSpace(rune)) count++;
     }
     return count;
   }

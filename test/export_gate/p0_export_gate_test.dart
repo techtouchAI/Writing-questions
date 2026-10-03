@@ -1368,7 +1368,7 @@ void main() {
     _matrix.record('latin-numerals', P0Path.vectorPdf, P0Status.pass,
         evidence: 'أرقام لاتينية=$latin (تسمية يدوية 1- و2026/2027 و45.5%)');
     _matrix.record('punctuation', P0Path.vectorPdf, P0Status.pass,
-        evidence: 'أقواس مرسومة=${parenSamples.length}، فواصل الترقيم '
+        evidence: 'أقواس مرسومة=${firstVisualParenLine.length}، فواصل الترقيم '
             'يسار الأرقام=${drawnLabels.length}، لا انقلاب=${invertedLabels.length}');
     _matrix.record('marks', P0Path.vectorPdf, P0Status.pass,
         evidence: '«(٢٠ درجة)» مرسومة مع أرقام مشرقية=${indic}');
