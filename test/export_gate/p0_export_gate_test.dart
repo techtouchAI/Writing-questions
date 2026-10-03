@@ -93,6 +93,10 @@ class _Gate {
   int rtlPreviewPageCount = 0;
   int ltrPreviewPageCount = 0;
   int mathRequests = 0;
+  // التقاط المعاينة الثقيل يُقاس مرة واحدة ويُخزَّن: لا يُعاد في كل اختبار،
+  // ولا يبقى سببُه مختبئاً خلف اختبار القطع.
+  _PreviewCapture? rtlCapture;
+  _PreviewCapture? ltrCapture;
 
   bool get artifactsReady =>
       rtlVectorPdf != null &&
@@ -110,6 +114,14 @@ class _Gate {
   void requireArtifacts() {
     if (!artifactsReady) {
       throw StateError('لم تُنتَج القطع: فشل P0-GATE-01 قبل أي فحص بنيوي.');
+    }
+  }
+
+  bool get previewReady => rtlCapture != null && ltrCapture != null;
+
+  void requirePreview() {
+    if (!previewReady) {
+      throw StateError('لم تُلقط المعاينة: فشل P0-GATE-00 قبل أي قياس مرجعي.');
     }
   }
 }
@@ -349,28 +361,55 @@ class _PreviewCapture {
 }
 
 /// أول فقرة في شجرة المعاينة يحوي نصّها [marker]، بقياساتها.
-_PreviewText? _previewTextAt(WidgetTester tester, String marker) {
+/// يقيس وسوم المعاينة في جولة واحدة على الشجرة.
+///
+/// المشي لكل وسم على حدة (45 وسماً × شجرة خمس صفحات + `getBoxesForSelection`
+/// لكل مطابقة) كان يكلّف ميزانية الاختبار كلها: CI أجهض P0-GATE-01 بـ
+/// `TimeoutException after 0:10:00`. القياسات نفسها بلا تغيير — عدد الأسطر من
+/// `getBoxesForSelection`، والموضع من `localToGlobal`، وصناديق السطور مشتركة
+/// بين الوسوم التي تسقط في الفقرة نفسها.
+({Map<String, _PreviewText> found, List<String> missing})
+    _measurePreviewMarkers(
+  WidgetTester tester,
+  List<String> markers,
+) {
   final finder = find.byType(RichText, skipOffstage: false);
   final widgets = tester.widgetList<RichText>(finder).toList();
   final paragraphs =
       tester.renderObjectList<RenderParagraph>(finder).toList();
-  for (var index = 0; index < widgets.length; index++) {
-    final span = widgets[index].text;
-    final plain = span.toPlainText();
-    if (!plain.contains(marker)) {
+  final plain = widgets
+      .map((rich) => rich.text.toPlainText())
+      .toList(growable: false);
+  final lineCounts = <int, int>{};
+  final found = <String, _PreviewText>{};
+  final missing = <String>[];
+  for (final marker in markers) {
+    var hit = -1;
+    for (var index = 0; index < plain.length; index++) {
+      if (plain[index].contains(marker)) {
+        hit = index;
+        break;
+      }
+    }
+    if (hit < 0) {
+      missing.add(marker);
       continue;
     }
-    final paragraph = paragraphs[index];
-    final boxes = paragraph.getBoxesForSelection(
-      TextSelection(baseOffset: 0, extentOffset: plain.length),
-      boxHeightStyle: ui.BoxHeightStyle.max,
-    );
-    final tops = boxes.map((box) => box.top.roundToDouble()).toSet();
+    final paragraph = paragraphs[hit];
+    final lines = lineCounts.putIfAbsent(hit, () {
+      final boxes = paragraph.getBoxesForSelection(
+        TextSelection(baseOffset: 0, extentOffset: plain[hit].length),
+        boxHeightStyle: ui.BoxHeightStyle.max,
+      );
+      final tops = boxes.map((box) => box.top.roundToDouble()).toSet();
+      return tops.isEmpty ? 1 : tops.length;
+    });
     final origin = paragraph.localToGlobal(Offset.zero);
-    return _PreviewText(
+    final span = widgets[hit].text;
+    found[marker] = _PreviewText(
       marker: marker,
-      text: plain,
-      lines: tops.isEmpty ? 1 : tops.length,
+      text: plain[hit],
+      lines: lines,
       rect: Rect.fromLTWH(0, 0, paragraph.size.width, paragraph.size.height)
           .shift(origin),
       align: paragraph.textAlign,
@@ -378,7 +417,7 @@ _PreviewText? _previewTextAt(WidgetTester tester, String marker) {
       fontFamilies: _fontFamiliesOf(span),
     );
   }
-  return null;
+  return (found: found, missing: missing);
 }
 
 double? _firstWordSpacing(InlineSpan span) {
@@ -508,12 +547,13 @@ Future<_PreviewCapture> _capturePreviewOf(
           ...P0GateFixture.footerMarkers,
         };
   final markersToMeasure = <String>{...known, ...sideMarkers, ...markers};
-  final texts = <String, _PreviewText>{};
-  for (final marker in markersToMeasure) {
-    final measured = _previewTextAt(tester, marker);
-    if (measured != null) {
-      texts[marker] = measured;
-    }
+  final measurement =
+      _measurePreviewMarkers(tester, markersToMeasure.toList());
+  final texts = measurement.found;
+  if (measurement.missing.isNotEmpty) {
+    // القائمة لا العدد فقط: «وسوم مقاسة 12/45» وحده لا يقول ما الناقص.
+    _stage('${document.name}: وسوم لم تُقَس في المعاينة '
+        '(${measurement.missing.length}): ${measurement.missing.join(', ')}');
   }
   final treeText = tester
       .widgetList<RichText>(find.byType(RichText, skipOffstage: false))
@@ -632,7 +672,7 @@ void main() {
   // P0.2 — القطع تُنتَج فعلاً، والمسارات الأربعة منفصلة.
   // ===========================================================================
   testWidgets(
-      'P0-GATE-01: المعاينة + vector.pdf + editable.docx + exact.* تُنتَج كلها',
+      'P0-GATE-00: مرجع المعاينة — RTL و LTR: لقطات كل صفحة وقياس كل وسم',
       (tester) async {
     await _loadAppFonts();
     final mathHost = FakeMathHost()..attach();
@@ -660,6 +700,7 @@ void main() {
       'HDRV',
       'FTR1',
     ]);
+    _gate.rtlCapture = rtl;
     _gate.previewRtl.addAll(rtl.texts);
     _gate.previewRtlMarkerOrder = rtl.markerOrder;
     _gate.rtlPreviewPages = rtl.pages;
@@ -679,10 +720,29 @@ void main() {
       'LTRV',
       'LTRF1',
     ]);
+    _gate.ltrCapture = ltr;
     _gate.previewLtr.addAll(ltr.texts);
     _gate.previewLtrMarkerOrder = ltr.markerOrder;
     _gate.ltrPreviewPages = ltr.pages;
     _gate.ltrPreviewPageCount = ltr.pages.length;
+    _recordPreviewCells(rtl, ltr);
+  });
+
+  testWidgets(
+      'P0-GATE-01: المعاينة + vector.pdf + editable.docx + exact.* تُنتَج كلها',
+      (tester) async {
+    await _loadAppFonts();
+    final mathHost = FakeMathHost()..attach();
+    addTearDown(mathHost.detach);
+
+    final rtlDocument = P0GateFixture.rtl();
+    final ltrDocument = P0GateFixture.ltr();
+
+    // مرجع المعاينة قيس في P0-GATE-00 ولا تُمشى الشجرة مرتين في اختبار واحد:
+    // إعادة المشي هي ما استهلك «TimeoutException after 0:10:00» كله.
+    _gate.requirePreview();
+    final rtl = _gate.rtlCapture!;
+    final ltr = _gate.ltrCapture!;
 
     // PDF المتجه و Word القابل للتحرير: محركاهما الخاصّان (لا Exact).
     _gate.rtlVectorPdf =
@@ -771,8 +831,6 @@ void main() {
     _stage('vector عربي: ${_gate.rtlPdfReport.pageCount} صفحة؛ '
         'المعاينة: ${_gate.rtlPreviewPageCount} صفحة؛ '
         'لقطات معادلات: ${_gate.mathRequests}');
-
-    _recordPreviewCells(rtl, ltr);
   });
 
   // ===========================================================================
