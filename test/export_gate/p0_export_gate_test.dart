@@ -2129,6 +2129,7 @@ void _recordPreviewCells(_PreviewCapture rtl, _PreviewCapture ltr) {
   final body1 = rtl.texts['BODY1'];
   expect(sta1, isNotNull, reason: 'منطوق Q1 لم يوجد في شجرة المعاينة.');
   final title = sta1!;
+  double? rightDrift;
   if (body1 == null) {
     _stage('المعاينة: BODY1 غير معروض فقرةً في الشجرة — قيس الحافة والالتفاف '
         'له يُكتفى في PDF (GATE-02/03) وDOCX (GATE-06)؛ لا يُقاس هنا ادّعاءً.');
@@ -2136,8 +2137,8 @@ void _recordPreviewCells(_PreviewCapture rtl, _PreviewCapture ltr) {
     final body = body1;
 
     // المحاذاة: كل كتلة RTL تبدأ من الحافة اليمنى للصندوق نفسه.
-    final rightDrift = (title.rect.right - body.rect.right).abs();
-    expect(rightDrift, lessThan(1.5),
+    rightDrift = (title.rect.right - body.rect.right).abs();
+    expect(rightDrift!, lessThan(1.5),
         reason: 'حواف بداية مختلفة بين العنوان والمتن في RTL: '
             '${title.rect.right} مقابل ${body.rect.right}');
 
@@ -2203,7 +2204,7 @@ void _recordPreviewCells(_PreviewCapture rtl, _PreviewCapture ltr) {
 
   _matrix.record('arabic', P0Path.preview, P0Status.pass,
       evidence: '${rtl.texts.length} كتلة مقاسة؛ حافة بداية مشتركة '
-          '(فرق ${rightDrift.toStringAsFixed(2)}px)');
+          '(فرق ${rightDrift?.toStringAsFixed(2) ?? 'غير مقيس — المتن غير معروض فقرة'}px)');
   _matrix.record('latin', P0Path.preview, P0Status.pass,
       evidence: 'MIX1/OPT1/OP1A حاضرة في الشجرة بترتيب العقد نفسه');
   _matrix.record('mixed', P0Path.preview, P0Status.pass,
