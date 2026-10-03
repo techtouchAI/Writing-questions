@@ -52,10 +52,8 @@ class LayoutOffset {
 class LayoutRect {
   const LayoutRect.fromLTWH(this.left, this.top, this.width, this.height);
 
-  const LayoutRect.fromLTRB(double left, double top, double right, double bottom)
-      : left = left,
-        top = top,
-        width = right - left,
+  const LayoutRect.fromLTRB(this.left, this.top, double right, double bottom)
+      : width = right - left,
         height = bottom - top;
 
   final double left;
