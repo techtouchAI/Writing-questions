@@ -73,6 +73,40 @@ const String _dir = P0GateFixture.artifactDir;
 /// وسم آية واحد يُستعمل لإثبات شمول الفحص القرآني لكل سطح مطبوع.
 const String _verse = '﴿وَقُل رَّبِّ زِدْنِي عِلْمًا﴾';
 
+/// PDF text extraction can expose punctuation as standalone tokens. These are
+/// tested for order/placement separately; they are not word-space samples.
+const Set<String> _punctuationOnlyPdfTokens = <String>{
+  ',',
+  '.',
+  ':',
+  ';',
+  '،',
+  '؛',
+  '؟',
+  '?',
+  '!',
+  '/',
+  '\\',
+  '-',
+  '–',
+  '—',
+  '(',
+  ')',
+  '[',
+  ']',
+  '{',
+  '}',
+  '﴿',
+  '﴾',
+  '«',
+  '»',
+  '%',
+  '٪',
+};
+
+bool _isPunctuationOnlyPdfToken(String text) =>
+    _punctuationOnlyPdfTokens.contains(text.trim());
+
 /// قياسات القطع والممرّات، مشتركة بين اختبارات هذا الملف (ترتيب التنفيذ
 /// مضمون: اختبار القطع أولاً، ثم الفحوص البنيوية، ثم المصفوفة).
 class _Gate {
@@ -1228,15 +1262,21 @@ void main() {
             'أكبر فجوة ${gaps.reduce((a, b) => a > b ? a : b).toStringAsFixed(2)}pt');
     final titleLines = page.linesWithMarker('STA1');
     expect(titleLines, isNotEmpty, reason: 'سطر عنوان Q1 مفقود من ص1.');
+    // PDF extraction may expose attached punctuation as standalone tokens
+    // (for example «أجب» followed by «:»). Check every adjacent lexical pair;
+    // punctuation placement and ordering have their own assertions below.
+    final titleLine = titleLines.first;
     final titleGaps = <double>[
-      for (final index in titleLines.first.adjacencyIndices)
-        titleLines.first.gapAfter(index),
+      for (final index in titleLine.adjacencyIndices)
+        if (!_isPunctuationOnlyPdfToken(titleLine.words[index].text) &&
+            !_isPunctuationOnlyPdfToken(titleLine.words[index + 1].text))
+          titleLine.gapAfter(index),
     ];
     if (titleGaps.isNotEmpty) {
       expect(titleGaps.every((gap) => gap >= 1.0 && gap <= 6.0), isTrue,
-          reason: 'فجوات سطر غير مضبوط خارج نطاق المسافة الطبيعية: '
-              '${titleGaps.map((v) => v.toStringAsFixed(2)).toList()} — '
-              'السطر: ${titleLines.first.describe()} — '
+          reason: 'فجوات الكلمات في السطر غير المضبوط خارج نطاق المسافة '
+              'الطبيعية: ${titleGaps.map((v) => v.toStringAsFixed(2)).toList()} — '
+              'السطر: ${titleLine.describe()} — '
               'مسافة الكلمة لا تُطابق عرض المسافة للخط (انحدار realign).');
     }
 

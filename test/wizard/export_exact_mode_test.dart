@@ -69,21 +69,20 @@ Future<void> _openReview(WidgetTester tester) async {
 
 void main() {
   testWidgets(
-    'Exact اختياري ومطفأ افتراضياً لإبقاء التصدير قابلاً للتحرير',
+    'Exact is optional by default and accurately discloses image-only exports',
     (tester) async {
       await _pump(tester);
       await _openReview(tester);
 
-      final switchFinder = find.byKey(const ValueKey<String>('export-exact-mode'));
+      const switchKey = ValueKey<String>('export-exact-mode');
+      final switchFinder = find.byKey(switchKey);
       expect(
         switchFinder,
         findsOneWidget,
         reason: 'مفتاح نمط التصدير في الحوار.',
       );
-
-      final asSwitch = tester.widget<SwitchListTile>(switchFinder);
       expect(
-        asSwitch.value,
+        tester.widget<SwitchListTile>(switchFinder).value,
         isFalse,
         reason: 'المسار الافتراضي نصي وقابل للتحرير.',
       );
@@ -91,22 +90,12 @@ void main() {
       expect(find.textContaining('غير قابل للتحرير'), findsNothing);
       expect(find.textContaining('صور صفحات المعاينة'), findsNothing);
       expect(find.text('صفحات المعاينة'), findsOneWidget);
-    },
-  );
 
-  testWidgets(
-    'تفعيل Exact يعلن أن PDF وWord صفحات صور غير قابلة للتحرير',
-    (tester) async {
-      await _pump(tester);
-      await _openReview(tester);
-
-      await tester.tap(find.byKey(const ValueKey<String>('export-exact-mode')));
-      await tester.pumpAndSettle();
-
-      final asSwitch = tester.widget<SwitchListTile>(
-        find.byKey(const ValueKey<String>('export-exact-mode')),
-      );
-      expect(asSwitch.value, isTrue);
+      // Toggle the same live review dialog: normal mode stays editable, while
+      // Exact must disclose the loss of searchability/editability explicitly.
+      await tester.tap(switchFinder);
+      await tester.pump();
+      expect(tester.widget<SwitchListTile>(switchFinder).value, isTrue);
       expect(find.textContaining('صور صفحات المعاينة'), findsOneWidget);
       expect(find.textContaining('غير قابل للتحرير'), findsOneWidget);
       expect(find.textContaining('OMML'), findsNothing);

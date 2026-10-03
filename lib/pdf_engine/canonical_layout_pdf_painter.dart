@@ -147,6 +147,9 @@ class CanonicalLayoutPdfPainter {
     final top = line.baseline - run.baselineOffset - originY;
     final textStyle = _pdfTextStyle(run, fonts);
     final height = run.isMath ? run.height : line.rect.height;
+    // Each run's x is already a canonical physical coordinate. Use physical
+    // left alignment inside its fixed box; `start` would apply the RTL
+    // paragraph-start offset a second time to independently positioned runs.
     final pw.Widget content;
     if (run.isMath) {
       final raster = mathRasters.lookup(run.text, run.style.fontSizePt);
@@ -162,7 +165,7 @@ class CanonicalLayoutPdfPainter {
           EquationModel.readableText(run.text),
           style: textStyle,
           textDirection: _pdfDirection(run.direction),
-          textAlign: pw.TextAlign.start,
+          textAlign: pw.TextAlign.left,
           softWrap: false,
           maxLines: 1,
           tightBounds: false, // Retain font ascent/descent for stable baselines.
@@ -174,7 +177,7 @@ class CanonicalLayoutPdfPainter {
         run.text,
         style: textStyle,
         textDirection: _pdfDirection(run.direction),
-        textAlign: pw.TextAlign.start,
+        textAlign: pw.TextAlign.left,
         softWrap: false,
         maxLines: 1,
         tightBounds: false, // Retain font ascent/descent for stable baselines.
