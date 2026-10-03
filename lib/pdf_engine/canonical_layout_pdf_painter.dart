@@ -124,6 +124,14 @@ class CanonicalLayoutPdfPainter {
     double originX = 0,
     double originY = 0,
   }) {
+    if (line.id.contains('header') &&
+        (run.text.contains('المتوسط') ||
+            run.text.contains('السنة') ||
+            run.text.contains('النهوض') ||
+            run.text == 'س')) {
+      print('[p0-gate] canonical header direction=${run.direction} '
+          'run=${run.text} id=${run.semanticNodeId}');
+    }
     if (run.advance <= 0 || (run.text.isEmpty && !run.isMath)) return null;
     final left = run.x - originX;
     final top = line.baseline - run.baselineOffset - originY;
