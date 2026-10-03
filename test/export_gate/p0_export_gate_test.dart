@@ -796,8 +796,13 @@ void main() {
     final watch = Stopwatch();
     await tester.runAsync(() async {
       watch.start();
-      _gate.rtlVectorPdf =
-          await PaginatedPdfExamEngine().generate(document: rtlDocument);
+      try {
+        _gate.rtlVectorPdf =
+            await PaginatedPdfExamEngine().generate(document: rtlDocument);
+      } catch (error, stackTrace) {
+        _stage('RTL vector generation failed: $error\n$stackTrace');
+        Error.throwWithStackTrace(error, stackTrace);
+      }
       _stage('توليد vector.pdf عربي: ${watch.elapsedMilliseconds}ms، '
           '${_gate.rtlVectorPdf!.length} بايت');
       watch
