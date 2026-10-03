@@ -1,6 +1,6 @@
 import '../../models/branch_item.dart';
 import '../../models/exam_document.dart';
-import '../../models/question_model.dart';
+import '../../models/floating_element.dart';
 import '../../models/question_option.dart';
 import '../blueprint/exam_blueprint.dart';
 import '../document_ir.dart';

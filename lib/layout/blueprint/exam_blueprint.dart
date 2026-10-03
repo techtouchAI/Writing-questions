@@ -194,7 +194,7 @@ class FooterBlueprint {
       (_legacyClosingPhrase == null
           ? null
           : InlineContent.fromSource(
-              _legacyClosingPhrase!,
+              _legacyClosingPhrase,
               direction: DocumentDirection.rtl,
             ));
 }
@@ -338,7 +338,7 @@ class PointBlueprint {
     required String? trailer,
     required String? marks,
     required this.options,
-    List<OptionBlueprint>? allOptions,
+    this.allOptions,
   })  : _legacyLabel = label,
         _legacyText = text,
         _legacyTrailer = trailer,
@@ -347,8 +347,7 @@ class PointBlueprint {
         labelSeparator = null,
         content = null,
         trailerContent = null,
-        marksNode = null,
-        allOptions = allOptions;
+        marksNode = null;
 
   const PointBlueprint.semantic({
     required this.item,
@@ -483,7 +482,7 @@ class QuestionBlueprint {
   String? get section => category?.text ?? _legacySection;
   String? get body => bodyContent?.legacyText ?? _legacyBody;
   InlineContent? get semanticBody => bodyContent ??
-      (_legacyBody == null ? null : InlineContent.fromSource(_legacyBody!));
+      (_legacyBody == null ? null : InlineContent.fromSource(_legacyBody));
 
   /// هل يُطبع السؤال؟ (الفارغ يبقى مساحة تحرير فقط.)
   bool isPrintable({Set<String> ignoredAttachmentIds = const <String>{}}) =>

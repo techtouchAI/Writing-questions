@@ -5821,12 +5821,6 @@ InlineContent _feedbackTitleContent(
 String _readableInlineContent(InlineContent content) {
   final buffer = StringBuffer();
 
-  void appendContent(InlineContent value) {
-    for (final node in value.nodes) {
-      appendNode(node);
-    }
-  }
-
   void appendNode(InlineNode node) {
     if (node is MathNode) {
       buffer.write(EquationModel.readableText(node.source));
@@ -5835,7 +5829,9 @@ String _readableInlineContent(InlineContent content) {
     } else if (node is QuranNode) {
       buffer.write(node.source);
     } else if (node is LabelNode) {
-      appendContent(node.content);
+      for (final child in node.content.nodes) {
+        appendNode(child);
+      }
     } else if (node is NumberNode) {
       buffer.write(node.displayText);
     } else if (node is SeparatorNode) {
@@ -5849,6 +5845,8 @@ String _readableInlineContent(InlineContent content) {
     }
   }
 
-  appendContent(content);
+  for (final node in content.nodes) {
+    appendNode(node);
+  }
   return buffer.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
 }

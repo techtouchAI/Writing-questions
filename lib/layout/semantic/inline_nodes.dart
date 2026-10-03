@@ -93,7 +93,7 @@ abstract class RichRunNode extends InlineNode {
 /// Plain textual run. It keeps the existing `VisualRunStyle` if one was
 /// supplied by [RichContent].
 class TextNode extends RichRunNode {
-  const TextNode(
+  TextNode(
     String text, {
     VisualRunStyle? style,
     DocumentDirection direction = DocumentDirection.auto,
@@ -102,10 +102,7 @@ class TextNode extends RichRunNode {
           direction: direction,
         );
 
-  const TextNode.fromRun(
-    VisualRun run, {
-    DocumentDirection direction = DocumentDirection.auto,
-  }) : super(run, direction: direction);
+  const TextNode.fromRun(super.run, {super.direction});
 }
 
 /// A label run whose semantic role is explicit (question/branch/item/option,
@@ -191,7 +188,7 @@ class SeparatorNode extends InlineNode {
 /// A LaTeX expression remains a math node, with its source and display/block
 /// intent. Raster data, OMML, widgets, and measured geometry are not stored.
 class MathNode extends RichRunNode {
-  const MathNode({
+  MathNode({
     required String source,
     bool isBlock = false,
     VisualRunStyle? style,
@@ -206,10 +203,7 @@ class MathNode extends RichRunNode {
           direction: direction,
         );
 
-  const MathNode.fromRun(
-    VisualRun run, {
-    DocumentDirection direction = DocumentDirection.auto,
-  }) : super(run, direction: direction);
+  const MathNode.fromRun(super.run, {super.direction});
 
   String get source => run.text;
   bool get isBlock => run.isBlockMath;
@@ -219,7 +213,7 @@ class MathNode extends RichRunNode {
 /// Quran content remains identifiable, including the source verse markers,
 /// Quran font intent, classification, run style, and per-node direction.
 class QuranNode extends RichRunNode {
-  const QuranNode({
+  QuranNode({
     required String source,
     this.classification = QuranSemanticKind.verse,
     this.fontIntent = PaperFont.amiri,
@@ -235,11 +229,11 @@ class QuranNode extends RichRunNode {
         );
 
   const QuranNode.fromRun(
-    VisualRun run, {
+    super.run, {
     this.classification = QuranSemanticKind.verse,
     this.fontIntent = PaperFont.amiri,
-    DocumentDirection direction = DocumentDirection.auto,
-  }) : super(run, direction: direction);
+    super.direction,
+  });
 
   final QuranSemanticKind classification;
   final PaperFont fontIntent;

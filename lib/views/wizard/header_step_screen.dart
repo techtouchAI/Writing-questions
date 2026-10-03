@@ -326,7 +326,7 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
                   ),
                   const SizedBox(height: 24),
                   PaperFooterView(
-                    footer: blueprint.footer,
+                    semanticFooter: documentIr.footer,
                     style: _header.style,
                     defaultFont: settings.defaultFont,
                     fontScale: 1,

@@ -43,15 +43,10 @@ class ParagraphBlock extends DocumentBlock {
 class CategoryBlock extends ParagraphBlock {
   const CategoryBlock({
     required this.questionId,
-    required InlineContent content,
-    PaperAlign? alignment,
-    DocumentDirection direction = DocumentDirection.inherit,
-  }) : super(
-          content: content,
-          style: const DocumentStyleReference(role: VisualRole.category),
-          alignment: alignment,
-          direction: direction,
-        );
+    required super.content,
+    super.alignment,
+    super.direction,
+  }) : super(style: const DocumentStyleReference(role: VisualRole.category));
 
   final String questionId;
 }
@@ -301,16 +296,11 @@ class HeaderBlock extends DocumentBlock {
 class HeaderLineBlock extends ParagraphBlock {
   const HeaderLineBlock({
     required this.field,
-    required InlineContent content,
+    required super.content,
     this.bold = false,
-    PaperAlign? alignment,
-    DocumentDirection direction = DocumentDirection.rtl,
-  }) : super(
-          content: content,
-          style: const DocumentStyleReference(role: VisualRole.headerBody),
-          alignment: alignment,
-          direction: direction,
-        );
+    super.alignment,
+    super.direction = DocumentDirection.rtl,
+  }) : super(style: const DocumentStyleReference(role: VisualRole.headerBody));
 
   final HeaderFieldKind field;
   final bool bold;
