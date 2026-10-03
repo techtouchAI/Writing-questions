@@ -297,6 +297,85 @@ void main() {
   );
 
   testWidgets(
+    'inline math follows its neighboring run inside an RTL title',
+    (_) async {
+      final fontLoader = FontLoader(PaperFont.naskh.family)
+        ..addFont(rootBundle.load(PaperFont.naskh.regularAsset));
+      await fontLoader.load();
+
+      const style = LayoutTextStyle(
+        font: PaperFont.naskh,
+        fontSizePt: 12,
+        lineHeightFactor: 1.2,
+      );
+      final paragraph = const FlutterTextMetrics().layoutParagraph(
+        spans: const <MetricSpan>[
+          MetricSpan(
+            semanticNodeId: 'question-label',
+            semanticNode: null,
+            text: 'السؤال الأول — ',
+            contentKind: LayoutContentKind.number,
+            semanticRole: LayoutSemanticRole.questionNumber,
+            style: style,
+            direction: DocumentDirection.rtl,
+            logicalIndex: 0,
+          ),
+          MetricSpan(
+            semanticNodeId: 'left-anchor',
+            semanticNode: null,
+            text: 'F5A ',
+            contentKind: LayoutContentKind.text,
+            semanticRole: LayoutSemanticRole.text,
+            style: style,
+            direction: DocumentDirection.auto,
+            logicalIndex: 1,
+          ),
+          MetricSpan(
+            semanticNodeId: 'inline-equation',
+            semanticNode: null,
+            text: r'\frac{5}{8}',
+            contentKind: LayoutContentKind.math,
+            semanticRole: LayoutSemanticRole.text,
+            style: style,
+            direction: DocumentDirection.auto,
+            logicalIndex: 2,
+            mathBox: LayoutMathBox(
+              widthPt: 14.8,
+              heightPt: 15.4,
+              baselinePt: 12,
+            ),
+          ),
+          MetricSpan(
+            semanticNodeId: 'right-anchor',
+            semanticNode: null,
+            text: ' F5B',
+            contentKind: LayoutContentKind.text,
+            semanticRole: LayoutSemanticRole.text,
+            style: style,
+            direction: DocumentDirection.auto,
+            logicalIndex: 3,
+          ),
+        ],
+        width: 300,
+        direction: DocumentDirection.rtl,
+        alignment: PaperAlign.start,
+        resolveJustification: false,
+      );
+      final fragments = paragraph.lines.single.fragments;
+      final anchorA = fragments.firstWhere(
+        (fragment) => fragment.spanIndex == 1 && fragment.text.trim() == 'F5A',
+      );
+      final equation = fragments.firstWhere((fragment) => fragment.spanIndex == 2);
+      final anchorB = fragments.firstWhere(
+        (fragment) => fragment.spanIndex == 3 && fragment.text.trim() == 'F5B',
+      );
+
+      expect(anchorA.x + anchorA.width, lessThan(equation.x + 0.25));
+      expect(equation.x + equation.width, lessThan(anchorB.x + 0.25));
+    },
+  );
+
+  testWidgets(
     'Arabic word ranges stay aligned after inline math placeholders',
     (_) async {
       final fontLoader = FontLoader(PaperFont.naskh.family)

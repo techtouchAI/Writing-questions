@@ -645,10 +645,14 @@ class _DocumentIRBuilder {
             alignment: model.categoryAlign,
             direction: direction,
           );
-    final body = source.semanticBody == null
+    // Cache this compatibility projection: semanticBody reparses legacy text
+    // when bodyContent is absent, so evaluating the getter twice would parse
+    // the same body twice on the legacy path.
+    final semanticBody = source.semanticBody;
+    final body = semanticBody == null
         ? null
         : ParagraphBlock(
-            content: source.semanticBody!,
+            content: semanticBody,
             style: DocumentStyleReference(
               role: VisualRole.questionBody,
               override: model.style,

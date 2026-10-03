@@ -15,8 +15,9 @@ import 'layout_units.dart';
 /// Flutter paragraph engine adapter for P2 measurement.
 ///
 /// `TextPainter` is intentionally confined to this adapter. It performs font
-/// shaping, Unicode line breaking, paragraph bidi, line metrics and justified
-/// placement. Only primitive point-space measurements escape this class.
+/// shaping, Unicode line breaking, paragraph bidi and line metrics. Canonical
+/// justification adjusts its measured run boxes here, before primitive
+/// point-space geometry escapes this class.
 class FlutterTextMetrics implements FontMetricsProvider {
   const FlutterTextMetrics();
 
@@ -46,7 +47,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
   }
 
   @override
-  String get backendId => 'flutter-text-painter-pt-v3';
+  String get backendId => 'flutter-text-painter-pt-v4';
 
   @override
   FontRunMetrics measureText(
@@ -120,30 +121,13 @@ class FlutterTextMetrics implements FontMetricsProvider {
     // its strong text to resolve shaping order, while preserving the block
     // direction for start/end alignment and pagination.
     final bidiDirection = _bidiDirectionFor(spans, direction);
-    final natural = _layoutOnce(
-      spans: spans,
-      width: width,
-      direction: direction,
-      bidiDirection: bidiDirection,
-      alignment: alignment,
-      justify: false,
-    );
-    final mayJustify = resolveJustification &&
-        alignment == PaperAlign.justify &&
-        natural.lines.length > 1 &&
-        natural.lines.take(natural.lines.length - 1).any(
-              (line) => line.justificationOpportunityCount > 0,
-            );
-    if (!mayJustify) return natural;
-
     return _layoutOnce(
       spans: spans,
       width: width,
       direction: direction,
       bidiDirection: bidiDirection,
       alignment: alignment,
-      justify: true,
-      naturalLines: natural.lines,
+      justify: resolveJustification && alignment == PaperAlign.justify,
     );
   }
 
@@ -154,7 +138,6 @@ class FlutterTextMetrics implements FontMetricsProvider {
     required DocumentDirection bidiDirection,
     required PaperAlign? alignment,
     required bool justify,
-    List<MeasuredLine>? naturalLines,
   }) {
     final children = <InlineSpan>[];
     final placeholderDimensions = <PlaceholderDimensions>[];
@@ -212,7 +195,9 @@ class FlutterTextMetrics implements FontMetricsProvider {
     final painter = TextPainter(
       text: TextSpan(children: children),
       textDirection: _textDirection(bidiDirection),
-      textAlign: _textAlign(alignment, justify: justify),
+      // TextPainter owns wrapping and bidi boxes. Justification is applied to
+      // those canonical boxes below so run positions remain renderer-neutral.
+      textAlign: _textAlign(alignment),
       textScaler: TextScaler.noScaling,
       textHeightBehavior: const TextHeightBehavior(
         applyHeightToFirstAscent: true,
@@ -360,47 +345,48 @@ class FlutterTextMetrics implements FontMetricsProvider {
       final lines = <MeasuredLine>[];
       for (var index = 0; index < lineMetrics.length; index++) {
         final metric = lineMetrics[index];
-        final naturalMetric = naturalLines != null && index < naturalLines.length
-            ? naturalLines[index]
-            : null;
         final fragments = fragmentsByLine[index]
           ..sort((a, b) => a.x.compareTo(b.x));
         final opportunities =
             _breakableSpaceCount(fragments, plainText, spanRanges);
-        final isJustified = justify &&
+        final naturalWidth = LayoutUnits.pxToPt(metric.width);
+        final eligibleForJustification = justify &&
             index < lineMetrics.length - 1 &&
             opportunities > 0;
-        final resolvedWidth = LayoutUnits.pxToPt(metric.width);
-        final naturalWidth = naturalMetric?.naturalWidth ?? resolvedWidth;
-        final extra = isJustified && opportunities > 0
-            ? ((resolvedWidth - naturalWidth) / opportunities)
+        final extra = eligibleForJustification
+            ? ((width - naturalWidth) / opportunities)
                 .clamp(0.0, double.infinity)
                 .toDouble()
             : 0.0;
+        final isJustified = eligibleForJustification && extra > 0.01;
+        final directionResolvedFragments = _resolveInlineMathDirection(
+          fragments,
+          plainText,
+          spanRanges,
+          spans,
+        );
+        final resolvedWidth = isJustified ? width : naturalWidth;
+        final measuredFragments = isJustified
+            ? _expandJustifiedFragments(
+                directionResolvedFragments,
+                plainText,
+                spanRanges,
+                bidiDirection,
+                extra,
+              )
+            : directionResolvedFragments;
         final alignmentOffset = _alignmentOffsetPt(
           alignment: alignment,
           direction: direction,
           paragraphWidthPt: width,
-          fragments: fragments,
+          fragments: measuredFragments,
           justified: isJustified,
         );
         final positionedFragments = alignmentOffset == 0
-            ? fragments
+            ? measuredFragments
             : <MeasuredRunFragment>[
-                for (final fragment in fragments)
-                  MeasuredRunFragment(
-                    spanIndex: fragment.spanIndex,
-                    text: fragment.text,
-                    startOffset: fragment.startOffset,
-                    endOffset: fragment.endOffset,
-                    x: fragment.x + alignmentOffset,
-                    width: fragment.width,
-                    direction: fragment.direction,
-                    baselineOffset: fragment.baselineOffset,
-                    height: fragment.height,
-                    mathBox: fragment.mathBox,
-                    fixedAdvancePt: fragment.fixedAdvancePt,
-                  ),
+                for (final fragment in measuredFragments)
+                  _translateFragment(fragment, alignmentOffset),
               ];
         lines.add(
           MeasuredLine(
@@ -653,6 +639,201 @@ class FlutterTextMetrics implements FontMetricsProvider {
     return nearest;
   }
 
+  List<MeasuredRunFragment> _resolveInlineMathDirection(
+    List<MeasuredRunFragment> fragments,
+    String plainText,
+    List<({int start, int end, int spanIndex})> spanRanges,
+    List<MetricSpan> spans,
+  ) {
+    final rangesBySpan = <int, ({int start, int end, int spanIndex})>{
+      for (final range in spanRanges) range.spanIndex: range,
+    };
+    final resolved = List<MeasuredRunFragment>.of(fragments);
+    final mathLocations = resolved
+        .where((fragment) => spans[fragment.spanIndex].isMath)
+        .map((fragment) => (
+              spanIndex: fragment.spanIndex,
+              startOffset: fragment.startOffset,
+              endOffset: fragment.endOffset,
+            ))
+        .toList(growable: false);
+
+    int sourceStart(MeasuredRunFragment fragment) =>
+        rangesBySpan[fragment.spanIndex]!.start + fragment.startOffset;
+    int sourceEnd(MeasuredRunFragment fragment) =>
+        rangesBySpan[fragment.spanIndex]!.start + fragment.endOffset;
+
+    for (final location in mathLocations) {
+      final mathIndex = resolved.indexWhere((fragment) =>
+          fragment.spanIndex == location.spanIndex &&
+          fragment.startOffset == location.startOffset &&
+          fragment.endOffset == location.endOffset &&
+          spans[fragment.spanIndex].isMath);
+      if (mathIndex < 0) continue;
+      final math = resolved[mathIndex];
+      final range = rangesBySpan[math.spanIndex];
+      if (range == null) continue;
+      final mathStart = sourceStart(math);
+      final mathEnd = sourceEnd(math);
+      final previousCandidates = resolved.where((fragment) {
+        final span = spans[fragment.spanIndex];
+        return !span.isMath &&
+            !span.isFixedAdvance &&
+            sourceEnd(fragment) <= mathStart &&
+            !_isOnlySpacing(fragment.text);
+      }).toList()
+        ..sort((a, b) => sourceEnd(a).compareTo(sourceEnd(b)));
+      final nextCandidates = resolved.where((fragment) {
+        final span = spans[fragment.spanIndex];
+        return !span.isMath &&
+            !span.isFixedAdvance &&
+            sourceStart(fragment) >= mathEnd &&
+            !_isOnlySpacing(fragment.text);
+      }).toList()
+        ..sort((a, b) => sourceStart(a).compareTo(sourceStart(b)));
+      if (previousCandidates.isEmpty || nextCandidates.isEmpty) continue;
+
+      final previous = previousCandidates.last;
+      final next = nextCandidates.first;
+      if (previous.direction != next.direction) continue;
+      final runDirection = previous.direction;
+      final beforeText = plainText.substring(sourceEnd(previous), mathStart);
+      final afterText = plainText.substring(mathEnd, sourceStart(next));
+      if (!_isOnlySpacing(beforeText) || !_isOnlySpacing(afterText)) continue;
+
+      final previousSpan = spans[previous.spanIndex];
+      final nextSpan = spans[next.spanIndex];
+      final beforeGap = _spacingAdvance(
+        beforeText,
+        previousSpan.style,
+        runDirection,
+      );
+      final afterGap = _spacingAdvance(
+        afterText,
+        nextSpan.style,
+        runDirection,
+      );
+      final orderIsCorrect = runDirection == DocumentDirection.ltr
+          ? previous.x + previous.width <= math.x + 0.25 &&
+              math.x + math.width <= next.x + 0.25
+          : previous.x >= math.x + math.width - 0.25 &&
+              math.x >= next.x + next.width - 0.25;
+      if (math.direction == runDirection && orderIsCorrect) continue;
+
+      final targetMathX = runDirection == DocumentDirection.ltr
+          ? previous.x + previous.width + beforeGap
+          : previous.x - beforeGap - math.width;
+      final targetNextX = runDirection == DocumentDirection.ltr
+          ? targetMathX + math.width + afterGap
+          : targetMathX - afterGap - next.width;
+      final tailShift = targetNextX - next.x;
+      for (var index = 0; index < resolved.length; index++) {
+        final fragment = resolved[index];
+        if (index == mathIndex) {
+          resolved[index] = _translateFragment(
+            fragment,
+            targetMathX - fragment.x,
+            direction: runDirection,
+          );
+        } else if (sourceStart(fragment) >= mathEnd) {
+          resolved[index] = _translateFragment(fragment, tailShift);
+        }
+      }
+    }
+    return resolved;
+  }
+
+  bool _isOnlySpacing(String text) =>
+      text.runes.every((rune) => _isJustifiableSpace(rune) || _isNonbreakingSpace(rune));
+
+  double _spacingAdvance(
+    String text,
+    LayoutTextStyle style,
+    DocumentDirection direction,
+  ) {
+    var advance = 0.0;
+    for (final rune in text.runes) {
+      if (_isJustifiableSpace(rune)) {
+        advance += whitespaceAdvance(style, direction);
+      } else if (_isNonbreakingSpace(rune)) {
+        advance += whitespaceAdvance(style, direction, nonBreaking: true);
+      } else {
+        return 0;
+      }
+    }
+    return advance;
+  }
+
+  List<MeasuredRunFragment> _expandJustifiedFragments(
+    List<MeasuredRunFragment> fragments,
+    String plainText,
+    List<({int start, int end, int spanIndex})> spanRanges,
+    DocumentDirection direction,
+    double extraSpacePerOpportunity,
+  ) {
+    final rangesBySpan = <int, ({int start, int end, int spanIndex})>{
+      for (final range in spanRanges) range.spanIndex: range,
+    };
+    var lineStart = plainText.length;
+    var lineEnd = 0;
+    for (final fragment in fragments) {
+      final range = rangesBySpan[fragment.spanIndex];
+      if (range == null) continue;
+      final start = range.start + fragment.startOffset;
+      final end = range.start + fragment.endOffset;
+      if (end <= start) continue;
+      if (start < lineStart) lineStart = start;
+      if (end > lineEnd) lineEnd = end;
+    }
+    if (lineEnd <= lineStart) return fragments;
+
+    final sign = direction == DocumentDirection.ltr ? 1.0 : -1.0;
+    return <MeasuredRunFragment>[
+      for (final fragment in fragments)
+        _translateFragment(
+          fragment,
+          sign *
+              _breakableSpaceCountBefore(
+                plainText,
+                lineStart,
+                rangesBySpan[fragment.spanIndex] == null
+                    ? lineStart
+                    : rangesBySpan[fragment.spanIndex]!.start +
+                        fragment.startOffset,
+              ) *
+              extraSpacePerOpportunity,
+        ),
+    ];
+  }
+
+  MeasuredRunFragment _translateFragment(
+    MeasuredRunFragment fragment,
+    double dx, {
+    DocumentDirection? direction,
+  }) =>
+      MeasuredRunFragment(
+        spanIndex: fragment.spanIndex,
+        text: fragment.text,
+        startOffset: fragment.startOffset,
+        endOffset: fragment.endOffset,
+        x: fragment.x + dx,
+        width: fragment.width,
+        direction: direction ?? fragment.direction,
+        baselineOffset: fragment.baselineOffset,
+        height: fragment.height,
+        mathBox: fragment.mathBox,
+        fixedAdvancePt: fragment.fixedAdvancePt,
+      );
+
+  int _breakableSpaceCountBefore(String text, int start, int end) {
+    if (end <= start) return 0;
+    var count = 0;
+    for (final rune in text.substring(start, end).runes) {
+      if (_isJustifiableSpace(rune)) count++;
+    }
+    return count;
+  }
+
   int _breakableSpaceCount(
     Iterable<MeasuredRunFragment> fragments,
     String plainText,
@@ -719,16 +900,13 @@ class FlutterTextMetrics implements FontMetricsProvider {
   DocumentDirection _documentDirection(ui.TextDirection direction) =>
       direction == ui.TextDirection.ltr ? DocumentDirection.ltr : DocumentDirection.rtl;
 
-  TextAlign _textAlign(PaperAlign? alignment, {required bool justify}) {
-    if (justify) return TextAlign.justify;
-    return switch (alignment) {
+  TextAlign _textAlign(PaperAlign? alignment) => switch (alignment) {
       PaperAlign.center => TextAlign.center,
       PaperAlign.end => TextAlign.end,
       PaperAlign.left => TextAlign.left,
       PaperAlign.right => TextAlign.right,
       PaperAlign.justify || PaperAlign.start || null => TextAlign.start,
     };
-  }
 
   /// Resolve alignment from the boxes actually returned by TextPainter. Some
   /// Paragraph implementations include an alignment offset in selection boxes
