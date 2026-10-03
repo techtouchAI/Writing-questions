@@ -18,6 +18,9 @@ abstract final class CanonicalLayoutService {
     bool quranFontAvailable = true,
     List<List<String>>? questionPageAssignments,
   }) async {
+    if (fontMetrics is FlutterTextMetrics) {
+      await FlutterTextMetrics.ensureFontsLoaded();
+    }
     final ir = DocumentIR.fromBlueprint(
       blueprint: ExamBlueprint.from(document),
       document: document,

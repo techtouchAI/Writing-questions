@@ -172,7 +172,7 @@ class CanonicalLayoutPdfPainter {
           textAlign: pw.TextAlign.start,
           softWrap: false,
           maxLines: 1,
-          tightBounds: true,
+          tightBounds: false,
           overflow: pw.TextOverflow.clip,
         );
       }
@@ -184,7 +184,7 @@ class CanonicalLayoutPdfPainter {
         textAlign: pw.TextAlign.start,
         softWrap: false,
         maxLines: 1,
-        tightBounds: true,
+        tightBounds: false,
         overflow: pw.TextOverflow.clip,
       );
     }

@@ -1,9 +1,11 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/painting.dart';
+import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter/widgets.dart'
     show PlaceholderAlignment, SizedBox, TextBaseline, TextSelection, WidgetSpan;
 
+import '../../models/paper_font.dart';
 import '../../models/paper_text_style.dart';
 import '../document_direction.dart';
 import 'font_metrics.dart';
@@ -18,8 +20,33 @@ import 'layout_units.dart';
 class FlutterTextMetrics implements FontMetricsProvider {
   const FlutterTextMetrics();
 
+  static Future<void>? _fontRegistration;
+
+  /// Register the same application font files used by PDF before TextPainter
+  /// measures canonical runs. This is normally satisfied by the preview's
+  /// first paint, but exports and headless tests may resolve layout directly.
+  static Future<void> ensureFontsLoaded() =>
+      _fontRegistration ??= _registerFonts();
+
+  static Future<void> _registerFonts() async {
+    for (final font in PaperFont.values) {
+      final loader = FontLoader(font.family)
+        ..addFont(rootBundle.load(font.regularAsset));
+      if (font.hasBoldWeight && font.boldAsset != font.regularAsset) {
+        loader.addFont(rootBundle.load(font.boldAsset));
+      }
+      try {
+        await loader.load();
+      } catch (_) {
+        if (font == PaperFont.naskh) rethrow;
+        // Optional families retain the existing Naskh fallback when an asset
+        // is unavailable; the required regular family must be measurable.
+      }
+    }
+  }
+
   @override
-  String get backendId => 'flutter-text-painter-pt-v1';
+  String get backendId => 'flutter-text-painter-pt-v2';
 
   @override
   FontRunMetrics measureText(
