@@ -8,6 +8,56 @@ import 'package:writing_questions_app/models/paper_font.dart';
 
 void main() {
   testWidgets(
+    'mixed Arabic and Latin words map each visual box to its own source run',
+    (_) async {
+      final fontLoader = FontLoader(PaperFont.naskh.family)
+        ..addFont(rootBundle.load(PaperFont.naskh.regularAsset));
+      await fontLoader.load();
+
+      const style = LayoutTextStyle(
+        font: PaperFont.naskh,
+        fontSizePt: 12,
+        lineHeightFactor: 1.2,
+      );
+      const source = 'المتوسطHDG1';
+      final paragraph = const FlutterTextMetrics().layoutParagraph(
+        spans: const <MetricSpan>[
+          MetricSpan(
+            semanticNodeId: 'mixed-header-field',
+            semanticNode: null,
+            text: source,
+            contentKind: LayoutContentKind.text,
+            semanticRole: LayoutSemanticRole.text,
+            style: style,
+            direction: DocumentDirection.rtl,
+            logicalIndex: 0,
+          ),
+        ],
+        width: 180,
+        direction: DocumentDirection.rtl,
+        alignment: null,
+        resolveJustification: false,
+      );
+
+      final fragments = paragraph.lines
+          .expand((line) => line.fragments)
+          .toList()
+        ..sort((a, b) => a.startOffset.compareTo(b.startOffset));
+      expect(fragments.map((fragment) => fragment.text).join(), source);
+      expect(
+        fragments.where((fragment) => fragment.direction == DocumentDirection.rtl)
+            .map((fragment) => fragment.text).join(),
+        'المتوسط',
+      );
+      expect(
+        fragments.where((fragment) => fragment.direction == DocumentDirection.ltr)
+            .map((fragment) => fragment.text).join(),
+        'HDG1',
+      );
+    },
+  );
+
+  testWidgets(
     'Arabic word ranges stay aligned after inline math placeholders',
     (_) async {
       final fontLoader = FontLoader(PaperFont.naskh.family)

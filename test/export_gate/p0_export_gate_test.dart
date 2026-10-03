@@ -1319,12 +1319,14 @@ void main() {
     expect(sizes.length, greaterThan(2),
         reason: 'أحجام الخطوط في PDF ($sizes): أدوار العقد لا تصل جميعها.');
 
-    // المعادلات: كل طلب لقطة وصل صورة، وترتيبها كما في العقد.
+    // المعادلات: كل طلب لقطة له موضع رسم صورة، وترتيبها كما في العقد.
+    // قد تشترك مواضع متعددة في XObject واحد إذا تطابقت بايتات الصور؛ لذا
+    // عدد الاستدعاءات Do (placements) هو الدليل الصحيح، لا عدد الموارد الفريدة.
     expect(_gate.mathRequests, greaterThan(0),
         reason: 'لم تُطلب أي لقطة معادلة — مسار الرياضيات غير مختبَر.');
-    expect(report.imageObjects, greaterThanOrEqualTo(_gate.mathRequests),
-        reason: 'صور PDF (${report.imageObjects}) أقلّ من طلبات المعادلات '
-            '(${_gate.mathRequests}).');
+    expect(report.allImages.length, greaterThanOrEqualTo(_gate.mathRequests),
+        reason: 'مواضع صور PDF (${report.allImages.length}) أقلّ من طلبات '
+            'المعادلات (${_gate.mathRequests}).');
     const mathOrder = <String>['MATH1', 'TEXTAR1', 'MATH2'];
     final drawnMathOrder = <String>[];
     for (final page in report.pages) {
@@ -1350,15 +1352,19 @@ void main() {
       }
     }
 
-    // العنصر الحرّ (صورة PNG) مضمَّن: صورة إضافية على صور المعادلات.
-    expect(report.imageObjects, greaterThanOrEqualTo(_gate.mathRequests + 1),
+    // العنصر الحرّ (صورة PNG) له موضع رسم إضافي على صور المعادلات.
+    expect(report.allImages.length,
+        greaterThanOrEqualTo(_gate.mathRequests + 1),
         reason: 'صورة العنصر الحر لم تُضمَّن في PDF '
-            '(عدد الصور ${report.imageObjects} مقابل ${_gate.mathRequests} '
-            'معادلة).');
+            '(مواضع الصور ${report.allImages.length} مقابل '
+            '${_gate.mathRequests} معادلة).');
+    expect(report.imageObjects, greaterThan(0),
+        reason: 'لا توجد موارد صور XObject مضمَّنة في PDF.');
 
     _matrix.record('math', P0Path.vectorPdf, P0Status.pass,
-        evidence: 'صور المعادلات=${report.imageObjects}، طلبات='
-            '${_gate.mathRequests}، ترتيب العقد محفوظ: $drawnMathOrder');
+        evidence: 'مواضع الصور=${report.allImages.length}، موارد XObject='
+            '${report.imageObjects}، طلبات=${_gate.mathRequests}، '
+            'ترتيب العقد محفوظ: $drawnMathOrder');
     _matrix.record('quran', P0Path.vectorPdf, P0Status.pass,
         evidence: 'Amiri على سطور الآيات (${verseLines.length} سطر) '
             'والخطوط=$fonts');
@@ -1366,9 +1372,9 @@ void main() {
         evidence: 'OP1A..OP1C وQUR4/QUR5 مرسومة في صفّ خيارات بعد نص النقطة');
     _matrix.record('floating', P0Path.vectorPdf, P0Status.pass,
         evidence: 'FLOAT2 (مربع النص المملوك) مرسوم، وصورة PNG المملوكة '
-            'تزيد الصور المضمَّنة: صور/صفحة='
-            '${report.pages.map((p) => p.embeddedImageObjects).join("/")} '
-            'إجمالي=${report.imageObjects}');
+            'لها موضع رسم؛ استخدامات/صفحة='
+            '${report.pages.map((p) => p.embeddedImageObjects).join("/")}، '
+            'مواضع=${report.allImages.length} موارد XObject=${report.imageObjects}');
     _matrix.record('marks', P0Path.vectorPdf, P0Status.pass,
         evidence: 'أرقام مشرقية مرسومة '
             '${report.pages.fold<int>(0, (sum, p) => sum + p.arabicIndicDigits)} '

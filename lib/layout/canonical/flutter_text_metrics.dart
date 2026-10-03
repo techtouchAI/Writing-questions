@@ -205,24 +205,85 @@ class FlutterTextMetrics implements FontMetricsProvider {
             : _wordRanges(painter, range.start, range.end);
         for (final textRange in ranges) {
           if (textRange.end <= textRange.start) continue;
+          if (!span.isMath && !span.isFixedAdvance) {
+            final boxes = painter.getBoxesForSelection(
+              TextSelection(baseOffset: textRange.start, extentOffset: textRange.end),
+              boxHeightStyle: ui.BoxHeightStyle.strut,
+              boxWidthStyle: ui.BoxWidthStyle.tight,
+            );
+            if (boxes.isEmpty) continue;
+            final sourceText = _textForRange(span, range, textRange);
+            final splitVisualRuns = boxes.length != 1 ||
+                (boxes.single.direction == ui.TextDirection.ltr &&
+                    _containsArabic(sourceText));
+            if (!splitVisualRuns) {
+              final box = boxes.single;
+              final lineIndex = _lineForBox(box, lineMetrics);
+              final metric = lineMetrics[lineIndex];
+              fragmentsByLine[lineIndex].add(
+                MeasuredRunFragment(
+                  spanIndex: range.spanIndex,
+                  text: sourceText,
+                  startOffset: textRange.start - range.start,
+                  endOffset: textRange.end - range.start,
+                  x: LayoutUnits.pxToPt(box.left),
+                  width: LayoutUnits.pxToPt(box.right - box.left),
+                  direction: _documentDirection(box.direction),
+                  baselineOffset: LayoutUnits.pxToPt(metric.baseline - box.top),
+                  height: LayoutUnits.pxToPt(box.bottom - box.top),
+                  mathBox: span.mathBox,
+                ),
+              );
+              continue;
+            }
+
+            // A mixed selection can return several visual TextBoxes. Reusing
+            // the whole selection text for each box duplicates content and
+            // assigns the wrong direction to at least one copy. Recover source
+            // ranges per Unicode scalar, then coalesce adjacent scalars that
+            // belong to the same visual direction/run.
+            for (final fragment in _directionalTextFragments(
+              painter,
+              plainText,
+              textRange.start,
+              textRange.end,
+              lineMetrics,
+            )) {
+              final metric = lineMetrics[fragment.lineIndex];
+              fragmentsByLine[fragment.lineIndex].add(
+                MeasuredRunFragment(
+                  spanIndex: range.spanIndex,
+                  text: _textForRange(
+                    span,
+                    range,
+                    (start: fragment.startOffset, end: fragment.endOffset),
+                  ),
+                  startOffset: fragment.startOffset - range.start,
+                  endOffset: fragment.endOffset - range.start,
+                  x: LayoutUnits.pxToPt(fragment.left),
+                  width: LayoutUnits.pxToPt(fragment.right - fragment.left),
+                  direction: fragment.direction,
+                  baselineOffset: LayoutUnits.pxToPt(metric.baseline - fragment.top),
+                  height: LayoutUnits.pxToPt(fragment.bottom - fragment.top),
+                  mathBox: span.mathBox,
+                ),
+              );
+            }
+            continue;
+          }
+
           final boxes = painter.getBoxesForSelection(
             TextSelection(baseOffset: textRange.start, extentOffset: textRange.end),
             boxHeightStyle: ui.BoxHeightStyle.strut,
             boxWidthStyle: ui.BoxWidthStyle.tight,
           );
-          if (boxes.isEmpty) continue;
           for (final box in boxes) {
             final lineIndex = _lineForBox(box, lineMetrics);
             final metric = lineMetrics[lineIndex];
-            final fragmentText = span.isMath
-                ? span.text
-                : span.isFixedAdvance
-                    ? ''
-                    : _textForRange(span, range, textRange);
             fragmentsByLine[lineIndex].add(
               MeasuredRunFragment(
                 spanIndex: range.spanIndex,
-                text: fragmentText,
+                text: span.isMath ? span.text : '',
                 startOffset: textRange.start - range.start,
                 endOffset: textRange.end - range.start,
                 x: LayoutUnits.pxToPt(box.left),
@@ -350,6 +411,12 @@ class FlutterTextMetrics implements FontMetricsProvider {
       codePoint == 0xFEFF ||
       codePoint == 0x2060;
 
+  bool _containsArabic(String text) => text.runes.any((rune) =>
+      (rune >= 0x0600 && rune <= 0x08FF) ||
+      (rune >= 0xFB50 && rune <= 0xFEFF) ||
+      (rune >= 0x10E60 && rune <= 0x10E7F) ||
+      (rune >= 0x1EC70 && rune <= 0x1EEFF));
+
   String _textForRange(
     MetricSpan span,
     ({int start, int end, int spanIndex}) spanRange,
@@ -359,6 +426,66 @@ class FlutterTextMetrics implements FontMetricsProvider {
     final relativeEnd = range.end - spanRange.start;
     if (relativeStart < 0 || relativeEnd > span.text.length) return span.text;
     return span.text.substring(relativeStart, relativeEnd);
+  }
+
+  List<_DirectionalTextFragment> _directionalTextFragments(
+    TextPainter painter,
+    String text,
+    int start,
+    int end,
+    List<ui.LineMetrics> lineMetrics,
+  ) {
+    final fragments = <_DirectionalTextFragment>[];
+    _DirectionalTextFragment? current;
+    var offset = start;
+    while (offset < end) {
+      final unit = text.codeUnitAt(offset);
+      final isHighSurrogate = unit >= 0xD800 && unit <= 0xDBFF;
+      final hasLowSurrogate = offset + 1 < end &&
+          text.codeUnitAt(offset + 1) >= 0xDC00 &&
+          text.codeUnitAt(offset + 1) <= 0xDFFF;
+      final nextOffset = offset + (isHighSurrogate && hasLowSurrogate ? 2 : 1);
+      final boxes = painter.getBoxesForSelection(
+        TextSelection(baseOffset: offset, extentOffset: nextOffset),
+        boxHeightStyle: ui.BoxHeightStyle.strut,
+        boxWidthStyle: ui.BoxWidthStyle.tight,
+      );
+      if (boxes.isEmpty) {
+        // Preserve zero-width source characters with the adjacent run without
+        // inventing a box or allowing a control character to become a break.
+        if (current != null && current.endOffset == offset) {
+          current.endOffset = nextOffset;
+        }
+        offset = nextOffset;
+        continue;
+      }
+
+      // A single Unicode scalar cannot cross a wrapped line. Flutter may
+      // return duplicate boxes for a combining sequence, so use one geometry
+      // record for its source range and keep the original scalar exactly once.
+      final box = boxes.first;
+      final lineIndex = _lineForBox(box, lineMetrics);
+      final boxDirection = _documentDirection(box.direction);
+      if (current != null &&
+          current.endOffset == offset &&
+          current.lineIndex == lineIndex &&
+          current.direction == boxDirection) {
+        current
+          ..endOffset = nextOffset
+          ..include(box);
+      } else {
+        current = _DirectionalTextFragment(
+          startOffset: offset,
+          endOffset: nextOffset,
+          lineIndex: lineIndex,
+          direction: boxDirection,
+          box: box,
+        );
+        fragments.add(current);
+      }
+      offset = nextOffset;
+    }
+    return fragments;
   }
 
   int _lineForBox(ui.TextBox box, List<ui.LineMetrics> lines) {
@@ -433,5 +560,34 @@ class FlutterTextMetrics implements FontMetricsProvider {
       PaperAlign.right => TextAlign.right,
       PaperAlign.justify || PaperAlign.start || null => TextAlign.start,
     };
+  }
+}
+
+class _DirectionalTextFragment {
+  _DirectionalTextFragment({
+    required this.startOffset,
+    required this.endOffset,
+    required this.lineIndex,
+    required this.direction,
+    required ui.TextBox box,
+  })  : left = box.left,
+        right = box.right,
+        top = box.top,
+        bottom = box.bottom;
+
+  final int startOffset;
+  int endOffset;
+  final int lineIndex;
+  final DocumentDirection direction;
+  double left;
+  double right;
+  double top;
+  double bottom;
+
+  void include(ui.TextBox box) {
+    if (box.left < left) left = box.left;
+    if (box.right > right) right = box.right;
+    if (box.top < top) top = box.top;
+    if (box.bottom > bottom) bottom = box.bottom;
   }
 }
