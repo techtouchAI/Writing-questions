@@ -17,10 +17,10 @@ Word، لا رتوش. كل ما لم يكن قابلاً للإصلاح داخل
 
 | ملف | دور |
 |---|---|
-| `test/export_gate/p0_gate_fixture.dart` (729 سطراً) | Golden Export fixture: وثيقتان حقيقيتان (عربية RTL بثمانية أسئلة + إنجليزية LTR بثلاثة)، كل حالة مطلوبة في P0.1 مُثبَّتة بوسم ASCII قابل للقياس، ومعجم الميزات الخمس عشرة للمصفوفة. |
-| `test/export_gate/pdf_structure_probe.dart` (398) | البنية من بايتات PDF نفسه: صفحات، `/MediaBox`، صناديق، أسطر/كلمات بمواضعها، اتجاه التقدّم على x، أشكال العرض العربية مقابل الحروف المعجمية، أرقام مشرقية/لاتينية، `/BaseFont` وأحجام، صور مرسومة، تسلسل الوسوم، صفحةُ كل وسم. |
+| `test/export_gate/p0_gate_fixture.dart` (763 سطراً) | Golden Export fixture: وثيقتان حقيقيتان (عربية RTL بخمسة أسئلة و13 كتلة مقيسة + إنجليزية LTR بأربعة أسئلة و8 كتل)، كل حالة مطلوبة في P0.1 مُثبَّتة بوسم ASCII قابل للقياس، ومعجم الميزات الخمس عشرة للمصفوفة. |
+| `test/export_gate/pdf_structure_probe.dart` (450) | البنية من بايتات PDF نفسه: صفحات، `/MediaBox`، صناديق، أسطر/كلمات بمواضعها، اتجاه التقدّم على x، أشكال العرض العربية مقابل الحروف المعجمية، أرقام مشرقية/لاتينية، `/BaseFont` وأحجام، صور مرسومة، تسلسل الوسوم، صفحةُ كل وسم. |
 | `test/export_gate/ooxml_probe.dart` (592) | حزمة DOCX مفكوكة: الأجزاء، `_rels/*`، `[Content_Types].xml`، فقرات بخصائصها (`w:bidi`, `w:rtl`, `w:jc`, `w:ind`, `w:spacing/@w:line|lineRule`), ترتيب `w:t` والجريان، `w:br type="page"`، `m:oMath` و`m:t`، الوسائط وعلاقاتها، `w:sectPr`. |
-| `test/export_gate/p0_export_gate_test.dart` (1940، 12 اختباراً) | الممرّات الأربعة تُنتَج فعلاً (معاينة، vector PDF، editable DOCX، Exact) ثم تُفحص بنيوياً، وتُبنى مصفوفة 15×4 بدليل لكل خلية. |
+| `test/export_gate/p0_export_gate_test.dart` (2559 سطراً، 14 اختباراً: ثلاثة `testWidgets` للمعاينة و11 فحصاً بنيوياً) | الممرّات الأربعة تُنتَج فعلاً (معاينة، vector PDF، editable DOCX، Exact) ثم تُفحص بنيوياً، وتُبنى مصفوفة 15×4 بدليل لكل خلية. |
 
 ### ملفات `lib/` المُصلَحة
 
@@ -318,6 +318,37 @@ BLOCKERS، البند 6).
 | وظيفة التحقق البصري (Exact مقابل المعاينة، RMSE) | نجح: PDF ص1‑3 بمقاس 794×1123 وRMSE ‏0؛ Word: البكسلات المضمّنة مطابقة بايتاً ببايت، وRMSE ‏0.05891 / 0.0685479 / 0.0611121 تحت سقف 0.12 |
 | مصفوفة 15×4 (60 خلية) | **PASS=32، FAIL=0، DEFERRED_TO_P1=25، NOT_APPLICABLE=3، UNMEASURED=0** |
 | الانحدار الوحيد في المنتج | تعليق `::error` باسمه: لا جزء `header*.xml` إطلاقاً؛ الوسوم الخمسة كلها لا تصل إلى الترويسة، وأربعة منها لا تظهر في `document.xml` أصلاً |
+
+جدول المصفوفة كما نشره CI نفسه في الجولة الخضراء (الحالة لكل خلية، والدليل
+والسبب الكاملان في `matrix.txt` و`summary.txt` داخل المرفق `p0-export-gate`):
+
+```text
+feature             Preview        VectorPDF      EditableDOCX   Exact          
+arabic              DEFERRED_TO_P1 PASS           PASS           DEFERRED_TO_P1 
+latin               PASS           PASS           PASS           DEFERRED_TO_P1 
+mixed               PASS           PASS           PASS           DEFERRED_TO_P1 
+arabic-numerals     NOT_APPLICABLE PASS           PASS           DEFERRED_TO_P1 
+latin-numerals      NOT_APPLICABLE PASS           PASS           DEFERRED_TO_P1 
+punctuation         NOT_APPLICABLE PASS           PASS           DEFERRED_TO_P1 
+math                PASS           PASS           DEFERRED_TO_P1 DEFERRED_TO_P1 
+quran               PASS           PASS           PASS           DEFERRED_TO_P1 
+options             PASS           PASS           PASS           DEFERRED_TO_P1 
+marks               PASS           PASS           PASS           DEFERRED_TO_P1 
+pagination          PASS           DEFERRED_TO_P1 PASS           PASS           
+justification       DEFERRED_TO_P1 DEFERRED_TO_P1 PASS           DEFERRED_TO_P1 
+floating            PASS           PASS           DEFERRED_TO_P1 DEFERRED_TO_P1 
+header-footer       PASS           DEFERRED_TO_P1 DEFERRED_TO_P1 DEFERRED_TO_P1 
+ltr-document        DEFERRED_TO_P1 DEFERRED_TO_P1 DEFERRED_TO_P1 DEFERRED_TO_P1
+```
+
+- خلايا `Exact` مُؤجَّلة عن قصد وبالحُجة: القياس أثبت أنها **لقطة نقطية**
+  (`drawnWords = 0` في `exact.pdf`) فلا تُثبت خصائص نصية، وتُترك موازيةً لا
+  بديلاً عن `vector.pdf`/`editable.docx`.
+- `NOT_APPLICABLE` الثلاث = أرقام لاتينية/عربية وعلامات ترقيم في **المعاينة**
+  وحدها، لأن المعاينة لا تُرسم في هذه الجولة من ذلك المصدر؛ ولا تُحسب نجاحاً.
+- `ltr-document` مُؤجَّلة في الممرّات الأربعة كلها: ترويسة ورقة إنجليزية وتذييلها
+  يُرسمان RTL، وفقراتها العربية تُورِث اتجاه المستند، ومعاينتها لا تُعرِض أسماء
+  الحقول في الشجرة — مقيسة ومُسجَّلة، لا مُبرَّأة ولا مُستَرَة.
 
 ولأن «أخضر» ليس دليلاً بذاته، صارت خطوة النشر (‏`if: always()`) تطبع الحصيلة
 والمصفوفة في الجولة الناجحة كما في الفاشلة؛ وقد كشف هذا التغيير نفسه خطأً
