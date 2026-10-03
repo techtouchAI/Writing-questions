@@ -1956,7 +1956,27 @@ void main() {
     // يُرسم من اليمين — لا يتعلق بنقاء السطر بل بترتيب مواضع الكلمات.
     var bodyLines = 0;
     var latinRuns = 0;
+    var probedRtlPairs = 0;
     final mirroredRuns = <String>[];
+    // «التجاور» في القارئ (`areAdjacentInRun`) محسوب لاتجاه عربي: فجوته
+    // `right.x - (left.x + width)` بافتراض أن الكلمة التالية إلى اليسار، فهي
+    // في سطر إنجليزي سالبة دائماً (قيس: 0 زوج من 66 سطراً) أي أن الفحص كان
+    // يعمى لا أنه ينجح. الوجه الصحيح للقاعدة نفسها لسطر لاتيني:
+    // `next.x - (prev.x + width)`، مع اشتراط الخط والحجم نفسيهما (جريان واحد
+    // فعلاً) وسقف فجوة يسعّ الضبط المبرَّر ولا يسعّ قفزة رجعية إلى أول السطر.
+    bool adjacentLtrRun(ProbedLine line, int index) {
+      final previous = line.words[index];
+      final next = line.words[index + 1];
+      if (previous.fontSize != next.fontSize ||
+          previous.fontName != next.fontName) {
+        return false;
+      }
+      if (line.areAdjacentInRun(index)) {
+        probedRtlPairs++;
+      }
+      final gap = next.x - (previous.x + previous.advanceWidth);
+      return gap >= -3.0 && gap <= 40.0;
+    }
     for (final page in report.pages) {
       for (final line in page.lines) {
         final joined = line.words.map((word) => word.text).join(' ');
@@ -1984,7 +2004,7 @@ void main() {
           // خط قاعدة واحد ليست انعكاساً، وحكم ذلك `areAdjacentInRun` نفسه.
           var pairs = 0;
           for (var k = i; k < j; k++) {
-            if (!line.areAdjacentInRun(k)) {
+            if (!adjacentLtrRun(line, k)) {
               continue;
             }
             pairs++;
@@ -2009,7 +2029,9 @@ void main() {
         reason: 'جريان لاتيني يتقدّم من اليمين في وثيقة إنجليزية (تسرّب RTL '
             'إلى LTR): ${mirroredRuns.take(3).toList()}');
     _stage('ورقة LTR: $latinRuns جريانا لاتينية في $bodyLines سطراً تتقدّم '
-        'يساراً بلا انعكاس (مقيسة من مواضع الكلمات في الملف).');
+        'يساراً بلا انعكاس (مقيسة من مواضع الكلمات في الملف)؛ أزواج '
+        'مقبولة بقاعدة القارئ المصمَّمة للعربية: $probedRtlPairs — لذلك لا '
+        'تُعمل هذه الجولة على تلك القاعدة.');
 
     // الترويسة في المنتج ثنائية اللغة بقصد (تسميات عربية وقيم إنجليزية)،
     // والركيزة تحمل عمداً فقرة عربية داخل الورقة الإنجليزية (قياس الاتجاه
