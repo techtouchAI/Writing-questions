@@ -129,6 +129,7 @@ class CanonicalLayoutPdfPainter {
             run.text.contains('السنة') ||
             run.text.contains('النهوض') ||
             run.text == 'س')) {
+      // ignore: avoid_print
       print('[p0-gate] canonical header direction=${run.direction} '
           'run=${run.text} id=${run.semanticNodeId}');
     }
