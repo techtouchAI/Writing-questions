@@ -99,7 +99,7 @@ String logicalToVisual(String input) {
     // run positions remain resolved by LayoutEngine.
     final shaped = String.fromCharCodes(
       arabic.convert(input).runes.map(
-            (rune) => bidi.basicToIsolatedMappings[rune] ?? rune,
+            (rune) => basicToIsolatedMappings[rune] ?? rune,
           ),
     );
     if (input.contains('السنة') || input.contains('النهوض') ||
