@@ -47,7 +47,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
   }
 
   @override
-  String get backendId => 'flutter-text-painter-pt-v4';
+  String get backendId => 'flutter-text-painter-pt-v5';
 
   @override
   FontRunMetrics measureText(
@@ -256,14 +256,21 @@ class FlutterTextMetrics implements FontMetricsProvider {
             if (!splitVisualRuns) {
               final box = boxes.single;
               final lineIndex = _lineForBox(box, lineMetrics);
+              final runBounds = _caretBounds(
+                painter,
+                textRange.start,
+                textRange.end,
+                fallbackLeft: box.left,
+                fallbackRight: box.right,
+              );
               fragmentsByLine[lineIndex].add(
                 MeasuredRunFragment(
                   spanIndex: range.spanIndex,
                   text: sourceText,
                   startOffset: textRange.start - range.start,
                   endOffset: textRange.end - range.start,
-                  x: LayoutUnits.pxToPt(box.left),
-                  width: LayoutUnits.pxToPt(box.right - box.left),
+                  x: LayoutUnits.pxToPt(runBounds.left),
+                  width: LayoutUnits.pxToPt(runBounds.right - runBounds.left),
                   direction: _documentDirection(box.direction),
                   baselineOffset: runBaselineOffset(
                     range.spanIndex,
@@ -288,6 +295,13 @@ class FlutterTextMetrics implements FontMetricsProvider {
               textRange.end,
               lineMetrics,
             )) {
+              final runBounds = _caretBounds(
+                painter,
+                fragment.startOffset,
+                fragment.endOffset,
+                fallbackLeft: fragment.left,
+                fallbackRight: fragment.right,
+              );
               fragmentsByLine[fragment.lineIndex].add(
                 MeasuredRunFragment(
                   spanIndex: range.spanIndex,
@@ -298,8 +312,8 @@ class FlutterTextMetrics implements FontMetricsProvider {
                   ),
                   startOffset: fragment.startOffset - range.start,
                   endOffset: fragment.endOffset - range.start,
-                  x: LayoutUnits.pxToPt(fragment.left),
-                  width: LayoutUnits.pxToPt(fragment.right - fragment.left),
+                  x: LayoutUnits.pxToPt(runBounds.left),
+                  width: LayoutUnits.pxToPt(runBounds.right - runBounds.left),
                   direction: fragment.direction,
                   baselineOffset: runBaselineOffset(
                     range.spanIndex,
@@ -637,6 +651,35 @@ class FlutterTextMetrics implements FontMetricsProvider {
       }
     }
     return nearest;
+  }
+
+  /// Selection boxes with `BoxWidthStyle.tight` describe glyph ink and can
+  /// omit side-bearing advances. Use the shaped caret interval for a run's
+  /// canonical box so a painter can position the run without consuming the
+  /// neighboring word-space.
+  ({double left, double right}) _caretBounds(
+    TextPainter painter,
+    int start,
+    int end, {
+    required double fallbackLeft,
+    required double fallbackRight,
+  }) {
+    if (end <= start) return (left: fallbackLeft, right: fallbackRight);
+    final startCaret = painter.getOffsetForCaret(
+      TextPosition(offset: start),
+      ui.Rect.zero,
+    );
+    final endCaret = painter.getOffsetForCaret(
+      TextPosition(offset: end),
+      ui.Rect.zero,
+    );
+    final left = startCaret.dx < endCaret.dx ? startCaret.dx : endCaret.dx;
+    final right = startCaret.dx > endCaret.dx ? startCaret.dx : endCaret.dx;
+    final advance = right - left;
+    if (!advance.isFinite || advance <= 0.001) {
+      return (left: fallbackLeft, right: fallbackRight);
+    }
+    return (left: left, right: right);
   }
 
   List<MeasuredRunFragment> _resolveInlineMathDirection(

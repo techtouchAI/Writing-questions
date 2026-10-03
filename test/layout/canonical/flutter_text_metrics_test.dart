@@ -315,7 +315,7 @@ void main() {
             semanticNode: null,
             text: 'السؤال الأول — ',
             contentKind: LayoutContentKind.number,
-            semanticRole: LayoutSemanticRole.questionNumber,
+            semanticRole: LayoutSemanticRole.number,
             style: style,
             direction: DocumentDirection.rtl,
             logicalIndex: 0,

@@ -58,10 +58,13 @@ Future<void> _openReview(WidgetTester tester) async {
   await tester.pumpAndSettle();
   await tester.tap(tool);
   // Opening review resolves the canonical pagination document before showing
-  // the dialog. Keep pumping the real loading state, but allow slower CI
-  // runners more than pumpAndSettle's default 100 frames.
-  await tester.pumpAndSettle(timeout: const Duration(seconds: 30));
-  expect(find.text('مراجعة الورقة'), findsOneWidget);
+  // the dialog. Pump the real loading state until the dialog appears; this
+  // tolerates the toolbar's indeterminate busy animation without settling it.
+  final reviewTitle = find.text('مراجعة الورقة');
+  for (var frame = 0; frame < 300 && reviewTitle.evaluate().isEmpty; frame++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+  expect(reviewTitle, findsOneWidget);
 }
 
 void main() {

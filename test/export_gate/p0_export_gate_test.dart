@@ -1236,6 +1236,7 @@ void main() {
       expect(titleGaps.every((gap) => gap >= 1.0 && gap <= 6.0), isTrue,
           reason: 'فجوات سطر غير مضبوط خارج نطاق المسافة الطبيعية: '
               '${titleGaps.map((v) => v.toStringAsFixed(2)).toList()} — '
+              'السطر: ${titleLines.first.describe()} — '
               'مسافة الكلمة لا تُطابق عرض المسافة للخط (انحدار realign).');
     }
 
