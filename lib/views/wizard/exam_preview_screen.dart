@@ -8,8 +8,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 
-import '../../layout/blueprint/exam_blueprint.dart';
+import '../../layout/document_ir.dart';
 import '../../layout/pagination_engine.dart';
+import '../../layout/semantic/inline_nodes.dart';
 import '../../layout/paper_metrics.dart';
 import '../../layout/visual/visual_metrics.dart';
 import '../../models/branch_item.dart';
@@ -22,7 +23,6 @@ import '../../models/paper_font.dart';
 import '../../models/paper_settings.dart';
 import '../../models/paper_text_style.dart';
 import '../../models/point_kind.dart';
-import '../../models/question_model.dart';
 import '../../models/quran_text.dart';
 import '../../models/subject_layout.dart';
 import '../../models/tex_content.dart';
@@ -3280,7 +3280,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     bool showPreviewChrome = true,
   }) {
     final document = controller.document;
-    final blueprint = controller.blueprint;
+    final documentIr = controller.documentIr;
     final blocks = <Widget>[];
     String? previousBlockId;
     for (final blockId in page.blockIds) {
@@ -3309,7 +3309,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         previousBlockId = blockId;
         continue;
       }
-      final questionData = blueprint.questionById(blockId);
+      final questionData = documentIr.questionById(blockId);
       if (questionData == null) {
         continue;
       }
@@ -3374,40 +3374,50 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     // وقابلةً للمس والسحب في أي مكان (اختبار الإصابة لا يتجاوز حدود الأب،
     // والطبقة بحجم الورقة كاملة)، وبنفس الإحداثيات في PDF و Word.
     final pageAttachments = <_AttachmentRef>[];
-    final globalElementIds = document.floatingElements.map((element) => element.id).toSet();
+    final globalReferences =
+        documentIr.floatingElements?.elements ?? const <FloatingElementReference>[];
+    final globalElementIds = globalReferences.map((reference) => reference.id).toSet();
     final seenElementIds = <String>{};
     int resolvedPageIndex(FloatingElement element) => _elementGeometry(controller, element)
         .pageIndex
         .clamp(0, math.max(0, pageCount - 1))
         .toInt();
 
-    for (final element in document.floatingElements) {
-      if (resolvedPageIndex(element) == page.index && seenElementIds.add(element.id)) {
-        pageAttachments.add(_AttachmentRef.global(element.id));
+    for (final reference in globalReferences) {
+      final element = document.floatingElementById(reference.id);
+      if (element != null &&
+          resolvedPageIndex(element) == page.index &&
+          seenElementIds.add(reference.id)) {
+        pageAttachments.add(_AttachmentRef.global(reference.id));
       }
     }
 
-    void collect(QuestionModel question, int index) {
-      for (final element in question.attachments) {
-        if (globalElementIds.contains(element.id) || !seenElementIds.add(element.id)) {
+    void collect(QuestionBlock question) {
+      for (final reference in question.attachments?.elements ??
+          const <FloatingElementReference>[]) {
+        if (globalElementIds.contains(reference.id) ||
+            !seenElementIds.add(reference.id)) {
           continue;
         }
         pageAttachments.add(
-          _AttachmentRef(questionIndex: index, elementId: element.id),
+          _AttachmentRef(
+            questionIndex: question.index,
+            elementId: reference.id,
+          ),
         );
       }
-      for (var branchIndex = 0;
-          branchIndex < question.branches.length;
-          branchIndex++) {
-        for (final element in question.branches[branchIndex].attachments) {
-          if (globalElementIds.contains(element.id) || !seenElementIds.add(element.id)) {
+      for (final branch in question.branches) {
+        for (final reference in branch.attachments?.elements ??
+            const <FloatingElementReference>[]) {
+          if (globalElementIds.contains(reference.id) ||
+              !seenElementIds.add(reference.id)) {
             continue;
           }
           pageAttachments.add(
             _AttachmentRef(
-              questionIndex: index,
-              branchIndex: branchIndex,
-              elementId: element.id,
+              questionIndex: branch.questionIndex,
+              branchIndex: branch.index,
+              elementId: reference.id,
             ),
           );
         }
@@ -3415,18 +3425,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
 
     for (final blockId in page.blockIds) {
-      final index = document.indexOfQuestion(blockId);
-      if (index == -1) {
-        continue;
-      }
-      collect(document.questions[index], index);
+      final question = documentIr.questionById(blockId);
+      if (question != null) collect(question);
     }
-    // عناصر الملفات القديمة التي لم تُقَس أسئلتها بعد تُعرض مؤقتاً على الصفحة الأولى.
-    if (!controller.isFullyMeasured &&
-        page.index == 0 &&
-        pageAttachments.isEmpty) {
-      for (var index = 0; index < document.questions.length; index++) {
-        collect(document.questions[index], index);
+    // Elements whose legacy question height is not measured yet are shown on
+    // page one while pagination measurement catches up, as before.
+    if (!controller.isFullyMeasured && page.index == 0 && pageAttachments.isEmpty) {
+      for (final question in documentIr.questions) {
+        collect(question);
       }
     }
 
@@ -3623,7 +3629,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         borderRadius: BorderRadius.circular(4),
       ),
       child: PaperFooterView(
-        footer: controller.blueprint.footer,
+        semanticFooter: controller.documentIr.footer,
         style: document.header.style,
         defaultFont: document.settings.defaultFont,
         fontScale: _fontScale,
@@ -3772,7 +3778,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         child: Stack(
           children: <Widget>[
             PaperHeaderView(
-              header: controller.blueprint.header,
+              semanticHeader: controller.documentIr.header,
               style: document.header.style,
               defaultFont: document.settings.defaultFont,
               fontScale: _fontScale,
@@ -3887,10 +3893,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   Widget _buildQuestionBlock(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
-    QuestionBlueprint data,
+    QuestionBlock data,
   ) {
     final document = controller.document;
-    final question = data.model;
+    final question = document.questions[data.index];
     final questionIndex = data.index;
     final selected = _isQuestionSelected(questionIndex);
     // الحقول الاختيارية (نص السؤال) تظهر للتحرير عند تحديد السؤال نفسه،
@@ -3925,7 +3931,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         // عنوان قسم السؤال: نص قابل للتحرير مباشرة على الورقة.
-        if (data.section != null)
+        if (data.category != null)
           _paperField(
             fieldKey: _categoryKey(question.id),
             onLongPress: () => _longPressQuestion(questionIndex),
@@ -3937,6 +3943,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             style: _scaled(PaperStyles.category),
             textAlign: _textAlignFor(_categoryKey(question.id), fallback: TextAlign.start),
             hint: 'عنوان القسم...',
+            semanticContent: data.category!.content,
           ),
         // سطر العنوان: الرقم ← المنطوق ← الدرجة «(٢٠ درجة)» في سطر واحد.
         GestureDetector(
@@ -3960,7 +3967,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                             width: 320,
                             padding: const EdgeInsets.all(8),
                             child: Text(
-                              data.title.line,
+                              _readableInlineContent(
+                                _feedbackTitleContent(data.title),
+                              ),
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: _scaled(PaperStyles.question),
@@ -3985,7 +3994,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               message: 'انقر لتعديل رقم السؤال',
               child: GestureDetector(
                 onTap: () => _editQuestionLabel(questionIndex),
-                child: Text(data.title.number, style: titleStyle),
+                child: _semanticInline(data.title.labelContent, titleStyle),
               ),
             ),
             statement: _paperField(
@@ -4006,6 +4015,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               hint: layout.isLtr
                   ? 'Question statement...'
                   : 'اكتب منطوق السؤال هنا...',
+              semanticContent: data.content,
             ),
             marks: _marksTarget(
               marks: data.title.marks,
@@ -4060,6 +4070,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             hint: layout.isLtr
                 ? 'Question text (optional)...'
                 : 'نص السؤال (اختياري) — يُحذف من الورقة إن تُرك فارغاً',
+            semanticContent: data.body?.content,
           ),
         ],
         // نقاط السؤال المباشرة (١-، ٢-، ٣-...) بأنواعها المختلطة وتسلسلها المتصل.
@@ -4142,7 +4153,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     // حافظ على حجز المساحة للمرفقات القديمة فقط. العناصر المسجّلة على
     // مستوى المستند لا تغيّر ارتفاع السؤال عند سحبها.
     final globalIds = document.floatingElements.map((element) => element.id).toSet();
-    final minHeight = _legacyAttachmentMinHeight(question.attachments, globalIds);
+    final questionAttachments = _attachmentModels(
+      document,
+      data.attachments,
+      questionIndex: questionIndex,
+    );
+    final minHeight = _legacyAttachmentMinHeight(questionAttachments, globalIds);
     return ConstrainedBox(
       constraints: BoxConstraints(minHeight: minHeight, minWidth: double.infinity),
       // الضغط المطوّل في أي موضع من كتلة السؤال (بما فيها الفراغات والنقاط
@@ -4159,8 +4175,21 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   /// درجة سطر العنوان «(٢٠ درجة)»: نقرة تفتح إدخال الرقم الخام فقط. وحين
   /// لا درجة تظهر أداة «+ درجة» (أداة تحرير لا تُطبع) إن كانت الدرجات مفعّلة.
+  Widget _semanticInline(
+    InlineContent content,
+    TextStyle style, {
+    TextAlign textAlign = TextAlign.start,
+  }) =>
+      TexText.fromRichContent(
+        content.richContent,
+        style: style,
+        mathTextStyle: style,
+        textAlign: textAlign,
+        expandToWidth: false,
+      );
+
   Widget _marksTarget({
-    required String? marks,
+    required MarksNode? marks,
     required bool showPlaceholder,
     required TextStyle style,
     required VoidCallback onEdit,
@@ -4172,7 +4201,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           onTap: onEdit,
           child: Padding(
             padding: const EdgeInsetsDirectional.only(start: 4),
-            child: Text(marks, style: style),
+            child: _semanticInline(InlineContent(<InlineNode>[marks]), style),
           ),
         ),
       );
@@ -4214,6 +4243,28 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         ),
       ),
     );
+  }
+
+  List<FloatingElement> _attachmentModels(
+    ExamDocument document,
+    AttachmentBlock? attachments, {
+    required int questionIndex,
+    int? branchIndex,
+  }) {
+    if (attachments == null) return const <FloatingElement>[];
+    final models = <FloatingElement>[];
+    for (final reference in attachments.elements) {
+      final element = _findAttachment(
+        document,
+        _AttachmentRef(
+          questionIndex: questionIndex,
+          branchIndex: branchIndex,
+          elementId: reference.id,
+        ),
+      );
+      if (element != null) models.add(element);
+    }
+    return models;
   }
 
   double _legacyAttachmentMinHeight(
@@ -4266,13 +4317,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   Widget _buildBranchBlock(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
-    BranchBlueprint data,
+    BranchBlock data,
   ) {
-    final branch = data.model;
     final ref = BranchRef(
       questionIndex: data.questionIndex,
-      branchIndex: data.branchIndex,
+      branchIndex: data.index,
     );
+    final branch = controller.document.branchAt(ref);
     final selected = _isBranchSelected(ref);
 
     // مقبض السحب وحده يبدأ السحب (حتى لا يتعارض مع تحديد النص في الحقول)؛
@@ -4296,7 +4347,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                     // معاينة السحب تُعرض نصاً مقروءاً: لا كود LaTeX حتى في
                     // العنصر العائم أثناء السحب.
                     child: Text(
-                      '${data.title.number} ${_readableStatement(branch.content.statement)}',
+                      _readableInlineContent(
+                        _feedbackTitleContent(
+                          data.title,
+                          includeMarks: false,
+                        ),
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: _scaled(PaperStyles.body(layout)),
@@ -4396,12 +4452,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
     BranchRef ref,
-    BranchBlueprint data,
+    BranchBlock data,
     Widget dragHandle, {
     required bool isSelected,
   }) {
     final document = controller.document;
-    final branch = data.model;
+    final branch = document.branchAt(ref);
     final content = branch.content;
     final bodyStyle = PaperStyles.resolve(
       PaperStyles.body(layout),
@@ -4429,9 +4485,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             message: 'انقر لتعديل رقم الفرع',
             child: GestureDetector(
               onTap: () => _editBranchLabel(ref),
-              child: Text(
-                data.title.number,
-                style: bodyStyle.copyWith(fontWeight: FontWeight.bold),
+              child: _semanticInline(
+                data.title.labelContent,
+                bodyStyle.copyWith(fontWeight: FontWeight.bold),
               ),
             ),
           ),
@@ -4447,6 +4503,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             textAlign: _textAlignFor(statementKey, fallback: branchAlign),
             hint: layout.isLtr ? 'Branch statement...' : 'اكتب منطوق الفرع هنا...',
             mushafStyle: true,
+            semanticContent: data.content,
           ),
           marks: _marksTarget(
             marks: data.title.marks,
@@ -4498,6 +4555,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               hint: layout.isLtr
                   ? 'Branch text (optional)...'
                   : 'نص الفرع (اختياري) — يُحذف من الورقة إن تُرك فارغاً',
+              semanticContent: data.body?.content,
             ),
           ),
         for (var index = 0; index < data.points.length; index++) ...<Widget>[
@@ -4528,9 +4586,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
 
     final globalIds = document.floatingElements.map((element) => element.id).toSet();
-    final legacyAttachments = branch.attachments
-        .where((element) => !globalIds.contains(element.id))
-        .toList(growable: false);
+    final legacyAttachments = _attachmentModels(
+      document,
+      data.attachments,
+      questionIndex: ref.questionIndex,
+      branchIndex: ref.branchIndex,
+    );
     if (legacyAttachments.isEmpty) {
       return column;
     }
@@ -4549,11 +4610,20 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   Widget _pointRow(
     ExamWizardController controller,
     PointsOwner owner,
-    PointBlueprint point,
+    PointBlock point,
     TextStyle bodyStyle,
     TextAlign ownerAlign,
   ) {
-    final item = point.item;
+    final document = controller.document;
+    final sourceItems = owner.isBranch
+        ? document.branchAt(
+            BranchRef(
+              questionIndex: owner.questionIndex,
+              branchIndex: owner.branchIndex!,
+            ),
+          ).content.items
+        : document.questions[owner.questionIndex].items;
+    final item = sourceItems.firstWhere((candidate) => candidate.id == point.id);
     final fieldKey = _itemKey(item.id);
     final showActions =
         !_exactCaptureInProgress && _activeItemFieldKey == fieldKey;
@@ -4576,13 +4646,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       top: VisualMetrics.optionTopGapPx,
                       left: VisualMetrics.pointLabelGapPx,
                     ),
-                    child: point.label.isEmpty
+                    child: point.labelContent.isEmpty
                         ? _exactCaptureInProgress
                             ? const SizedBox.shrink()
                             : const Icon(Icons.tag, size: 12, color: Colors.grey)
-                        : Text(
-                            point.label,
-                            style: bodyStyle.copyWith(fontWeight: FontWeight.bold),
+                        : _semanticInline(
+                            point.labelContent,
+                            bodyStyle.copyWith(fontWeight: FontWeight.bold),
                           ),
                   ),
                 ),
@@ -4598,13 +4668,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   ),
                   style: bodyStyle,
                   textAlign: _textAlignFor(fieldKey, fallback: ownerAlign),
-                  hint: item.kind.textHint,
+                  hint: point.kind.textHint,
+                  semanticContent: point.content,
                 ),
               ),
               if (point.trailer != null)
                 Padding(
                   padding: const EdgeInsetsDirectional.only(start: 4),
-                  child: Text(point.trailer!, style: bodyStyle),
+                  child: _semanticInline(point.trailer!, bodyStyle),
                 ),
               _marksTarget(
                 marks: point.marks,
@@ -4638,8 +4709,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               ],
             ],
           ),
-          if (item.kind == PointKind.multipleChoice)
-            _buildPointOptions(controller, owner, item, bodyStyle, ownerAlign),
+          if (point.options != null)
+            _buildPointOptions(
+              controller,
+              owner,
+              item,
+              point,
+              bodyStyle,
+              ownerAlign,
+            ),
         ],
       ),
     );
@@ -4656,10 +4734,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     ExamWizardController controller,
     PointsOwner owner,
     BranchItem item,
+    PointBlock point,
     TextStyle bodyStyle,
     TextAlign ownerAlign,
   ) {
-    final document = controller.document;
+    final options = point.options!.options;
     final active = !_exactCaptureInProgress &&
         (_activeItemFieldKey == _itemKey(item.id) ||
             (_activeFieldKey?.startsWith('option-${item.id}-') ?? false));
@@ -4672,7 +4751,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         spacing: VisualMetrics.optionWrapSpacingPx,
         runSpacing: VisualMetrics.optionRunSpacingPx,
         children: <Widget>[
-          for (var index = 0; index < item.options.length; index++)
+          for (var index = 0; index < options.length; index++)
             SizedBox(
               width: _optionFieldWidth,
               child: Row(
@@ -4684,14 +4763,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       onTap: () => _editOptionLabel(owner, item.id, index),
                       child: Padding(
                         padding: const EdgeInsets.only(top: 1),
-                        child: document.displayOptionLabel(item.options[index], index).isEmpty
+                        child: options[index].labelContent.isEmpty
                             ? _exactCaptureInProgress
                                 ? const SizedBox.shrink()
                                 : const Icon(Icons.tag, size: 12, color: Colors.grey)
-                            : Text(
-                                document.displayOptionLabel(item.options[index], index),
-                                style: bodyStyle,
-                              ),
+                            : _semanticInline(options[index].labelContent, bodyStyle),
                       ),
                     ),
                   ),
@@ -4716,6 +4792,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                         fallback: ownerAlign,
                       ),
                       hint: 'اكتب الخيار هنا...',
+                      semanticContent: options[index].content,
                     ),
                   ),
                   // أداة الحذف تخص وضع التحرير ولا تدخل صورة الورقة النهائية.
@@ -4849,6 +4926,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       ),
       child: FloatingElementView(
         element: element,
+        semanticLabel: controller.documentIr.floatingElementById(element.id)?.label,
         defaultFont: controller.document.settings.defaultFont,
         fontScale: _fontScale,
         heightScale: _heightScale,
@@ -5576,16 +5654,28 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     String text,
     TextStyle bodyStyle, {
     TextAlign textAlign = TextAlign.start,
+    InlineContent? semanticContent,
   }) {
-    final mushafVerse =
-        layout.prefersQuranicFont && QuranText.isStandaloneVerse(text);
+    final standaloneVerse = semanticContent?.isStandaloneQuranVerse ??
+        QuranText.isStandaloneVerse(text);
+    final mushafVerse = layout.prefersQuranicFont && standaloneVerse;
+    final quranStyle = mushafVerse
+        ? _scaled(PaperStyles.verse(layout))
+        : PaperStyles.quranic(bodyStyle);
+    if (semanticContent != null) {
+      return TexText.fromRichContent(
+        semanticContent.richContent,
+        style: bodyStyle,
+        mathTextStyle: bodyStyle,
+        quranStyle: quranStyle,
+        textAlign: mushafVerse ? TextAlign.center : textAlign,
+      );
+    }
     return TexText(
       text,
       style: bodyStyle,
       mathTextStyle: bodyStyle,
-      quranStyle: mushafVerse
-          ? _scaled(PaperStyles.verse(layout))
-          : PaperStyles.quranic(bodyStyle),
+      quranStyle: quranStyle,
       textAlign: mushafVerse ? TextAlign.center : textAlign,
     );
   }
@@ -5658,6 +5748,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     TextAlign textAlign = TextAlign.start,
     String? hint,
     bool mushafStyle = false,
+    InlineContent? semanticContent,
     VoidCallback? onLongPress,
   }) {
     final layout = _controller!.document.layout;
@@ -5665,6 +5756,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       key: ValueKey<String>(fieldKey),
       controller: controller,
       style: style,
+      semanticContent: semanticContent,
       textAlign: textAlign,
       hint: _exactCaptureInProgress ? null : hint,
       onActivate: () => _activateField(fieldKey, controller),
@@ -5677,24 +5769,84 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       onLongPress: onLongPress,
       // نص الفرع وحده يتبع «أسلوب المصحف» (توسيط الآية القائمة بذاتها)
       // كما في محرك الـ PDF — وبقية الحقول تُعرض بمحاذاة الحقل نفسها.
-      renderBuilder: (text) => mushafStyle
-          ? _buildRichPreview(layout, text, style, textAlign: textAlign)
-          : TexText(text, style: style, mathTextStyle: style, textAlign: textAlign),
+      renderBuilder: (text) {
+        if (mushafStyle) {
+          return _buildRichPreview(
+            layout,
+            text,
+            style,
+            textAlign: textAlign,
+            semanticContent: semanticContent,
+          );
+        }
+        if (semanticContent != null) {
+          return TexText.fromRichContent(
+            semanticContent.richContent,
+                style: style,
+            mathTextStyle: style,
+            textAlign: textAlign,
+          );
+        }
+        return TexText(
+          text,
+          style: style,
+          mathTextStyle: style,
+          textAlign: textAlign,
+        );
+      },
     );
   }
 }
 
-/// نص العبارة مقروءاً للسحب والمعاينات الخفيفة: يُقسَّم النص بمقاطع
-/// [TexContent.split] وتُعرض كل صيغة من نموذج المعادلات نفسه
-/// ([EquationModel.readableText]) — فلا يظهر كود LaTeX على الشاشة أبداً.
-String _readableStatement(String statement) {
+InlineContent _feedbackTitleContent(
+  TitleParagraphBlock title, {
+  bool includeMarks = true,
+}) {
+  final nodes = <InlineNode>[...title.labelContent.nodes];
+  if (title.statement.isNotEmpty) {
+    nodes
+      ..add(const SeparatorNode(' '))
+      ..addAll(title.statement.nodes);
+  }
+  if (includeMarks && title.marks != null) {
+    nodes
+      ..add(const SeparatorNode(' '))
+      ..add(title.marks!);
+  }
+  return InlineContent(nodes);
+}
+
+/// Text for lightweight drag previews is derived from typed inline nodes;
+/// LaTeX is shown readably and never as raw source code.
+String _readableInlineContent(InlineContent content) {
   final buffer = StringBuffer();
-  for (final segment in TexContent.split(statement)) {
-    if (segment.isMath) {
-      buffer.write(EquationModel.readableText(segment.text));
-    } else {
-      buffer.write(segment.text);
+
+  void appendNode(InlineNode node) {
+    if (node is MathNode) {
+      buffer.write(EquationModel.readableText(node.source));
+    } else if (node is TextNode) {
+      buffer.write(node.text);
+    } else if (node is QuranNode) {
+      buffer.write(node.source);
+    } else if (node is LabelNode) {
+      for (final child in node.content.nodes) {
+        appendNode(child);
+      }
+    } else if (node is NumberNode) {
+      buffer.write(node.displayText);
+    } else if (node is SeparatorNode) {
+      buffer.write(node.text);
+    } else if (node is MarksNode) {
+      appendNode(node.opening);
+      appendNode(node.number);
+      appendNode(node.numberUnitGap);
+      appendNode(node.unit);
+      appendNode(node.closing);
     }
+  }
+
+  for (final node in content.nodes) {
+    appendNode(node);
   }
   return buffer.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
 }

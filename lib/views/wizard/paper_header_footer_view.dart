@@ -1,127 +1,148 @@
 import 'package:flutter/material.dart';
 
 import '../../layout/blueprint/exam_blueprint.dart';
+import '../../layout/document_ir.dart';
+import '../../layout/semantic/inline_nodes.dart';
 import '../../models/paper_font.dart';
 import '../../models/paper_text_style.dart';
 import '../widgets/tex_text.dart';
 import 'paper_styles.dart';
 
-/// ترويسة الورقة كما تُطبع: ثلاثة أعمدة بحسب المواصفة، للقراءة فقط.
-///
-/// - **اليمين** (موسَّط): «ادارة» ← اسم المدرسة ← «للبنين».
-/// - **الوسط** (موسَّط): البسملة اختيارياً بخط خطّي ← «اسئلة امتحان …» ←
-///   «للعام الدراسي …» ← الدور.
-/// - **اليسار** (محاذى لليمين): المادة ← الصف ← الوقت ← اسم الطالب.
-///
-/// تُرسم دائماً باتجاه RTL (ترتيب الأعمدة فيزيائي) مهما كان اتجاه منطقة
-/// الأسئلة، وتأخذ كل نصوصها من [HeaderBlueprint] المشترك مع PDF وWord.
+/// Render-only header view. Production Preview supplies [semanticHeader]; the
+/// older blueprint argument is retained for other public/test callers.
 class PaperHeaderView extends StatelessWidget {
   const PaperHeaderView({
     super.key,
-    required this.header,
+    this.header,
+    this.semanticHeader,
     required this.style,
     required this.defaultFont,
     required this.fontScale,
     required this.heightScale,
-  });
+  }) : assert(header != null || semanticHeader != null);
 
-  final HeaderBlueprint header;
-
-  /// تنسيق الترويسة الذي اختاره المدرس (خط/حجم/عريض/مائل/تسطير/لون).
+  final HeaderBlueprint? header;
+  final HeaderBlock? semanticHeader;
   final PaperTextStyle style;
   final PaperFont defaultFont;
   final double fontScale;
   final double heightScale;
 
-  TextStyle _resolve(TextStyle base, [PaperTextStyle? override]) {
-    return PaperStyles.resolve(
-      base,
-      override ?? style,
-      defaultFont: defaultFont,
-      fontScale: fontScale,
-      heightScale: heightScale,
-    );
-  }
+  TextStyle _resolve(TextStyle base, [PaperTextStyle? override]) =>
+      PaperStyles.resolve(
+        base,
+        override ?? style,
+        defaultFont: defaultFont,
+        fontScale: fontScale,
+        heightScale: heightScale,
+      );
 
-  Widget _line(String text, TextStyle style, TextAlign align) {
-    // سطر الترويسة يُعرض منسّقاً كما يُطبع: صيغ `$...$` مرسومةً في مكانها
-    // (مطابقة للوحة القديمة ولمصدّر Word)، لا كوداً خاماً.
-    return TexText(
-      text,
-      style: style,
-      mathTextStyle: style,
-      textAlign: align,
-    );
-  }
+  Widget _legacyLine(String text, TextStyle style, TextAlign align) => TexText(
+        text,
+        style: style,
+        mathTextStyle: style,
+        textAlign: align,
+      );
 
-  /// أسطر عمود في الترويسة: محاذاة المدرس ([PaperTextStyle.align]) تسود
-  /// محاذاة العمود الافتراضية، وبعد كل سطر مسافة الفقرات إن ضبطها —
-  /// المصدر الوحيد نفسه الذي يصل إلى ملفي Word وPDF حرفياً.
-  List<Widget> _lines(List<String> lines, TextStyle lineStyle, TextAlign columnAlign) {
+  Widget _semanticLine(
+    InlineContent content,
+    TextStyle style,
+    TextAlign align,
+  ) =>
+      TexText.fromRichContent(
+        content.richContent,
+        style: style,
+        mathTextStyle: style,
+        textAlign: align,
+      );
+
+  List<Widget> _legacyLines(
+    List<String> lines,
+    TextStyle lineStyle,
+    TextAlign columnAlign,
+  ) {
     final align = PaperStyles.toTextAlign(style.align, columnAlign);
     final spacing = style.paragraphSpacing;
     return <Widget>[
       for (final line in lines) ...<Widget>[
-        _line(line, lineStyle, align),
+        _legacyLine(line, lineStyle, align),
         if (spacing != null && spacing > 0) SizedBox(height: spacing),
       ],
     ];
   }
 
-  Widget _column(List<String> lines, TextStyle lineStyle, TextAlign align) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: _lines(lines, lineStyle, align),
-    );
+  List<Widget> _semanticLines(
+    List<HeaderLineBlock> lines,
+    TextStyle lineStyle,
+    TextAlign columnAlign,
+  ) {
+    final align = PaperStyles.toTextAlign(style.align, columnAlign);
+    final spacing = style.paragraphSpacing;
+    return <Widget>[
+      for (final line in lines) ...<Widget>[
+        _semanticLine(
+          line.content,
+          line.bold ? lineStyle.copyWith(fontWeight: FontWeight.bold) : lineStyle,
+          align,
+        ),
+        if (spacing != null && spacing > 0) SizedBox(height: spacing),
+      ],
+    ];
   }
+
+  Widget _column(List<Widget> lines) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: lines,
+      );
 
   @override
   Widget build(BuildContext context) {
+    final legacy = header;
+    final ir = semanticHeader;
     final lineStyle = _resolve(PaperStyles.headerLine);
     final centerStyle = _resolve(PaperStyles.headerCenter);
-    // البسملة بخط خطّي أنيق مستقل عن خط الورقة؛ ويبقى لونها لون الترويسة.
     final bismillahStyle = _resolve(
       PaperStyles.bismillah,
       PaperTextStyle(font: PaperFont.amiri, bold: false, color: style.color),
     );
+    final right = ir == null
+        ? _legacyLines(legacy!.rightLines, lineStyle, TextAlign.center)
+        : _semanticLines(ir.rightColumn, lineStyle, TextAlign.center);
+    final center = ir == null
+        ? _legacyLines(legacy!.centerLines, centerStyle, TextAlign.center)
+        : _semanticLines(ir.centerColumn, centerStyle, TextAlign.center);
+    final left = ir == null
+        ? _legacyLines(legacy!.leftLines, lineStyle, TextAlign.right)
+        : _semanticLines(ir.leftColumn, lineStyle, TextAlign.right);
+    final showBismillah = ir?.showBismillah ?? legacy!.showBismillah;
+    final bismillah = ir?.bismillah.content ?? legacy!.bismillahContent;
+    final framed = ir?.framed ?? legacy!.framed;
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: header.framed
+        decoration: framed
             ? BoxDecoration(border: Border.all(color: PaperStyles.ink, width: 1.2))
             : null,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            // الأول في اتجاه القراءة العربية = يمين الورقة.
-            Expanded(
-              flex: 3,
-              child: _column(header.rightLines, lineStyle, TextAlign.center),
-            ),
+            Expanded(flex: 3, child: _column(right)),
             const SizedBox(width: 8),
             Expanded(
               flex: 4,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  // البسملة موسَّطة دائماً (خطها ومحاذاتها مستقلان عن
-                  // تنسيق الترويسة — كما في Word وPDF).
-                  if (header.showBismillah)
-                    Text(
-                      header.bismillah,
-                      style: bismillahStyle,
-                      textAlign: TextAlign.center,
-                    ),
-                  ..._lines(header.centerLines, centerStyle, TextAlign.center),
+                  if (showBismillah)
+                    _semanticLine(bismillah, bismillahStyle, TextAlign.center),
+                  ...center,
                 ],
               ),
             ),
             const SizedBox(width: 8),
-            Expanded(
-              flex: 3,
-              child: _column(header.leftLines, lineStyle, TextAlign.right),
-            ),
+            Expanded(flex: 3, child: _column(left)),
           ],
         ),
       ),
@@ -129,25 +150,51 @@ class PaperHeaderView extends StatelessWidget {
   }
 }
 
-/// تذييل الورقة كما يُطبع في أسفل آخر صفحة: عبارة ختامية وسطاً، والتوقيع
-/// الأساسي يساراً، والثاني يميناً (فقط إن أضافه المدرس) — للقراءة فقط.
+/// Render-only footer view. Production Preview supplies [semanticFooter]; the
+/// blueprint argument remains as a compatibility path.
 class PaperFooterView extends StatelessWidget {
   const PaperFooterView({
     super.key,
-    required this.footer,
+    this.footer,
+    this.semanticFooter,
     required this.style,
     required this.defaultFont,
     required this.fontScale,
     required this.heightScale,
-  });
+  }) : assert(footer != null || semanticFooter != null);
 
-  final FooterBlueprint footer;
+  final FooterBlueprint? footer;
+  final FooterBlock? semanticFooter;
   final PaperTextStyle style;
   final PaperFont defaultFont;
   final double fontScale;
   final double heightScale;
 
-  Widget _signature(SignatureBlueprint source, TextStyle plain, TextStyle bold) {
+  Widget _semanticText(InlineContent content, TextStyle textStyle) =>
+      TexText.fromRichContent(
+        content.richContent,
+        style: textStyle,
+        mathTextStyle: textStyle,
+        textAlign: TextAlign.center,
+      );
+
+  Widget _signature(
+    SignatureBlueprint? legacy,
+    SignatureBlock? semantic,
+    TextStyle plain,
+    TextStyle bold,
+  ) {
+    if (semantic != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _semanticText(semantic.title.content, bold),
+          const SizedBox(height: 3),
+          _semanticText(semantic.name, plain),
+        ],
+      );
+    }
+    final source = legacy!;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -168,30 +215,41 @@ class PaperFooterView extends StatelessWidget {
       heightScale: heightScale,
     );
     final bold = plain.copyWith(fontWeight: FontWeight.bold);
-    final secondary = footer.secondary;
-    final phrase = footer.closingPhrase;
+    final ir = semanticFooter;
+    final legacy = footer;
+    final secondaryLegacy = legacy?.secondary;
+    final secondarySemantic = ir?.secondary;
+    final phraseContent = ir?.closingPhrase?.content;
+    final phrase = legacy?.closingPhrase;
+
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          // اليمين: التوقيع الثاني (فقط إن أضافه المدرس).
           Expanded(
             flex: 3,
-            child: secondary == null
+            child: ir == null && secondaryLegacy == null ||
+                    ir != null && secondarySemantic == null
                 ? const SizedBox.shrink()
-                : _signature(secondary, plain, bold),
+                : _signature(secondaryLegacy, secondarySemantic, plain, bold),
           ),
           const SizedBox(width: 8),
           Expanded(
             flex: 4,
-            child: phrase == null
-                ? const SizedBox.shrink()
-                : Text(phrase, style: bold, textAlign: TextAlign.center),
+            child: ir != null
+                ? phraseContent == null
+                    ? const SizedBox.shrink()
+                    : _semanticText(phraseContent, bold)
+                : phrase == null
+                    ? const SizedBox.shrink()
+                    : Text(phrase, style: bold, textAlign: TextAlign.center),
           ),
           const SizedBox(width: 8),
-          // اليسار: التوقيع الأساسي دائماً.
-          Expanded(flex: 3, child: _signature(footer.primary, plain, bold)),
+          Expanded(
+            flex: 3,
+            child: _signature(legacy?.primary, ir?.primary, plain, bold),
+          ),
         ],
       ),
     );

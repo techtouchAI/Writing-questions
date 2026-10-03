@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 
 import '../layout/blueprint/exam_blueprint.dart';
+import '../layout/document_ir.dart';
 import '../layout/pagination_engine.dart';
 import '../layout/paper_metrics.dart';
 import '../models/branch_item.dart';
@@ -51,6 +52,7 @@ class ExamWizardController extends ChangeNotifier {
   final Map<String, double> _blockHeights = <String, double>{};
   PaginationResult? _paginationCache;
   ExamBlueprint? _blueprintCache;
+  DocumentIR? _documentIrCache;
 
   // ============================ سجل التراجع ============================
 
@@ -77,6 +79,7 @@ class ExamWizardController extends ChangeNotifier {
     _lastCoalesceKey = null;
     _paginationCache = null;
     _blueprintCache = null;
+    _documentIrCache = null;
     _clampCurrentQuestion();
     _scheduleAutoSave();
     notifyListeners();
@@ -95,6 +98,7 @@ class ExamWizardController extends ChangeNotifier {
     _lastCoalesceKey = null;
     _paginationCache = null;
     _blueprintCache = null;
+    _documentIrCache = null;
     _clampCurrentQuestion();
     _scheduleAutoSave();
     notifyListeners();
@@ -165,6 +169,14 @@ class ExamWizardController extends ChangeNotifier {
 
   /// مخطط الورقة المحلَّل للمستند الحالي (مخزَّن حتى التعديل التالي).
   ExamBlueprint get blueprint => _blueprintCache ??= ExamBlueprint.from(_document);
+
+  /// Canonical semantic representation of the current blueprint, cached for
+  /// the same lifetime as [blueprint].
+  DocumentIR get documentIr => _documentIrCache ??= DocumentIR.fromBlueprint(
+        blueprint: blueprint,
+        document: _document,
+      );
+
   SubjectLayoutTemplate get layout => _document.layout;
   List<QuestionModel> get questions => _document.questions;
 
@@ -1418,6 +1430,7 @@ class ExamWizardController extends ChangeNotifier {
     _document = next.normalized;
     _paginationCache = null;
     _blueprintCache = null;
+    _documentIrCache = null;
     _scheduleAutoSave();
     notifyListeners();
   }
