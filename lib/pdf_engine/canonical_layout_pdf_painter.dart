@@ -146,38 +146,40 @@ class CanonicalLayoutPdfPainter {
     final left = run.x - originX;
     final top = line.baseline - run.baselineOffset - originY;
     final textStyle = _pdfTextStyle(run, fonts);
-    final height = run.isMath ? run.height : line.rect.height;
-    // Each run's x is already a canonical physical coordinate. Use physical
-    // left alignment inside its fixed box; `start` would apply the RTL
-    // paragraph-start offset a second time to independently positioned runs.
+    final raster = run.isMath
+        ? mathRasters.lookup(run.text, run.style.fontSizePt)
+        : null;
+    // The run's physical box comes from canonical TextPainter geometry. Keep
+    // its width tight so PDF's RTL start alignment anchors the logical start
+    // (the right edge) to that box; a loose-width Align collapses to PDF's
+    // differently shaped glyph advance and consumes the neighboring word gap.
+    // Height remains intrinsic for text to avoid clipping font-specific
+    // ascent/descent; raster math already has canonical dimensions.
     final pw.Widget content;
-    if (run.isMath) {
-      final raster = mathRasters.lookup(run.text, run.style.fontSizePt);
-      if (raster != null) {
-        content = pw.Image(
-          pw.MemoryImage(raster.pngBytes),
-          width: run.width,
-          height: run.height,
-          fit: pw.BoxFit.fill,
-        );
-      } else {
-        content = pw.Text(
-          EquationModel.readableText(run.text),
-          style: textStyle,
-          textDirection: _pdfDirection(run.direction),
-          textAlign: pw.TextAlign.left,
-          softWrap: false,
-          maxLines: 1,
-          tightBounds: false, // Retain font ascent/descent for stable baselines.
-          overflow: pw.TextOverflow.clip,
-        );
-      }
+    if (raster != null) {
+      content = pw.Image(
+        pw.MemoryImage(raster.pngBytes),
+        width: run.width,
+        height: run.height,
+        fit: pw.BoxFit.fill,
+      );
+    } else if (run.isMath) {
+      content = pw.Text(
+        EquationModel.readableText(run.text),
+        style: textStyle,
+        textDirection: _pdfDirection(run.direction),
+        textAlign: pw.TextAlign.start,
+        softWrap: false,
+        maxLines: 1,
+        tightBounds: false, // Retain font ascent/descent for stable baselines.
+        overflow: pw.TextOverflow.clip,
+      );
     } else {
       content = pw.Text(
         run.text,
         style: textStyle,
         textDirection: _pdfDirection(run.direction),
-        textAlign: pw.TextAlign.left,
+        textAlign: pw.TextAlign.start,
         softWrap: false,
         maxLines: 1,
         tightBounds: false, // Retain font ascent/descent for stable baselines.
@@ -189,11 +191,8 @@ class CanonicalLayoutPdfPainter {
       top: top,
       child: pw.SizedBox(
         width: run.width,
-        height: height,
-        child: pw.Align(
-          alignment: pw.Alignment.topLeft,
-          child: content,
-        ),
+        height: raster == null ? null : run.height,
+        child: content,
       ),
     );
   }

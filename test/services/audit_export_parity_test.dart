@@ -253,7 +253,9 @@ void main() {
         lastJustifyLine.gapAfter(index),
         lessThanOrEqualTo(natural + 0.35),
         reason: 'AUD-PDF-02: السطر الأخير لفقرة الضبط ممدود داخل PDF — '
-            'Microsoft Word لا تمدّد السطر الأخير أبداً.',
+            'Microsoft Word لا تمدّد السطر الأخير أبداً. '
+            'gap=${lastJustifyLine.gapAfter(index).toStringAsFixed(3)} '
+            'line=${lastJustifyLine.describe()}',
       );
     }
 

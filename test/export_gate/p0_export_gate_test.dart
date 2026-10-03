@@ -867,6 +867,15 @@ void main() {
             .take(10)
             .toList();
         _stage('P2 number/separator runs: ${_gate.canonicalLabelRuns}');
+        final quranRunGeometry = canonicalLayout.allLines
+            .expand((line) => line.runs)
+            .where((run) => run.isQuran)
+            .map((run) => '"${run.text}"@${run.x.toStringAsFixed(2)}+'
+                '${run.width.toStringAsFixed(2)} '
+                'dir=${run.direction.name} id=${run.semanticNodeId}')
+            .take(12)
+            .toList();
+        _stage('P2 Quran run geometry: $quranRunGeometry');
         _gate.rtlVectorPdf = await pdfEngine.generate(
           document: rtlDocument,
           layoutDocument: canonicalLayout,
