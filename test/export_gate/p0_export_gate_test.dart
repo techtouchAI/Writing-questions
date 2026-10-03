@@ -813,15 +813,24 @@ void main() {
             .length;
         _gate.canonicalLabelRuns = canonicalLayout.allLines
             .expand((line) => line.runs)
-            .where((run) =>
-                run.semanticNodeId.contains('p0q1i') &&
-                const <String>{'label', 'number', 'separator'}
-                    .contains(run.semanticRole.name))
-            .map((run) => '${run.semanticNodeId} ${run.semanticRole.name}: '
-                '"${run.text}" @${run.x.toStringAsFixed(2)}+'
-                '${run.width.toStringAsFixed(2)} '
-                'advance=${run.advance.toStringAsFixed(2)}')
-            .take(32)
+            .where((run) {
+              final id = run.semanticNodeId;
+              final directLabel = id.endsWith('/label') ||
+                  id.contains('/label/content/') ||
+                  id.endsWith('/separator');
+              return id.contains('/point/p0q1i') &&
+                  !id.contains('/options/') &&
+                  directLabel &&
+                  const <String>{'label', 'number', 'separator'}
+                      .contains(run.semanticRole.name);
+            })
+            .map((run) => '${run.semanticNodeId.split('/').firstWhere(
+                      (part) => part.startsWith('p0q1i'),
+                    )} ${run.semanticRole.name}:"${run.text}" '
+                '@${run.x.toStringAsFixed(1)}+'
+                '${run.width.toStringAsFixed(1)} '
+                'a=${run.advance.toStringAsFixed(1)}')
+            .take(10)
             .toList();
         _stage('P2 number/separator runs: ${_gate.canonicalLabelRuns}');
         _gate.rtlVectorPdf = await pdfEngine.generate(
