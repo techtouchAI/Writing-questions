@@ -186,6 +186,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
     );
     painter.setPlaceholderDimensions(placeholderDimensions);
     painter.layout(maxWidth: LayoutUnits.ptToPx(width));
+    final plainText = painter.text!.toPlainText(includePlaceholders: true);
 
     try {
       final lineMetrics = painter.computeLineMetrics();
