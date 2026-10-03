@@ -43,7 +43,12 @@ class PdfPaperBuilder {
   final ExamDocument document;
   final ExamBlueprint blueprint;
   final ExamFonts fonts;
+
+  /// جدول أنماط تراثي يمرّ مع الباني ولا يُقرأ منه شيء: كل القيم تأتي من العقد
+  /// البصري ([ExamTypography] عبر `styleOf`). يُبقَى كجزء من توقيع الباني العام
+  /// حتى P1 (انظر توثيق [ExamTextStyles]) — والدليل في بوابة P0 (P0-GATE-08).
   final ExamTextStyles styles;
+
   final PaperSettings settings;
   final SubjectLayoutTemplate layout;
 

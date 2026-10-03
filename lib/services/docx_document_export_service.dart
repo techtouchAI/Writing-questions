@@ -1574,8 +1574,10 @@ class _DocxBuilder {
     final isLtr = document.layout.isLtr;
     switch (align) {
       case null:
-        // الافتراضي القائم (يمين) لم يتغيّر: ورقات العربية هي الغالبة.
-        return 'right';
+        // «بلا محاذاة» = بداية السطر حسب **اتجاه الورقة**، وهو ما تفعله
+        // المعاينة (`TextAlign.start`) وPDF (افتراضي السمة `start`): كانت
+        // تعيد «right» دائماً فتدفع ورقة LTR إلى اليمين بلا سبب.
+        return isLtr ? 'left' : 'right';
       case PaperAlign.start:
         return isLtr ? 'left' : 'right';
       case PaperAlign.end:
@@ -1606,16 +1608,19 @@ class _DocxBuilder {
     int? indent,
     int? before,
     int? after,
-    String alignment = 'right',
+    String? alignment,
     String? font,
     List<DocxRunSpec>? runs,
   }) {
+    // غياب المحاذاة = بداية السطر باتجاه الورقة (`_wordAlign(null)`)، لا
+    // «right» المطلقة: نفس قرار المعاينة وPDF في الفقرة نفسها.
+    final effectiveAlignment = alignment ?? _wordAlign(null);
     final effectiveSize = scaleSize
         ? (size * document.settings.fontScale).round().clamp(12, 96)
         : size.clamp(12, 96);
     // تباعد أسطر العنصر المخصص يسود، وإلا العام من إعدادات الورقة (240 = مفرد).
     final line = (240 * (lineHeight ?? document.settings.lineSpacing)).round();
-    body.write('<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:jc w:val="$alignment"/>');
+    body.write('<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:jc w:val="$effectiveAlignment"/>');
     if (border) {
       body.write(
         '<w:pBdr><w:top w:val="single" w:sz="6" w:space="4" w:color="000000"/>'
@@ -1626,7 +1631,13 @@ class _DocxBuilder {
       );
     }
     if (indent != null) {
-      body.write('<w:ind w:right="$indent"/>');
+      // إزاحة **منطقية** تتبع اتجاه الفقرة: `w:start` هو المفتاح الاتجاهي في
+      // OOXML (يتحول يميناً في فقرة `w:bidi` ويساراً في LTR دون أن يتغير
+      // الملف). ويُكتب معه المفتاح الفيزيائي لجهة البداية في الاتجاه الحالي
+      // ليقرأه أي محرر لا يدعم الصيغة الاتجاهية — فلا ينخفض الحد في Word قديم
+      // ولا يُجعَل `w:right` حلاً عالمياً: كان يُزاح فقرات LTR إلى اليمين.
+      final startSide = document.layout.isLtr ? 'w:left' : 'w:right';
+      body.write('<w:ind w:start="$indent" $startSide="$indent"/>');
     }
     body.write(
       '<w:spacing${before == null ? '' : ' w:before="$before"'}${after == null ? '' : ' w:after="$after"'} w:line="$line" w:lineRule="auto"/>',

@@ -47,6 +47,34 @@ class ProbedWord {
       'advance=${advanceWidth.toStringAsFixed(3)})';
 }
 
+/// صورة (XObject) مرسومة فعلاً في الصفحة، بموضعها من مصفوفة `cm` التي تسبق
+/// `Do` — وهو ما يجعل **ترتيب المعادلات وأحجامها** قابلاً للقياس من الملف نفسه
+/// بدل الاستنتاج من الشيفرة: محرك الصور في `pdf` يكتب
+/// `q [w 0 0 h x y] cm /ImN Do Q` لكل صورة.
+class ProbedImage {
+  const ProbedImage({
+    required this.name,
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+  });
+
+  /// اسم المورد كما في المجرى (`/Im0`).
+  final String name;
+
+  /// الركن الأيسر السفلي للصورة بنقاط PDF (بعد تطبيق ctm).
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+
+  @override
+  String toString() => 'ProbedImage($name x=${x.toStringAsFixed(2)} '
+      'y=${y.toStringAsFixed(2)} ${width.toStringAsFixed(2)}×'
+      '${height.toStringAsFixed(2)})';
+}
+
 /// سطر نصّي واحد داخل الملف (كلمات متلاصقة في ترتيب الرسم بنفس إحداثي y).
 class ProbedLine {
   const ProbedLine({required this.words});
@@ -105,10 +133,16 @@ class ProbedLine {
 /// قارئ محتوى PDF: يحلّل الكائنات، الخطوط، مصفوفات العرض، وخريطة ToUnicode،
 /// ثم يستخرج الكلمات المرسومة بمواضعها الحقيقية.
 class PdfContentProbe {
-  PdfContentProbe._(this.lines);
+  PdfContentProbe._(this.lines, this.images);
 
   /// كل سطور النص بالترتيب الذي رُسمت به.
   final List<ProbedLine> lines;
+
+  /// كل الصور المرسومة في الصفحة بترتيب الرسم (المعادلات المصوَّرة والصور).
+  final List<ProbedImage> images;
+
+  /// عدد الصور في الصفحة (المعادلات المصوَّرة تُطلب مرة لكل صيغة).
+  int get imageCount => images.length;
 
   /// عدد صفحات ملف PDF [bytes] (من شجرة الصفحات).
   static int pageCountOf(Uint8List bytes) => _PdfObjects.parse(bytes).pageCount;
@@ -134,15 +168,17 @@ class PdfContentProbe {
 
     final fontsResource =
         RegExp(r'/Font\s*<<(.*?)>>', dotAll: true).firstMatch(page)?.group(1);
-    // صفحة صالحة بلا أي نص لا تحتاج موارد خطوط؛ تمثل صفراً من الكلمات.
-    if (fontsResource == null) {
-      return PdfContentProbe._(<ProbedLine>[]);
-    }
-
+    // صفحة بلا موارد خطوط (لقطة صورة فقط، كصفحات exact.pdf) تظل صفحةً فيها
+    // مشغّلات رسم: الخروج المبكر هنا كان يجعل الصور صِفراً في ملف بلا نص،
+    // فيُنسب للنص أنه غائب، وما غاب إلا القراءة بسبب غياب مورد الخطوط. تُقرأ الصفحة على
+    // أي حال، وتُترك قائمة الخطوط فارغة.
     final fonts = <String, _FontData>{};
-    for (final match
-        in RegExp(r'/(\w+)\s+(\d+)\s+0\s+R').allMatches(fontsResource)) {
-      fonts['/${match.group(1)}'] = objects.fontData(int.parse(match.group(2)!));
+    if (fontsResource != null) {
+      for (final match
+          in RegExp(r'/(\w+)\s+(\d+)\s+0\s+R').allMatches(fontsResource)) {
+        fonts['/${match.group(1)}'] =
+            objects.fontData(int.parse(match.group(2)!));
+      }
     }
 
     final contents = <String>[];
@@ -166,7 +202,8 @@ class PdfContentProbe {
       throw const FormatException('تعذّر فك ضغط مجرى محتوى الصفحة.');
     }
 
-    return PdfContentProbe._(_parseContent(contents.join('\n'), fonts));
+    final parsed = _parseContent(contents.join('\n'), fonts);
+    return PdfContentProbe._(parsed.lines, parsed.images);
   }
 
   // ------------------------------------------------------------------
@@ -195,14 +232,16 @@ class PdfContentProbe {
     r'|(?<a>-?[\d.]+)\s+(?<b>-?[\d.]+)\s+(?<c>-?[\d.]+)\s+'
     r'(?<d>-?[\d.]+)\s+(?<e>-?[\d.]+)\s+(?<f>-?[\d.]+)\s+cm'
     r'|(?<![A-Za-z0-9/])(?<save>[qQ])(?![A-Za-z0-9])'
+    r'|(?<imageResource>/[A-Za-z0-9_.]+)\s+Do'
     r'|<(?<hex>[0-9A-Fa-f]*)>',
   );
 
-  static List<ProbedLine> _parseContent(
+  static _ParsedPageContent _parseContent(
     String content,
     Map<String, _FontData> fonts,
   ) {
     final words = <ProbedWord>[];
+    final images = <ProbedImage>[];
     var fontSize = 0.0;
     var fontName = '';
     _FontData? font;
@@ -235,6 +274,18 @@ class PdfContentProbe {
           double.parse(match.namedGroup('e')!),
           double.parse(match.namedGroup('f')!),
         ]);
+        continue;
+      }
+      final imageResource = match.namedGroup('imageResource');
+      if (imageResource != null) {
+        // `Do` بعد `cm`: الموضع والحجم من مصفوفة التحويل الحالية.
+        images.add(ProbedImage(
+          name: imageResource,
+          x: ctm[4],
+          y: ctm[5],
+          width: ctm[0].abs(),
+          height: ctm[3].abs(),
+        ));
         continue;
       }
       final save = match.namedGroup('save');
@@ -305,8 +356,16 @@ class PdfContentProbe {
     if (bucket.isNotEmpty) {
       lines.add(ProbedLine(words: bucket));
     }
-    return lines;
+    return _ParsedPageContent(lines: lines, images: images);
   }
+}
+
+/// ناتج تحليل مجرى صفحة: نصّها وصورها بترتيب الرسم.
+class _ParsedPageContent {
+  const _ParsedPageContent({required this.lines, required this.images});
+
+  final List<ProbedLine> lines;
+  final List<ProbedImage> images;
 }
 
 /// عرض تقدّم المسافة U+0020 بنقاط PDF من ملف خط فعلي.

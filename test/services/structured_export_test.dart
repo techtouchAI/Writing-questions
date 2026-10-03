@@ -172,9 +172,12 @@ void main() {
         () async {
       final xml = await _docxXml(_document());
       final point = _paragraphWith(xml, 'PointOne');
+      // P0.5-A: `w:ind` يُعلن بالاتجاه أولاً — `w:start` مع الفيزيائي
+      // المقابل لاتجاه الورقة (هنا عربية ⇒ right)، والقيمة من العقد وحدها.
       expect(
         point.contains(
-          '<w:ind w:right="${PaperMetrics.twips(VisualMetrics.pointIndentPx)}"/>',
+          '<w:ind w:start="${PaperMetrics.twips(VisualMetrics.pointIndentPx)}" '
+          'w:right="${PaperMetrics.twips(VisualMetrics.pointIndentPx)}"/>',
         ),
         isTrue,
         reason: 'إزاحة النقطة من VisualMetrics لا رقم مكتوب في الخدمة.',
@@ -185,9 +188,12 @@ void main() {
           reason: 'ارتفاع سطر النقطة 1.5 → 360 تويب من العقد.');
 
       final options = _paragraphWith(xml, 'OptA');
+      // P0.5-A: `w:ind` يُعلن بالاتجاه أولاً — `w:start` مع الفيزيائي
+      // المقابل لاتجاه الورقة (هنا عربية ⇒ right)، والقيمة من العقد وحدها.
       expect(
         options.contains(
-          '<w:ind w:right="${PaperMetrics.twips(VisualMetrics.pointIndentPx) + PaperMetrics.twips(VisualMetrics.optionIndentPx)}"/>',
+          '<w:ind w:start="${PaperMetrics.twips(VisualMetrics.pointIndentPx) + PaperMetrics.twips(VisualMetrics.optionIndentPx)}" '
+          'w:right="${PaperMetrics.twips(VisualMetrics.pointIndentPx) + PaperMetrics.twips(VisualMetrics.optionIndentPx)}"/>',
         ),
         isTrue,
         reason: 'إزاحة الخيارات = إزاحة النقطة + إزاحتها من العقد.',

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 
 import '../../layout/visual/visual_content.dart';
+import '../../layout/visual/visual_flutter_style.dart';
 import '../../models/exam_font.dart';
 import 'safe_math_tex.dart';
 
@@ -56,25 +57,20 @@ class TexText extends StatelessWidget {
         final blocks = <Widget>[];
         final inlineSpans = <InlineSpan>[];
 
+        // قرار الضبط (justify) مشترك مع `PaperField` في العقد نفسه: لا يمدّ
+        // `TexText` فقرةً من سطر واحد كما كان، فلا يفترق سطحان للفقرة نفسها.
         TextStyle? effectiveStyle = style;
-        if (textAlign == TextAlign.justify &&
-            constraints.hasBoundedWidth &&
-            text.trim().isNotEmpty) {
-          final words = text.trim().split(RegExp(r'\s+'));
-          if (words.length > 1) {
-            final naturalPainter = TextPainter(
-              text: TextSpan(text: text, style: style),
-              textDirection: TextDirection.rtl,
-            )..layout();
-            final gap = constraints.maxWidth - naturalPainter.width;
-            if (gap > 0) {
-              final maxPerWord = (constraints.maxWidth / words.length).clamp(12.0, 60.0);
-              final rawSpacing = gap / (words.length - 1);
-              final addedSpacing = rawSpacing.clamp(0.0, maxPerWord);
-              effectiveStyle = (style ?? const TextStyle()).copyWith(
-                wordSpacing: ((style?.wordSpacing) ?? 0) + addedSpacing,
-              );
-            }
+        if (textAlign == TextAlign.justify && constraints.hasBoundedWidth) {
+          final addedSpacing = VisualFlutterStyle.justifyWordSpacing(
+            text: text,
+            style: style,
+            maxWidth: constraints.maxWidth,
+            direction: Directionality.maybeOf(context) ?? TextDirection.rtl,
+          );
+          if (addedSpacing != null) {
+            effectiveStyle = (style ?? const TextStyle()).copyWith(
+              wordSpacing: (style?.wordSpacing ?? 0) + addedSpacing,
+            );
           }
         }
 

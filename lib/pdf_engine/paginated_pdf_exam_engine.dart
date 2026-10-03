@@ -64,37 +64,82 @@ class PaginatedPdfExamEngine {
   static double _pageContentHeightFor(ExamDocument document) =>
       PdfPageFormat.a4.height - 2 * _marginFor(document);
 
-  /// هل تحتاج الورقة الخط القرآني (Amiri)؟ نعم عند تفعيل البسملة أو وجود
-  /// نص موسوم بآية قرآنية — وإلا لا يُحمَّل أصل الخط أصلاً.
+  /// هل تحتاج الورقة الخط القرآني (Amiri)؟
+  ///
+  /// يستقصي **كل سطح يُطبع على الورقة**: أسطر الترويسة (بما فيها اسم المدرسة
+  /// ونوع الامتحان والعام والصف والزمن والبسملة)، والتذييل (العبارة الختامية
+  /// ولقبي الموقّع واسميهما)، وسطر القسم، وتسميات السؤال والفرع والنقطة
+  /// والخيار — تلقائية كانت أو يدوية — والنصوص (منطوقاً ومتناً ونقاطاً
+  /// وخيارات)، وملحقات السؤال والفرع والعناصر الحرة.
+  ///
+  /// كان الفحص يدوياً وناقصاً: لا يرى القسم ولا الترويسة ولا التذييل ولا
+  /// التسميات اليدوية، فتُطبع آيةٌ هناك بخط النسخ بدل Amiri (خطأ محدد
+  /// مُثبَت بالكود). الفحص هنا قراءة حقول في النموذج وحدها: لا إعادة بناء
+  /// لـ IR ولا للطباعة، ولا تبديل لسلوك أي فقرة غير قرآنية.
   static bool needsQuranicFont(ExamDocument document) {
     if (document.header.showBismillah) {
       return true;
     }
+    final header = document.header;
+    if (_anyVerse(<String>[
+      header.schoolName,
+      header.examType,
+      header.academicYear,
+      header.subject,
+      header.grade,
+      header.time,
+      header.schoolGender.label,
+      header.session.label,
+    ])) {
+      return true;
+    }
+    final footer = document.footer;
+    if (_anyVerse(<String>[
+      footer.closingPhrase,
+      footer.primary.title.label,
+      footer.primary.name,
+      footer.secondary?.title.label ?? '',
+      footer.secondary?.name ?? '',
+    ])) {
+      return true;
+    }
     for (final element in document.floatingElements) {
-      if (QuranText.containsQuran(element.label)) {
+      if (_elementHasVerse(element)) {
         return true;
       }
     }
     for (final question in document.questions) {
-      if (QuranText.containsQuran(question.statement) ||
-          QuranText.containsQuran(question.body) ||
-          _pointsContainQuran(question.items)) {
+      // سطر القسم وتسمية السؤال اليدوية: سطحان كان الفحص يغفلهما.
+      if (_anyVerse(<String>[
+        question.category,
+        question.numberOverride ?? '',
+        question.statement,
+        question.body,
+      ])) {
+        return true;
+      }
+      if (_itemsContainVerse(question.items)) {
         return true;
       }
       for (final element in question.attachments) {
-        if (QuranText.containsQuran(element.label)) {
+        if (_elementHasVerse(element)) {
           return true;
         }
       }
       for (final branch in question.branches) {
         final content = branch.content;
-        if (QuranText.containsQuran(content.statement) ||
-            QuranText.containsQuran(content.body) ||
-            _pointsContainQuran(content.items)) {
+        if (_anyVerse(<String>[
+          branch.labelOverride ?? '',
+          content.statement,
+          content.body,
+        ])) {
+          return true;
+        }
+        if (_itemsContainVerse(content.items)) {
           return true;
         }
         for (final element in branch.attachments) {
-          if (QuranText.containsQuran(element.label)) {
+          if (_elementHasVerse(element)) {
             return true;
           }
         }
@@ -103,13 +148,24 @@ class PaginatedPdfExamEngine {
     return false;
   }
 
-  static bool _pointsContainQuran(List<BranchItem> items) {
+  /// هل في أي نص من [parts] آية موسومة؟
+  static bool _anyVerse(Iterable<String> parts) =>
+      parts.any(QuranText.containsQuran);
+
+  /// عنصر حرّ (ملحق سؤال/فرع أو عنصر ورقة): مربع النص يحمل تسمته.
+  static bool _elementHasVerse(FloatingElement element) =>
+      QuranText.containsQuran(element.label);
+
+  /// نقاط مرقّمة: نص النقطة، وتسميتها اليدوية، وخياراتها بنصها وتسميتها.
+  static bool _itemsContainVerse(List<BranchItem> items) {
     for (final item in items) {
-      if (QuranText.containsQuran(item.text)) {
+      if (QuranText.containsQuran(item.text) ||
+          QuranText.containsQuran(item.labelOverride ?? '')) {
         return true;
       }
       for (final option in item.options) {
-        if (QuranText.containsQuran(option.text)) {
+        if (QuranText.containsQuran(option.text) ||
+            QuranText.containsQuran(option.labelOverride ?? '')) {
           return true;
         }
       }

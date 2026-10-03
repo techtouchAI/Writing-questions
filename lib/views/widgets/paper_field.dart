@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../layout/visual/visual_flutter_style.dart';
 import '../../models/quran_text.dart';
 import '../../models/tex_content.dart';
 import 'mixed_content_editor.dart';
@@ -195,48 +196,37 @@ class _PaperFieldState extends State<PaperField> {
     _focusNode.requestFocus();
   }
 
-  TextStyle _resolveEffectiveStyle(BoxConstraints constraints) {
+  /// نمط الفقرة بعد قرار **الضبط** (justify) — بقاعدة واحدة مع `TexText`:
+  /// تُحسب التوسعة في `VisualFlutterStyle.justifyWordSpacing` ولا يكرّر أي
+  /// سطح منطق «متى يُمَدّ السطر».
+  TextStyle _resolveEffectiveStyle(
+    BoxConstraints constraints,
+    BuildContext context,
+  ) {
     final baseStyle = widget.style;
-    if (widget.textAlign != TextAlign.justify || !constraints.hasBoundedWidth) {
+    if (widget.textAlign != TextAlign.justify ||
+        !constraints.hasBoundedWidth) {
       return baseStyle;
     }
-    final text = widget.controller.text;
-    if (text.trim().isEmpty) {
+    final addedSpacing = VisualFlutterStyle.justifyWordSpacing(
+      text: widget.controller.text,
+      style: baseStyle,
+      maxWidth: constraints.maxWidth,
+      direction: Directionality.maybeOf(context) ?? TextDirection.rtl,
+    );
+    if (addedSpacing == null) {
       return baseStyle;
     }
-    final words = text.trim().split(RegExp(r'\s+'));
-    if (words.length <= 1) {
-      return baseStyle;
-    }
-    final availableWidth = constraints.maxWidth;
-    final painter = TextPainter(
-      text: TextSpan(text: text, style: baseStyle),
-      textDirection: TextDirection.rtl,
-    )..layout(maxWidth: availableWidth);
-    // Word لا يمدّد الفقرة ذات السطر الواحد (الضبط للأسطر الملتفّة وحدها)،
-    // ولا يُشدّ سطرها الأخير — فلا wordSpacing أصلاً لسطر منفرد.
-    if (painter.computeLineMetrics().length <= 1) {
-      return baseStyle;
-    }
-    if (painter.width < availableWidth) {
-      final diff = availableWidth - painter.width;
-      if (diff > 0) {
-        final maxPerWord = (availableWidth / words.length).clamp(12.0, 60.0);
-        final rawSpacing = diff / (words.length - 1);
-        final addedSpacing = rawSpacing.clamp(0.0, maxPerWord);
-        return baseStyle.copyWith(
-          wordSpacing: ((baseStyle.wordSpacing) ?? 0) + addedSpacing,
-        );
-      }
-    }
-    return baseStyle;
+    return baseStyle.copyWith(
+      wordSpacing: (baseStyle.wordSpacing ?? 0) + addedSpacing,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final effectiveStyle = _resolveEffectiveStyle(constraints);
+        final effectiveStyle = _resolveEffectiveStyle(constraints, context);
         final showRendered = _isRenderable && !_editing && !_focusNode.hasFocus;
         if (showRendered) {
           return Tooltip(
