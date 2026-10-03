@@ -21,6 +21,7 @@ import 'dart:typed_data';
 
 import 'package:writing_questions_app/layout/blueprint/exam_blueprint.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
+import 'package:writing_questions_app/models/exam_catalog.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_footer_model.dart';

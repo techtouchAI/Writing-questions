@@ -171,9 +171,12 @@ void main() {
       final xml = await _docxXml(document);
       final paragraph = _paragraphWith(xml, 'PointText');
       expect(paragraph.contains('<w:sz w:val="21"/>'), isTrue);
+      // P0.5-A: `w:ind` يُعلن بالاتجاه أولاً — `w:start` مع الفيزيائي
+      // المقابل لاتجاه الورقة (هنا عربية ⇒ right)، والقيمة من العقد وحدها.
       expect(
         paragraph.contains(
-          '<w:ind w:right="${PaperMetrics.twips(VisualMetrics.pointIndentPx)}"/>',
+          '<w:ind w:start="${PaperMetrics.twips(VisualMetrics.pointIndentPx)}" '
+          'w:right="${PaperMetrics.twips(VisualMetrics.pointIndentPx)}"/>',
         ),
         isTrue,
         reason: 'إزاحة النقطة 36px في المعاينة = 540 تويب في Word.',
@@ -191,9 +194,12 @@ void main() {
       );
       final xml = await _docxXml(document);
       final paragraph = _paragraphWith(xml, 'BranchTitle');
+      // P0.5-A: `w:ind` يُعلن بالاتجاه أولاً — `w:start` مع الفيزيائي
+      // المقابل لاتجاه الورقة (هنا عربية ⇒ right)، والقيمة من العقد وحدها.
       expect(
         paragraph.contains(
-          '<w:ind w:right="${PaperMetrics.twips(VisualMetrics.branchIndentPx)}"/>',
+          '<w:ind w:start="${PaperMetrics.twips(VisualMetrics.branchIndentPx)}" '
+          'w:right="${PaperMetrics.twips(VisualMetrics.branchIndentPx)}"/>',
         ),
         isTrue,
         reason: 'إزاحة الفرع 26px = 390 تويب من VisualMetrics.',
@@ -209,9 +215,12 @@ void main() {
       final document = _document();
       final xml = await _docxXml(document);
       final paragraph = _paragraphWith(xml, 'OptA');
+      // P0.5-A: `w:ind` يُعلن بالاتجاه أولاً — `w:start` مع الفيزيائي
+      // المقابل لاتجاه الورقة (هنا عربية ⇒ right)، والقيمة من العقد وحدها.
       expect(
         paragraph.contains(
-          '<w:ind w:right="${PaperMetrics.twips(VisualMetrics.pointIndentPx) + PaperMetrics.twips(VisualMetrics.optionIndentPx)}"/>',
+          '<w:ind w:start="${PaperMetrics.twips(VisualMetrics.pointIndentPx) + PaperMetrics.twips(VisualMetrics.optionIndentPx)}" '
+          'w:right="${PaperMetrics.twips(VisualMetrics.pointIndentPx) + PaperMetrics.twips(VisualMetrics.optionIndentPx)}"/>',
         ),
         isTrue,
       );

@@ -196,7 +196,22 @@ jobs:
             lines="${lines//$'\n'/%0A}"
             echo "::error title=$label ($count)::$lines"
           }
+          # أخطاء مترجم Dart تُطبع **قبل** «Failed to load» فتبقى خارج نوافذ
+          # مقاطع الفشل: بدونها يصير فشل تحميل الاختبار بلا سبب مسمّى.
+          publish_compile_errors() {
+            local file="$1" lines count
+            [ -f "$file" ] || return 0
+            lines="$(grep -E '\.dart:[0-9]+:[0-9]+: (Error|Warning):' "$file" \
+              | sed -E 's|/home/runner/work/[^ ]*/||' | sort -u | head -n 30 || true)"
+            [ -n "$lines" ] || return 0
+            count="$(printf '%s\n' "$lines" | wc -l | tr -d ' ')"
+            lines="${lines//%/%25}"
+            lines="${lines//$'\r'/%0D}"
+            lines="${lines//$'\n'/%0A}"
+            echo "::error title=Dart compiler errors ($count)::$lines"
+          }
           publish_analyzer_findings "$RUNNER_TEMP/flutter-analyze.log" 'error' 'Analyzer errors' 80
+          publish_compile_errors "$RUNNER_TEMP/flutter-test.log"
           publish_failure_names "$RUNNER_TEMP/flutter-test.log"
           publish_tail "$RUNNER_TEMP/flutter-analyze.log" 'Flutter analyzer log excerpt'
           publish_tail "$RUNNER_TEMP/flutter-test.log" 'Flutter test log excerpt'
