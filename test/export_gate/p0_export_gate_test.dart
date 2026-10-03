@@ -93,7 +93,8 @@ class _Gate {
   List<Uint8List> ltrPreviewPages = <Uint8List>[];
   int rtlPreviewPageCount = 0;
   int ltrPreviewPageCount = 0;
-  int mathRequests = 0;
+  int mathRunCount = 0;
+  int mathHostRequestCount = 0;
   // التقاط المعاينة الثقيل يُقاس مرة واحدة ويُخزَّن: لا يُعاد في كل اختبار،
   // ولا يبقى سببُه مختبئاً خلف اختبار القطع.
   _PreviewCapture? rtlCapture;
@@ -797,8 +798,24 @@ void main() {
     await tester.runAsync(() async {
       watch.start();
       try {
-        _gate.rtlVectorPdf =
-            await PaginatedPdfExamEngine().generate(document: rtlDocument);
+        final pdfFonts = await ExamFonts.load(
+          loadQuranic: PaginatedPdfExamEngine.needsQuranicFont(rtlDocument),
+        );
+        final pdfEngine = PaginatedPdfExamEngine();
+        final canonicalLayout = await pdfEngine.resolveLayoutDocument(
+          document: rtlDocument,
+          fonts: pdfFonts,
+        );
+        _gate.mathRunCount = canonicalLayout.allLines
+            .expand((line) => line.runs)
+            .where((run) => run.isMath)
+            .length;
+        _gate.rtlVectorPdf = await pdfEngine.generate(
+          document: rtlDocument,
+          layoutDocument: canonicalLayout,
+          fonts: pdfFonts,
+        );
+        _gate.mathHostRequestCount = mathHost.requests.length;
       } catch (error, stackTrace) {
         _stage('RTL vector generation failed: $error\n$stackTrace');
         Error.throwWithStackTrace(error, stackTrace);
@@ -825,7 +842,6 @@ void main() {
       _stage('توليد exact.* عربي: ${watch.elapsedMilliseconds}ms');
       watch.stop();
     });
-    _gate.mathRequests = mathHost.requests.length;
 
     // القطع على القرص.
     for (var index = 0; index < _gate.rtlPreviewPages.length; index++) {
@@ -846,7 +862,8 @@ void main() {
         'rtlPreviewPageCount': _gate.rtlPreviewPageCount,
         'ltrPreviewPageCount': _gate.ltrPreviewPageCount,
         'rtlPdfPageCount': PdfContentProbe.pageCountOf(_gate.rtlVectorPdf!),
-        'mathRequests': _gate.mathRequests,
+        'mathRunCount': _gate.mathRunCount,
+        'mathHostRequestCount': _gate.mathHostRequestCount,
       }),
     );
 
@@ -876,7 +893,8 @@ void main() {
 
     _stage('vector عربي: ${_gate.rtlPdfReport.pageCount} صفحة؛ '
         'المعاينة: ${_gate.rtlPreviewPageCount} صفحة؛ '
-        'لقطات معادلات: ${_gate.mathRequests}');
+        'صيغ رياضية: ${_gate.mathRunCount}، طلبات المضيف: '
+          '${_gate.mathHostRequestCount}');
 
     // الانحراف مقيس ولا يُمرّ بصمت: المعاينة تقسم الورقة العربية إلى
     // صفحات والـPDF إلى عدد آخر، والسبب أن لكل ممرّ مصدره لارتفاع السطر
@@ -1319,14 +1337,17 @@ void main() {
     expect(sizes.length, greaterThan(2),
         reason: 'أحجام الخطوط في PDF ($sizes): أدوار العقد لا تصل جميعها.');
 
-    // المعادلات: كل طلب لقطة له موضع رسم صورة، وترتيبها كما في العقد.
-    // قد تشترك مواضع متعددة في XObject واحد إذا تطابقت بايتات الصور؛ لذا
-    // عدد الاستدعاءات Do (placements) هو الدليل الصحيح، لا عدد الموارد الفريدة.
-    expect(_gate.mathRequests, greaterThan(0),
-        reason: 'لم تُطلب أي لقطة معادلة — مسار الرياضيات غير مختبَر.');
-    expect(report.allImages.length, greaterThanOrEqualTo(_gate.mathRequests),
-        reason: 'مواضع صور PDF (${report.allImages.length}) أقلّ من طلبات '
-            'المعادلات (${_gate.mathRequests}).');
+    // كل عقدة Math في LayoutDocument لها موضع رسم صورة في PDF. قد تشترك
+    // مواضع متعددة في XObject واحد إذا تطابقت بايتات الصور؛ لذا عدد استدعاءات
+    // Do (placements) هو الدليل الصحيح، لا عدد الموارد الفريدة أو استدعاءات
+    // مضيف القياس/التصيير المتكررة.
+    expect(_gate.mathRunCount, greaterThan(0),
+        reason: 'لا توجد عقد Math في التخطيط — مسار الرياضيات غير مختبَر.');
+    expect(_gate.mathHostRequestCount, greaterThan(0),
+        reason: 'لم تُطلب أي لقطة من مضيف الرياضيات.');
+    expect(report.allImages.length, greaterThanOrEqualTo(_gate.mathRunCount),
+        reason: 'مواضع صور PDF (${report.allImages.length}) أقلّ من عقد '
+            'Math في التخطيط (${_gate.mathRunCount}).');
     const mathOrder = <String>['MATH1', 'TEXTAR1', 'MATH2'];
     final drawnMathOrder = <String>[];
     for (final page in report.pages) {
@@ -1354,16 +1375,16 @@ void main() {
 
     // العنصر الحرّ (صورة PNG) له موضع رسم إضافي على صور المعادلات.
     expect(report.allImages.length,
-        greaterThanOrEqualTo(_gate.mathRequests + 1),
+        greaterThanOrEqualTo(_gate.mathRunCount + 1),
         reason: 'صورة العنصر الحر لم تُضمَّن في PDF '
             '(مواضع الصور ${report.allImages.length} مقابل '
-            '${_gate.mathRequests} معادلة).');
+            '${_gate.mathRunCount} معادلة).');
     expect(report.imageObjects, greaterThan(0),
         reason: 'لا توجد موارد صور XObject مضمَّنة في PDF.');
 
     _matrix.record('math', P0Path.vectorPdf, P0Status.pass,
         evidence: 'مواضع الصور=${report.allImages.length}، موارد XObject='
-            '${report.imageObjects}، طلبات=${_gate.mathRequests}، '
+            '${report.imageObjects}، صيغ=${_gate.mathRunCount}، '
             'ترتيب العقد محفوظ: $drawnMathOrder');
     _matrix.record('quran', P0Path.vectorPdf, P0Status.pass,
         evidence: 'Amiri على سطور الآيات (${verseLines.length} سطر) '

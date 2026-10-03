@@ -94,9 +94,14 @@ String logicalToVisual(String input) {
     if (!hasArabic) rethrow;
     // package:bidi's normalization can index past its original-length table
     // when an Arabic character decomposes into several code points. Keep PDF
-    // export resilient by using the package's Arabic word shaper for that
-    // fragment; all canonical run positions remain resolved by LayoutEngine.
-    final shaped = arabic.convert(input);
+    // export resilient with the package's Arabic word shaper, then map isolated
+    // base letters to their Unicode presentation-form equivalents; canonical
+    // run positions remain resolved by LayoutEngine.
+    final shaped = String.fromCharCodes(
+      arabic.convert(input).runes.map(
+            (rune) => bidi.basicToIsolatedMappings[rune] ?? rune,
+          ),
+    );
     if (input.contains('السنة') || input.contains('النهوض') ||
         input.contains('المتوسط') || input == 'س') {
       // ignore: avoid_print
