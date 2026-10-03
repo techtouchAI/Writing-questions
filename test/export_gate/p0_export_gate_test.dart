@@ -38,6 +38,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
+import 'package:writing_questions_app/layout/paper_metrics.dart';
 import 'package:writing_questions_app/layout/visual/visual_content.dart';
 import 'package:writing_questions_app/layout/visual/visual_flutter_style.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
@@ -443,8 +444,24 @@ Future<_PreviewCapture> _capturePreviewOf(
   expect(controller.isFullyMeasured, isTrue,
       reason: 'لم يكتمل قياس كتل المعاينة، فلا معنى لعدد الصفحات.');
   final pageCount = controller.pagination.pageCount;
+  // التشخيص قبل الحكم: بلا الارتفاعات المقاسة يصير «صفحة واحدة» لغزاً.
+  final measuredHeights = <String, double?>{
+    for (final question in controller.document.questions)
+      question.id: controller.blockHeight(question.id),
+    PaperMetrics.headerBlockId: controller.blockHeight(PaperMetrics.headerBlockId),
+  };
+  final heightSum = measuredHeights.values
+      .fold<double>(0, (sum, h) => sum + (h ?? 0));
+  _stage('تقسيم ${document.name}: صفحات=$pageCount، '
+      'مجموع الارتفاعات=${heightSum.toStringAsFixed(1)}px، '
+      'ارتفاع محتوى الصفحة='
+      '${PaperMetrics.pageContentHeightFor(document.settings.marginMm)}px، '
+      'قيست ${measuredHeights.values.where((h) => h != null).length}/'
+      '${measuredHeights.length} كتلة، '
+      'الكتل=${measuredHeights.map((k, v) => MapEntry<String, String>(k, v?.toStringAsFixed(1) ?? 'null'))}');
   expect(pageCount, greaterThan(1),
-      reason: 'التركيبة يجب أن تتعدّى صفحة واحدة لتغطية التقسيم.');
+      reason: 'التركيبة يجب أن تتعدّى صفحة واحدة لتغطية التقسيم: '
+          'الارتفاعات المقاسة = $measuredHeights.');
 
   // نافذة تكفي لرسم كل الصفحات (ما خرج من نافذة التمرير لا يُرسم ولا يُلقط).
   var viewHeight = (ExamCanvasGeometry.height + 16) * pageCount + 400;
