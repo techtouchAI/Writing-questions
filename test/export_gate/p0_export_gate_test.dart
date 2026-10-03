@@ -813,14 +813,15 @@ void main() {
             .length;
         _gate.canonicalLabelRuns = canonicalLayout.allLines
             .expand((line) => line.runs)
-            .where((run) => run.text.contains('-') ||
-                run.text.runes.any((rune) =>
-                    (rune >= 0x0660 && rune <= 0x0669) ||
-                    (rune >= 0x30 && rune <= 0x39)))
-            .map((run) => '${run.semanticRole.name}:"${run.text}" '
-                '@${run.x.toStringAsFixed(2)}+${run.width.toStringAsFixed(2)} '
+            .where((run) =>
+                run.semanticNodeId.contains('p0q1i') &&
+                const <String>{'label', 'number', 'separator'}
+                    .contains(run.semanticRole.name))
+            .map((run) => '${run.semanticNodeId} ${run.semanticRole.name}: '
+                '"${run.text}" @${run.x.toStringAsFixed(2)}+'
+                '${run.width.toStringAsFixed(2)} '
                 'advance=${run.advance.toStringAsFixed(2)}')
-            .take(24)
+            .take(32)
             .toList();
         _stage('P2 number/separator runs: ${_gate.canonicalLabelRuns}');
         _gate.rtlVectorPdf = await pdfEngine.generate(
@@ -1298,7 +1299,7 @@ void main() {
     expect(drawnLabels, isNotEmpty,
         reason: 'لم يظهر نمط «رقم ثم فاصل» (١-) في vector.pdf — لا يقيس الفحص '
             'الترقيم من غير مثال مرسوم. P2 runs: '
-            '${_gate.canonicalLabelRuns.take(24).toList()}');
+            '${_gate.canonicalLabelRuns.take(32).toList()}');
     expect(invertedLabels, isEmpty,
         reason: 'نصّ التسمية مرسوم بفاصل قبل الرقم (انقلاب في السلسلة '
             'المنطقية لا في المواضع فقط): ${invertedLabels.take(6).toList()}');
