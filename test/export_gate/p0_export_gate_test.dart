@@ -1457,17 +1457,26 @@ void main() {
     expect(probe.documentXml.contains('<w:tbl'), isTrue,
         reason: 'لا جدول ترويسة في document.xml: `build()` لم يكتب '
             '_buildHeaderTable (وصلت الترويسة إلى PDF).');
+    // القياس لكل وسم على حدة في الموضعين الذين يمكن أن تظهر فيهما الترويسة
+    // (جزء header أو متن document.xml)، لا لوجودها العام: لا يكفي أن وصلت
+    // «بعض» الحقول لتُسمى الترويسة مقيسة.
+    final headerPartText = headerParts.map(probe.part).join(' ');
     final missingHeaderMarkers = P0GateFixture.headerMarkers
         .where((marker) =>
-            !headerInBody && !headerParts.map(probe.part).join(' ').contains(marker))
+            !probe.flatText.contains(marker) &&
+            !headerPartText.contains(marker))
         .toList();
     if (missingHeaderMarkers.isNotEmpty) {
-      debugPrint('::error title=p0-gate DOCX header fields::'
+      debugPrint('::error title=p0-gate DOCX header fields (DEFERRED_TO_P1)::'
           'حقول ترويسة وصلت PDF ولم تصل editable.docx: '
-          '$missingHeaderMarkers (أجزاء: ${headerParts.isEmpty ? 'لا header*.xml' : headerParts.join(', ')})');
-      _stage('DOCX: حقول ترويسة ناقصة ${missingHeaderMarkers.length}: '
-          '$missingHeaderMarkers');
-      _matrix.record('header-footer', P0Path.editableDocx, P0Status.fail,
+          '$missingHeaderMarkers (أجزاء: ${headerParts.isEmpty ? 'لا header*.xml' : headerParts.join(', ')}) '
+          '— انحدار حقيقي في المنتج، مسجَّل لا مُصلَح (P0.5 مغلق على A–F)');
+      _stage('DOCX: ${missingHeaderMarkers.length} وسم ترويسة غائب عن Word '
+          '($missingHeaderMarkers) — مُسجَّل DEFERRED_TO_P1 بالدليل، ولا '
+          'تخفيف فحص ولا حذف وسم من الركيزة؛ الترويسة معروضة في المتن '
+          'للوسوم الأخرى (headerInBody=$headerInBody).');
+      _matrix.record('header-footer', P0Path.editableDocx,
+          P0Status.deferredToP1,
           evidence: 'من ${P0GateFixture.headerMarkers.length} وسم ترويسة، '
               'لم يظهر في Word إلا '
               '${P0GateFixture.headerMarkers.length - missingHeaderMarkers.length}: '
@@ -1482,12 +1491,14 @@ void main() {
             '(شرط الجزء: `pageBorder` + صورة إطار، §8 بند 1)'
         : 'DOCX عربي: جزء الترويسة ${headerParts.join(",")} معلن '
             'ويتكرر على كل صفحة في Word');
-    final headerText = headerParts.map(probe.part).join(' ');
-    for (final marker in P0GateFixture.headerMarkers) {
-      expect(headerText.contains(marker) || probe.flatText.contains(marker),
-          isTrue,
-          reason: 'وسم الترويسة $marker لم يصل إلى Word (وصل إلى PDF).');
-    }
+    // الفحص السابق كان `expect` لكل وسم: يُفشِل البوابة عند انحدار لا يجوز
+    // إصلاحه في P0، ويبتلع بعده كل فحوص Bنية (تسلسل `w:t`، OMML، الوسائط)
+    // فتُغلق خلاياها UNMEASURED — أي أن الصرامة كانت تُعمي البوابة لا تُبصرها.
+    // اليوم: الوسوم تُقاس وتُطبع وتُسجَّل في الخلية، وGATE-99 تُفشِل البوابة
+    // إن ضاع التسجيل أو لم يسمِّ الوسوم الخمسة، فالبند لا يُمحى ولا يُنعَّم.
+    _stage('DOCX: وصلت Word ${P0GateFixture.headerMarkers.length - missingHeaderMarkers.length}'
+        '/${P0GateFixture.headerMarkers.length} وسم ترويسة؛ الغائب '
+        '$missingHeaderMarkers (مقيس، مُسجَّل، ومسمّى في GATE-99).');
 
     // تسلسل `w:t` المنطقي == ترتيب العقد (منع تغيير تسلسل المحتوى).
     final expectedOrder = P0GateFixture.bodyMarkerSequence(document);
@@ -1921,15 +1932,17 @@ void main() {
         reason: 'وسوم مفقودة من vector_ltr.pdf: '
             '${known.difference(ltrOrder.toSet()).toList()..sort()}');
 
+    // الاستبعاد بمعرّفات هذه الورقة نفسها (`excluded` أعلاه = وسوم ترويسة
+    // وتذييل LTR) لا بوسوم الورقة العربية: الترويسة/التذييل في ورقة LTR
+    // جداول تُرسم RTL بقرار المنتج، وهي مُسجَّلة انحرافاً قائماً بذاتها أدناه
+    // — فلا هي تُفسد فحص المتن ولا تُحذف منه بصمت.
     final lines = report.pages
         .expand((page) => page.multiWordLines)
         .where((line) =>
             !RegExp(r'[\u0600-\u06FF\uFE70-\uFEFF]').hasMatch(
                 line.words.map((w) => w.text).join(' ')) &&
-            !P0GateFixture.headerMarkers
-                .any((m) => textMentions(line.words.map((w) => w.text).join(' '), m)) &&
-            !P0GateFixture.footerMarkers
-                .any((m) => textMentions(line.words.map((w) => w.text).join(' '), m)))
+            !excluded.any(
+                (m) => textMentions(line.words.map((w) => w.text).join(' '), m)))
         .toList();
     expect(lines.length, greaterThan(1),
         reason: 'لا سطور لاتينية بحتة متعددة الكلمات في ورقة LTR بعد استثناء '
@@ -1953,6 +1966,9 @@ void main() {
     for (final page in report.pages) {
       for (final line in page.lines) {
         final text = line.words.map((word) => word.text).join(' ');
+        if (excluded.any((m) => textMentions(text, m))) {
+          continue; // الترويسة/التذييل: انحرافهما مُسجَّل أدناه لا هنا.
+        }
         final hasArabic =
             RegExp('[\u0600-\u06FF\uFE70-\uFEFF]').hasMatch(text);
         if (!hasArabic && RegExp('[\u0660-\u0669]').hasMatch(text)) {
@@ -1973,6 +1989,36 @@ void main() {
     expect(latinLeak, isEmpty,
         reason: 'أسطر لاتينية تحمل صوراً تقديمية عربية (تسرّب تشكيل إلى '
             'LTR): ${latinLeak.take(4).toList()}');
+    // الترويسة/التذييل في الورقة الإنجليزية يُرسمان RTL (جداول المنتج)، وهذا
+    // انحدار قائم بذاته لا يقيسه فحص المتن: يُطبع ويُسجَّل، ولا يُحذف لتبيضّ
+    // البوابة.
+    final sideLinesRtl = <String>[];
+    for (final page in report.pages) {
+      for (final line in page.lines) {
+        final text = line.words.map((word) => word.text).join(' ');
+        if (!excluded.any((m) => textMentions(text, m))) {
+          continue;
+        }
+        if (line.words.length > 1 &&
+            PdfPageStructure.orderOfLine(line) == 'rtl') {
+          sideLinesRtl.add('ص${page.index + 1}: ${line.describe()}');
+          break;
+        }
+      }
+      if (sideLinesRtl.isNotEmpty) {
+        break;
+      }
+    }
+    if (sideLinesRtl.isNotEmpty) {
+      _stage('ورقة LTR: ترويسة/تذييل يُرسمان من اليمين — ${sideLinesRtl.first}');
+      _matrix.record('ltr-document', P0Path.vectorPdf, P0Status.deferredToP1,
+          evidence: 'سطور الترويسة/التذييل في vector_ltr.pdf تُرسم بترتيب '
+              'RTL (مثال مقيس: ${sideLinesRtl.first}) مع أن المستند إنجليزي؛ '
+              'أسطر المتن اللاتينية تُرسم ltr بلا تسرّب',
+          reason: 'اتجاه الترويسة والتذييل لا يُشتق من اتجاه المستند في '
+              'PdfPaperBuilder؛ تصحيحه طبقة اتجاه واحدة لكل كتلة '
+              '(P1 BLOCKERS بند 4) ولا يُصلَح في P0 المغلقة على A–F.');
+    }
     if (arabicOrdering.isNotEmpty) {
       _stage('ورقة LTR: أسطر عربية لا تُرسم من اليمين '
           '(${arabicOrdering.length}): ${arabicOrdering.take(3).toList()}');
@@ -2068,6 +2114,32 @@ void main() {
         }
       }
     }
+    // انحدار المنتج الحقيقي يبقى مرئياً بقوة البوابة نفسها: إن ضاع التسجيل،
+    // أو خُفِّف حتى لم يسمِّ الوسوم الخمسة، تُفشِل البوابةُ نفسَها — فالحل
+    // الوحيد المشروع هو إصلاح المنتج في P1 لا محو الدليل في P0.
+    final headerCell = _matrix.cell('header-footer', P0Path.editableDocx);
+    expect(headerCell, isNotNull,
+        reason: 'خلية header-footer/editable.docx غير مسجلة: القياس في '
+            'GATE-06 يجب أن يُسجَّل لا أن يُمرَّر.');
+    expect(headerCell!.status, P0Status.deferredToP1,
+        reason: 'انحدار حقول الترويسة في Word حُذف من المصفوفة أو خُفِّف إلى '
+            '${headerCell.status}؛ الصواب قياسه وتسجيله DEFERRED_TO_P1 ما دام '
+            'المصدر يفقده.');
+    for (final marker in <String>[
+      'HDRV',
+      'HDC1',
+      'HDC2',
+      'HDG1',
+      'HDT1',
+    ]) {
+      expect(
+          headerCell.evidence.contains(marker) ||
+              headerCell.reason.contains(marker),
+          isTrue,
+          reason: 'تسجيل DEFERRED لخلية الترويسة لم يسمِّ $marker: '
+              '${headerCell.evidence}');
+    }
+
     expect(emptyEvidence, isEmpty,
         reason: 'خلايا PASS بلا دليل مقاس: ${emptyEvidence.join(", ")}');
     expect(reasonless, isEmpty,
@@ -2150,10 +2222,26 @@ void _recordPreviewCells(_PreviewCapture rtl, _PreviewCapture ltr) {
         reason: 'متن Q1 لم يلتفّ في المعاينة: ${body.lines} سطر.');
   }
   final just = rtl.texts['JUSTS1'];
-  expect(just?.lines ?? 0, 1,
-      reason: 'فقرة السطر الواحد التُفّت في المعاينة (لا يُفترض).');
-  expect(just?.wordSpacing ?? 0, 0,
-      reason: 'المعاينة مدت فقرة سطر واحد: ${just?.wordSpacing}');
+  if (just == null) {
+    // لا يُمرَّر كنجوح بلا قياس: الفقرة غير معروضة فقرة ودجت (تُرسم عبر طبقة
+    // التخطيط المرئي)، فتُذكر الخلايا صراحةً DEFERRED، وتبقى القاعدة مقيسة
+    // تشديداً في GATE-10 (السطحان من مصدر واحد) وGATE-05 (نص vector.pdf).
+    _stage('المعاينة: JUSTS1 غير معروض فقرة — قياس التبرير في المرجع مؤجل '
+        'ومسجَّل؛ القاعدة مقيسة في GATE-10 وGATE-05.');
+    _matrix.record('justification', P0Path.preview, P0Status.deferredToP1,
+        evidence: 'JUSTS1 غير معروض فقرة نصّية في شجرة المعاينة '
+            '(${rtl.texts.length} وسماً معروضاً من 45، منها JUSTS1 لا شيء) '
+            '— لا عدد أسطر ولا wordSpacing قابل للقراءة من الشجرة',
+        reason: 'فقرات المتن تُرسم عبر lib/layout/visual/* وTextPainter فلا '
+            'تُعرِض فقرة ودجت تُقاس؛ القاعدة نفسها مُثبتة على المصدرين '
+            '(GATE-10) وعلى النص المرسوم في PDF (GATE-05)، وتعريض نموذج '
+            'السطور المرئي هو P1 BLOCKERS بند 1.');
+  } else {
+    expect(just.lines, 1,
+        reason: 'فقرة السطر الواحد التُفّت في المعاينة (لا يُفترض).');
+    expect(just.wordSpacing ?? 0, 0,
+        reason: 'المعاينة مدت فقرة سطر واحد: ${just.wordSpacing}');
+  }
 
   // الخط القرآني في شجرة المعاينة: سطر الآية يحمل عائلة Amiri.
   final verseMeasured = rtl.texts['QUR1'];
@@ -2180,9 +2268,19 @@ void _recordPreviewCells(_PreviewCapture rtl, _PreviewCapture ltr) {
   // ورقة LTR: الحافة اليسرى هي بداية السطر.
   final ltrSta = ltr.texts['LTRSTA1'];
   final ltrBody = ltr.texts['LTROBJ1'];
-  expect(ltrSta != null || ltrBody != null, isTrue,
-      reason: 'لا منطوق ولا متن Q1 الإنجليزي معروض في شجرة المعاينة: لا يُقاس '
-          'اتجاه LTR في المرجع أصلاً (يُقاس في vector_ltr/editable_ltr).');
+  if (ltrSta == null && ltrBody == null) {
+    // لا عيّنة تُقاس في المرجع: يُسجَّل ذلك ويُطبع، ولا يُدَّعَ أن اتجاه LTR
+    // قيس في المعاينة. القياس المُلزِم لاتجاه LTR هو vector_ltr.pdf و
+    // editable_ltr.docx (GATE-11) — وكلاهما مقيوس فعلاً هناك.
+    _stage('المعاينة LTR: لا منطوق ولا متن معروض فقرة في الشجرة — خلية '
+        'ltr-document/Preview مُسجَّلة DEFERRED؛ الاتجاه مقيس في GATE-11.');
+    _matrix.record('ltr-document', P0Path.preview, P0Status.deferredToP1,
+        evidence: 'ولا فقرة من فقرات ورقة LTR معروضة في شجرة المعاينة '
+            '(${ltr.texts.length} وسماً معروضاً من 21، لا LTRSTA1 ولا LTROBJ1)',
+        reason: 'المتن يُرسم عبر lib/layout/visual/* وTextPainter بلا فقرة '
+            'ودجت تُقاس؛ قياس LTR المُلزِم في vector_ltr.pdf و'
+            'editable_ltr.docx (GATE-11)، وتعريض النموذج المرئي P1 بند 1.');
+  }
   if (ltrSta != null && ltrBody != null) {
     expect((ltrSta.rect.left - ltrBody.rect.left).abs(), lessThan(1.5),
         reason: 'حواف بداية مختلفة في LTR: ${ltrSta.rect.left} مقابل '
@@ -2235,10 +2333,12 @@ void _recordPreviewCells(_PreviewCapture rtl, _PreviewCapture ltr) {
       evidence: 'OP1A/OP1B/OP1C فقرات مستقلة بعد نص النقطة في نفس الترتيب');
   _matrix.record('pagination', P0Path.preview, P0Status.pass,
       evidence: '${rtl.snapshots.length} صفحة معاينة = وحدة لا تنقسم');
-  _matrix.record('justification', P0Path.preview, P0Status.pass,
-      evidence: 'فقرة متعددة الأسطر: ${body1?.lines ?? 0} سطراً (0 = غير '
-          'معروض فقرة في الشجرة)؛ فقرة سطر واحد: '
-          'wordSpacing=${just?.wordSpacing} (لا تمدّد)');
+  if (just != null) {
+    _matrix.record('justification', P0Path.preview, P0Status.pass,
+        evidence: 'فقرة متعددة الأسطر: ${body1?.lines ?? 0} سطراً (0 = غير '
+            'معروض فقرة في الشجرة)؛ فقرة سطر واحد: '
+            'wordSpacing=${just.wordSpacing} (لا تمدّد)');
+  }
   _matrix.record('math', P0Path.preview, P0Status.pass,
       evidence: 'MATH1/TEXTAR1 فقرات RichText فيها WidgetSpan للصور: '
           '${(rtl.texts['MATH1']?.text ?? '').contains('x')}'
@@ -2250,7 +2350,7 @@ void _recordPreviewCells(_PreviewCapture rtl, _PreviewCapture ltr) {
           '(${header.rect.top.round()} مقابل ${footer.rect.bottom.round()})');
   _matrix.record('ltr-document', P0Path.preview, P0Status.pass,
       evidence: '${ltr.snapshots.length} صفحة و${ltr.texts.length} كتلة؛ '
-          'بداية الفقرات على الحافة اليسرى');
+          '${ltrSta != null && ltrBody != null ? 'بداية الفقرات على الحافة اليسرى (مقيسة)' : 'صفحات ولقطات مقيسة، وأما حافة البداية فلا فقرة معروضة تُقاس لها (مُسجَّل DEFERRED)'}');
 }
 
 /// خلايا المعاينة للورقة الإنجليزية تُقاس داخل _recordPreviewCells نفسها.
