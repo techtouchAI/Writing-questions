@@ -1836,14 +1836,6 @@ class _LayoutBuilder {
               ? DocumentDirection.ltr
               : DocumentDirection.rtl);
 
-  DocumentDirection _nodeDirection(
-    DocumentDirection source,
-    DocumentDirection fallback,
-  ) =>
-      source == DocumentDirection.auto || source == DocumentDirection.inherit
-          ? fallback
-          : source;
-
   /// Preserve `auto` on inline atoms for the measurement backend to resolve
   /// from their actual bidi content; only `inherit` is replaced by the block
   /// direction at this boundary.
