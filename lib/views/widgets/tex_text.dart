@@ -39,15 +39,16 @@ class TexText extends StatelessWidget {
     this.expandToWidth = true,
   }) : richContent = null;
 
-  const TexText.fromRichContent(
-    this.richContent, {
+  TexText.fromRichContent(
+    RichContent content, {
     super.key,
     this.style,
     this.mathTextStyle,
     this.quranStyle,
     this.textAlign = TextAlign.start,
     this.expandToWidth = true,
-  }) : text = '';
+  })  : richContent = content,
+        text = _measurementText(content);
 
   final String text;
   final RichContent? richContent;
