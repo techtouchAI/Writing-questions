@@ -227,7 +227,7 @@ class _LayoutBuilder {
               override: headerOverride,
               bold: line.bold,
             ),
-            alignment: line.alignment,
+            alignment: headerOverride?.align ?? line.alignment,
             direction: line.direction,
             x: x,
             width: width,
@@ -561,11 +561,10 @@ class _LayoutBuilder {
     final framePadding = branch.container.framed
         ? LayoutUnits.pxToPt(VisualMetrics.branchFramePaddingPx)
         : 0.0;
-    final endInset = LayoutUnits.pxToPt(4);
     final branchX = parentX + indent;
     final branchWidth = (parentWidth - indent).clamp(0.0, parentWidth).toDouble();
     final contentX = branchX + framePadding;
-    final contentWidth = (branchWidth - endInset - 2 * framePadding)
+    final contentWidth = (branchWidth - 2 * framePadding)
         .clamp(0.0, branchWidth)
         .toDouble();
     final flow = _FlowBuilder(x: contentX, width: contentWidth);

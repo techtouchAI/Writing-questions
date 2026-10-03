@@ -325,7 +325,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
           alignment: alignment,
           direction: direction,
           paragraphWidthPt: width,
-          lineWidthPt: resolvedWidth,
+          fragments: fragments,
           justified: isJustified,
         );
         final positionedFragments = alignmentOffset == 0
@@ -588,20 +588,30 @@ class FlutterTextMetrics implements FontMetricsProvider {
     };
   }
 
-  /// Selection boxes returned by TextPainter are line-relative; unlike paint(),
-  /// they do not include the free-space offset for a centered/right-aligned
-  /// paragraph. Add that renderer-neutral offset here, before LayoutDocument
-  /// is produced, so Preview and PDF consume the same resolved x positions.
+  /// Resolve alignment from the boxes actually returned by TextPainter. Some
+  /// Paragraph implementations include an alignment offset in selection boxes
+  /// and others leave them line-relative; computing the target from the current
+  /// visual bounds avoids either dropping or doubling that offset.
   double _alignmentOffsetPt({
     required PaperAlign? alignment,
     required DocumentDirection direction,
     required double paragraphWidthPt,
-    required double lineWidthPt,
+    required List<MeasuredRunFragment> fragments,
     required bool justified,
   }) {
-    if (justified) return 0;
+    if (justified || fragments.isEmpty) return 0;
+    var currentLeft = double.infinity;
+    var currentRight = double.negativeInfinity;
+    for (final fragment in fragments) {
+      if (fragment.x < currentLeft) currentLeft = fragment.x;
+      final fragmentRight = fragment.x + fragment.width;
+      if (fragmentRight > currentRight) currentRight = fragmentRight;
+    }
+    final occupiedWidth = (currentRight - currentLeft)
+        .clamp(0.0, double.infinity)
+        .toDouble();
     final remaining =
-        (paragraphWidthPt - lineWidthPt).clamp(0.0, double.infinity).toDouble();
+        (paragraphWidthPt - occupiedWidth).clamp(0.0, double.infinity).toDouble();
     final alignRight = switch (alignment) {
       PaperAlign.left => false,
       PaperAlign.right => true,
@@ -610,8 +620,12 @@ class FlutterTextMetrics implements FontMetricsProvider {
       PaperAlign.start || PaperAlign.justify || null =>
         direction == DocumentDirection.rtl,
     };
-    if (alignment == PaperAlign.center) return remaining / 2;
-    return alignRight == true ? remaining : 0;
+    final targetLeft = alignment == PaperAlign.center
+        ? remaining / 2
+        : alignRight == true
+            ? remaining
+            : 0.0;
+    return targetLeft - currentLeft;
   }
 }
 

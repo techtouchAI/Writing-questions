@@ -1319,25 +1319,29 @@ void main() {
         reason: 'نصّ التسمية مرسوم بفاصل قبل الرقم (انقلاب في السلسلة '
             'المنطقية لا في المواضع فقط): ${invertedLabels.take(6).toList()}');
 
-    // الأقواس في RTL: أول قوس في السلسلة المرسومة (من اليسار) هو المغلق،
-    // لأن `( أ )` و`(١)` و`(20 درجة)` تنعكس أطرافها عند العرض.
-    final drawnSequence =
-        report.pages.map((page) => page.drawnText).join(' ');
-    final parenSamples = <String>[];
-    for (final rune in drawnSequence.runes) {
-      if (rune == 0x28 || rune == 0x29) {
-        parenSamples.add(String.fromCharCode(rune));
+    // `PdfContentProbe` keeps PDF text operators in emission order (RTL's
+    // rightmost-first order), not visual left-to-right order. Measure brackets
+    // by their actual x positions within the first line containing a pair.
+    final firstVisualParenLine = <ProbedWord>[];
+    for (final page in report.pages) {
+      for (final line in page.lines) {
+        final brackets = line.words
+            .where((word) => word.text == '(' || word.text == ')')
+            .toList()
+          ..sort((a, b) => a.x.compareTo(b.x));
+        if (brackets.length >= 2) {
+          firstVisualParenLine.addAll(brackets);
+          break;
+        }
       }
-      if (parenSamples.length >= 6) {
-        break;
-      }
+      if (firstVisualParenLine.isNotEmpty) break;
     }
-    expect(parenSamples.length, greaterThan(1),
+    expect(firstVisualParenLine.length, greaterThan(1),
         reason: 'أقواس مرسومة أقلّ من المتوقع لتسميات ( أ ) و(١) و(ب): '
-            '${parenSamples.length}');
-    expect(parenSamples.first, ')',
-        reason: 'أول قوس مرسوم في الورقة العربية يجب أن يكون المغلق (الأيسر '
-            'بصرياً): $parenSamples — إن انقلب كله فالتسلسل مردود مرتين.');
+            '${firstVisualParenLine.map((word) => word.text).toList()}');
+    expect(firstVisualParenLine.first.text, ')',
+        reason: 'أقصى قوس يساراً في سطر RTL يجب أن يكون المغلق: '
+            '${firstVisualParenLine.map((word) => '${word.text}@${word.x.toStringAsFixed(1)}').toList()}');
 
     // الأرقام المشرقية واللاتينية في الورقة العربية نفسها.
     final indic = report.pages.fold<int>(
