@@ -228,15 +228,28 @@ void main() {
         document: _document(withMath: false),
       );
 
-      final mathSpan = _anchorsSpan(PdfContentProbe.fromBytes(mathBytes));
-      final controlSpan = _anchorsSpan(PdfContentProbe.fromBytes(controlBytes));
+      final mathProbe = PdfContentProbe.fromBytes(mathBytes);
+      final controlProbe = PdfContentProbe.fromBytes(controlBytes);
+      final mathSpan = _anchorsSpan(mathProbe);
+      final controlSpan = _anchorsSpan(controlProbe);
+      final mathAnchorLines = mathProbe.lines
+          .where((line) => line.words.any((word) => word.text.trim() == 'F5A') &&
+              line.words.any((word) => word.text.trim() == 'F5B'))
+          .map((line) => line.describe())
+          .join(' | ');
 
       // الضابط: «F5A F5B» بمسافة كلمة واحدة. المرسوم: بينهما صورة الكسر
       // المعادلة المرسومة — الفارق أعرض من نصف حرف وأصغر من سطر — إن حُذفت المعادلة
       // لتساوى الحقلان تماماً.
       expect(mathSpan, greaterThan(controlSpan + 5.0),
           reason: 'الكسر لم يأخذ مكانه في السطر — رُسم؟ حُذف؟');
-      expect(mathSpan, greaterThan(9.0));
+      expect(
+        mathSpan,
+        greaterThan(9.0),
+        reason: 'mathSpan=${mathSpan.toStringAsFixed(3)}pt; '
+            'anchors=$mathAnchorLines; '
+            'images=${mathProbe.images.map((image) => image.toString()).join(' | ')}',
+      );
     });
 
     test('الحقول الفارغة لا تترك أي أثر مرسوم ولا مسافة محجوزة', () async {

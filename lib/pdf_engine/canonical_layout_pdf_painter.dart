@@ -154,6 +154,11 @@ class CanonicalLayoutPdfPainter {
     final top = line.baseline - run.baselineOffset - originY;
     final textStyle = _pdfTextStyle(run, fonts);
     final height = run.isMath ? run.height : line.rect.height;
+    // Canonical run boxes are selection bounds. Anchor RTL text to its logical
+    // start (the right edge), just as LTR text is anchored to the left edge.
+    final runAlignment = run.direction == DocumentDirection.ltr
+        ? pw.Alignment.topLeft
+        : pw.Alignment.topRight;
     final pw.Widget content;
     if (run.isMath) {
       final raster = mathRasters.lookup(run.text, run.style.fontSizePt);
@@ -195,7 +200,7 @@ class CanonicalLayoutPdfPainter {
         width: run.width,
         height: height,
         child: pw.Align(
-          alignment: pw.Alignment.topLeft,
+          alignment: runAlignment,
           child: content,
         ),
       ),

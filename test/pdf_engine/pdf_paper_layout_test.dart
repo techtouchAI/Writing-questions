@@ -102,7 +102,8 @@ void main() {
 
       final right = word(probe, await firstShaped('ادارة'));
       final center = word(probe, await firstShaped('اسئلة'));
-      final left = word(probe, await firstShaped('المادة:'));
+      // The punctuation colon is a separate semantic run in canonical layout.
+      final left = word(probe, await firstShaped('المادة'));
 
       expect(right.x, greaterThan(center.x));
       expect(center.x, greaterThan(left.x));

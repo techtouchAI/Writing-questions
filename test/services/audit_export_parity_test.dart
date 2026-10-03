@@ -241,7 +241,8 @@ void main() {
         greaterThanOrEqualTo(contentWidth - 2.0),
         reason: 'AUD-PDF-02: سطر ضبط ملتفّ لم يمتد حتى حافة صندوق المحتوى '
             '(${(maxRight - minLeft).toStringAsFixed(2)} من $contentWidth) — '
-            'الضبط غير مطبَّق على الأسطر الملتفّة في PDF.',
+            'الضبط غير مطبَّق على الأسطر الملتفّة في PDF. '
+            'السطر: ${line.describe()}',
       );
     }
 
