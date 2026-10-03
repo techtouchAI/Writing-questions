@@ -152,10 +152,10 @@ const List<P0Feature> kP0MatrixFeatures = <P0Feature>[
   ),
   P0Feature(
     key: 'math',
-    title: 'الرياضيات: $...$ في جملة عربية، و\\text{} عربي، وترتيب المعادلات',
+    title: 'الرياضيات: \$...\$ في جملة عربية، و\\text{} عربي، وترتيب المعادلات',
     fixtureEvidence:
-        'MATH1 ($x^2+2x+1=0$)، MATH2 ($\\frac{a}{b}$)، TEXTAR1 '
-        '($\\text{المربع } S$ / $\\text{العدد } n$)',
+        'MATH1 (\$x^2+2x+1=0\$)، MATH2 (\$\\frac{a}{b}\$)، TEXTAR1 '
+        '(\$\\text{المربع } S\$ / \$\\text{العدد } n\$)',
   ),
   P0Feature(
     key: 'quran',
@@ -378,10 +378,10 @@ abstract final class P0GateFixture {
           id: 'p0q2',
           questionNumber: 2,
           category: 'الجبر CAT2',
-          statement: 'احسب جذور المعادلة $x^2+2x+1=0$ MATH1 ثم قارن '
+          statement: 'احسب جذور المعادلة \$x^2+2x+1=0\$ MATH1 ثم قارن '
               'بالمجموعة Set A = {1, 2}',
-          body: 'اكتب الإجابة داخل $\\text{المربع } S$ ثم بيّن '
-              '$\\text{العدد } n$ TEXTAR1',
+          body: 'اكتب الإجابة داخل \$\\text{المربع } S\$ ثم بيّن '
+              '\$\\text{العدد } n\$ TEXTAR1',
           marksOverride: 8,
           dividerAfter: const PaperDivider(),
           items: <BranchItem>[

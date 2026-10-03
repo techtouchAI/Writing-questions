@@ -352,7 +352,7 @@ _PreviewText? _previewTextAt(WidgetTester tester, String marker) {
   final finder = find.byType(RichText, skipOffstage: false);
   final widgets = tester.widgetList<RichText>(finder).toList();
   final paragraphs =
-      tester.renderList<RenderParagraph>(finder).toList();
+      tester.renderObjectList<RenderParagraph>(finder).toList();
   for (var index = 0; index < widgets.length; index++) {
     final span = widgets[index].text;
     final plain = span.toPlainText();
@@ -361,7 +361,7 @@ _PreviewText? _previewTextAt(WidgetTester tester, String marker) {
     }
     final paragraph = paragraphs[index];
     final boxes = paragraph.getBoxesForSelection(
-      ui.TextSelection(baseOffset: 0, extentOffset: plain.length),
+      TextSelection(baseOffset: 0, extentOffset: plain.length),
       boxHeightStyle: ui.BoxHeightStyle.max,
     );
     final tops = boxes.map((box) => box.top.roundToDouble()).toSet();
@@ -993,8 +993,8 @@ void main() {
     _matrix.record('latin-numerals', P0Path.vectorPdf, P0Status.pass,
         evidence: 'أرقام لاتينية=$latin (تسمية يدوية 1- و2026/2027 و45.5%)');
     _matrix.record('punctuation', P0Path.vectorPdf, P0Status.pass,
-        evidence: 'أقواس مرسومة=${parens.length}، فواصل الترقيم '
-            'يسار الأرقام=${drawnLabels.length}، لا انقلاب=${reversedLabels.length}');
+        evidence: 'أقواس مرسومة=${parenSamples.length}، فواصل الترقيم '
+            'يسار الأرقام=${drawnLabels.length}، لا انقلاب=${invertedLabels.length}');
     _matrix.record('marks', P0Path.vectorPdf, P0Status.pass,
         evidence: '«(٢٠ درجة)» مرسومة مع أرقام مشرقية=${indic}');
   });
