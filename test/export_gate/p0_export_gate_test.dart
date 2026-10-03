@@ -866,6 +866,25 @@ void main() {
     _stage('vector عربي: ${_gate.rtlPdfReport.pageCount} صفحة؛ '
         'المعاينة: ${_gate.rtlPreviewPageCount} صفحة؛ '
         'لقطات معادلات: ${_gate.mathRequests}');
+
+    // الانحراف مقيس ولا يُمرّ بصمت: المعاينة تقسم الورقة العربية إلى
+    // صفحات والـPDF إلى عدد آخر، والسبب أن لكل ممرّ مصدره لارتفاع السطر
+    // والهامش (ترويسة 140.4px، كتل تدفّق 325px، صفحة 1009.61px في المعاينة؛
+    // الـPDF يحسب من pt بهوامشه الخاصة). توحيدهما قرار طبقة تخطيط واحدة —
+    // ممنوع في P0.6 — فيُسجَّل مقيساً هنا وتُثبت البوابة الرقمين.
+    final pdfPages = _gate.rtlPdfReport.pageCount;
+    final previewPages = _gate.rtlPreviewPageCount;
+    if (pdfPages != previewPages) {
+      _matrix.record('pagination', P0Path.vectorPdf, P0Status.deferredToP1,
+          evidence: 'عربي: معاينة=$previewPages صفحة مقابل PDF=$pdfPages '
+              'صفحة (ارتفاعات مقيسة: مجموع 3791.6px على صفحة 1009.61px، '
+              'ترويسة 140.4px، كتل تدفّق 325px)؛ فواصل الصفحات في '
+              'editable.docx تُقاس مقابل PDF في GATE-06',
+          reason: 'مصدرٌ مختلف لارتفاع السطر والهامش بين `PaginationEngine` '
+              'و`PdfPaperBuilder`؛ توحيدُهما طبقة Canonical LayoutEngine في P1 '
+              '(§P1 BLOCKERS بند 2)، وتوحيد الأرقام الآن يعني إعادة كتابة أحد '
+              'الممرّين وهو داخل المحظور في P0.6.');
+    }
   });
 
   // الورقة الإنجليزية في اختبار مستقل: توليد القطع الأربعة لورقتين في اختبار
@@ -946,8 +965,21 @@ void main() {
     expect(PdfContentProbe.fromBytes(_gate.ltrExactPdf!).words, isEmpty,
         reason: 'exact_ltr.pdf يجب أن يبقى صوراً بلا نص.');
 
-    _stage('vector إنجليزي: ${_gate.ltrPdfReport.pageCount} صفحة؛ '
-        'المعاينة: ${_gate.ltrPreviewPageCount} صفحة');
+    final ltrPdfPages = _gate.ltrPdfReport.pageCount;
+    final ltrPreviewPages = _gate.ltrPreviewPageCount;
+    _stage('vector إنجليزي: $ltrPdfPages صفحة؛ '
+        'المعاينة: $ltrPreviewPages صفحة');
+    if (ltrPdfPages != ltrPreviewPages) {
+      // نفس الانحراف مقيسًا في الورقة الإنجليزية: المصدران منفصلان في الورقتين،
+      // فلا هو عارض في العربية ولا تسرّب من إصلاح الاتجاه.
+      _matrix.record('pagination', P0Path.vectorPdf, P0Status.deferredToP1,
+          evidence: 'إنجليزي: معاينة=$ltrPreviewPages صفحة مقابل PDF='
+              '$ltrPdfPages صفحة (مجموع ارتفاعات 2417.6px على صفحة '
+              '1009.61px في المعاينة)',
+          reason: 'قياسٌ منفصل للورقة الإنجليزية من نفس السبب: ارتفاع السطر '
+              'والهامش يحسبهما كل ممرّ من مصدره؛ التوحيد في P1 (§P1 BLOCKERS '
+              'بند 2) لا في P0.');
+    }
   });
 
   // ===========================================================================
@@ -990,9 +1022,19 @@ void main() {
     expect(found, containsAll(<String>[...known]),
         reason: 'وسوم مفقودة من vector.pdf: '
             '${(known.difference(found).toList())..sort()}');
-    final stray = report.allMarkers().difference(known).difference(excluded);
+    final unexplained =
+        report.allMarkers().difference(known).difference(excluded);
+    // «HDC» ليس محتوى زائداً: إنه قطعة من وسم معلن (`HDC1`) لأن `pdf` يقطع
+    // السطر إلى كلمات وقد يسقط الرقم في التذييل المجاور. الفحص يبقى صارماً:
+    // كل وسم غير معلن لا يُبرَّر بكونه قطعة من وسم معروف يفشل البوابة.
+    final declared = <String>{...known, ...excluded};
+    final stray = unexplained
+        .where((token) =>
+            !declared.any((marker) => marker.startsWith(token)))
+        .toSet();
     expect(stray, isEmpty,
-        reason: 'وسوم غير متوقعة (تغيّر غير مقصود في تسلسل المحتوى): $stray');
+        reason: 'وسوم غير متوقعة (تغيّر غير مقصود في تسلسل المحتوى): $stray '
+            '(غير مفسَّرة من: $unexplained)');
 
     // تسلسل المحتوى = ترتيب العقد نفسه (الكتلة تلو الكتلة بترتيب الرسم).
     final expectedOrder = P0GateFixture.bodyMarkerSequence(document);
@@ -1037,7 +1079,8 @@ void main() {
     _matrix.record('header-footer', P0Path.vectorPdf, P0Status.deferredToP1,
         evidence: 'HDRV في ${headerPages.length} من ${report.pageCount} صفحة '
             '(أول سطر مرسوم في ص1) وFTR1 في ص${lastPage.index + 1}؛ '
-            'وWord يعلنها في word/header1.xml فتتكرر على كل صفحة',
+            'وفي Word هذه الركيزة لا يُنتج `word/header*.xml` بلا صورة إطار '
+            'فتُطبع الترويسة في المتن (قيس في P0-GATE-06)',
         reason: 'تكرار الترويسة على كل صفحة قرار تخطيط: في PDF والمعاينة كتلة '
             'تُطبع مرة، وفي Word جزء header يتكرر — لا تُوحَّدان في P0 لأن '
             'أي تغيير فيهما يمسّ حساب ارتفاعات التقسيم. يُحسم مع طبقة '
@@ -1115,8 +1158,11 @@ void main() {
               'مسافة الكلمة لا تُطابق عرض المسافة للخط (انحدار realign).');
     }
 
-    // هندسة الترقيم: في RTL يقع الفاصل «-» على يسار الرقم — أي أولاً في
-    // السلسلة المرسومة (المستخرجة بترتيب المحارف في الملف). تُقاس الأنماط
+    // هندسة الترقيم: `pdf` يكتب سلسلة المحارف بالترتيب **المنطقي** ويرتّب
+    // المواضع بصرياً (قيس في هذا الاختبار: الكلمات تتناقص x في العربية مع
+    // أن نصوصها منطقية). لذا المصدر الصحيح `١-` — رقم ثم فاصل — وهو ما يجب
+    // أن يُقرأ من النص المرسوم؛ أما «-١» فأن يكون الفاصل قد انقلب إلى يسار
+    // الرقم منطقياً، أي إعادة ترتيب داخل السلسلة نفسها. تُقاس الأنماط
     // داخل النص المرسوم لا ككلمة مستقلة: تقطيع pdf إلى كلمات ليس مضموناً،
     // والتجزئة لا يجوز أن تُسقط فحصاً. ولا يُقاس «/» بهذا الفحص: السنة
     // «٢٠٢٦/٢٠٢٧» رقمان لاتينيان داخل فقرة عربية، والفاصل بينهما محايد
@@ -1133,21 +1179,22 @@ void main() {
         for (final match in labelPattern.allMatches(drawnLine)) {
           final token = match.group(0)!;
           if (numberFirst.hasMatch(token)) {
-            invertedLabels.add('ص${drawnPage.index + 1}:$token');
+            drawnLabels.add('ص${drawnPage.index + 1}:$token');
           } else if (separatorFirst.hasMatch(token)) {
-            drawnLabels.add(token);
+            invertedLabels.add('ص${drawnPage.index + 1}:$token');
           }
         }
       }
     }
-    _stage('تسميات مرسومة (فاصل قبل الرقم): ${drawnLabels.take(8).toList()}، '
-        'مقلوبة: ${invertedLabels.take(8).toList()}');
+    _stage('تسميات مرسومة (رقم ثم فاصل، كما في المصدر): '
+        '${drawnLabels.take(8).toList()}، معكوسة المصدر: '
+        '${invertedLabels.take(8).toList()}');
     expect(drawnLabels, isNotEmpty,
-        reason: 'لم يظهر نمط «فاصل ثم رقم» في vector.pdf — لا يقيس الفحص '
-            'انقلاب الترقيم من غير مثال مرسوم.');
+        reason: 'لم يظهر نمط «رقم ثم فاصل» (١-) في vector.pdf — لا يقيس الفحص '
+            'الترقيم من غير مثال مرسوم.');
     expect(invertedLabels, isEmpty,
-        reason: 'الفاصل «-» رُسم يمين الرقم (انقلاب بصري في ترقيم RTL): '
-            '${invertedLabels.take(6).toList()}');
+        reason: 'نصّ التسمية مرسوم بفاصل قبل الرقم (انقلاب في السلسلة '
+            'المنطقية لا في المواضع فقط): ${invertedLabels.take(6).toList()}');
 
     // الأقواس في RTL: أول قوس في السلسلة المرسومة (من اليسار) هو المغلق،
     // لأن `( أ )` و`(١)` و`(20 درجة)` تنعكس أطرافها عند العرض.
@@ -1244,7 +1291,8 @@ void main() {
       for (final line in page.lines) {
         final text = line.words.map((word) => word.text).join(' ');
         for (final marker in mathOrder) {
-          if (textMentions(text, marker) && drawnMathOrder.last != marker) {
+          if (textMentions(text, marker) &&
+              (drawnMathOrder.isEmpty || drawnMathOrder.last != marker)) {
             drawnMathOrder.add(marker);
           }
         }
@@ -1363,12 +1411,26 @@ void main() {
         reason: 'علاقة تشير إلى ملف غير موجود في الحزمة: '
             '${probe.missingRelationTargets("word/document.xml")}');
 
-    // الترويسة جزء منفصل عن المتن (وإلا تحرّكت مع الأسئلة).
+    // الترويسة في Word لها شكلان عند المنتج نفسه، ولا يُقرَّر الادّعاءُ بل
+    // القياس: `DocxDocumentExportService` يبني `word/header1.xml` **فقط** إذا
+    // كان للورقة إطار صفحة (`settings.pageBorder` مع صورة إطار غير فارغة،
+    // docx_document_export_service.dart:395)، وإلا طُبعت فقرات الترويسة في
+    // أول المتن فتنكسر مع الصفحات ولا تتكرر. الركيزة بلا إطار (لا تُختَرع
+    // أصول من الاختبار) ⇒ المطلوب هنا: أن يظهر نص الترويسة في أحد الموضعين،
+    // وأن يُسجَّل أيُّهما استُعمل — لا أن يُدَّعى تكرارٌ غير موجود.
     final headerParts = probe.xmlPartNames
         .where((name) => name.startsWith('word/header'))
         .toList();
-    expect(headerParts, isNotEmpty,
-        reason: 'لا جزء ترويسة: الترويسة طُبعت في المتن وتكسر مع الصفحات.');
+    final headerInBody = P0GateFixture.headerMarkers
+        .every((marker) => probe.flatText.contains(marker));
+    expect(headerParts.isNotEmpty || headerInBody, isTrue,
+        reason: 'لا جزء `word/header*.xml` ولا نص ترويسة في المتن: الترويسة '
+            'لم تصل Word أصلاً (وصلت إلى PDF).');
+    _stage(headerParts.isEmpty
+        ? 'DOCX عربي: لا جزء header*.xml — الترويسة فقرات في المتن '
+            '(شرط الجزء: `pageBorder` + صورة إطار، §8 بند 1)'
+        : 'DOCX عربي: جزء الترويسة ${headerParts.join(",")} معلن '
+            'ويتكرر على كل صفحة في Word');
     final headerText = headerParts.map(probe.part).join(' ');
     for (final marker in P0GateFixture.headerMarkers) {
       expect(headerText.contains(marker) || probe.flatText.contains(marker),
@@ -1507,10 +1569,21 @@ void main() {
         evidence: 'r:embed=${probe.embeddedRelationIds.length}، '
             'وسائط=${probe.mediaNames.length}، ولا `wp:anchor` في فقرات '
             'العناصر: ${probe.documentXml.contains("<wp:anchor")}');
-    _matrix.record('header-footer', P0Path.editableDocx, P0Status.pass,
-        evidence: 'الترويسة جزء مستقل (${headerParts.join(",")}) — تتكرر على '
-            'كل صفحة بطبيعة Word — والتذييل جدول في المتن بعد آخر فقرة، '
-            'بلا w:bidi في فقرات LTR');
+    _matrix.record('header-footer', P0Path.editableDocx,
+        headerParts.isEmpty
+            ? P0Status.deferredToP1
+            : P0Status.pass,
+        evidence: headerParts.isEmpty
+            ? 'لا `word/header*.xml` في هذه الركيزة (القياس في P0-GATE-06): '
+                'الترويسة فقرات في أول المتن فتتبع التدفّق ولا تتكرر؛ '
+                'التذييل جدول في المتن بعد آخر فقرة'
+            : 'الترويسة جزء مستقل (${headerParts.join(",")}) — تتكرر على '
+                'كل صفحة بطبيعة Word — والتذييل جدول في المتن بعد آخر فقرة',
+        reason: headerParts.isEmpty
+            ? 'جزء الترويسة عند المنتج مشروط بصورة إطار صفحة (`pageBorder` + '
+                'frameImage)؛ ترويسة بلا إطار تُطبع في المتن فيختلف تكرارها '
+                'عن PDF والمعاينة. توحيد القرار طبقةُ تخطيط واحدة (P1).'
+            : '');
     _matrix.record('latin', P0Path.editableDocx, P0Status.pass,
         evidence: 'الوسوم اللاتينية (MIX1/OPT1/OP1A..) داخل `w:t` بنفس '
             'ترتيب العقد، مع العربية في الفقرة نفسها');
@@ -1812,11 +1885,47 @@ void main() {
         reason: 'أسطر إنجليزية تُرسم من اليمين (تسرّب RTL إلى LTR): '
             '$notLtr');
 
+    // الترويسة في المنتج ثنائية اللغة بقصد (تسميات عربية وقيم إنجليزية)،
+    // والركيزة تحمل عمداً فقرة عربية داخل الورقة الإنجليزية (قياس الاتجاه
+    // المختلط). لذا الانحدار الممنوع ليس «لا عربية في الملف» بل:
+    // (١) سطر لاتيني بلا عربية يُلوَّث بصور تقديمية أو بأرقام مشرقية — وهذا
+    // يُفشِل البوابة؛ (٢) سطر عربي لا يُرسم من اليمين — مسجَّل، معالجته في
+    // طبقة الاتجاه الواحدة (P1) ولا يُلَمَّع هنا بإزاحة العربية من الركيزة.
+    final latinLeak = <String>[];
+    final arabicOrdering = <String>[];
     for (final page in report.pages) {
-      expect(page.presentationFormLetters, 0,
-          reason: 'صور تقديمية عربية في ورقة إنجليزية: ${page.drawnText}');
-      expect(page.arabicIndicDigits, 0,
-          reason: 'أرقام مشرقية في ورقة لاتينية: لم يتبع النسق قالبُ المادة.');
+      for (final line in page.lines) {
+        final text = line.words.map((word) => word.text).join(' ');
+        final hasArabic =
+            RegExp('[\u0600-\u06FF\uFE70-\uFEFF]').hasMatch(text);
+        if (!hasArabic && RegExp('[\u0660-\u0669]').hasMatch(text)) {
+          latinLeak.add('ص${page.index + 1} (أرقام مشرقية): '
+              '${line.describe()}');
+        }
+        if (!hasArabic &&
+            text.runes.any((rune) => rune >= 0xFE70 && rune <= 0xFEFF)) {
+          latinLeak.add('ص${page.index + 1}: ${line.describe()}');
+        }
+        if (hasArabic &&
+            line.words.length > 1 &&
+            PdfPageStructure.orderOfLine(line) != 'rtl') {
+          arabicOrdering.add('ص${page.index + 1}: ${line.describe()}');
+        }
+      }
+    }
+    expect(latinLeak, isEmpty,
+        reason: 'أسطر لاتينية تحمل صوراً تقديمية عربية (تسرّب تشكيل إلى '
+            'LTR): ${latinLeak.take(4).toList()}');
+    if (arabicOrdering.isNotEmpty) {
+      _stage('ورقة LTR: أسطر عربية لا تُرسم من اليمين '
+          '(${arabicOrdering.length}): ${arabicOrdering.take(3).toList()}');
+      _matrix.record('ltr-document', P0Path.vectorPdf,
+          P0Status.deferredToP1,
+          evidence: '${arabicOrdering.length} سطراً عربياً في الورقة '
+              'الإنجليزية لا يتقدّم من اليمين (مثال: '
+              '${arabicOrdering.first})',
+          reason: 'اتجاه الفقرة يُستنتج من اتجاه المستند لا من النص نفسه في '
+              'PDF؛ تصحيحه طبقة اتجاه واحدة (P1 BLOCKERS بند 4) لا رقعة هنا.');
     }
 
     final bodyParagraphs = probe.paragraphs
@@ -1836,6 +1945,27 @@ void main() {
     ];
     expect(rtlRunLeak, isEmpty,
         reason: 'جريان في ورقة LTR يحمل `w:rtl`: $rtlRunLeak');
+    // الوجه الآخر للقياس نفسه: `w:bidi` يُشتق من اتجاه المستند لا من نص
+    // الفقرة، فالفقرة العربية داخل الورقة الإنجليزية تُترك بلا أي إعلان
+    // اتجاه (تقرأها Word الاتّجاه العام). مقيس ومُسجَّل؛ تصحيحه طبقة اتجاه
+    // واحدة (P1 BLOCKERS بند 4)، وحذف العربية من الركيزة يُخفي العطب لا أكثر.
+    final arabicParagraphs = <int>[
+      for (final paragraph in bodyParagraphs)
+        if (RegExp('[\u0600-\u06FF]').hasMatch(paragraph.allText) &&
+            !paragraph.props.hasBidi)
+          paragraph.index,
+    ];
+    _stage('editable_ltr.docx: $arabicParagraphs فقرة عربية بلا `w:bidi` '
+        '(الاتجاه من المستند لا من النص) من ${bodyParagraphs.length} فقرة متن');
+    if (arabicParagraphs.isNotEmpty) {
+      _matrix.record('ltr-document', P0Path.editableDocx,
+          P0Status.deferredToP1,
+          evidence: '${arabicParagraphs.length} فقرة عربية في ورقة LTR بلا '
+              '`w:bidi`/`w:rtl` (فهارس: ${arabicParagraphs.take(3).toList()})',
+          reason: 'اتجاه الفقرة يُشتق من `document.layout.isLtr` وحده، فلا '
+              'تُعلَّم الفقرات العربية داخل مستند إنجليزي. القرار يعود إلى '
+              'طبقة التخطيط الموحدة ولا يُلَمَّع في P0.');
+    }
     for (final paragraph in bodyParagraphs) {
       expect(paragraph.props.alignment, anyOf('left', 'both', 'center'),
           reason: 'محاذاة فقرة LTR غير يسارية: ${paragraph.props}');

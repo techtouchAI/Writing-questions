@@ -168,15 +168,17 @@ class PdfContentProbe {
 
     final fontsResource =
         RegExp(r'/Font\s*<<(.*?)>>', dotAll: true).firstMatch(page)?.group(1);
-    // صفحة صالحة بلا أي نص لا تحتاج موارد خطوط؛ تمثل صفراً من الكلمات.
-    if (fontsResource == null) {
-      return PdfContentProbe._(<ProbedLine>[], <ProbedImage>[]);
-    }
-
+    // صفحة بلا موارد خطوط (لقطة صورة فقط، كصفحات exact.pdf) تظل صفحةً فيها
+    // مشغّلات رسم: الخروج المبكر هنا كان يجعل الصور صِفراً في ملف بلا نص،
+    // فيُنسب للنص أنه غائب، وما غاب إلا القراءة بسبب غياب مورد الخطوط. تُقرأ الصفحة على
+    // أي حال، وتُترك قائمة الخطوط فارغة.
     final fonts = <String, _FontData>{};
-    for (final match
-        in RegExp(r'/(\w+)\s+(\d+)\s+0\s+R').allMatches(fontsResource)) {
-      fonts['/${match.group(1)}'] = objects.fontData(int.parse(match.group(2)!));
+    if (fontsResource != null) {
+      for (final match
+          in RegExp(r'/(\w+)\s+(\d+)\s+0\s+R').allMatches(fontsResource)) {
+        fonts['/${match.group(1)}'] =
+            objects.fontData(int.parse(match.group(2)!));
+      }
     }
 
     final contents = <String>[];
