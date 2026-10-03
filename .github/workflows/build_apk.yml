@@ -139,6 +139,13 @@ jobs:
             done
             tally="${tally//%/%25}"; tally="${tally//:/%3A}"
             echo "::notice title=P0 gate — matrix tally::$tally"
+            # الحصيلة الرقمية وحدها لا تُرين أي خلية مُؤجَّلة: الجدول كاملاً
+            # في تعليق ليُقرأ من الـ API كما من صفحة التشغيل. وترتيب الترميز
+            # مهم: `%` أولاً ثم `:` وإلا صار `%3A` نفسه مُرمَّزاً مرتين.
+            table="$(cat build/export_gate/matrix.txt)"
+            table="${table//%/%25}"; table="${table//:/%3A}"
+            table="${table//$'\n'/%0A}"
+            echo "::notice title=P0 gate — matrix (60 cells)::$table"
           fi
       - name: Publish analyzer and test diagnostics
         if: failure() && (steps.analyze.outcome == 'failure' || steps.test.outcome == 'failure')
