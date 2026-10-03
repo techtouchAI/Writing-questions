@@ -1,12 +1,12 @@
 // ---------------------------------------------------------------------------
 // نسخة معدّلة محلياً من حزمة pdf 3.11.3 (Apache-2.0، DavBfr/dart_pdf).
 //
-// يحمل الملف إصلاح P1 لمسافة الكلمات العربية في `_Line.realign()` (استخدام
-// `advanceWidth` بدل عرض الحبر) وإضافة P2 لخيار تجاوز إعادة ترتيب bidi على
-// مستوى `RichText` مع إبقاء تشكيل الحروف العربية متاحاً. يستخدمه رسام PDF
-// القانوني بعد أن يحدد LayoutDocument مواضع المقاطع المرئية؛ بقية مستهلكي
-// الحزمة تحتفظ بالسلوك الافتراضي. تفاصيل إصلاح P1 في
-// docs/arabic_word_spacing_fix.md؛ وتبقى أداة الحقن والتحقق مخصصة له.
+// التعديل الوحيد المطبَّق هنا هو إصلاح مسافات الكلمات في النص من اليمين إلى
+// اليسار: في _Line.realign() كان الموضع يُعكس بعرض الحبر (span.width) بدل عرض
+// التقدّم (span.advanceWidth)، فتتآكل مسافة الكلمات العربية (مثال: تدورالأرض).
+// كل تفاصيل التحقيق والقياسات في docs/arabic_word_spacing_fix.md، والتعديل
+// نفسه محقون بهذه النسخة عبر tool/apply_pdf_rtl_word_spacing_patch.dart
+// (يمكن تشغيله على أي نسخة أخرى من الحزمة، مثل مخزن الحزم بعد pub get).
 // ---------------------------------------------------------------------------
 /*
  * Copyright (C) 2017, David PHAM-VAN <dev.nfet.net@gmail.com>
@@ -699,8 +699,6 @@ class RichText extends Widget with SpanningWidget {
     this.maxLines,
     this.overflow = TextOverflow.visible,
     this.hyphenation,
-    this.bidiOverride,
-    this.arabicOverride,
   });
 
   static bool debug = false;
@@ -734,15 +732,6 @@ class RichText extends Widget with SpanningWidget {
   List<InlineSpan>? _preprocessed;
 
   final Hyphenation? hyphenation;
-
-  /// Overrides package-level bidi processing for this text widget.
-  ///
-  /// Canonical layout painters can disable bidi ordering after resolving visual
-  /// run positions, while retaining Arabic glyph shaping via [arabicOverride].
-  final bool? bidiOverride;
-
-  /// Overrides package-level Arabic shaping for this text widget.
-  final bool? arabicOverride;
 
   void _appendDecoration(bool append, _TextDecoration td) {
     if (append && _decorations.isNotEmpty) {
@@ -967,11 +956,9 @@ class RichText extends Widget with SpanningWidget {
           final space =
               font.stringMetrics(' ') * (style.fontSize! * textScaleFactor);
 
-          final applyArabic = arabicOverride ?? useArabic;
-          final applyBidi = bidiOverride ?? useBidi;
-          final spanLines = (applyArabic && _textDirection == TextDirection.rtl
+          final spanLines = (useArabic && _textDirection == TextDirection.rtl
                   ? arabic.convert(span.text!)
-                  : applyBidi && _textDirection == TextDirection.rtl
+                  : useBidi && _textDirection == TextDirection.rtl
                       ? bidi.logicalToVisual(span.text!)
                       : span.text)!
               .split('\n');
@@ -1400,8 +1387,6 @@ class Text extends RichText {
     double textScaleFactor = 1.0,
     int? maxLines,
     TextOverflow? overflow,
-    bool? bidiOverride,
-    bool? arabicOverride,
   }) : super(
           text: TextSpan(text: text, style: style),
           textAlign: textAlign,
@@ -1411,7 +1396,5 @@ class Text extends RichText {
           textScaleFactor: textScaleFactor,
           maxLines: maxLines,
           overflow: overflow,
-          bidiOverride: bidiOverride,
-          arabicOverride: arabicOverride,
         );
 }

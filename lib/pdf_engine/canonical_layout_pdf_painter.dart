@@ -128,7 +128,6 @@ class CanonicalLayoutPdfPainter {
     final left = run.x - originX;
     final top = line.baseline - run.baselineOffset - originY;
     final textStyle = _pdfTextStyle(run, fonts);
-    final isRtl = run.direction != DocumentDirection.ltr;
     final height = run.isMath ? run.height : line.rect.height;
     final pw.Widget content;
     if (run.isMath) {
@@ -147,8 +146,6 @@ class CanonicalLayoutPdfPainter {
           textDirection: _pdfDirection(run.direction),
           textAlign: pw.TextAlign.start,
           softWrap: false,
-          bidiOverride: isRtl ? false : null,
-          arabicOverride: isRtl ? true : null,
           maxLines: 1,
           tightBounds: true,
           overflow: pw.TextOverflow.clip,
@@ -161,8 +158,6 @@ class CanonicalLayoutPdfPainter {
         textDirection: _pdfDirection(run.direction),
         textAlign: pw.TextAlign.start,
         softWrap: false,
-        bidiOverride: isRtl ? false : null,
-        arabicOverride: isRtl ? true : null,
         maxLines: 1,
         tightBounds: true,
         overflow: pw.TextOverflow.clip,
