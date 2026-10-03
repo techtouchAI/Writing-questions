@@ -224,6 +224,29 @@ jobs:
             echo "::error title=P0 gate stages ($count)::$lines"
           }
           publish_gate_stages "$RUNNER_TEMP/flutter-test.log"
+          # سبب فشل واحد لكل اختبار بوابة: نافذة «مقطع الفشل» المشتركة تُقتطع
+          # عند حد GitHub، فتنحصر القراءة في أول اختبار فقط. الحل: تعليق مستقل
+          # لكل P0-GATE-NN يحمل أول أسطر بعده حتى السبب (reason).
+          publish_gate_reasons() {
+            local file="$1" id block
+            [ -f "$file" ] || return 0
+            for id in 01 02 03 04 05 06 07 08 09 10 11 99; do
+              block="$(awk -v pat="P0-GATE-$id:" '
+                index($0, pat) > 0 && index($0, "❌") > 0 && index($0, "(failed)") > 0 {
+                  show = 9; next
+                }
+                index($0, "::endgroup::") > 0 { if (show > 0) { show = 0 }; next }
+                index($0, "❌") > 0 || index($0, "✅") > 0 { next }
+                show > 0 { print "  " substr($0, 1, 200); show-- }
+              ' "$file" | head -n 9)"
+              [ -n "$block" ] || continue
+              block="${block//%/%25}"
+              block="${block//$'\r'/%0D}"
+              block="${block//$'\n'/%0A}"
+              echo "::error title=P0-GATE-$id reason::$block"
+            done
+          }
+          publish_gate_reasons "$RUNNER_TEMP/flutter-test.log"
           publish_failure_names "$RUNNER_TEMP/flutter-test.log"
           publish_tail "$RUNNER_TEMP/flutter-analyze.log" 'Flutter analyzer log excerpt'
           publish_tail "$RUNNER_TEMP/flutter-test.log" 'Flutter test log excerpt'
