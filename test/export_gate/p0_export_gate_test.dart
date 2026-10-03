@@ -113,7 +113,8 @@ class _Gate {
 
   void requireArtifacts() {
     if (!artifactsReady) {
-      throw StateError('لم تُنتَج القطع: فشل P0-GATE-01 قبل أي فحص بنيوي.');
+      throw StateError('لم تُنتَج القطع: فشل P0-GATE-01 أو P0-GATE-01B قبل '
+          'أي فحص بنيوي.');
     }
   }
 
@@ -284,26 +285,45 @@ void _writeText(String name, String content) {
 }
 
 Set<String> _markersIn(String haystack, Set<String> known) {
-  final found = <String>{};
-  for (final match in kMarkerTokenPattern.allMatches(haystack)) {
-    final marker = match.group(1)!;
-    if (known.contains(marker)) {
-      found.add(marker);
-    }
-  }
-  return found;
+  // نص مرسوم: المطابقة باتجاهيه (انظر `mirrorText` في الطبقة البنيوية).
+  return <String>{
+    for (final marker in known)
+      if (textMentions(haystack, marker)) marker,
+  };
 }
 
 /// تسلسل الوسوم في [haystack] (تكرار المتتابع مطويّ).
-List<String> _markerOrder(String haystack, Set<String> known) {
+/// ترتيب الوسوم المنطقية في نصّ **منطقي** (OOXML): وسم واحد لكل فقرة،
+/// والتكرار المتتابع مطويّ. لا يُقلب الاتجاه هنا: النص المنطقي قلبُه يُنتج
+/// ترتيباً وهمياً.
+List<String> _markerOrder(String haystack, Set<String> known) =>
+    _markerOrderInParts(<String>[haystack], known, allowReversed: false);
+
+/// ترتيب الوسوم في نصوص مفكوكة (فقرة ففقرة). الردّ يُطبَّق على الفقرة وحدها:
+/// المعاينة والـPDF يرسمان السطر العربي بترتيب بصري معكوس، فقلبُ مجموع النص
+/// بدل ذلك يقلب ترتيب الفقرات نفسها ويُنتج تسلسلاً كاذباً.
+List<String> _markerOrderInParts(
+  List<String> parts,
+  Set<String> known, {
+  bool allowReversed = true,
+}) {
   final order = <String>[];
-  for (final match in kMarkerTokenPattern.allMatches(haystack)) {
-    final marker = match.group(1)!;
-    if (!known.contains(marker)) {
-      continue;
-    }
-    if (order.isEmpty || order.last != marker) {
-      order.add(marker);
+  for (final part in parts) {
+    final seen = <String>{};
+    final variants = allowReversed
+        ? <String>[part, mirrorText(part)]
+        : <String>[part];
+    for (final variant in variants) {
+      for (final match in kMarkerTokenPattern.allMatches(variant)) {
+        final marker = match.group(1)!;
+        if (!known.contains(marker) || seen.contains(marker)) {
+          continue;
+        }
+        seen.add(marker);
+        if (order.isEmpty || order.last != marker) {
+          order.add(marker);
+        }
+      }
     }
   }
   return order;
@@ -386,7 +406,7 @@ class _PreviewCapture {
   for (final marker in markers) {
     var hit = -1;
     for (var index = 0; index < plain.length; index++) {
-      if (plain[index].contains(marker)) {
+      if (textMentions(plain[index], marker)) {
         hit = index;
         break;
       }
@@ -555,11 +575,11 @@ Future<_PreviewCapture> _capturePreviewOf(
     _stage('${document.name}: وسوم لم تُقَس في المعاينة '
         '(${measurement.missing.length}): ${measurement.missing.join(', ')}');
   }
-  final treeText = tester
+  final treeParts = tester
       .widgetList<RichText>(find.byType(RichText, skipOffstage: false))
       .map((rich) => rich.text.toPlainText())
-      .join('\n');
-  final markerOrder = _markerOrder(treeText, known)
+      .toList();
+  final markerOrder = _markerOrderInParts(treeParts, known)
       .where((marker) => !excluded.contains(marker))
       .toList();
 
@@ -729,33 +749,25 @@ void main() {
   });
 
   testWidgets(
-      'P0-GATE-01: المعاينة + vector.pdf + editable.docx + exact.* تُنتَج كلها',
+      'P0-GATE-01: قطع الورقة العربية — preview + vector.pdf + editable.docx + exact.*',
       (tester) async {
     await _loadAppFonts();
     final mathHost = FakeMathHost()..attach();
     addTearDown(mathHost.detach);
 
     final rtlDocument = P0GateFixture.rtl();
-    final ltrDocument = P0GateFixture.ltr();
 
     // مرجع المعاينة قيس في P0-GATE-00 ولا تُمشى الشجرة مرتين في اختبار واحد:
     // إعادة المشي هي ما استهلك «TimeoutException after 0:10:00» كله.
     _gate.requirePreview();
     final rtl = _gate.rtlCapture!;
-    final ltr = _gate.ltrCapture!;
 
     // PDF المتجه و Word القابل للتحرير: محركاهما الخاصّان (لا Exact).
     _gate.rtlVectorPdf =
         await PaginatedPdfExamEngine().generate(document: rtlDocument);
-    _gate.ltrVectorPdf =
-        await PaginatedPdfExamEngine().generate(document: ltrDocument);
     _gate.rtlEditableDocx =
         await DocxDocumentExportService.buildDocumentDocxBytes(
       document: rtlDocument,
-    );
-    _gate.ltrEditableDocx =
-        await DocxDocumentExportService.buildDocumentDocxBytes(
-      document: ltrDocument,
     );
     _gate.mathRequests = mathHost.requests.length;
 
@@ -763,28 +775,16 @@ void main() {
     _gate.rtlExactPdf =
         await ExactExportService.buildPdfFromSnapshots(rtl.snapshots);
     _gate.rtlExactDocx = ExactExportService.buildDocxFromSnapshots(rtl.snapshots);
-    _gate.ltrExactPdf =
-        await ExactExportService.buildPdfFromSnapshots(ltr.snapshots);
-    _gate.ltrExactDocx =
-        ExactExportService.buildDocxFromSnapshots(ltr.snapshots);
 
     // القطع على القرص.
     for (var index = 0; index < _gate.rtlPreviewPages.length; index++) {
       await _writeArtifact(
           'preview_rtl_page_${index + 1}.png', _gate.rtlPreviewPages[index]);
     }
-    for (var index = 0; index < _gate.ltrPreviewPages.length; index++) {
-      await _writeArtifact(
-          'preview_ltr_page_${index + 1}.png', _gate.ltrPreviewPages[index]);
-    }
     await _writeArtifact('vector.pdf', _gate.rtlVectorPdf!);
     await _writeArtifact('editable.docx', _gate.rtlEditableDocx!);
-    await _writeArtifact('vector_ltr.pdf', _gate.ltrVectorPdf!);
-    await _writeArtifact('editable_ltr.docx', _gate.ltrEditableDocx!);
     await _writeArtifact('exact.pdf', _gate.rtlExactPdf!);
     await _writeArtifact('exact.docx', _gate.rtlExactDocx!);
-    await _writeArtifact('exact_ltr.pdf', _gate.ltrExactPdf!);
-    await _writeArtifact('exact_ltr.docx', _gate.ltrExactDocx!);
     _writeText(
       'preview_geometry.json',
       const JsonEncoder.withIndent('  ').convert(<String, Object?>{
@@ -795,7 +795,6 @@ void main() {
         'rtlPreviewPageCount': _gate.rtlPreviewPageCount,
         'ltrPreviewPageCount': _gate.ltrPreviewPageCount,
         'rtlPdfPageCount': PdfContentProbe.pageCountOf(_gate.rtlVectorPdf!),
-        'ltrPdfPageCount': PdfContentProbe.pageCountOf(_gate.ltrVectorPdf!),
         'mathRequests': _gate.mathRequests,
       }),
     );
@@ -806,10 +805,6 @@ void main() {
       'editable.docx',
       'exact.pdf',
       'exact.docx',
-      'vector_ltr.pdf',
-      'editable_ltr.docx',
-      'exact_ltr.pdf',
-      'exact_ltr.docx',
       for (var index = 0; index < _gate.rtlPreviewPages.length; index++)
         'preview_rtl_page_${index + 1}.png',
     ]) {
@@ -831,6 +826,73 @@ void main() {
     _stage('vector عربي: ${_gate.rtlPdfReport.pageCount} صفحة؛ '
         'المعاينة: ${_gate.rtlPreviewPageCount} صفحة؛ '
         'لقطات معادلات: ${_gate.mathRequests}');
+  });
+
+  // الورقة الإنجليزية في اختبار مستقل: توليد القطع الأربعة لورقتين في اختبار
+  // واحد كان يتجاوز سقف CI (عشر دقائق) فيُجهض البوابة كلها بلا قياس واحد.
+  testWidgets(
+      'P0-GATE-01B: قطع الورقة الإنجليزية — vector_ltr + editable_ltr + exact_ltr',
+      (tester) async {
+    await _loadAppFonts();
+    final mathHost = FakeMathHost()..attach();
+    addTearDown(mathHost.detach);
+
+    final ltrDocument = P0GateFixture.ltr();
+    _gate.requirePreview();
+    final ltr = _gate.ltrCapture!;
+
+    _gate.ltrVectorPdf =
+        await PaginatedPdfExamEngine().generate(document: ltrDocument);
+    _gate.ltrEditableDocx =
+        await DocxDocumentExportService.buildDocumentDocxBytes(
+      document: ltrDocument,
+    );
+    _gate.ltrExactPdf =
+        await ExactExportService.buildPdfFromSnapshots(ltr.snapshots);
+    _gate.ltrExactDocx =
+        ExactExportService.buildDocxFromSnapshots(ltr.snapshots);
+
+    for (var index = 0; index < _gate.ltrPreviewPages.length; index++) {
+      await _writeArtifact(
+          'preview_ltr_page_${index + 1}.png', _gate.ltrPreviewPages[index]);
+    }
+    await _writeArtifact('vector_ltr.pdf', _gate.ltrVectorPdf!);
+    await _writeArtifact('editable_ltr.docx', _gate.ltrEditableDocx!);
+    await _writeArtifact('exact_ltr.pdf', _gate.ltrExactPdf!);
+    await _writeArtifact('exact_ltr.docx', _gate.ltrExactDocx!);
+    _writeText(
+      'preview_geometry_ltr.json',
+      const JsonEncoder.withIndent('  ').convert(<String, Object?>{
+        'ltrPdfPageCount': PdfContentProbe.pageCountOf(_gate.ltrVectorPdf!),
+        'ltrPreviewPageCount': _gate.ltrPreviewPageCount,
+        'ltrMathRequests': mathHost.requests.length,
+      }),
+    );
+
+    for (final name in <String>[
+      'vector_ltr.pdf',
+      'editable_ltr.docx',
+      'exact_ltr.pdf',
+      'exact_ltr.docx',
+      for (var index = 0; index < _gate.ltrPreviewPages.length; index++)
+        'preview_ltr_page_${index + 1}.png',
+    ]) {
+      final file = File('$_dir/$name');
+      expect(file.existsSync(), isTrue, reason: 'لم تُكتب القطعة $name.');
+      expect(file.lengthSync(), greaterThan(1024),
+          reason: 'القطعة $name أصغر من أن تكون مخرجاً حقيقياً.');
+    }
+
+    expect(_gate.ltrVectorPdf!.length, isNot(_gate.ltrExactPdf!.length),
+        reason: 'vector_ltr.pdf يطابق exact_ltr.pdf بايتاً: الممرّان لم '
+            'يُقيسا منفصلين.');
+    expect(PdfContentProbe.fromBytes(_gate.ltrVectorPdf!).words, isNotEmpty,
+        reason: 'vector_ltr.pdf بلا نص قابل للتحديد — لا تُبنى عليه بوابة.');
+    expect(PdfContentProbe.fromBytes(_gate.ltrExactPdf!).words, isEmpty,
+        reason: 'exact_ltr.pdf يجب أن يبقى صوراً بلا نص.');
+
+    _stage('vector إنجليزي: ${_gate.ltrPdfReport.pageCount} صفحة؛ '
+        'المعاينة: ${_gate.ltrPreviewPageCount} صفحة');
   });
 
   // ===========================================================================
@@ -1127,7 +1189,7 @@ void main() {
       for (final line in page.lines) {
         final text = line.words.map((word) => word.text).join(' ');
         for (final marker in mathOrder) {
-          if (text.contains(marker) && drawnMathOrder.last != marker) {
+          if (textMentions(text, marker) && drawnMathOrder.last != marker) {
             drawnMathOrder.add(marker);
           }
         }

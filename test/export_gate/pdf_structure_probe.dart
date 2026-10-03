@@ -30,6 +30,50 @@ final RegExp kMarkerTokenPattern =
 final RegExp _doImagePattern = RegExp(r'/(X[A-Za-z0-9_]+|Im[A-Za-z0-9_]+)\s+Do');
 
 /// صفحة واحدة محلَّلة.
+/// يعكس نصاً بمحارفه: ما يُرسم في سطر عربي يُرسم بترتيب بصري معكوس (العرض
+/// يُمِرّ Bidi، فتُرى السلسلة اللاتينية `CAT1` بصيغة معكوسة). البحث بالاتجاه
+/// المنطقي وحده يُخفي وسوماً حاضرة في الصفحة فعلاً — وهو ما عطّل قياس
+/// التغطية في المعاينة («12/45») قبل أن يُقرأ سببه.
+String mirrorText(String text) =>
+    String.fromCharCodes(text.runes.toList().reversed);
+
+/// هل يذكر [text] الوسم [marker] في أيٍّ من اتجاهيه المرسومين؟
+bool textMentions(String text, String marker) =>
+    text.contains(marker) || text.contains(mirrorText(marker));
+
+/// الوسم الظاهر في سطر مرسوم: من الكلمات كما رُسمت؛ وإن لم تُعطِ الكلمات
+/// شيئاً (سطر عربي معكوس بالكامل) تُستخرج من السطر كاملاً بعد ردّه إلى
+/// الاتجاه المنطقي، وهو الترتيب الصحيح داخل السطر.
+List<String> logicalLineMarkers(ProbedLine line, {Set<String> known = const <String>{}}) {
+  final direct = <String>[];
+  for (final word in line.words) {
+    for (final match in kMarkerTokenPattern.allMatches(word.text)) {
+      final marker = match.group(1)!;
+      if (known.isNotEmpty && !known.contains(marker)) {
+        continue;
+      }
+      if (direct.isEmpty || direct.last != marker) {
+        direct.add(marker);
+      }
+    }
+  }
+  if (direct.isNotEmpty) {
+    return direct;
+  }
+  final visual = line.words.map((word) => word.text).join(' ');
+  final result = <String>[];
+  for (final match in kMarkerTokenPattern.allMatches(mirrorText(visual))) {
+    final marker = match.group(1)!;
+    if (known.isNotEmpty && !known.contains(marker)) {
+      continue;
+    }
+    if (result.isEmpty || result.last != marker) {
+      result.add(marker);
+    }
+  }
+  return result;
+}
+
 class PdfPageStructure {
   PdfPageStructure({
     required this.index,
@@ -120,13 +164,17 @@ class PdfPageStructure {
 
   /// سطور تحتوي [marker] (وسم ASCII داخل نص مرسوم).
   List<ProbedLine> linesWithMarker(String marker) => lines
-      .where((line) => line.words.any((word) => word.text.contains(marker)))
+      .where((line) =>
+          line.words.any((word) => textMentions(word.text, marker)) ||
+          textMentions(line.words.map((word) => word.text).join(' '), marker))
       .toList(growable: false);
 
   /// فهرس سطر أول ظهور لـ [marker]، أو -1.
   int firstLineIndexOf(String marker) {
     for (var index = 0; index < lines.length; index++) {
-      if (lines[index].words.any((word) => word.text.contains(marker))) {
+      if (lines[index].words.any((word) => textMentions(word.text, marker)) ||
+          textMentions(
+              lines[index].words.map((word) => word.text).join(' '), marker)) {
         return index;
       }
     }
@@ -322,17 +370,14 @@ class PdfStructureReport {
     final sequence = <String>[];
     for (final page in pages) {
       for (final line in page.lines) {
-        for (final word in line.words) {
-          for (final match in kMarkerTokenPattern.allMatches(word.text)) {
-            final marker = match.group(1)!;
-            if (!known.contains(marker) || excluded.contains(marker)) {
-              continue;
-            }
-            if (sequence.isNotEmpty && sequence.last == marker) {
-              continue;
-            }
-            sequence.add(marker);
+        for (final marker in logicalLineMarkers(line, known: known)) {
+          if (excluded.contains(marker)) {
+            continue;
           }
+          if (sequence.isNotEmpty && sequence.last == marker) {
+            continue;
+          }
+          sequence.add(marker);
         }
       }
     }
@@ -346,6 +391,15 @@ class PdfStructureReport {
       for (final word in page.words) {
         for (final match in kMarkerTokenPattern.allMatches(word.text)) {
           final marker = match.group(1)!;
+          if (!excluded.contains(marker)) {
+            result.add(marker);
+          }
+        }
+      }
+      // السطور معكوسة الاتجاه تُنتج وسومها المنطقية من ردّ السطر، فلا تُحسب
+      // وسوماً «زائدة» لم يرها النموذج.
+      for (final line in page.lines) {
+        for (final marker in logicalLineMarkers(line)) {
           if (!excluded.contains(marker)) {
             result.add(marker);
           }
