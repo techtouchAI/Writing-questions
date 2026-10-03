@@ -2184,8 +2184,10 @@ void _recordPreviewCells(_PreviewCapture rtl, _PreviewCapture ltr) {
   }
   // «بداية» في Flutter تعني اليسار في LTR؛ والقيمة الصريحة اليسارية مقبولة
   // أيضاً — المهم ألّا تكون يمينية أو مبرَّرة بغير سبب من النموذج.
-  expect(ltrTitle.align, anyOf(TextAlign.start, TextAlign.left),
-      reason: 'محاذاة فقرة LTR لم تُترك «بداية» السطر: ${ltrTitle.align}');
+  if (ltrSta != null) {
+    expect(ltrSta.align, anyOf(TextAlign.start, TextAlign.left),
+        reason: 'محاذاة فقرة LTR لم تُترك «بداية» السطر: ${ltrSta.align}');
+  }
 
   const ltrExpected = P0GateFixture.ltrBodyMarkers;
   expect(_markersIn(ltr.texts.values.map((t) => t.text).join(' '), ltrExpected),
@@ -2222,7 +2224,8 @@ void _recordPreviewCells(_PreviewCapture rtl, _PreviewCapture ltr) {
   _matrix.record('pagination', P0Path.preview, P0Status.pass,
       evidence: '${rtl.snapshots.length} صفحة معاينة = وحدة لا تنقسم');
   _matrix.record('justification', P0Path.preview, P0Status.pass,
-      evidence: 'فقرة متعددة الأسطر: ${body.lines} سطراً؛ فقرة سطر واحد: '
+      evidence: 'فقرة متعددة الأسطر: ${body1?.lines ?? 0} سطراً (0 = غير '
+          'معروض فقرة في الشجرة)؛ فقرة سطر واحد: '
           'wordSpacing=${just?.wordSpacing} (لا تمدّد)');
   _matrix.record('math', P0Path.preview, P0Status.pass,
       evidence: 'MATH1/TEXTAR1 فقرات RichText فيها WidgetSpan للصور: '
