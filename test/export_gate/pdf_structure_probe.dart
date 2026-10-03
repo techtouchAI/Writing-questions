@@ -107,17 +107,15 @@ class PdfPageStructure {
         for (final line in lines)
           if (line.words.isNotEmpty)
             <double>[
-              line.words
-                  .map((word) => word.x)
-                  .reduce(math.min),
+              line.words.map((word) => word.x).reduce(math.min),
               line.words.first.y,
               line.words
                   .map((word) => word.x + word.advanceWidth)
                   .reduce(math.max),
               line.words.first.y,
-            ],
-        else
-          const <double>[0, 0, 0, 0],
+            ]
+          else
+            const <double>[0, 0, 0, 0],
       ];
 
   /// سطور تحتوي [marker] (وسم ASCII داخل نص مرسوم).

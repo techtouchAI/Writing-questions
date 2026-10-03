@@ -370,7 +370,8 @@ _PreviewText? _previewTextAt(WidgetTester tester, String marker) {
       marker: marker,
       text: plain,
       lines: tops.isEmpty ? 1 : tops.length,
-      rect: paragraph.size.toRect().shift(origin),
+      rect: Rect.fromLTWH(0, 0, paragraph.size.width, paragraph.size.height)
+          .shift(origin),
       align: paragraph.textAlign,
       wordSpacing: _firstWordSpacing(span),
       fontFamilies: _fontFamiliesOf(span),
