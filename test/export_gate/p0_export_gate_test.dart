@@ -1231,6 +1231,8 @@ void main() {
     final invertedLabels = <String>[];
     final separatorFirst = RegExp(r'^-[\u0660-\u06690-9]{1,4}$');
     final numberFirst = RegExp(r'^[\u0660-\u06690-9]{1,4}-$');
+    final digitRun = RegExp(r'^[\u0660-\u06690-9]{1,4}$');
+    final separatorRun = RegExp(r'^-$');
     for (final drawnPage in report.pages) {
       for (final line in drawnPage.lines) {
         final drawnLine = line.words.map((word) => word.text).join(' ');
@@ -1242,11 +1244,42 @@ void main() {
             invertedLabels.add('ص${drawnPage.index + 1}:$token');
           }
         }
+
+        // LayoutDocument paints semantic number/separator runs independently;
+        // the PDF probe therefore may expose `١` and `-` as separate text
+        // operators instead of one word. Rejoin only geometrically adjacent
+        // fragments, preserving their emitted (logical-run) order.
+        for (var index = 0; index + 1 < line.words.length; index++) {
+          final first = line.words[index];
+          final second = line.words[index + 1];
+          final gap = first.x <= second.x
+              ? second.x - (first.x + first.advanceWidth)
+              : first.x - (second.x + second.advanceWidth);
+          if (gap < -1 || gap > 2) continue;
+          if (digitRun.hasMatch(first.text) && separatorRun.hasMatch(second.text)) {
+            if (first.x > second.x) {
+              drawnLabels.add('ص${drawnPage.index + 1}:${first.text}${second.text}');
+            } else {
+              invertedLabels.add(
+                  'ص${drawnPage.index + 1}:visual-${first.text}${second.text}');
+            }
+          } else if (separatorRun.hasMatch(first.text) &&
+              digitRun.hasMatch(second.text)) {
+            invertedLabels.add('ص${drawnPage.index + 1}:${first.text}${second.text}');
+          }
+        }
       }
     }
+    final labelFragmentLines = report.pages
+        .expand((page) => page.lines)
+        .where((line) => line.words.any((word) =>
+            digitRun.hasMatch(word.text) || separatorRun.hasMatch(word.text)))
+        .map((line) => line.describe())
+        .take(6)
+        .toList();
     _stage('تسميات مرسومة (رقم ثم فاصل، كما في المصدر): '
         '${drawnLabels.take(8).toList()}، معكوسة المصدر: '
-        '${invertedLabels.take(8).toList()}');
+        '${invertedLabels.take(8).toList()}؛ أجزاء: $labelFragmentLines');
     expect(drawnLabels, isNotEmpty,
         reason: 'لم يظهر نمط «رقم ثم فاصل» (١-) في vector.pdf — لا يقيس الفحص '
             'الترقيم من غير مثال مرسوم.');
