@@ -120,6 +120,24 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+          # نجاحٌ بلا رقم ليس دليلاً: التعليقات هي القناة الوحيدة التي يقرأها
+          # من لا يملك سجلّات التشغيل، فتنشر الحصيلة في الجولة الخضراء كما في
+          # الحمراء (لا يُستنتج «نُجحت» من حالة الفحص وحدها).
+          if [ -f "$RUNNER_TEMP/flutter-test.log" ]; then
+            counts="$(grep -oE '[0-9]+ tests? passed|[0-9]+ tests? failed|All tests passed!|[0-9]+:[0-9]+ \+[0-9]+ ~?[0-9]* ?-?[0-9]*' "$RUNNER_TEMP/flutter-test.log" | tail -n 4 | tr '\n' ' ')"
+            counts="${counts//%/%25}"; counts="${counts//:/%3A}"
+            counts="${counts//$'\r'/%0D}"; counts="${counts//$'\n'/%0A}"
+            echo "::notice title=P0 gate — flutter test::$counts"
+          fi
+          if [ -f build/export_gate/matrix.txt ]; then
+            tally=""
+            for st in PASS FAIL DEFERRED_TO_P1 NOT_APPLICABLE UNMEASURED; do
+              n="$(grep -o "\b$st\b" build/export_gate/matrix.txt | wc -l | tr -d ' ')"
+              tally="$tally$st=$n "
+            done
+            tally="${tally//%/%25}"; tally="${tally//:/%3A}"
+            echo "::notice title=P0 gate — matrix tally::$tally"
+          fi
       - name: Publish analyzer and test diagnostics
         if: failure() && (steps.analyze.outcome == 'failure' || steps.test.outcome == 'failure')
         shell: bash
