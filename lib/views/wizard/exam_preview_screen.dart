@@ -9,6 +9,8 @@ import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 
 import '../../layout/document_ir.dart';
+import '../../layout/canonical/canonical_layout_preview.dart';
+import '../../layout/canonical/layout_document.dart';
 import '../../layout/pagination_engine.dart';
 import '../../layout/semantic/inline_nodes.dart';
 import '../../layout/paper_metrics.dart';
@@ -211,6 +213,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   /// يجمّد زخارف التحرير ويُظهر حاجباً أثناء التقاط صفحات المعاينة الأصلية.
   bool _exactCaptureInProgress = false;
+  LayoutDocument? _canonicalCaptureLayout;
+  CanonicalLayoutPreviewAssets? _canonicalCaptureAssets;
 
   /// يكبح زخارف التحديد من صورة Exact (إطارات التحديد ومقابض العناصر).
   bool _suppressSelectionChrome = false;
@@ -290,6 +294,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   @override
   void dispose() {
     _controller?.removeListener(_syncFieldsFromModel);
+    _canonicalCaptureAssets?.dispose();
     for (final field in _fields.values) {
       field.dispose();
     }
@@ -299,7 +304,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   }
 
   void _trimPageKeys(Iterable<PaginatedPage> pages) {
-    final valid = pages.map((page) => page.index).toSet();
+    _trimPageKeysByIndices(pages.map((page) => page.index));
+  }
+
+  void _trimPageKeysByIndices(Iterable<int> indices) {
+    final valid = indices.toSet();
     _pageCanvasKeys.removeWhere((key, _) => !valid.contains(key));
     _pageSnapshotKeys.removeWhere((key, _) => !valid.contains(key));
   }
@@ -1995,10 +2004,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final controller = _controller!;
     FocusManager.instance.primaryFocus?.unfocus();
     await _awaitStablePreviewLayout();
-
-    final pages = controller.pagination.pages.toList()
+    final canonicalLayout = await PdfExportService.resolveLayoutDocument(
+      document: controller.document,
+    );
+    final previewAssets = await CanonicalLayoutPreviewAssets.load(
+      layout: canonicalLayout,
+      document: controller.document,
+    );
+    final pages = canonicalLayout.pages.toList()
       ..sort((left, right) => left.index.compareTo(right.index));
     if (pages.isEmpty) {
+      previewAssets.dispose();
       throw StateError('لا توجد صفحات معاينة لالتقاطها.');
     }
 
@@ -2006,12 +2022,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final verticalOffset = _vScroll.hasClients ? _vScroll.offset : null;
     final horizontalOffset = _hScroll.hasClients ? _hScroll.offset : null;
     setState(() {
+      _canonicalCaptureLayout = canonicalLayout;
+      _canonicalCaptureAssets = previewAssets;
       _suppressSelectionChrome = true;
       _exactCaptureInProgress = true;
       _clearSelection();
       _stagedFormula = null;
       _stagedFormulaIsBlock = false;
     });
+    await SchedulerBinding.instance.endOfFrame;
 
     try {
       final snapshots = <PageSnapshot>[];
@@ -2051,15 +2070,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       if (mounted) {
         setState(() {
           _exactCaptureInProgress = false;
+          _canonicalCaptureLayout = null;
+          _canonicalCaptureAssets = null;
           _suppressSelectionChrome = false;
           _restoreUiState(uiSnapshot);
         });
-        // ننتظر تحديث مدى التمرير قبل استعادة الإزاحة (قد يعاد قياس الصفحة
-        // عند إزالة حالة الالتقاط، وإن كان محتواها البصري لم يتغير).
+        // ننتظر تحديث مدى التمرير قبل استعادة الإزاحة أو تحرير صور اللقط.
         await SchedulerBinding.instance.endOfFrame;
         _restoreScrollOffset(_vScroll, verticalOffset);
         _restoreScrollOffset(_hScroll, horizontalOffset);
       }
+      previewAssets.dispose();
     }
   }
 
@@ -2075,6 +2096,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   Future<void> _exportPdf({
     List<List<String>>? pageAssignments,
+    LayoutDocument? layoutDocument,
     bool? exact,
   }) async {
     if (_isBusy) {
@@ -2096,6 +2118,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   await PdfExportService.resolvePageAssignments(
                     document: document,
                   ),
+              layoutDocument: layoutDocument,
             );
       if (!mounted) {
         return;
@@ -2534,13 +2557,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final controller = _controller!;
     final document = controller.document;
     var pageAssignments = <List<String>>[];
+    LayoutDocument? canonicalReviewLayout;
     setState(() => _isBusy = true);
     try {
       // اعرض عدد الصفحات الفعلي للتصدير، لا صفحات مساحة التحرير التي قد
       // تحتوي على أسئلة فارغة غير قابلة للطباعة.
-      pageAssignments = await PdfExportService.resolvePageAssignments(
+      canonicalReviewLayout = await PdfExportService.resolveLayoutDocument(
         document: document,
       );
+      pageAssignments = canonicalReviewLayout.questionPageAssignments;
     } catch (error, stackTrace) {
       ExportFileService.logError('Preview pagination failed', error, stackTrace);
       if (mounted) {
@@ -2608,7 +2633,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               ),
               _reviewRow(
                 'صفحات المعاينة',
-                document.formatNumber(controller.pagination.pageCount),
+                document.formatNumber(canonicalReviewLayout?.pageCount ?? 0),
               ),
               const Divider(height: 20),
               // Exact اختياري ومطفأ افتراضياً: يصدّر صفحات المعاينة صوراً؛
@@ -2645,6 +2670,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               Navigator.of(dialogContext).pop();
               _exportPdf(
                 pageAssignments: pageAssignments,
+                layoutDocument: canonicalReviewLayout,
                 exact: _exactExport,
               );
             },
@@ -3034,7 +3060,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final controller = context.watch<ExamWizardController>();
     final layout = controller.layout;
     final pagination = controller.pagination;
-    _trimPageKeys(pagination.pages);
+    final canonicalCapture = _exactCaptureInProgress ? _canonicalCaptureLayout : null;
+    if (canonicalCapture == null) {
+      _trimPageKeys(pagination.pages);
+    } else {
+      _trimPageKeysByIndices(canonicalCapture.pages.map((page) => page.index));
+    }
     final document = controller.document;
     final activeStyle = _activeStyle();
 
@@ -3202,13 +3233,23 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                           width: contentWidth,
                           child: Column(
                             children: <Widget>[
-                              for (final page in pagination.pages)
-                                _buildZoomedPage(
-                                  controller,
-                                  layout,
-                                  page,
-                                  pagination.pageCount,
-                                ),
+                              if (canonicalCapture != null)
+                                for (final page in canonicalCapture.pages)
+                                  _buildZoomedPage(
+                                    controller,
+                                    layout,
+                                    _pageShellForCanonical(page),
+                                    canonicalCapture.pageCount,
+                                    canonicalPage: page,
+                                  )
+                              else
+                                for (final page in pagination.pages)
+                                  _buildZoomedPage(
+                                    controller,
+                                    layout,
+                                    page,
+                                    pagination.pageCount,
+                                  ),
                             ],
                           ),
                         ),
@@ -3235,12 +3276,58 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
+  PaginatedPage _pageShellForCanonical(LayoutPage page) => PaginatedPage(
+        index: page.index,
+        blockIds: List<String>.unmodifiable(
+          page.blocks.map((block) => block.semanticNodeId),
+        ),
+        usedHeight: page.usedBodyHeight,
+        overflows: page.scaleFactor < 1,
+      );
+
   Widget _buildZoomedPage(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
     PaginatedPage page,
-    int pageCount,
-  ) {
+    int pageCount, {
+    LayoutPage? canonicalPage,
+  }) {
+    final canonicalAssets = _canonicalCaptureAssets;
+    if (canonicalPage != null && canonicalAssets != null) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        child: SizedBox(
+          width: ExamCanvasGeometry.width * _zoom,
+          height: ExamCanvasGeometry.height * _zoom,
+          child: FittedBox(
+            fit: BoxFit.fill,
+            child: SizedBox(
+              width: ExamCanvasGeometry.width,
+              height: ExamCanvasGeometry.height,
+              child: RepaintBoundary(
+                key: _pageSnapshotKeys.putIfAbsent(
+                  page.index,
+                  () => GlobalKey(
+                    debugLabel: 'canonical-page-snapshot-${page.index}',
+                  ),
+                ),
+                child: Container(
+                  width: ExamCanvasGeometry.width,
+                  height: ExamCanvasGeometry.height,
+                  clipBehavior: Clip.antiAlias,
+                  decoration: const BoxDecoration(color: Colors.white),
+                  child: CanonicalLayoutPreviewPage(
+                    page: canonicalPage,
+                    document: controller.document,
+                    assets: canonicalAssets,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     // FittedBox بنفس نسبة الأبعاد = تكبير تخطيطي صحيح (القياس الداخلي
     // يبقى بالمقاس الحقيقي، والتفاعل مع الحقول يعمل تحت كل تكبير).
     return Container(

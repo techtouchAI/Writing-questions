@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../layout/canonical/layout_document.dart';
 import '../models/exam_document.dart';
 import '../pdf_engine/pdf_engine.dart';
 import 'export_file_service.dart';
@@ -11,8 +12,14 @@ import 'page_frame_store.dart';
 /// تعتمد بالكامل على وحدة [PaginatedPdfExamEngine]؛ لا تنسيق حيّ هنا إطلاقاً —
 /// الناتج لوحة A4 ثابتة لا تتغير بين الأجهزة أو إصدارات الأوفيس.
 abstract final class PdfExportService {
-  /// يحسب توزيع الأسئلة نفسه الذي سيستخدمه محرك PDF عند غياب قياسات المعاينة.
-  /// يمكن تمريره إلى Word لتتوافق فواصل الصفحات والعناصر الحرة مع PDF.
+  /// يحسم التخطيط نفسه الذي سيستخدمه محرك PDF، ويمكن تمريره إليه مباشرة.
+  static Future<LayoutDocument> resolveLayoutDocument({
+    required ExamDocument document,
+  }) {
+    return PaginatedPdfExamEngine().resolveLayoutDocument(document: document);
+  }
+
+  /// إسقاط P1-compatible لتوزيع الأسئلة؛ DOCX لا يستقبل إحداثيات التخطيط.
   static Future<List<List<String>>> resolvePageAssignments({
     required ExamDocument document,
   }) {
@@ -21,12 +28,14 @@ abstract final class PdfExportService {
 
   /// يبني بايتات PDF متعدد الصفحات لورقة الأسئلة [document].
   ///
-  /// [pageAssignments] هو توزيع الأسئلة على الصفحات كما حُسب على لوحة
-  /// المعاينة، فيُطبع الملف بنفس التقسيم المعروض تماماً. وصورة الإطار
-  /// (إن اختارها المدرس) تُقرأ من مسارها هنا وتُسلَّم للمحرك.
+  /// [layoutDocument] هو التخطيط المحسوم في مسار المعاينة؛ يضمن أن يرسم PDF
+  /// الإحداثيات وتقسيم الصفحات نفسيهما. عند غيابه يحسب المحرك التخطيط
+  /// بالـ pipeline المشترك. أما [pageAssignments] فحقل توافق قديم لا يعيد
+  /// تدفق المحتوى داخل PDF. وصورة الإطار تُقرأ هنا وتُسلَّم للمحرك.
   static Future<Uint8List> buildDocumentPdfBytes({
     required ExamDocument document,
     List<List<String>>? pageAssignments,
+    LayoutDocument? layoutDocument,
   }) async {
     final frameImage = document.settings.pageBorder
         ? await PageFrameStore.read(document.settings.frameImagePath)
@@ -34,6 +43,7 @@ abstract final class PdfExportService {
     return PaginatedPdfExamEngine().generate(
       document: document,
       pageAssignments: pageAssignments,
+      layoutDocument: layoutDocument,
       frameImage: frameImage,
     );
   }

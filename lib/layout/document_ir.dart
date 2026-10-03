@@ -630,7 +630,9 @@ class _DocumentIRBuilder {
       marks: source.title.marksNode,
       style: DocumentStyleReference(
         role: VisualRole.questionTitle,
-        override: model.style,
+        // Title color is source-authored text style, not layout geometry.
+        // Keep the model's title-only color in the semantic style reference.
+        override: model.style.copyWith(color: () => model.effectiveTitleColor),
       ),
       alignment: model.titleAlign ?? model.style.align,
       direction: direction,
