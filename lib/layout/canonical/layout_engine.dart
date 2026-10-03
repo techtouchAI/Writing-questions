@@ -926,7 +926,8 @@ class _LayoutBuilder {
         x: x,
       );
     }
-    if (segments.length == 1 && !segments.single.single.isBlockMath) {
+    if (segments.length == 1 &&
+        (segments.single.length != 1 || !segments.single.first.isBlockMath)) {
       return _paragraphBlock(
         id: id,
         kind: kind,
