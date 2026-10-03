@@ -1308,7 +1308,7 @@ void main() {
     expect(drawnLabels, isNotEmpty,
         reason: 'لم يظهر نمط «رقم ثم فاصل» (١-) في vector.pdf — لا يقيس الفحص '
             'الترقيم من غير مثال مرسوم. P2 runs: '
-            '${_gate.canonicalLabelRuns.take(32).toList()}');
+            '${_gate.canonicalLabelRuns.take(4).toList()}');
     expect(invertedLabels, isEmpty,
         reason: 'نصّ التسمية مرسوم بفاصل قبل الرقم (انقلاب في السلسلة '
             'المنطقية لا في المواضع فقط): ${invertedLabels.take(6).toList()}');
