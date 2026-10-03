@@ -521,6 +521,8 @@ void main() {
         id: 'global-float',
         type: FloatingElementType.shape,
         shape: FloatingShapeType.circle,
+        dx: 0,
+        dy: 0,
         width: 10,
         height: 10,
       );
@@ -528,6 +530,8 @@ void main() {
         id: 'question-float',
         type: FloatingElementType.shape,
         shape: FloatingShapeType.square,
+        dx: 0,
+        dy: 0,
         width: 10,
         height: 10,
       );
@@ -535,6 +539,8 @@ void main() {
         id: 'branch-float',
         type: FloatingElementType.shape,
         shape: FloatingShapeType.triangle,
+        dx: 0,
+        dy: 0,
         width: 10,
         height: 10,
       );

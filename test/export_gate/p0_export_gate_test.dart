@@ -810,6 +810,18 @@ void main() {
             .expand((line) => line.runs)
             .where((run) => run.isMath)
             .length;
+        final labelRuns = canonicalLayout.allLines
+            .expand((line) => line.runs)
+            .where((run) => run.text.contains('-') ||
+                run.text.runes.any((rune) =>
+                    (rune >= 0x0660 && rune <= 0x0669) ||
+                    (rune >= 0x30 && rune <= 0x39)))
+            .map((run) => '${run.semanticRole.name}:"${run.text}" '
+                '@${run.x.toStringAsFixed(2)}+${run.width.toStringAsFixed(2)} '
+                'advance=${run.advance.toStringAsFixed(2)}')
+            .take(24)
+            .toList();
+        _stage('P2 number/separator runs: $labelRuns');
         _gate.rtlVectorPdf = await pdfEngine.generate(
           document: rtlDocument,
           layoutDocument: canonicalLayout,
