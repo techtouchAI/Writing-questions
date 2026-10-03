@@ -85,7 +85,7 @@ String logicalToVisual(String input) {
   final bidi.BidiString bidiText;
   try {
     bidiText = bidi.BidiString.fromLogical(input);
-  } on RangeError {
+  } on RangeError catch (error) {
     final hasArabic = input.runes.any((rune) =>
         (rune >= 0x0600 && rune <= 0x08FF) ||
         (rune >= 0xFB50 && rune <= 0xFEFF) ||
@@ -96,7 +96,14 @@ String logicalToVisual(String input) {
     // when an Arabic character decomposes into several code points. Keep PDF
     // export resilient by using the package's Arabic word shaper for that
     // fragment; all canonical run positions remain resolved by LayoutEngine.
-    return arabic.convert(input);
+    final shaped = arabic.convert(input);
+    if (input.contains('السنة') || input.contains('النهوض') ||
+        input.contains('المتوسط') || input == 'س') {
+      // ignore: avoid_print
+      print('[p0-gate] bidi fallback input=${input.runes.map((r) => r.toRadixString(16)).join(",")} '
+          'output=${shaped.runes.map((r) => r.toRadixString(16)).join(",")} error=$error');
+    }
+    return shaped;
   }
   final buffer = StringBuffer();
   final paragraphs = bidiText.paragraphs;
@@ -109,5 +116,12 @@ String logicalToVisual(String input) {
       buffer.writeln();
     }
   }
-  return buffer.toString();
+  final visualText = buffer.toString();
+  if (input.contains('السنة') || input.contains('النهوض') ||
+      input.contains('المتوسط') || input == 'س') {
+    // ignore: avoid_print
+    print('[p0-gate] bidi shaped input=${input.runes.map((r) => r.toRadixString(16)).join(",")} '
+        'output=${visualText.runes.map((r) => r.toRadixString(16)).join(",")}');
+  }
+  return visualText;
 }
