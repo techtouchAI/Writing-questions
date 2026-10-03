@@ -16,6 +16,7 @@ abstract final class CanonicalLayoutService {
     required ExamDocument document,
     FontMetricsProvider fontMetrics = const FlutterTextMetrics(),
     bool quranFontAvailable = true,
+    List<List<String>>? questionPageAssignments,
   }) async {
     final ir = DocumentIR.fromBlueprint(
       blueprint: ExamBlueprint.from(document),
@@ -30,6 +31,7 @@ abstract final class CanonicalLayoutService {
       document: ir,
       configuration: configuration,
       fontMetrics: fontMetrics,
+      questionPageAssignments: questionPageAssignments,
     );
     if (!MathSnapshotRenderer.isAvailable) return layout;
 
@@ -40,6 +42,7 @@ abstract final class CanonicalLayoutService {
       configuration: configuration,
       fontMetrics: fontMetrics,
       mathMetrics: math,
+      questionPageAssignments: questionPageAssignments,
     );
     return layout;
   }

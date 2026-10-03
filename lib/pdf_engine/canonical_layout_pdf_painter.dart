@@ -28,13 +28,22 @@ class CanonicalLayoutPdfPainter {
   }) {
     final pageWidth = page.pageSize.width;
     final pageHeight = page.pageSize.height;
+    pw.MemoryImage? usableFrameImage;
+    if (sourceDocument.settings.pageBorder && frameImage != null) {
+      try {
+        usableFrameImage = pw.MemoryImage(frameImage);
+      } catch (_) {
+        // Invalid frame data must not abort export; the canonical vector border
+        // remains available in page.decorations as the fallback.
+      }
+    }
     final children = <pw.Widget>[
       pw.SizedBox(width: pageWidth, height: pageHeight),
-      if (frameImage != null)
+      if (usableFrameImage != null)
         pw.Positioned.fill(
-          child: pw.Image(pw.MemoryImage(frameImage), fit: pw.BoxFit.fill),
+          child: pw.Image(usableFrameImage, fit: pw.BoxFit.fill),
         ),
-      if (frameImage == null)
+      if (usableFrameImage == null)
         for (final decoration in page.decorations) _paintDecoration(decoration),
       for (final block in _allBlocks(page.blocks))
         for (final decoration in block.decorations) _paintDecoration(decoration),

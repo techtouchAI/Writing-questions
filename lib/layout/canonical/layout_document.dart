@@ -10,6 +10,7 @@ import 'layout_units.dart';
 enum PageBreakReason {
   naturalOverflow,
   explicitBreak,
+  assignedPageBoundary,
   keepTogether,
   forcedSplit,
   headerFooterReservation,

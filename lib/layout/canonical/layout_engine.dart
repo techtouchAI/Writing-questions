@@ -26,12 +26,14 @@ class LayoutEngine {
     required LayoutConfiguration configuration,
     required FontMetricsProvider fontMetrics,
     Map<String, LayoutMathBox> mathMetrics = const <String, LayoutMathBox>{},
+    List<List<String>>? questionPageAssignments,
   }) =>
       _LayoutBuilder(
         document: document,
         configuration: configuration,
         fontMetrics: fontMetrics,
         mathMetrics: mathMetrics,
+        questionPageAssignments: questionPageAssignments,
       ).build();
 }
 
@@ -41,12 +43,14 @@ class _LayoutBuilder {
     required this.configuration,
     required this.fontMetrics,
     required this.mathMetrics,
+    required this.questionPageAssignments,
   });
 
   final DocumentIR document;
   final LayoutConfiguration configuration;
   final FontMetricsProvider fontMetrics;
   final Map<String, LayoutMathBox> mathMetrics;
+  final List<List<String>>? questionPageAssignments;
   var _paragraphSerial = 0;
   var _logicalRunSerial = 0;
 
@@ -1347,7 +1351,66 @@ class _LayoutBuilder {
     );
   }
 
+  /// Honor a complete preview page assignment only when every assigned page
+  /// fits the canonical point-space capacity. The assignment remains a layout
+  /// input; it never asks the PDF painter to repaginate or move content.
+  _Pagination? _paginateUsingAssignedPages(List<_QuestionFlow> questions) {
+    final requested = questionPageAssignments;
+    if (requested == null || requested.isEmpty) return null;
+    if (questions.isEmpty) {
+      return requested.length == 1 && requested.single.isEmpty
+          ? _Pagination(<_PageState>[_PageState(0, null)])
+          : null;
+    }
+    if (requested.any((page) => page.isEmpty)) return null;
+
+    final expectedIds = <String>[
+      for (final question in questions) question.block.semanticNodeId,
+    ];
+    final assignedIds = requested.expand((page) => page).toList(growable: false);
+    if (assignedIds.length != expectedIds.length) return null;
+    for (var index = 0; index < expectedIds.length; index++) {
+      if (assignedIds[index] != expectedIds[index]) return null;
+    }
+
+    final byId = <String, _QuestionFlow>{
+      for (final question in questions) question.block.semanticNodeId: question,
+    };
+    final headerReserve = _header.height > 0 ? _header.height + _headerGap : 0.0;
+    final footerReserve = _footer.height > 0 ? _footer.height + _footerGap : 0.0;
+    final pages = <_PageState>[];
+    for (var pageIndex = 0; pageIndex < requested.length; pageIndex++) {
+      final page = _PageState(
+        pageIndex,
+        pageIndex == 0 ? null : PageBreakReason.assignedPageBoundary,
+      );
+      final isFirst = pageIndex == 0;
+      final isLast = pageIndex == requested.length - 1;
+      final capacity = (_contentHeight -
+              (isFirst ? headerReserve : 0) -
+              (isLast ? footerReserve : 0))
+          .clamp(0.0, _contentHeight)
+          .toDouble();
+      for (final id in requested[pageIndex]) {
+        final question = byId[id];
+        if (question == null) return null;
+        final gap = page.questions.isEmpty
+            ? 0.0
+            : page.questions.last.flow.spacingAfterPt;
+        if (page.usedHeight + gap + question.height > capacity + _epsilon) {
+          return null;
+        }
+        page.add(question, gap);
+      }
+      pages.add(page);
+    }
+    return _Pagination(pages);
+  }
+
   _Pagination _paginate(List<_QuestionFlow> questions) {
+    final assigned = _paginateUsingAssignedPages(questions);
+    if (assigned != null) return assigned;
+
     final pages = <_PageState>[_PageState(0, null)];
     final footerReserve = _footer.height > 0 ? _footer.height + _footerGap : 0.0;
     final headerReserve = _header.height > 0 ? _header.height + _headerGap : 0.0;

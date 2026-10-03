@@ -63,6 +63,7 @@ class PaginatedPdfExamEngine {
         await CanonicalLayoutService.resolve(
           document: document,
           quranFontAvailable: loadedFonts.hasQuranic,
+          questionPageAssignments: pageAssignments,
         );
     final mathRasters = await _rasterStoreFor(layout);
     final pdf = _newDocument(document);
