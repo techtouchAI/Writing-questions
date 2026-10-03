@@ -95,6 +95,7 @@ class _Gate {
   int ltrPreviewPageCount = 0;
   int mathRunCount = 0;
   int mathHostRequestCount = 0;
+  List<String> canonicalLabelRuns = <String>[];
   // التقاط المعاينة الثقيل يُقاس مرة واحدة ويُخزَّن: لا يُعاد في كل اختبار،
   // ولا يبقى سببُه مختبئاً خلف اختبار القطع.
   _PreviewCapture? rtlCapture;
@@ -810,7 +811,7 @@ void main() {
             .expand((line) => line.runs)
             .where((run) => run.isMath)
             .length;
-        final labelRuns = canonicalLayout.allLines
+        _gate.canonicalLabelRuns = canonicalLayout.allLines
             .expand((line) => line.runs)
             .where((run) => run.text.contains('-') ||
                 run.text.runes.any((rune) =>
@@ -821,7 +822,7 @@ void main() {
                 'advance=${run.advance.toStringAsFixed(2)}')
             .take(24)
             .toList();
-        _stage('P2 number/separator runs: $labelRuns');
+        _stage('P2 number/separator runs: ${_gate.canonicalLabelRuns}');
         _gate.rtlVectorPdf = await pdfEngine.generate(
           document: rtlDocument,
           layoutDocument: canonicalLayout,
@@ -1285,16 +1286,19 @@ void main() {
     final labelFragmentLines = report.pages
         .expand((page) => page.lines)
         .where((line) => line.words.any((word) =>
-            digitRun.hasMatch(word.text) || separatorRun.hasMatch(word.text)))
+            digitRun.hasMatch(word.text) || word.text.contains('-')))
         .map((line) => line.describe())
-        .take(6)
         .toList();
+    final labelFragmentTail = labelFragmentLines.length <= 8
+        ? labelFragmentLines
+        : labelFragmentLines.sublist(labelFragmentLines.length - 8);
     _stage('تسميات مرسومة (رقم ثم فاصل، كما في المصدر): '
         '${drawnLabels.take(8).toList()}، معكوسة المصدر: '
-        '${invertedLabels.take(8).toList()}؛ أجزاء: $labelFragmentLines');
+        '${invertedLabels.take(8).toList()}؛ أجزاء: $labelFragmentTail');
     expect(drawnLabels, isNotEmpty,
         reason: 'لم يظهر نمط «رقم ثم فاصل» (١-) في vector.pdf — لا يقيس الفحص '
-            'الترقيم من غير مثال مرسوم.');
+            'الترقيم من غير مثال مرسوم. P2 runs: '
+            '${_gate.canonicalLabelRuns.take(24).toList()}');
     expect(invertedLabels, isEmpty,
         reason: 'نصّ التسمية مرسوم بفاصل قبل الرقم (انقلاب في السلسلة '
             'المنطقية لا في المواضع فقط): ${invertedLabels.take(6).toList()}');
