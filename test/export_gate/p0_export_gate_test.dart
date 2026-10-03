@@ -28,6 +28,7 @@
 // لا «تقريباً صحيح» ولا RMSE: كل خلاصة مبنية على بايتات الملف نفسه.
 // =============================================================================
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -128,6 +129,11 @@ class _Gate {
 }
 
 final _Gate _gate = _Gate();
+
+/// أعلى سطر مرسوم: `ProbedLine` لا يحمل y بنفسه — السطر مجموعة كلمات، وأدناها
+/// هو سقفه في ترتيب الرسم.
+double _lineTop(ProbedLine line) =>
+    line.words.isEmpty ? 0.0 : line.words.map((w) => w.y).reduce(math.min);
 
 /// حالة خلية واحدة في مصفوفة P0.7.
 class _Cell {
@@ -1073,11 +1079,11 @@ void main() {
     expect(headerLineIndex, lessThan(bodyLineIndex),
         reason: 'الترويسة لا تُرسم قبل المتن في ص1: سطر الترويسة '
             '$headerLineIndex مقابل سطر المتن $bodyLineIndex.');
-    expect(firstPageLines.first.y,
-        lessThanOrEqualTo(report.pages.first.lines[headerLineIndex].y + 2.0),
+    expect(_lineTop(firstPageLines.first),
+        lessThanOrEqualTo(_lineTop(report.pages.first.lines[headerLineIndex]) + 2.0),
         reason: 'أعلى سطر مرسوم في ص1 ليس من حزمة الترويسة (أول سطر: '
             '"${firstPageLines.first.describe()}"، وسطر الترويسة '
-            'y=${report.pages.first.lines[headerLineIndex].y}).');
+            'y=${_lineTop(report.pages.first.lines[headerLineIndex])}).');
     final lastPage = report.pages.last;
     expect(
       lastPage.linesWithMarker('FTR1'),
