@@ -682,7 +682,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
     // differences, but fall back to this selection's own tight box when the
     // interval is implausibly wider than its glyph ink.
     final maximumPlausibleAdvance =
-        selectionWidth * 2 + LayoutUnits.ptToPx(0.5);
+        selectionWidth * 3 + LayoutUnits.ptToPx(0.5);
     if (!advance.isFinite ||
         advance <= 0.001 ||
         (selectionWidth > 0.001 && advance > maximumPlausibleAdvance)) {
