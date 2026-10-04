@@ -204,9 +204,15 @@ class CanonicalLayoutPdfPainter {
     List<double> advances,
   ) {
     assert(runs.length == advances.length);
-    final origins = List<double>.filled(runs.length, 0);
-    if (runs.isEmpty) return origins;
+    if (runs.isEmpty) return <double>[];
+    // LayoutDocument already distributed justification and fixed both line
+    // anchors. Paint those resolved origins as-is: remapping a justified line
+    // by PDF advances would perform a second, renderer-specific justification.
+    if (line.isJustified) {
+      return <double>[for (final run in runs) run.x];
+    }
 
+    final origins = List<double>.filled(runs.length, 0);
     final gaps = <double>[
       for (var index = 0; index + 1 < runs.length; index++)
         runs[index + 1].x - (runs[index].x + runs[index].width),
