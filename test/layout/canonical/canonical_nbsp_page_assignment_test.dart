@@ -15,6 +15,7 @@
 // نفسه المستعمل في test/pdf_engine/arabic_word_spacing_test.dart)، فلا يحملها
 // كل اختبار داخل جسمه؛ والمهل صريحة لأن كل اختبار يقيس مسحاً كاملاً.
 // =============================================================================
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/layout/blueprint/exam_blueprint.dart';
 import 'package:writing_questions_app/layout/canonical/exam_document_layout_adapter.dart';
