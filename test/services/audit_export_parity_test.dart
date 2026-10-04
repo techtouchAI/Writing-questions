@@ -242,70 +242,35 @@ void main() {
         reason: 'AUD-PDF-02: نص الضبط يجب أن يلتف على ≥3 أسطر لقياس التمدّد.');
     final lastJustifyLine = justifyLines.last;
     final canonicalRuns = canonicalFinalLine?.runs ?? const [];
-    final canonicalGapRows = <Map<String, Object?>>[
-      for (var index = 0; index + 1 < canonicalRuns.length; index++)
-        <String, Object?>{
-          'visualLeft': canonicalRuns[index].text,
-          'visualLeftId': canonicalRuns[index].id,
-          'leftXPt': canonicalRuns[index].x,
-          'leftWidthPt': canonicalRuns[index].width,
-          'visualRight': canonicalRuns[index + 1].text,
-          'visualRightId': canonicalRuns[index + 1].id,
-          'rightXPt': canonicalRuns[index + 1].x,
-          'canonicalGapPt': canonicalRuns[index + 1].x -
-              (canonicalRuns[index].x + canonicalRuns[index].width),
-        },
+    final compactCanonicalRuns = <String>[
+      for (final run in canonicalRuns)
+        'v${run.visualIndex}:"${run.text}"@'
+            '${run.x.toStringAsFixed(3)}+'
+            '${run.width.toStringAsFixed(3)}',
     ];
-    final pdfGapRows = <Map<String, Object?>>[
+    final pdfFocusWords = lastJustifyLine.words
+        .where((word) => word.x >= 350 && word.x <= 435)
+        .map((word) => '"${word.text}"@${word.x.toStringAsFixed(3)}+'
+            '${word.advanceWidth.toStringAsFixed(3)}')
+        .toList(growable: false);
+    final pdfFocusGaps = <String>[
       for (final index in lastJustifyLine.adjacencyIndices)
-        <String, Object?>{
-          'word': lastJustifyLine.words[index].text,
-          'xPt': lastJustifyLine.words[index].x,
-          'pdfAdvancePt': lastJustifyLine.words[index].advanceWidth,
-          'gapPt': lastJustifyLine.gapAfter(index),
-        },
+        if (lastJustifyLine.words[index].x >= 350 &&
+            lastJustifyLine.words[index].x <= 435)
+          '${lastJustifyLine.words[index].text} '
+              'gap=${lastJustifyLine.gapAfter(index).toStringAsFixed(3)}',
     ];
     debugPrint(
-      '[AUD-PDF-02 canonical-vs-PDF geometry] ${jsonEncode(<String, Object?>{
-        'canonicalLine': canonicalFinalLine == null
-            ? null
-            : <String, Object?>{
-                'id': canonicalFinalLine.id,
-                'semanticNodeId': canonicalFinalLine.semanticNodeId,
-                'lineIndex': canonicalFinalLine.lineIndex,
-                'direction': canonicalFinalLine.direction.name,
-                'alignment': canonicalFinalLine.alignment?.name,
-                'isJustified': canonicalFinalLine.isJustified,
-                'naturalWidthPt': canonicalFinalLine.naturalWidth,
-                'resolvedWidthPt': canonicalFinalLine.resolvedWidth,
-                'runs': <Map<String, Object?>>[
-                  for (final run in canonicalRuns)
-                    <String, Object?>{
-                      'id': run.id,
-                      'text': run.text,
-                      'xPt': run.x,
-                      'widthPt': run.width,
-                      'direction': run.direction.name,
-                      'font': run.style.font.family,
-                      'fontSizePt': run.style.fontSizePt,
-                    },
-                ],
-                'adjacentRunGaps': canonicalGapRows,
-              },
-        'pdfSpaceAdvancePt': natural,
-        'pdfLine': lastJustifyLine.describe(),
-        'pdfWords': <Map<String, Object?>>[
-          for (final word in lastJustifyLine.words)
-            <String, Object?>{
-              'text': word.text,
-              'xPt': word.x,
-              'advancePt': word.advanceWidth,
-              'font': word.baseFont,
-              'fontSizePt': word.fontSize,
-            },
-        ],
-        'pdfAdjacentGaps': pdfGapRows,
-      })}',
+      '[AUD-PDF-02 canonical-vs-PDF geometry] '
+      'line=${canonicalFinalLine?.id} '
+      'rtl/${canonicalFinalLine?.alignment?.name} '
+      'justified=${canonicalFinalLine?.isJustified} '
+      'natural/resolved=${canonicalFinalLine?.naturalWidth.toStringAsFixed(3)}/'
+      '${canonicalFinalLine?.resolvedWidth.toStringAsFixed(3)}pt '
+      'canonicalRuns(v#index,text,x,width)=$compactCanonicalRuns; '
+      'PDF space=${natural.toStringAsFixed(4)}pt '
+      'targetWords(x,advance)=$pdfFocusWords gaps=$pdfFocusGaps; '
+      'PDF line=${lastJustifyLine.describe()}',
       wrapWidth: 2000,
     );
 

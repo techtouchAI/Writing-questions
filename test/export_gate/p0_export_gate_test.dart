@@ -130,6 +130,7 @@ class _Gate {
   int mathRunCount = 0;
   int mathHostRequestCount = 0;
   List<String> canonicalLabelRuns = <String>[];
+  List<String> canonicalQuranTitlePairGeometry = <String>[];
   double? canonicalQuranTitleWordGap;
   // التقاط المعاينة الثقيل يُقاس مرة واحدة ويُخزَّن: لا يُعاد في كل اختبار،
   // ولا يبقى سببُه مختبئاً خلف اختبار القطع.
@@ -902,8 +903,18 @@ void main() {
           quranTitleWordGap =
               '${_gate.canonicalQuranTitleWordGap!.toStringAsFixed(3)}pt';
         }
+        _gate.canonicalQuranTitlePairGeometry = <String>[
+          if (zadni.isNotEmpty)
+            'زدني id=${zadni.first.id} '
+                '@${zadni.first.x.toStringAsFixed(3)}+'
+                '${zadni.first.width.toStringAsFixed(3)}',
+          if (ilma.isNotEmpty)
+            'علما id=${ilma.first.id} '
+                '@${ilma.first.x.toStringAsFixed(3)}+'
+                '${ilma.first.width.toStringAsFixed(3)}',
+        ];
         final quranTitleRunGeometry = <String>[
-          for (final line in quranTitleLines)
+          for (final line in quranTitleLines
             for (final run in line.runs)
               if (run.isQuran)
                 'line=${line.lineIndex} "${run.text}" '
@@ -1326,6 +1337,9 @@ void main() {
           reason: 'فجوات الكلمات في السطر غير المضبوط خارج نطاق المسافة '
               'الطبيعية: ${titleGaps.map((v) => v.toStringAsFixed(2)).toList()} — '
               'السطر: ${titleLine.describe()} — '
+              'canonical p0q1/title Quran pair gap='
+              '${_gate.canonicalQuranTitleWordGap?.toStringAsFixed(3)}pt '
+              'runs=${_gate.canonicalQuranTitlePairGeometry}; '
               'مسافة الكلمة لا تُطابق عرض المسافة للخط (انحدار realign).');
     }
 
