@@ -147,6 +147,15 @@ jobs:
             table="${table//$'\n'/%0A}"
             echo "::notice title=P0 gate — matrix (60 cells)::$table"
           fi
+          # الأدلة الرقمية لكل خلية (أعداد الصفحات، الأسطر، الأجزاء) كانت
+          # محصورة في مرفق لا يُقرأ من كل بيئة — فتُنشر تعليقاً أيضاً،
+          # فيبقى الرقم قابلاً للتحقق من الـ API كما من صفحة التشغيل.
+          if [ -f build/export_gate/summary.txt ]; then
+            evidence="$(cat build/export_gate/summary.txt)"
+            evidence="${evidence//%/%25}"; evidence="${evidence//:/%3A}"
+            evidence="${evidence//$'\r'/%0D}"; evidence="${evidence//$'\n'/%0A}"
+            echo "::notice title=P0 gate — summary::$evidence"
+          fi
       - name: Publish analyzer and test diagnostics
         if: failure() && (steps.analyze.outcome == 'failure' || steps.test.outcome == 'failure')
         shell: bash
