@@ -4,7 +4,8 @@
 // المطلوب ليس «الزوج يبدو ملتصقاً» بل إثبات ثلاث خصائص على نفس المصدر الذي
 // يقرأه Preview وPDF:
 //   1. القياس: للفراغ غير الفاصل تقدّم مقيس من الخط، والزوج يُقاس وحدةً واحدة.
-//   2. كسر الأسطر: عازل الأسطر لا يكسر الزوج عند أي عرض — ينزلق كاملاً.
+//   2. كسر الأسطر: عازل الأسطر لا يكسر الزوج عند أي عرض — ينزلق كاملاً، بينما
+//      الفراغ العادي عند العرض نفسه يكسر الزوج: المقارنة هي الدليل.
 //   3. توزيع الصفحات: تقسيم الصفحات يقصّ على حدود الأسطر لا داخل السطر، فلا
 //      يُفصل الزوج بين صفحتين ولو وقع حدّ الصفحة في منطقه.
 //
@@ -39,12 +40,21 @@ const String _nbsp = '\u00A0';
 const String _first = 'زينب';
 const String _second = 'خالد';
 
-/// أربعة أزواج فريدة تُوزَّع في المتن لتقع مواضع مختلفة من حدّ الصفحة.
+/// اثنا عشر زوجاً بكلمات **فريدة**: كل كلمة تظهر مرة واحدة في المتن، فيصحّ
+/// قياس «الكلمة على أي صفحة» و«الزوج لم ينقسم» بلا لبس مع تكرار.
 const List<List<String>> _pairs = <List<String>>[
   <String>['أحمد', 'بكر'],
   <String>['سعيد', 'جميل'],
   <String>['ليلى', 'هناد'],
   <String>['مريم', 'وليد'],
+  <String>['يوسف', 'كريم'],
+  <String>['هدى', 'سليم'],
+  <String>['عمر', 'رشيد'],
+  <String>['نورة', 'فهد'],
+  <String>['خديجة', 'ماجد'],
+  <String>['طارق', 'نجيب'],
+  <String>['سلمى', 'أمين'],
+  <String>['زيد', 'نبيل'],
 ];
 
 const LayoutTextStyle _style = LayoutTextStyle(
@@ -216,61 +226,86 @@ void main() {
   );
 
   test(
-    'P2-NBSP-02: لا كسر سطر داخل الزوج عند أي عرض',
+    'P2-NBSP-02: NBSP يمنع كسر الزوج حيث يكسره الفراغ العادي',
     () async {
       const metrics = FlutterTextMetrics();
 
-      final pair = '$_first$_nbsp$_second';
-      final pairAdvance =
-          metrics.measureText(pair, _style, DocumentDirection.rtl).advance;
+      final firstAdvance = metrics
+          .measureText(_first, _style, DocumentDirection.rtl)
+          .advance;
+      final secondAdvance = metrics
+          .measureText(_second, _style, DocumentDirection.rtl)
+          .advance;
+      final nbspAdvance = metrics.whitespaceAdvance(
+        _style,
+        DocumentDirection.rtl,
+        nonBreaking: true,
+      );
       final prefix = '${_filler(2)} ';
-      final base = metrics
-              .measureText(prefix, _style, DocumentDirection.rtl)
-              .advance +
-          pairAdvance;
+      final prefixAdvance =
+          metrics.measureText(prefix, _style, DocumentDirection.rtl).advance;
+      final pairAdvance = firstAdvance + nbspAdvance + secondAdvance;
 
-      var movedAsUnit = 0;
-      final lineCounts = <int>{};
+      MeasuredParagraph layout(String text, double width) =>
+          metrics.layoutParagraph(
+            spans: <MetricSpan>[_span('nbsp-body', text)],
+            width: width,
+            direction: DocumentDirection.rtl,
+            alignment: PaperAlign.right,
+            resolveJustification: false,
+          );
+
+      var spaceSplitWidths = 0;
+      var nbspMovedAsUnit = 0;
+      final nbspLineCounts = <int>{};
       for (var step = 0; step <= 12; step++) {
-        final width = base - pairAdvance / 2 + pairAdvance * step / 12;
-        final paragraph = metrics.layoutParagraph(
-          spans: <MetricSpan>[
-            _span('nbsp-body', '$prefix$pair ${_filler(1)}'),
-          ],
-          width: width,
-          direction: DocumentDirection.rtl,
-          alignment: PaperAlign.right,
-          resolveJustification: false,
-        );
-        final texts = paragraph.lines.map(_lineText).toList(growable: false);
-        expect(texts.length, greaterThan(1),
-            reason: 'العرض $width أنتج سطراً واحداً فلا يقيس كسراً.');
-        lineCounts.add(texts.length);
-        for (final line in texts) {
+        final width = prefixAdvance + pairAdvance * (0.55 + step * 0.05);
+        final spaceLines = layout('$prefix$_first $_second', width)
+            .lines
+            .map(_lineText)
+            .toList(growable: false);
+        final nbspLines = layout('$prefix$_first$_nbsp$_second', width)
+            .lines
+            .map(_lineText)
+            .toList(growable: false);
+
+        // (1) الفراغ العادي يكسر عند هذا العرض: الكلمتان في سطرين.
+        final spaceSplit = spaceLines.any((line) =>
+                line.contains(_first) && !line.contains(_second)) &&
+            spaceLines.any((line) =>
+                line.contains(_second) && !line.contains(_first));
+        if (spaceSplit) spaceSplitWidths++;
+
+        // (2) عند العرض نفسه لا يُكسر الزوج بالـNBSP، ولا يقف NBSP في طرف سطر.
+        for (final line in nbspLines) {
           final hasFirst = line.contains(_first);
           final hasSecond = line.contains(_second);
           expect(hasFirst, hasSecond,
-              reason: 'كُسر الزوج عند عرض $width: السطر «$line» يحمل '
+              reason: 'كُسر الزوج عند عرض $width (فراغ عادي كُسر هنا: '
+                  '$spaceSplit): السطر «$line» يحمل '
                   '${hasFirst ? _first : _second} وحده.');
           expect(line.startsWith(_nbsp), isFalse,
               reason: 'بدأ سطر بـNBSP عند عرض $width (كسر قبل الزوج): «$line»');
           expect(line.endsWith(_nbsp), isFalse,
               reason: 'انتهى سطر بـNBSP عند عرض $width (كسر بعد الزوج): «$line»');
         }
-        final carried = texts.indexWhere(
+        final carried = nbspLines.indexWhere(
             (line) => line.contains(_first) && line.contains(_second));
-        if (carried > 0) {
-          movedAsUnit++;
-        }
+        expect(carried, isNonNegative,
+            reason: 'الزوج غير موجود في أي سطر عند عرض $width: '
+                '${nbspLines.toList()}');
+        if (carried > 0) nbspMovedAsUnit++;
+        nbspLineCounts.add(nbspLines.length);
       }
-      expect(movedAsUnit, greaterThan(0),
-          reason: 'لم يُرصد انتقال الزوج كوحدة إلى سطر تالٍ في أي عرض: المسح '
-              'لا يمرّ على نقطة الكسر المطلوبة.');
-      expect(lineCounts.length, greaterThan(1),
-          reason: 'كل العروض أنتجت العدد نفسه من الأسطر $lineCounts: المسح '
-              'غير حسّاس لعرض السطر.');
+      expect(spaceSplitWidths, greaterThan(0),
+          reason: 'لم يكسر الفراغ العادي الزوج في أي عرض ممسوح: المسح لا يمرّ '
+              'على نقطة الكسر، فلا يقيس فرق NBSP.');
+      expect(nbspMovedAsUnit, greaterThan(0),
+          reason: 'لم ينتقل الزوج كوحدة إلى سطر تالٍ في أي عرض: المسح لا '
+              'يمرّ على الحافة التي يلزم فيها الانزلاق.');
       debugPrint('::notice title=P2-NBSP-02::widths=13 '
-          'lineCounts=${lineCounts.toList()..sort()} movedAsUnit=$movedAsUnit');
+          'spaceSplitWidths=$spaceSplitWidths nbspMovedAsUnit=$nbspMovedAsUnit '
+          'nbspLineCounts=${nbspLineCounts.toList()..sort()}');
     },
     timeout: _budget,
   );
@@ -278,12 +313,12 @@ void main() {
   test(
     'P2-NBSP-03: حدّ الصفحة لا يفصل الزوج، والسؤال يُقسَّم فعلاً',
     () async {
-      // متن طويل بقياس صريح: أطول صفحة ممسوحة 520pt، وهوامش 15مم.
+      // متن طويل بقياس صريح: أطول صفحة ممسوحة 520pt، وهوامش 15مم. كل زوج
+      // بكلمات فريدة، فيُقاس مالك الصفحة لكل كلمة بلا تكرار.
       final body = <String>[
-        for (var group = 0; group < 9; group++) ...<String>[
+        for (var group = 0; group < _pairs.length; group++) ...<String>[
           _filler(20),
-          '${_pairs[group % _pairs.length][0]}$_nbsp'
-              '${_pairs[group % _pairs.length][1]}',
+          '${_pairs[group][0]}$_nbsp${_pairs[group][1]}',
         ],
         _filler(20),
       ].join(' ');
@@ -335,7 +370,7 @@ void main() {
           .map((height) => '${height.toInt()}pt→${pagesByHeight[height]}ص')
           .join(' ');
       debugPrint('::notice title=P2-NBSP-03::$heightsText '
-          'splitQuestion=$anySplitQuestion pairs=4');
+          'splitQuestion=$anySplitQuestion pairs=${_pairs.length}');
     },
     timeout: _budget,
   );
