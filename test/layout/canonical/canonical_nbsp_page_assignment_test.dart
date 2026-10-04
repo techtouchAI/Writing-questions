@@ -10,6 +10,10 @@
 //
 // الحكم على `LayoutDocument` نفسه (لا صورة ولا نصّ مُستخرَج)، وكل النصوص هنا
 // من الاختبار لا من ركيزة منتج.
+//
+// الحِمل: خطوط التطبيق تُحمَّل مرة واحدة في `setUpAll` قبل الاختبارات (النمط
+// نفسه المستعمل في test/pdf_engine/arabic_word_spacing_test.dart)، فلا يحملها
+// كل اختبار داخل جسمه؛ والمهل صريحة لأن كل اختبار يقيس مسحاً كاملاً.
 // =============================================================================
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/layout/blueprint/exam_blueprint.dart';
@@ -47,6 +51,10 @@ const LayoutTextStyle _style = LayoutTextStyle(
   fontSizePt: 12,
   lineHeightFactor: 1.45,
 );
+
+/// المهل صريحة كي يفشل الاختبار برسالة تقول «تجاوز المدة» لا أن يُبتلع في
+/// مهلة المنصة الافتراضية؛ والحساب نفسه لا يعتمد عليها.
+const Timeout _budget = Timeout(Duration(minutes: 3));
 
 /// وحدة تعبئة بلا فراغ زائد في الطرفين.
 String _filler([int repeat = 1]) =>
@@ -113,10 +121,15 @@ LayoutDocument _layout(ExamDocument document, double pageHeightPt) {
 }
 
 void main() {
-  testWidgets(
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    await FlutterTextMetrics.ensureFontsLoaded();
+  });
+
+  test(
     'P2-NBSP-01: قياس الفراغ غير الفاصل، والزوج وحدةٌ واحدة، والضبط لا يوسّعه',
-    (_) async {
-      await FlutterTextMetrics.ensureFontsLoaded();
+    () async {
       const metrics = FlutterTextMetrics();
 
       final space = metrics.whitespaceAdvance(_style, DocumentDirection.rtl);
@@ -192,13 +205,18 @@ void main() {
       }
       expect(justifiedLines, greaterThan(0),
           reason: 'لم يتحقق سطر مضبوط في أي عرض ممسوح: الفحص لم يقس الضبط.');
+      debugPrint('::notice title=P2-NBSP-01::space='
+          '${space.toStringAsFixed(3)} nbsp=${nonBreaking.toStringAsFixed(3)} '
+          'pair=${pairAdvance.toStringAsFixed(3)} '
+          'sum=${(first + second).toStringAsFixed(3)} '
+          'justifiedLines=$justifiedLines/21');
     },
+    timeout: _budget,
   );
 
-  testWidgets(
+  test(
     'P2-NBSP-02: لا كسر سطر داخل الزوج عند أي عرض',
-    (_) async {
-      await FlutterTextMetrics.ensureFontsLoaded();
+    () async {
       const metrics = FlutterTextMetrics();
 
       final pair = '$_first$_nbsp$_second';
@@ -250,14 +268,15 @@ void main() {
       expect(lineCounts.length, greaterThan(1),
           reason: 'كل العروض أنتجت العدد نفسه من الأسطر $lineCounts: المسح '
               'غير حسّاس لعرض السطر.');
+      debugPrint('::notice title=P2-NBSP-02::widths=13 '
+          'lineCounts=${lineCounts.toList()..sort()} movedAsUnit=$movedAsUnit');
     },
+    timeout: _budget,
   );
 
-  testWidgets(
+  test(
     'P2-NBSP-03: حدّ الصفحة لا يفصل الزوج، والسؤال يُقسَّم فعلاً',
-    (_) async {
-      await FlutterTextMetrics.ensureFontsLoaded();
-
+    () async {
       // متن طويل بقياس صريح: أطول صفحة ممسوحة 520pt، وهوامش 15مم.
       final body = <String>[
         for (var group = 0; group < 9; group++) ...<String>[
@@ -270,9 +289,11 @@ void main() {
       final document = _document(body);
 
       const heights = <double>[240, 320, 420, 520];
+      final pagesByHeight = <double, int>{};
       var anySplitQuestion = false;
       for (final height in heights) {
         final layout = _layout(document, height);
+        pagesByHeight[height] = layout.pageCount;
         expect(layout.pageCount, greaterThan(1),
             reason: 'ارتفاع الصفحة $height لم يُنتج أكثر من صفحة: التقسيم '
                 'غير مقيس.');
@@ -309,6 +330,12 @@ void main() {
       }
       expect(anySplitQuestion, isTrue,
           reason: 'لا سؤال مُقسَّم في أي ارتفاع ممسوح.');
+      final heightsText = heights
+          .map((height) => '${height.toInt()}pt→${pagesByHeight[height]}ص')
+          .join(' ');
+      debugPrint('::notice title=P2-NBSP-03::$heightsText '
+          'splitQuestion=$anySplitQuestion pairs=4');
     },
+    timeout: _budget,
   );
 }
