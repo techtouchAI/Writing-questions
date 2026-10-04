@@ -163,7 +163,7 @@ void main() {
       final second = metrics
           .measureText(_second, _style, DocumentDirection.rtl)
           .advance;
-      final pair = '$_first$_nbsp$_second';
+      const pair = '$_first$_nbsp$_second';
       final pairAdvance =
           metrics.measureText(pair, _style, DocumentDirection.rtl).advance;
       expect(pairAdvance, greaterThanOrEqualTo(first + second),

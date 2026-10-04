@@ -30,7 +30,6 @@
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -671,7 +670,7 @@ Future<_PreviewCapture> _capturePreviewOf(
         '${document.name}: صفحات=$pageCount، '
         'مجموع الارتفاعات=${heightSum.toStringAsFixed(1)}px، '
         'صفحة=${PaperMetrics.pageContentHeightFor(document.settings.marginMm)}px، '
-        'الكتل=${measuredHeights}');
+        'الكتل=$measuredHeights');
   }
   expect(pageCount, greaterThan(1),
       reason: 'التركيبة يجب أن تتعدّى صفحة واحدة لتغطية التقسيم: '
@@ -1638,7 +1637,7 @@ void main() {
         evidence: 'أقواس مرسومة=${firstVisualParenLine.length}، فواصل الترقيم '
             'يسار الأرقام=${drawnLabels.length}، لا انقلاب=${invertedLabels.length}');
     _matrix.record('marks', P0Path.vectorPdf, P0Status.pass,
-        evidence: '«(٢٠ درجة)» مرسومة مع أرقام مشرقية=${indic}');
+        evidence: '«(٢٠ درجة)» مرسومة مع أرقام مشرقية=$indic');
   });
 
   test('P0-GATE-04: بنية vector.pdf — الخطوط والأحجام والمعادلات والصور', () {
@@ -1869,7 +1868,7 @@ void main() {
     // بشكله المطبَّع أو الخام، ولو غاب واحد لسقط كل ما بعده من ادّعاء.
     expect(missingAnywhere, isEmpty,
         reason: 'حقول ترويسة غائبة عن editable.docx بالمطبَّع والخام: '
-            '${missingAnywhere} — الخام: '
+            '$missingAnywhere — الخام: '
             '${P0GateFixture.headerMarkers.join("/")}، المطبَّع: '
             '$localizedHeaderMarkers');
     if (missingInHeaderPart.isNotEmpty) {
@@ -2738,7 +2737,7 @@ void _recordPreviewCells(_PreviewCapture rtl, _PreviewCapture ltr) {
 
     // المحاذاة: كل كتلة RTL تبدأ من الحافة اليمنى للصندوق نفسه.
     rightDrift = (title.rect.right - body.rect.right).abs();
-    expect(rightDrift!, lessThan(1.5),
+    expect(rightDrift, lessThan(1.5),
         reason: 'حواف بداية مختلفة بين العنوان والمتن في RTL: '
             '${title.rect.right} مقابل ${body.rect.right}');
 
@@ -2920,13 +2919,13 @@ void _recordExactCells() {
       feature.key,
       P0Path.exact,
       P0Status.deferredToP1,
-      reason: 'Exact لقطة نقطية للصفحة: لا نص مرسوم (${drawnWords} كلمة)، '
+      reason: 'Exact لقطة نقطية للصفحة: لا نص مرسوم ($drawnWords كلمة)، '
           'ولا `w:t`/`w:bidi`/`w:ind` ولا خطوط مضمَّنة — فالتسلسل والتشكيل '
           'والأرقام وخصائص الفقرة لا تُقاس فيه بنيةً، وأي «صحة» فيه تُستنتج '
           'من صورة المعاينة لا من المخرج. البوابة القائمة '
           '(tool/verify_visual_parity.sh) تقيس مطابقته للبكسل، وهذا تمام '
           'دوره؛ خصائص البنية تُقاس في vector/editable.',
-      evidence: 'كلمات مرسومة=${drawnWords}، وسائط في exact.docx='
+      evidence: 'كلمات مرسومة=$drawnWords، وسائط في exact.docx='
           '${exactDocx.mediaNames.length}، أجزاء xml='
           '${exactDocx.xmlPartNames.length}',
     );

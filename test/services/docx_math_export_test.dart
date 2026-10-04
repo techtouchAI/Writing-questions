@@ -81,7 +81,7 @@ ExamDocument _documentWithMath(String latex) {
   return document.withQuestionAt(
     0,
     question.copyWith(
-      statement: 'أوجد قيمة ' + '\$' + latex + '\$',
+      statement: 'أوجد قيمة \$$latex\$',
       items: <BranchItem>[],
       branches: <BranchModel>[],
       attachments: <FloatingElement>[],
@@ -359,7 +359,7 @@ void main() {
     final withMatrix = document.withQuestionAt(
       0,
       question.copyWith(
-        statement: 'رتّب المصفوفة ' + '\$' + _matrixLatex + r'$ في صفوف',
+        statement: 'رتّب المصفوفة \$$_matrixLatex\$ في صفوف',
         items: <BranchItem>[],
         branches: <BranchModel>[],
         attachments: <FloatingElement>[],
@@ -395,7 +395,7 @@ void main() {
     final withMatrix = document.withQuestionAt(
       0,
       question.copyWith(
-        statement: 'رتّب ' + '\$' + _matrixLatex + r'$ ثم اكتب الحد الأدنى',
+        statement: 'رتّب \$$_matrixLatex\$ ثم اكتب الحد الأدنى',
         items: <BranchItem>[],
         branches: <BranchModel>[],
         attachments: <FloatingElement>[],
@@ -468,7 +468,7 @@ void main() {
           for (var index = 0; index < _mathSamples.length; index++)
             BranchItem(
               id: 'm$index',
-              text: '(${index + 1}) ' + '\$' + _mathSamples[index] + '\$',
+              text: '(${index + 1}) \$${_mathSamples[index]}\$',
             ),
         ],
         branches: <BranchModel>[
@@ -476,7 +476,7 @@ void main() {
             id: 'bm',
             marks: 4,
             content: BranchContent(
-              statement: 'المصفوفة: ' + '\$' + _matrixLatex + '\$',
+              statement: 'المصفوفة: \$$_matrixLatex\$',
             ),
           ),
         ],

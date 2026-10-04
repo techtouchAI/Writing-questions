@@ -16,7 +16,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/layout/blueprint/exam_blueprint.dart';
 import 'package:writing_questions_app/layout/paper_metrics.dart';
 import 'package:writing_questions_app/layout/visual/visual_metrics.dart';
-import 'package:writing_questions_app/layout/visual/visual_typography.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';

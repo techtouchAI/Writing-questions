@@ -26,9 +26,6 @@ import '../pdf_engine/pdf_content_probe.dart';
 final RegExp kMarkerTokenPattern =
     RegExp(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9]{2,})(?![A-Za-z0-9])');
 
-/// حقل `<image>` أو صورة XObject داخل مجرى الصفحة: `/ImNN Do`.
-final RegExp _doImagePattern = RegExp(r'/(X[A-Za-z0-9_]+|Im[A-Za-z0-9_]+)\s+Do');
-
 /// صفحة واحدة محلَّلة.
 /// يعكس نصاً بمحارفه: ما يُرسم في سطر عربي يُرسم بترتيب بصري معكوس (العرض
 /// يُمِرّ Bidi، فتُرى السلسلة اللاتينية `CAT1` بصيغة معكوسة). البحث بالاتجاه

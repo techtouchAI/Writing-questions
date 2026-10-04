@@ -97,8 +97,8 @@ void main() {
 
   group('معامل الورقة يُطبَّق مرة واحدة', () {
     const scaled = PaperSettings(baseFontSize: 12.6, lineSpacing: 2.0);
-    final fontScale = 12.6 / PaperSettings.referenceFontSize;
-    final heightScale = 2.0 / PaperSettings.referenceLineSpacing;
+    const fontScale = 12.6 / PaperSettings.referenceFontSize;
+    const heightScale = 2.0 / PaperSettings.referenceLineSpacing;
 
     test('الحجم والارتفاع مضروبان بالمعامل مرة واحدة لا مرتين', () {
       final title = _resolve(VisualRole.questionTitle, settings: scaled);

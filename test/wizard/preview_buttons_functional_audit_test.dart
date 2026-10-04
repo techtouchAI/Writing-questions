@@ -252,7 +252,7 @@ void main() {
     const BranchRef essayRef = BranchRef(questionIndex: 0, branchIndex: 0);
     const BranchRef mcqRef = BranchRef(questionIndex: 0, branchIndex: 1);
     const BranchRef tfRef = BranchRef(questionIndex: 1, branchIndex: 0);
-    final PointsOwner questionOwner = PointsOwner.question(0);
+    const PointsOwner questionOwner = PointsOwner.question(0);
     final PointsOwner mcqOwner = PointsOwner.branch(mcqRef);
     final PointsOwner tfOwner = PointsOwner.branch(tfRef);
 
