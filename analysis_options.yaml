@@ -7,8 +7,9 @@ analyzer:
     # مع تعديل موثّق واحد (انظر docs/arabic_word_spacing_fix.md و
     # README-VENDORED.md)، ولا نُخضعها لقواعد تحليل التطبيق.
     - third_party/**
-    # TEMPORARY (removed before the final commit): isolate lib diagnostics while tests are migrated.
-    - test/**
+    # كان `test/**` مستثنى مؤقتاً أثناء ترحيل P1، فأخفت الاستثناءة أخطاء
+    # ترجمة في الاختبارات الجديدة (مثال موثّق: debugPrint بلا import).
+    # أُزيل الاستثناء ليشمل التحليل الاختبارات كما يشمل lib.
 
 linter:
   rules:
