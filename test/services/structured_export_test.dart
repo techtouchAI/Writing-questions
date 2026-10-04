@@ -238,8 +238,10 @@ void main() {
       // المسافة بين صندوقين متجاورين = عرض الصندوق + الفجوة (من العقد).
       // تُقاس من **تسميتي** الخيارين (وكلتاهما في أول صندوقها) فلا يتداخل
       // عرض التسمية مع نص الخيار في القياس.
-      final labelA = probe.words.firstWhere((word) => word.text.contains('A)'));
-      final labelB = probe.words.firstWhere((word) => word.text.contains('B)'));
+      // The canonical semantic tree keeps punctuation in its own stable run,
+      // so the word probe sees the alphanumeric label separately from `)`.
+      final labelA = probe.words.firstWhere((word) => word.text.trim() == 'A');
+      final labelB = probe.words.firstWhere((word) => word.text.trim() == 'B');
       final step = PaperMetrics.pt(
         VisualMetrics.optionBoxWidthPx + VisualMetrics.optionWrapSpacingPx,
       );
@@ -250,10 +252,17 @@ void main() {
         isTrue,
         reason: 'نص النقطة مرسوم ككلمة مستقلة عن تسميتها.',
       );
+      final pointLine = probe.lines.firstWhere(
+        (line) => line.words.any((word) => word.text.trim() == 'PointOne'),
+      );
+      final pointLabelParts = pointLine.words
+          .map((word) => word.text.trim())
+          .where((text) => text == '1' || text == '-')
+          .toSet();
       expect(
-        probe.words.any((word) => word.text.contains('1-')),
-        isTrue,
-        reason: 'تسمية النقطة كتلة مستقلة (لا نص مدموج مع النص).',
+        pointLabelParts,
+        containsAll(<String>{'1', '-'}),
+        reason: 'رقم النقطة وفاصلها يُرسمان كتسمية مستقلة عن نصها.',
       );
     });
   });

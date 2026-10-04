@@ -57,27 +57,32 @@ Future<void> _openReview(WidgetTester tester) async {
   await tester.ensureVisible(tool);
   await tester.pumpAndSettle();
   await tester.tap(tool);
-  await tester.pumpAndSettle();
-  expect(find.text('مراجعة الورقة'), findsOneWidget);
+  // Opening review resolves the canonical pagination document before showing
+  // the dialog. Pump the real loading state until the dialog appears; this
+  // tolerates the toolbar's indeterminate busy animation without settling it.
+  final reviewTitle = find.text('مراجعة الورقة');
+  for (var frame = 0; frame < 300 && reviewTitle.evaluate().isEmpty; frame++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+  expect(reviewTitle, findsOneWidget);
 }
 
 void main() {
   testWidgets(
-    'Exact اختياري ومطفأ افتراضياً لإبقاء التصدير قابلاً للتحرير',
+    'Exact is optional by default and accurately discloses image-only exports',
     (tester) async {
       await _pump(tester);
       await _openReview(tester);
 
-      final switchFinder = find.byKey(const ValueKey<String>('export-exact-mode'));
+      const switchKey = ValueKey<String>('export-exact-mode');
+      final switchFinder = find.byKey(switchKey);
       expect(
         switchFinder,
         findsOneWidget,
         reason: 'مفتاح نمط التصدير في الحوار.',
       );
-
-      final asSwitch = tester.widget<SwitchListTile>(switchFinder);
       expect(
-        asSwitch.value,
+        tester.widget<SwitchListTile>(switchFinder).value,
         isFalse,
         reason: 'المسار الافتراضي نصي وقابل للتحرير.',
       );
@@ -85,22 +90,12 @@ void main() {
       expect(find.textContaining('غير قابل للتحرير'), findsNothing);
       expect(find.textContaining('صور صفحات المعاينة'), findsNothing);
       expect(find.text('صفحات المعاينة'), findsOneWidget);
-    },
-  );
 
-  testWidgets(
-    'تفعيل Exact يعلن أن PDF وWord صفحات صور غير قابلة للتحرير',
-    (tester) async {
-      await _pump(tester);
-      await _openReview(tester);
-
-      await tester.tap(find.byKey(const ValueKey<String>('export-exact-mode')));
-      await tester.pumpAndSettle();
-
-      final asSwitch = tester.widget<SwitchListTile>(
-        find.byKey(const ValueKey<String>('export-exact-mode')),
-      );
-      expect(asSwitch.value, isTrue);
+      // Toggle the same live review dialog: normal mode stays editable, while
+      // Exact must disclose the loss of searchability/editability explicitly.
+      await tester.tap(switchFinder);
+      await tester.pump();
+      expect(tester.widget<SwitchListTile>(switchFinder).value, isTrue);
       expect(find.textContaining('صور صفحات المعاينة'), findsOneWidget);
       expect(find.textContaining('غير قابل للتحرير'), findsOneWidget);
       expect(find.textContaining('OMML'), findsNothing);

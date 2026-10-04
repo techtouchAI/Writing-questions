@@ -241,7 +241,8 @@ void main() {
         greaterThanOrEqualTo(contentWidth - 2.0),
         reason: 'AUD-PDF-02: سطر ضبط ملتفّ لم يمتد حتى حافة صندوق المحتوى '
             '(${(maxRight - minLeft).toStringAsFixed(2)} من $contentWidth) — '
-            'الضبط غير مطبَّق على الأسطر الملتفّة في PDF.',
+            'الضبط غير مطبَّق على الأسطر الملتفّة في PDF. '
+            'السطر: ${line.describe()}',
       );
     }
 
@@ -252,7 +253,9 @@ void main() {
         lastJustifyLine.gapAfter(index),
         lessThanOrEqualTo(natural + 0.35),
         reason: 'AUD-PDF-02: السطر الأخير لفقرة الضبط ممدود داخل PDF — '
-            'Microsoft Word لا تمدّد السطر الأخير أبداً.',
+            'Microsoft Word لا تمدّد السطر الأخير أبداً. '
+            'gap=${lastJustifyLine.gapAfter(index).toStringAsFixed(3)} '
+            'line=${lastJustifyLine.describe()}',
       );
     }
 

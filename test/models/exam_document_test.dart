@@ -516,6 +516,59 @@ void main() {
       expect(restored.floatingElements.single.dx, 24);
     });
 
+    test('resolves floating elements by stable id in legacy owner attachments', () {
+      final global = FloatingElement(
+        id: 'global-float',
+        type: FloatingElementType.shape,
+        shape: FloatingShapeType.circle,
+        dx: 0,
+        dy: 0,
+        width: 10,
+        height: 10,
+      );
+      final questionFloat = FloatingElement(
+        id: 'question-float',
+        type: FloatingElementType.shape,
+        shape: FloatingShapeType.square,
+        dx: 0,
+        dy: 0,
+        width: 10,
+        height: 10,
+      );
+      final branchFloat = FloatingElement(
+        id: 'branch-float',
+        type: FloatingElementType.shape,
+        shape: FloatingShapeType.triangle,
+        dx: 0,
+        dy: 0,
+        width: 10,
+        height: 10,
+      );
+      final document = ExamDocument(
+        name: 'مرفقات قديمة',
+        header: ExamHeaderModel.initial(),
+        floatingElements: <FloatingElement>[global],
+        questions: <QuestionModel>[
+          QuestionModel(
+            id: 'q-floats',
+            questionNumber: 1,
+            attachments: <FloatingElement>[questionFloat],
+            branches: <BranchModel>[
+              BranchModel(
+                id: 'b-floats',
+                attachments: <FloatingElement>[branchFloat],
+              ),
+            ],
+          ),
+        ],
+      );
+
+      expect(document.floatingElementById(global.id), same(global));
+      expect(document.floatingElementById(questionFloat.id), same(questionFloat));
+      expect(document.floatingElementById(branchFloat.id), same(branchFloat));
+      expect(document.floatingElementById('missing-float'), isNull);
+    });
+
     test('deleting an owner does not delete a document-level floating element', () {
       final element = FloatingElement(
         id: 'survives-question-removal',

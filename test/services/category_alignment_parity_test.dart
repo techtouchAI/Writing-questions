@@ -91,14 +91,14 @@ void main() {
     test('يمين: الكلمة تنتهي عند حدّ المحتوى الأيمن', () async {
       final word = await categoryWord(PaperAlign.right);
       expect(word.x + word.advanceWidth, closeTo(_rightEdge, 3),
-          reason: 'المحاذاة «يمين» تُلصق القسم بحدّ الصندوق الأيمن.');
+          reason: 'المحاذاة «يمين» تُلصق القسم بحدّ الصندوق الأيمن: $word');
     });
 
     test('وسط: مركز الكلمة في منتصف الصندوق', () async {
       final word = await categoryWord(PaperAlign.center);
       expect(word.x + word.advanceWidth / 2,
           closeTo((_leftEdge + _rightEdge) / 2, 4),
-          reason: 'المحاذاة «وسط» توسّط سطر القسم في صندوق المحتوى.');
+          reason: 'المحاذاة «وسط» توسّط سطر القسم في صندوق المحتوى: $word');
     });
   });
 
