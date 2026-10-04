@@ -135,7 +135,7 @@ void main() {
       expect(RegExp(r'<wp:anchor ').allMatches(xml).length, 3,
           reason: 'صورة مثبّتة لكل صفحة.');
       expect(
-        RegExp('<wp:positionH relativeFrom=\"page\">'
+        RegExp('<wp:positionH relativeFrom="page">'
                 '<wp:posOffset>0</wp:posOffset></wp:positionH>')
             .allMatches(xml)
             .length,
@@ -143,7 +143,7 @@ void main() {
         reason: 'الموضع الأفقي من أصل الصفحة (لا من الفقرة).',
       );
       expect(
-        RegExp('<wp:positionV relativeFrom=\"page\">'
+        RegExp('<wp:positionV relativeFrom="page">'
                 '<wp:posOffset>0</wp:posOffset></wp:positionV>')
             .allMatches(xml)
             .length,

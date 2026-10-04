@@ -30,7 +30,6 @@
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -237,6 +236,11 @@ class _Gate {
   }
 
   bool get previewReady => rtlCapture != null && ltrCapture != null;
+
+  /// أجزاء الترويسة في editable.docx القابل للتحرير (لا شيء عند غياب الإطار).
+  List<String> headerPartNames() => rtlDocx.xmlPartNames
+      .where((name) => name.startsWith('word/header'))
+      .toList(growable: false);
 
   void requirePreview() {
     if (!previewReady) {
@@ -666,7 +670,7 @@ Future<_PreviewCapture> _capturePreviewOf(
         '${document.name}: صفحات=$pageCount، '
         'مجموع الارتفاعات=${heightSum.toStringAsFixed(1)}px، '
         'صفحة=${PaperMetrics.pageContentHeightFor(document.settings.marginMm)}px، '
-        'الكتل=${measuredHeights}');
+        'الكتل=$measuredHeights');
   }
   expect(pageCount, greaterThan(1),
       reason: 'التركيبة يجب أن تتعدّى صفحة واحدة لتغطية التقسيم: '
@@ -1633,7 +1637,7 @@ void main() {
         evidence: 'أقواس مرسومة=${firstVisualParenLine.length}، فواصل الترقيم '
             'يسار الأرقام=${drawnLabels.length}، لا انقلاب=${invertedLabels.length}');
     _matrix.record('marks', P0Path.vectorPdf, P0Status.pass,
-        evidence: '«(٢٠ درجة)» مرسومة مع أرقام مشرقية=${indic}');
+        evidence: '«(٢٠ درجة)» مرسومة مع أرقام مشرقية=$indic');
   });
 
   test('P0-GATE-04: بنية vector.pdf — الخطوط والأحجام والمعادلات والصور', () {
@@ -1812,19 +1816,21 @@ void main() {
     // الترويسة في Word لها شكلان عند المنتج نفسه، ولا يُقرَّر الادّعاءُ بل
     // القياس: `DocxDocumentExportService` يبني `word/header1.xml` **فقط** إذا
     // كان للورقة إطار صفحة (`settings.pageBorder` مع صورة إطار غير فارغة،
-    // docx_document_export_service.dart:395)، وإلا طُبعت فقرات الترويسة في
-    // أول المتن فتنكسر مع الصفحات ولا تتكرر. الركيزة بلا إطار (لا تُختَرع
-    // أصول من الاختبار) ⇒ المطلوب هنا: أن يظهر نص الترويسة في أحد الموضعين،
-    // وأن يُسجَّل أيُّهما استُعمل — لا أن يُدَّعى تكرارٌ غير موجود.
+    // docx_document_export_service.dart:431)، وإلا طُبعت فقرات الترويسة في
+    // أول المتن مرة واحدة كما في المعاينة وPDF. الركيزة بلا إطار (لا
+    // تُختَرع أصول من الاختبار) ⇒ المطلوب هنا: أن يظهر كل حقل في أحد
+    // الموضعين بشكله المطبَّع أو الخام، وأن يُسجَّل أيُّهما استُعمل — لا أن
+    // يُدَّعى تكرارٌ غير موجود، ولا أن يُقرأ تطبيعُ الأرقام فقدانَ حقل.
     final headerParts = probe.xmlPartNames
         .where((name) => name.startsWith('word/header'))
         .toList();
-    final headerInBody = P0GateFixture.headerMarkers
-        .every((marker) => probe.flatText.contains(marker));
-    // ادّعاءٌ مقيَس لا مُتوهَّم: جدول الترويسة يُكتب في المتن (سطر 365 من
+    final headerInBody = P0GateFixture.headerMarkers.every((marker) =>
+        probe.flatText.contains(marker) ||
+        probe.flatText.contains(document.localizeDigits(marker)));
+    // ادّعاءٌ مقيَس لا مُتوهَّم: جدول الترويسة يُكتب في المتن (سطر 401 من
     // docx_document_export_service.dart) بلا شروط، فوجوده هو ما يُفحص هنا؛
-    // أما هل وصلت **كل حقل** من حقول الترويسة، فقياسٌ مستقل يُسجَّل فشله
-    // انحداراً حقيقياً في المصفوفة لا في نصّ هذا الفحص.
+    // أما هل وصلت **كل حقل** من حقول الترويسة فيُقاس أدناه لكل حقل على حدة
+    // بالشكلين (الخام والمطبَّع) ويُفشِل البوابة حقيقةً إن غاب حقل.
     expect(probe.documentXml.contains('<w:tbl'), isTrue,
         reason: 'لا جدول ترويسة في document.xml: `build()` لم يكتب '
             '_buildHeaderTable (وصلت الترويسة إلى PDF).');
@@ -1832,52 +1838,80 @@ void main() {
     // (جزء header أو متن document.xml)، لا لوجودها العام: لا يكفي أن وصلت
     // «بعض» الحقول لتُسمى الترويسة مقيسة.
     final headerPartText = headerParts.map(probe.part).join(' ');
+    // القياس الخام كان يقرأ **تطبيع الأرقام** فقدانَ حقل: المولّد يمرّر قيمة
+    // كل سطر ترويسة عبر `ExamDocument.localizeDigits` قبل كتابته، فوسم
+    // الركيزة `HDC1` يصل الملف `HDC١` (نسق الورقة عربية-هندية)، ولا يوجد
+    // `HDC1` في أي جزء بطبيعته. القياس اليوم يبحث عن الشكلين — الخام
+    // والمطبَّع — ويُفشِل البوابة إن غاب الحقل بالشكلين، فلا يُبيَّض غيابٌ
+    // حقيقي ولا يُسجَّل تطبيعٌ مشروع انحداراً.
+    final rtlDocument = document;
+    String localizedMarker(String marker) => rtlDocument.localizeDigits(marker);
+    bool headerFieldIn(String haystack, String marker) =>
+        haystack.contains(marker) || haystack.contains(localizedMarker(marker));
     // المعيار «جزء الترويسة» لا document.xml:HDRV قيمة صفٍّ تُطبع في المتن
     // أيضاً، فحسابُ حضورها العام وصولاً إلى الترويسة يُبيضّ انحداراً موجوداً.
     // لذلك يُقاس الموضعان معاً ويسقطان إلى الخلية كما هما.
     final missingInHeaderPart = P0GateFixture.headerMarkers
-        .where((marker) => !headerPartText.contains(marker))
+        .where((marker) => !headerFieldIn(headerPartText, marker))
+        .toList();
+    final missingInBody = P0GateFixture.headerMarkers
+        .where((marker) => !headerFieldIn(probe.flatText, marker))
         .toList();
     final missingAnywhere = P0GateFixture.headerMarkers
         .where((marker) =>
-            !probe.flatText.contains(marker) &&
-            !headerPartText.contains(marker))
+            !headerFieldIn(probe.flatText, marker) &&
+            !headerFieldIn(headerPartText, marker))
         .toList();
+    final localizedHeaderMarkers =
+        P0GateFixture.headerMarkers.map(localizedMarker).join('/');
+    // الغياب الحقيقي يُفشل البوابة هنا: كل حقل ترويسة يجب أن يصل الملف
+    // بشكله المطبَّع أو الخام، ولو غاب واحد لسقط كل ما بعده من ادّعاء.
+    expect(missingAnywhere, isEmpty,
+        reason: 'حقول ترويسة غائبة عن editable.docx بالمطبَّع والخام: '
+            '$missingAnywhere — الخام: '
+            '${P0GateFixture.headerMarkers.join("/")}، المطبَّع: '
+            '$localizedHeaderMarkers');
     if (missingInHeaderPart.isNotEmpty) {
-      debugPrint('::error title=p0-gate DOCX header fields (DEFERRED_TO_P1)::'
-          'جزء ترويسة في editable.docx: '
-          '${headerParts.isEmpty ? 'لا header*.xml إطلاقاً' : headerParts.join(",")}؛ '
-          'وسوم لا تصل إلى الترويسة: $missingInHeaderPart (منها $missingAnywhere '
-          'لا يظهر في document.xml أصلاً) — انحدار حقيقي في المنتج، مسجَّل لا '
-          'مُصلَح (P0.5 مغلق على A–F)');
-      _stage('DOCX: ${missingInHeaderPart.length}'
-          '/${P0GateFixture.headerMarkers.length} وسم ترويسة لا يصل إلى جزء '
-          'الترويسة — مُسجَّل DEFERRED_TO_P1 بالدليل، ولا تخفيف فحص ولا حذف '
-          'وسم من الركيزة.');
+      debugPrint(
+          '::error title=p0-gate DOCX header structure (DEFERRED_TO_P1)::'
+          'editable.docx: ${headerParts.isEmpty ? 'لا header*.xml إطلاقاً' : headerParts.join(", ")}؛ '
+          'حقول الترويسة الخمسة مقيسة في المتن بأرقام مطبَّعة '
+          '$localizedHeaderMarkers (الخام '
+          '${P0GateFixture.headerMarkers.join("/")}) — '
+          'الغياب عن جزء الترويسة بنيةُ موضع لا فقدانُ حقل: الترويسة تُطبع '
+          'مرة في أول المتن ولا تتكرر على الصفحات في Word؛ مُسجَّل '
+          'DEFERRED_TO_P1 بقرار «مرة أم كل صفحة» لا بفقد حقل.');
+      _stage('DOCX: لا جزء ترويسة؛ الحقول الخمسة مقيسة في المتن '
+          '(${P0GateFixture.headerMarkers.length - missingInBody.length}'
+          '/${P0GateFixture.headerMarkers.length} بالشكل المطبَّع أو الخام) — '
+          'DEFERRED_TO_P1 لبنية الموضع لا لفقدان حقل.');
       _matrix.record('header-footer', P0Path.editableDocx,
           P0Status.deferredToP1,
-          evidence: '${missingInHeaderPart.length}'
-              '/${P0GateFixture.headerMarkers.length} وسم ترويسة غائب عن جزء '
-              'الترويسة (${headerParts.isEmpty ? 'لا header*.xml' : headerParts.join(",")})، '
-              'ومنها ${missingAnywhere.length} غائب عن document.xml أيضاً '
-              '$missingInHeaderPart؛ الترويسة كاملة في vector.pdf، وكل الحقول '
-              'في المتن: $headerInBody',
-          reason: 'جزء header*.xml مشروط بصورة إطار + `pageBorder` في '
-              'docx_document_export_service.dart:365/396، فالترويسة كلها تُطبع '
-              'فقراتٍ في المتن وتفقد الوسوم '
-              '${P0GateFixture.headerMarkers.join("/")} موضعَها عند الطباعة. '
-              'توحيد الحقول عقدُ محتوى واحد بين PDF وOOXML (P1 BLOCKERS بند 1).');
+          evidence: 'لا جزء header*.xml '
+              '(${headerParts.isEmpty ? 'الركيزة بلا إطار، فلا يُبنى جزء' : headerParts.join(", ")}); '
+              'الحقول ${P0GateFixture.headerMarkers.join("/")} كلها في '
+              'document.xml بأرقام مطبَّعة $localizedHeaderMarkers '
+              '(مقيس: ${P0GateFixture.headerMarkers.length - missingInBody.length}'
+              '/${P0GateFixture.headerMarkers.length} بالشكلين)؛ Word يقرأ '
+              'الترويسة فقراتٍ في أول المتن مرة واحدة، وفي vector.pdf '
+              'مرة على ص1؛ ترويسة كاملة في المتن: $headerInBody',
+          reason: 'جزء header*.xml مشروط بـ`pageBorder` + صورة إطار غير '
+              'فارغة في docx_document_export_service.dart:431، والترويسة '
+              'بلا إطار تُطبع فقراتٍ في أول المتن فتتبع التدفّق مرة واحدة '
+              'ولا تتكرر؛ قرار «تُكرَّر على كل صفحة أم مرة» يمسّ حساب '
+              'ارتفاعات التقسيم ويُحسم في طبقة التخطيط الواحدة، فلا يُغيَّر '
+              'في P0.');
     }
     _stage(headerParts.isEmpty
         ? 'DOCX عربي: لا جزء header*.xml — الترويسة فقرات في المتن '
             '(شرط الجزء: `pageBorder` + صورة إطار، §8 بند 1)'
         : 'DOCX عربي: جزء الترويسة ${headerParts.join(",")} معلن '
             'ويتكرر على كل صفحة في Word');
-    // الفحص السابق كان `expect` لكل وسم: يُفشِل البوابة عند انحدار لا يجوز
-    // إصلاحه في P0، ويبتلع بعده كل فحوص Bنية (تسلسل `w:t`، OMML، الوسائط)
-    // فتُغلق خلاياها UNMEASURED — أي أن الصرامة كانت تُعمي البوابة لا تُبصرها.
-    // اليوم: الوسوم تُقاس وتُطبع وتُسجَّل في الخلية، وGATE-99 تُفشِل البوابة
-    // إن ضاع التسجيل أو لم يسمِّ الوسوم الخمسة، فالبند لا يُمحى ولا يُنعَّم.
+    // الفحص لا يسقط إلى الصمت: القيمة الحقيقية مفروضة بـ`expect` أعلاه
+    // (غياب أي حقل بالشكلين يُفشل البوابة)، وبنيةُ الموضع تُسجَّل في الخلية
+    // بسبب مسمّى، وGATE-99 تُفشِل البوابة إن ضاع التسجيل أو لم يسمِّ
+    // الوسوم الخمسة (الخام والمطبَّع) أو لم تطابق حالةُ الخلية البنيةَ
+    // المقيسة — فالبند لا يُمحى ولا يُنعَّم ولا يُقرأ تطبيعُ الأرقام عطلاً.
     _stage('DOCX: الترويسة في جزء الترويسة '
         '${P0GateFixture.headerMarkers.length - missingInHeaderPart.length}'
         '/${P0GateFixture.headerMarkers.length}، وفي document.xml '
@@ -2028,8 +2062,11 @@ void main() {
                 'كل صفحة بطبيعة Word — والتذييل جدول في المتن بعد آخر فقرة',
         reason: headerParts.isEmpty
             ? 'جزء الترويسة عند المنتج مشروط بصورة إطار صفحة (`pageBorder` + '
-                'frameImage)؛ ترويسة بلا إطار تُطبع في المتن فيختلف تكرارها '
-                'عن PDF والمعاينة. توحيد القرار طبقةُ تخطيط واحدة (P1).'
+                'frameImage) في docx_document_export_service.dart:431؛ ترويسة '
+                'بلا إطار تُطبع فقراتٍ في أول المتن مرة واحدة — كالمعاينة '
+                'وPDF تماماً — فلا تعيش في منطقة ترويسة Word ولا تتكرر عليه. '
+                'قرار «مرة أم كل صفحة» يمسّ حساب ارتفاعات التقسيم ويُحسم في '
+                'طبقة التخطيط الواحدة.'
             : '');
     _matrix.record('latin', P0Path.editableDocx, P0Status.pass,
         evidence: 'الوسوم اللاتينية (MIX1/OPT1/OP1A..) داخل `w:t` بنفس '
@@ -2570,10 +2607,25 @@ void main() {
     expect(headerCell, isNotNull,
         reason: 'خلية header-footer/editable.docx غير مسجلة: القياس في '
             'GATE-06 يجب أن يُسجَّل لا أن يُمرَّر.');
-    expect(headerCell!.status, P0Status.deferredToP1,
-        reason: 'انحدار حقول الترويسة في Word حُذف من المصفوفة أو خُفِّف إلى '
-            '${headerCell.status}؛ الصواب قياسه وتسجيله DEFERRED_TO_P1 ما دام '
-            'المصدر يفقده.');
+    // الخلية تتبع البنية المقيسة لا حكماً مثبَّتاً: ما دام الملف لا يحمل
+    // جزء ترويسة يحوي الحقول الخمسة (بشكلها المطبَّع أو الخام) فالحالة
+    // DEFERRED_TO_P1 بسبب مسمّى، ولو بُني الجزء لاحقاً فالحالة PASS. فلا
+    // تُقفَل الخلية على DEFERRED إن أُصلح المنتج، ولا تُرفَع إلى PASS بلا
+    // جزء يحمل الحقول.
+    final headerParts = _gate.headerPartNames();
+    final headerPartText = headerParts.map(_gate.rtlDocx.part).join(' ');
+    final rtlDocument = P0GateFixture.rtl();
+    bool headerFieldInPart(String marker) =>
+        headerPartText.contains(marker) ||
+        headerPartText.contains(rtlDocument.localizeDigits(marker));
+    final completeHeaderPart = headerParts.isNotEmpty &&
+        P0GateFixture.headerMarkers.every(headerFieldInPart);
+    expect(headerCell!.status,
+        completeHeaderPart ? P0Status.pass : P0Status.deferredToP1,
+        reason: 'حالة خلية الترويسة لا تطابق البنية المقيسة: '
+            'أجزاء=${headerParts.isEmpty ? 'لا شيء' : headerParts.join(",")}، '
+            'الحقول كلها في الجزء=$completeHeaderPart، '
+            'الحالة=${headerCell.status}');
     // التسجيل يجب أن يبقى مبنياً على معياره: جزء الترويسة. لو استُبدل لاحقاً
     // بـ«هل يظهر النص في الملف؟» لصارت الترويسة «مقيسة ناجحة» بلا ترويسة.
     expect(headerCell.evidence.contains('header*.xml') ||
@@ -2585,6 +2637,9 @@ void main() {
         isTrue,
         reason: 'سبب التأجيل لا يسمّي الموضع في المصدر فيضيع تشخيص P1: '
             '${headerCell.reason}');
+    // الحقول تُقاس بأرقامها المطبَّعة: التسجيل يجب أن يسمّي الشكل الذي
+    // كُتب فعلاً (`HDC1` ← `HDC١`)، وإلا عاد القياس الخام فقرأ التطبيع
+    // فقدانَ حقل وسجّل انحداراً غير موجود.
     for (final marker in <String>[
       'HDRV',
       'HDC1',
@@ -2597,6 +2652,15 @@ void main() {
               headerCell.reason.contains(marker),
           isTrue,
           reason: 'تسجيل DEFERRED لخلية الترويسة لم يسمِّ $marker: '
+              '${headerCell.evidence}');
+      final localized = rtlDocument.localizeDigits(marker);
+      expect(
+          localized == marker ||
+              headerCell.evidence.contains(localized) ||
+              headerCell.reason.contains(localized),
+          isTrue,
+          reason: 'تسجيل خلية الترويسة لا يسمّي الشكل المطبَّع $localized '
+              'للوسم $marker — القياس الخام يقرأ التطبيع فقداناً: '
               '${headerCell.evidence}');
     }
 
@@ -2673,7 +2737,7 @@ void _recordPreviewCells(_PreviewCapture rtl, _PreviewCapture ltr) {
 
     // المحاذاة: كل كتلة RTL تبدأ من الحافة اليمنى للصندوق نفسه.
     rightDrift = (title.rect.right - body.rect.right).abs();
-    expect(rightDrift!, lessThan(1.5),
+    expect(rightDrift, lessThan(1.5),
         reason: 'حواف بداية مختلفة بين العنوان والمتن في RTL: '
             '${title.rect.right} مقابل ${body.rect.right}');
 
@@ -2855,13 +2919,13 @@ void _recordExactCells() {
       feature.key,
       P0Path.exact,
       P0Status.deferredToP1,
-      reason: 'Exact لقطة نقطية للصفحة: لا نص مرسوم (${drawnWords} كلمة)، '
+      reason: 'Exact لقطة نقطية للصفحة: لا نص مرسوم ($drawnWords كلمة)، '
           'ولا `w:t`/`w:bidi`/`w:ind` ولا خطوط مضمَّنة — فالتسلسل والتشكيل '
           'والأرقام وخصائص الفقرة لا تُقاس فيه بنيةً، وأي «صحة» فيه تُستنتج '
           'من صورة المعاينة لا من المخرج. البوابة القائمة '
           '(tool/verify_visual_parity.sh) تقيس مطابقته للبكسل، وهذا تمام '
           'دوره؛ خصائص البنية تُقاس في vector/editable.',
-      evidence: 'كلمات مرسومة=${drawnWords}، وسائط في exact.docx='
+      evidence: 'كلمات مرسومة=$drawnWords، وسائط في exact.docx='
           '${exactDocx.mediaNames.length}، أجزاء xml='
           '${exactDocx.xmlPartNames.length}',
     );
