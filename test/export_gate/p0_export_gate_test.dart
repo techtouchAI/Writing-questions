@@ -914,7 +914,7 @@ void main() {
                 '${ilma.first.width.toStringAsFixed(3)}',
         ];
         final quranTitleRunGeometry = <String>[
-          for (final line in quranTitleLines
+          for (final line in quranTitleLines)
             for (final run in line.runs)
               if (run.isQuran)
                 'line=${line.lineIndex} "${run.text}" '
