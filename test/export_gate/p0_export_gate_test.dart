@@ -1408,6 +1408,33 @@ void main() {
     final titleGaps = <double>[];
     final titleGapDiagnostics = <String>[];
     final canonicalTitleLine = _gate.canonicalQuestionTitleLine;
+    final canonicalRunsById = <String, LayoutRun>{
+      for (final run in canonicalTitleLine?.runs ?? const <LayoutRun>[]) run.id: run,
+    };
+    final canonicalQuranRunsInSourceOrder = <LayoutRun>[
+      for (final id in canonicalTitleLine?.logicalRunIds ?? const <String>[])
+        if (canonicalRunsById[id]?.isQuran ?? false) canonicalRunsById[id]!,
+    ];
+    final pdfQuranWordIndices = <int>[];
+    var insideTitleVerse = false;
+    for (var index = 0; index < titleLine.words.length; index++) {
+      final text = titleLine.words[index].text;
+      if (text == '﴿') insideTitleVerse = true;
+      if (insideTitleVerse) pdfQuranWordIndices.add(index);
+      if (insideTitleVerse && text == '﴾') break;
+    }
+    final canonicalQuranRunByPdfWordIndex = <int, LayoutRun>{};
+    if (canonicalQuranRunsInSourceOrder.length == pdfQuranWordIndices.length) {
+      for (var index = 0; index < pdfQuranWordIndices.length; index++) {
+        canonicalQuranRunByPdfWordIndex[pdfQuranWordIndices[index]] =
+            canonicalQuranRunsInSourceOrder[index];
+      }
+    }
+    debugPrint('::notice title=p0-gate canonical Quran token map::'
+        'PDF indices=$pdfQuranWordIndices; '
+        'canonical=${canonicalQuranRunsInSourceOrder.map((run) => '
+            '${run.id}:${run.text}@${run.x.toStringAsFixed(3)}+'
+            '${run.width.toStringAsFixed(3)}').join('|')}');
     for (final index in titleLine.adjacencyIndices) {
       final rightWord = titleLine.words[index];
       final leftWord = titleLine.words[index + 1];
@@ -1415,12 +1442,14 @@ void main() {
           _isPunctuationOnlyPdfToken(leftWord.text)) {
         continue;
       }
-      final rightRun = canonicalTitleLine == null
-          ? null
-          : _canonicalRunForPdfWord(canonicalTitleLine, rightWord);
-      final leftRun = canonicalTitleLine == null
-          ? null
-          : _canonicalRunForPdfWord(canonicalTitleLine, leftWord);
+      final rightRun = canonicalQuranRunByPdfWordIndex[index] ??
+          (canonicalTitleLine == null
+              ? null
+              : _canonicalRunForPdfWord(canonicalTitleLine, rightWord));
+      final leftRun = canonicalQuranRunByPdfWordIndex[index + 1] ??
+          (canonicalTitleLine == null
+              ? null
+              : _canonicalRunForPdfWord(canonicalTitleLine, leftWord));
       final pdfGap = titleLine.gapAfter(index);
       if (rightRun != null &&
           leftRun != null &&
