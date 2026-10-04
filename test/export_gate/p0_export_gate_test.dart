@@ -130,6 +130,7 @@ class _Gate {
   int mathRunCount = 0;
   int mathHostRequestCount = 0;
   List<String> canonicalLabelRuns = <String>[];
+  double? canonicalQuranTitleWordGap;
   // التقاط المعاينة الثقيل يُقاس مرة واحدة ويُخزَّن: لا يُعاد في كل اختبار،
   // ولا يبقى سببُه مختبئاً خلف اختبار القطع.
   _PreviewCapture? rtlCapture;
@@ -875,7 +876,46 @@ void main() {
                 'dir=${run.direction.name} id=${run.semanticNodeId}')
             .take(12)
             .toList();
-        _stage('P2 Quran run geometry: $quranRunGeometry');
+        final quranTitleLines = canonicalLayout.allLines
+            .where((line) => line.semanticNodeId == 'p0q1/title')
+            .toList(growable: false);
+        final quranTitleRuns = quranTitleLines
+            .expand((line) => line.runs)
+            .where((run) => run.isQuran)
+            .toList(growable: false);
+        String withoutArabicMarks(String value) => String.fromCharCodes(
+              value.runes.where((rune) =>
+                  !(rune >= 0x064b && rune <= 0x065f) && rune != 0x0670),
+            );
+        final zadni = quranTitleRuns
+            .where((run) => withoutArabicMarks(run.text).contains('زدني'))
+            .toList(growable: false);
+        final ilma = quranTitleRuns
+            .where((run) => withoutArabicMarks(run.text).contains('علما'))
+            .toList(growable: false);
+        String? quranTitleWordGap;
+        if (zadni.isNotEmpty && ilma.isNotEmpty) {
+          final left = zadni.first.x <= ilma.first.x ? zadni.first : ilma.first;
+          final right = identical(left, zadni.first) ? ilma.first : zadni.first;
+          _gate.canonicalQuranTitleWordGap =
+              right.x - (left.x + left.width);
+          quranTitleWordGap =
+              '${_gate.canonicalQuranTitleWordGap!.toStringAsFixed(3)}pt';
+        }
+        final quranTitleRunGeometry = <String>[
+          for (final line in quranTitleLines)
+            for (final run in line.runs)
+              if (run.isQuran)
+                'line=${line.lineIndex} "${run.text}" '
+                    '@${run.x.toStringAsFixed(3)}+'
+                    '${run.width.toStringAsFixed(3)} '
+                    'dir=${run.direction.name} '
+                    'font=${run.style.font.family} size=${run.style.fontSizePt} '
+                    'id=${run.id}',
+        ];
+        _stage('P2 Quran run geometry: $quranRunGeometry; '
+            'p0q1/title runs=$quranTitleRunGeometry; '
+            'canonical gap زدني/علما=$quranTitleWordGap');
         _gate.rtlVectorPdf = await pdfEngine.generate(
           document: rtlDocument,
           layoutDocument: canonicalLayout,
