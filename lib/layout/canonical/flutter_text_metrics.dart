@@ -676,7 +676,16 @@ class FlutterTextMetrics implements FontMetricsProvider {
     final left = startCaret.dx < endCaret.dx ? startCaret.dx : endCaret.dx;
     final right = startCaret.dx > endCaret.dx ? startCaret.dx : endCaret.dx;
     final advance = right - left;
-    if (!advance.isFinite || advance <= 0.001) {
+    final selectionWidth = (fallbackRight - fallbackLeft).abs();
+    // Neutral punctuation and bidi-boundary carets can straddle unrelated
+    // visual runs. Keep the shaped caret interval for normal side-bearing
+    // differences, but fall back to this selection's own tight box when the
+    // interval is implausibly wider than its glyph ink.
+    final maximumPlausibleAdvance =
+        selectionWidth * 2 + LayoutUnits.ptToPx(0.5);
+    if (!advance.isFinite ||
+        advance <= 0.001 ||
+        (selectionWidth > 0.001 && advance > maximumPlausibleAdvance)) {
       return (left: fallbackLeft, right: fallbackRight);
     }
     return (left: left, right: right);

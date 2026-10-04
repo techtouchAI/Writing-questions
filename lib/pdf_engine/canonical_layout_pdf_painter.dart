@@ -21,9 +21,6 @@ import 'pdf_math_rasters.dart';
 class CanonicalLayoutPdfPainter {
   const CanonicalLayoutPdfPainter();
 
-  /// Temporary P0 diagnostics; cleared by the gate fixture before export.
-  static final List<String> debugTextRuns = <String>[];
-
   pw.Widget paintPage({
     required pw.Context context,
     required LayoutPage page,
@@ -61,7 +58,6 @@ class CanonicalLayoutPdfPainter {
           ],
           fonts: fonts,
           mathRasters: mathRasters,
-          pageWidth: pageWidth,
         ),
       ),
       for (final placement in page.floatingElements)
@@ -94,7 +90,6 @@ class CanonicalLayoutPdfPainter {
           Iterable<LayoutLine> lines, {
     required ExamFonts fonts,
     required PdfMathRasters mathRasters,
-    required double pageWidth,
   }) {
     final children = <pw.Widget>[];
     for (final line in lines) {
@@ -150,25 +145,6 @@ class CanonicalLayoutPdfPainter {
       }
 
       final origins = _mappedRunOrigins(line, runs, advances);
-      final hasOverflow = List<int>.generate(
-        runs.length,
-        (index) => index,
-      ).any((index) =>
-          origins[index] < 0 || origins[index] + advances[index] > pageWidth);
-      if (hasOverflow || runs.any((run) => run.text.contains('/'))) {
-        debugTextRuns.add('line=${line.id} align=${line.alignment} '
-            'dir=${line.direction} rect=${line.rect.left}+${line.rect.width}');
-        for (var index = 0; index < runs.length; index++) {
-          debugTextRuns.add('${runs[index].id} "${runs[index].text}" '
-              'dir=${runs[index].direction} '
-              'c=${runs[index].x}+${runs[index].width} '
-              'p=${origins[index]}+${advances[index]}');
-        }
-      }
-      if (hasOverflow) {
-        // ignore: avoid_print
-        print('[pdf-map-overflow] line=${line.id}');
-      }
       final originById = <String, double>{
         for (var index = 0; index < runs.length; index++)
           runs[index].id: origins[index],
@@ -345,10 +321,6 @@ class CanonicalLayoutPdfPainter {
     if (run.advance <= 0 || (run.text.isEmpty && !run.isMath)) return null;
     final left = run.x - originX;
     final top = line.baseline - run.baselineOffset - originY;
-    if (run.text.contains('/')) {
-      debugTextRuns.add('fixed line=${line.id} run=${run.id} '
-          'text="${run.text}" c=${run.x}+${run.width} local=$left+${run.width}');
-    }
     final textStyle = _pdfTextStyle(run, fonts);
     final raster = run.isMath
         ? mathRasters.lookup(run.text, run.style.fontSizePt)
