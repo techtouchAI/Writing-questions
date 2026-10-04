@@ -1142,9 +1142,13 @@ void main() {
       expect(bounds, isNotEmpty, reason: 'صفحة بلا محتوى مرسوم.');
       expect(bounds[0], greaterThanOrEqualTo(0),
           reason: 'محتوى خارج يسار الصفحة: minX=${bounds[0]}');
+      final furthestWord = page.words.reduce((a, b) =>
+          a.x + a.advanceWidth >= b.x + b.advanceWidth ? a : b);
       expect(bounds[2], lessThanOrEqualTo(page.pageWidth),
           reason: 'محتوى يتجاوز عرض الصفحة: maxX=${bounds[2]} '
-              'width=${page.pageWidth}');
+              'width=${page.pageWidth}; furthest=$furthestWord '
+              'font=${furthestWord.baseFont} size=${furthestWord.fontSize} '
+              'page=${page.index + 1}');
       expect(bounds[1], greaterThanOrEqualTo(0),
           reason: 'محتوى تحت حد الصفحة: minY=${bounds[1]}');
       expect(bounds[3], lessThanOrEqualTo(page.pageHeight),
