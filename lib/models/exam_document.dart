@@ -237,6 +237,19 @@ class ExamDocument {
         return element;
       }
     }
+    // Older documents store owned floats on their question/branch instead of
+    // in the document-level collection. Renderers still resolve by the stable
+    // float ID, so include those legacy locations as source data too.
+    for (final question in questions) {
+      for (final element in question.attachments) {
+        if (element.id == id) return element;
+      }
+      for (final branch in question.branches) {
+        for (final element in branch.attachments) {
+          if (element.id == id) return element;
+        }
+      }
+    }
     return null;
   }
 

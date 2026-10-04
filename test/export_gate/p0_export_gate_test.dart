@@ -73,6 +73,40 @@ const String _dir = P0GateFixture.artifactDir;
 /// وسم آية واحد يُستعمل لإثبات شمول الفحص القرآني لكل سطح مطبوع.
 const String _verse = '﴿وَقُل رَّبِّ زِدْنِي عِلْمًا﴾';
 
+/// PDF text extraction can expose punctuation as standalone tokens. These are
+/// tested for order/placement separately; they are not word-space samples.
+const Set<String> _punctuationOnlyPdfTokens = <String>{
+  ',',
+  '.',
+  ':',
+  ';',
+  '،',
+  '؛',
+  '؟',
+  '?',
+  '!',
+  '/',
+  '\\',
+  '-',
+  '–',
+  '—',
+  '(',
+  ')',
+  '[',
+  ']',
+  '{',
+  '}',
+  '﴿',
+  '﴾',
+  '«',
+  '»',
+  '%',
+  '٪',
+};
+
+bool _isPunctuationOnlyPdfToken(String text) =>
+    _punctuationOnlyPdfTokens.contains(text.trim());
+
 /// قياسات القطع والممرّات، مشتركة بين اختبارات هذا الملف (ترتيب التنفيذ
 /// مضمون: اختبار القطع أولاً، ثم الفحوص البنيوية، ثم المصفوفة).
 class _Gate {
@@ -93,7 +127,11 @@ class _Gate {
   List<Uint8List> ltrPreviewPages = <Uint8List>[];
   int rtlPreviewPageCount = 0;
   int ltrPreviewPageCount = 0;
-  int mathRequests = 0;
+  int mathRunCount = 0;
+  int mathHostRequestCount = 0;
+  List<String> canonicalLabelRuns = <String>[];
+  List<String> canonicalQuranTitlePairGeometry = <String>[];
+  double? canonicalQuranTitleWordGap;
   // التقاط المعاينة الثقيل يُقاس مرة واحدة ويُخزَّن: لا يُعاد في كل اختبار،
   // ولا يبقى سببُه مختبئاً خلف اختبار القطع.
   _PreviewCapture? rtlCapture;
@@ -796,8 +834,109 @@ void main() {
     final watch = Stopwatch();
     await tester.runAsync(() async {
       watch.start();
-      _gate.rtlVectorPdf =
-          await PaginatedPdfExamEngine().generate(document: rtlDocument);
+      try {
+        final pdfFonts = await ExamFonts.load(
+          loadQuranic: PaginatedPdfExamEngine.needsQuranicFont(rtlDocument),
+        );
+        final pdfEngine = PaginatedPdfExamEngine();
+        final canonicalLayout = await pdfEngine.resolveLayoutDocument(
+          document: rtlDocument,
+          fonts: pdfFonts,
+        );
+        _gate.mathRunCount = canonicalLayout.allLines
+            .expand((line) => line.runs)
+            .where((run) => run.isMath)
+            .length;
+        _gate.canonicalLabelRuns = canonicalLayout.allLines
+            .expand((line) => line.runs)
+            .where((run) {
+              final id = run.semanticNodeId;
+              final directLabel = id.endsWith('/label') ||
+                  id.contains('/label/content/') ||
+                  id.endsWith('/separator');
+              return id.contains('/point/p0q1i') &&
+                  !id.contains('/options/') &&
+                  directLabel &&
+                  const <String>{'label', 'number', 'separator'}
+                      .contains(run.semanticRole.name);
+            })
+            .map((run) => '${run.semanticNodeId.split('/').firstWhere(
+                      (part) => part.startsWith('p0q1i'),
+                    )} ${run.semanticRole.name}:"${run.text}" '
+                '@${run.x.toStringAsFixed(1)}+'
+                '${run.width.toStringAsFixed(1)} '
+                'a=${run.advance.toStringAsFixed(1)}')
+            .take(10)
+            .toList();
+        _stage('P2 number/separator runs: ${_gate.canonicalLabelRuns}');
+        final quranRunGeometry = canonicalLayout.allLines
+            .expand((line) => line.runs)
+            .where((run) => run.isQuran)
+            .map((run) => '"${run.text}"@${run.x.toStringAsFixed(2)}+'
+                '${run.width.toStringAsFixed(2)} '
+                'dir=${run.direction.name} id=${run.semanticNodeId}')
+            .take(12)
+            .toList();
+        final quranTitleLines = canonicalLayout.allLines
+            .where((line) => line.semanticNodeId == 'p0q1/title')
+            .toList(growable: false);
+        final quranTitleRuns = quranTitleLines
+            .expand((line) => line.runs)
+            .where((run) => run.isQuran)
+            .toList(growable: false);
+        String withoutArabicMarks(String value) => String.fromCharCodes(
+              value.runes.where((rune) =>
+                  !(rune >= 0x064b && rune <= 0x065f) && rune != 0x0670),
+            );
+        final zadni = quranTitleRuns
+            .where((run) => withoutArabicMarks(run.text).contains('زدني'))
+            .toList(growable: false);
+        final ilma = quranTitleRuns
+            .where((run) => withoutArabicMarks(run.text).contains('علما'))
+            .toList(growable: false);
+        String? quranTitleWordGap;
+        if (zadni.isNotEmpty && ilma.isNotEmpty) {
+          final left = zadni.first.x <= ilma.first.x ? zadni.first : ilma.first;
+          final right = identical(left, zadni.first) ? ilma.first : zadni.first;
+          _gate.canonicalQuranTitleWordGap =
+              right.x - (left.x + left.width);
+          quranTitleWordGap =
+              '${_gate.canonicalQuranTitleWordGap!.toStringAsFixed(3)}pt';
+        }
+        _gate.canonicalQuranTitlePairGeometry = <String>[
+          if (zadni.isNotEmpty)
+            'زدني id=${zadni.first.id} '
+                '@${zadni.first.x.toStringAsFixed(3)}+'
+                '${zadni.first.width.toStringAsFixed(3)}',
+          if (ilma.isNotEmpty)
+            'علما id=${ilma.first.id} '
+                '@${ilma.first.x.toStringAsFixed(3)}+'
+                '${ilma.first.width.toStringAsFixed(3)}',
+        ];
+        final quranTitleRunGeometry = <String>[
+          for (final line in quranTitleLines)
+            for (final run in line.runs)
+              if (run.isQuran)
+                'line=${line.lineIndex} "${run.text}" '
+                    '@${run.x.toStringAsFixed(3)}+'
+                    '${run.width.toStringAsFixed(3)} '
+                    'dir=${run.direction.name} '
+                    'font=${run.style.font.family} size=${run.style.fontSizePt} '
+                    'id=${run.id}',
+        ];
+        _stage('P2 Quran run geometry: $quranRunGeometry; '
+            'p0q1/title runs=$quranTitleRunGeometry; '
+            'canonical gap زدني/علما=$quranTitleWordGap');
+        _gate.rtlVectorPdf = await pdfEngine.generate(
+          document: rtlDocument,
+          layoutDocument: canonicalLayout,
+          fonts: pdfFonts,
+        );
+        _gate.mathHostRequestCount = mathHost.requests.length;
+      } catch (error, stackTrace) {
+        _stage('RTL vector generation failed: $error\n$stackTrace');
+        Error.throwWithStackTrace(error, stackTrace);
+      }
       _stage('توليد vector.pdf عربي: ${watch.elapsedMilliseconds}ms، '
           '${_gate.rtlVectorPdf!.length} بايت');
       watch
@@ -820,7 +959,6 @@ void main() {
       _stage('توليد exact.* عربي: ${watch.elapsedMilliseconds}ms');
       watch.stop();
     });
-    _gate.mathRequests = mathHost.requests.length;
 
     // القطع على القرص.
     for (var index = 0; index < _gate.rtlPreviewPages.length; index++) {
@@ -841,7 +979,8 @@ void main() {
         'rtlPreviewPageCount': _gate.rtlPreviewPageCount,
         'ltrPreviewPageCount': _gate.ltrPreviewPageCount,
         'rtlPdfPageCount': PdfContentProbe.pageCountOf(_gate.rtlVectorPdf!),
-        'mathRequests': _gate.mathRequests,
+        'mathRunCount': _gate.mathRunCount,
+        'mathHostRequestCount': _gate.mathHostRequestCount,
       }),
     );
 
@@ -871,7 +1010,8 @@ void main() {
 
     _stage('vector عربي: ${_gate.rtlPdfReport.pageCount} صفحة؛ '
         'المعاينة: ${_gate.rtlPreviewPageCount} صفحة؛ '
-        'لقطات معادلات: ${_gate.mathRequests}');
+        'صيغ رياضية: ${_gate.mathRunCount}، طلبات المضيف: '
+          '${_gate.mathHostRequestCount}');
 
     // الانحراف مقيس ولا يُمرّ بصمت: المعاينة تقسم الورقة العربية إلى
     // صفحات والـPDF إلى عدد آخر، والسبب أن لكل ممرّ مصدره لارتفاع السطر
@@ -1142,6 +1282,14 @@ void main() {
       shaped += p.presentationFormLetters;
       unshaped += p.unshapedArabicLetters;
     }
+    final unshapedWords = <ProbedWord>[
+      for (final pdfPage in report.pages)
+        for (final word in pdfPage.words)
+          if (word.text.runes.any((rune) => rune >= 0x0621 && rune <= 0x064A))
+            word,
+    ];
+    _stage('[p0-gate] unshaped words=${unshapedWords.take(12).map((word) =>
+        '${word.text}[${word.text.runes.map((rune) => rune.toRadixString(16)).join(",")}]@${word.x.toStringAsFixed(1)},${word.y.toStringAsFixed(1)}:${word.baseFont}').join(' | ')}');
     expect(shaped, greaterThan(100),
         reason: 'صور تقديمية عربية أقلّ من المتوقع في الملف كله: $shaped');
     expect(unshaped, 0,
@@ -1174,14 +1322,24 @@ void main() {
             'أكبر فجوة ${gaps.reduce((a, b) => a > b ? a : b).toStringAsFixed(2)}pt');
     final titleLines = page.linesWithMarker('STA1');
     expect(titleLines, isNotEmpty, reason: 'سطر عنوان Q1 مفقود من ص1.');
+    // PDF extraction may expose attached punctuation as standalone tokens
+    // (for example «أجب» followed by «:»). Check every adjacent lexical pair;
+    // punctuation placement and ordering have their own assertions below.
+    final titleLine = titleLines.first;
     final titleGaps = <double>[
-      for (final index in titleLines.first.adjacencyIndices)
-        titleLines.first.gapAfter(index),
+      for (final index in titleLine.adjacencyIndices)
+        if (!_isPunctuationOnlyPdfToken(titleLine.words[index].text) &&
+            !_isPunctuationOnlyPdfToken(titleLine.words[index + 1].text))
+          titleLine.gapAfter(index),
     ];
     if (titleGaps.isNotEmpty) {
       expect(titleGaps.every((gap) => gap >= 1.0 && gap <= 6.0), isTrue,
-          reason: 'فجوات سطر غير مضبوط خارج نطاق المسافة الطبيعية: '
-              '${titleGaps.map((v) => v.toStringAsFixed(2)).toList()} — '
+          reason: 'فجوات الكلمات في السطر غير المضبوط خارج نطاق المسافة '
+              'الطبيعية: ${titleGaps.map((v) => v.toStringAsFixed(2)).toList()} — '
+              'السطر: ${titleLine.describe()} — '
+              'canonical p0q1/title Quran pair gap='
+              '${_gate.canonicalQuranTitleWordGap?.toStringAsFixed(3)}pt '
+              'runs=${_gate.canonicalQuranTitlePairGeometry}; '
               'مسافة الكلمة لا تُطابق عرض المسافة للخط (انحدار realign).');
     }
 
@@ -1200,6 +1358,8 @@ void main() {
     final invertedLabels = <String>[];
     final separatorFirst = RegExp(r'^-[\u0660-\u06690-9]{1,4}$');
     final numberFirst = RegExp(r'^[\u0660-\u06690-9]{1,4}-$');
+    final digitRun = RegExp(r'^[\u0660-\u06690-9]{1,4}$');
+    final separatorRun = RegExp(r'^-$');
     for (final drawnPage in report.pages) {
       for (final line in drawnPage.lines) {
         final drawnLine = line.words.map((word) => word.text).join(' ');
@@ -1211,37 +1371,81 @@ void main() {
             invertedLabels.add('ص${drawnPage.index + 1}:$token');
           }
         }
+
+      }
+
+      // LayoutDocument paints semantic number/separator runs independently;
+      // bold digits and regular separators can receive slightly different PDF
+      // baselines, so they may land in adjacent probe lines. Rejoin only
+      // adjacent emitted text operators whose geometry is contiguous and whose
+      // baselines still belong to the same typographic line.
+      final pageWords = drawnPage.words;
+      for (var index = 0; index + 1 < pageWords.length; index++) {
+        final first = pageWords[index];
+        final second = pageWords[index + 1];
+        final baselineTolerance =
+            (first.fontSize > second.fontSize ? first.fontSize : second.fontSize) * 0.25;
+        if ((first.y - second.y).abs() > baselineTolerance) continue;
+        final gap = first.x <= second.x
+            ? second.x - (first.x + first.advanceWidth)
+            : first.x - (second.x + second.advanceWidth);
+        if (gap < -1 || gap > 2) continue;
+        if (digitRun.hasMatch(first.text) && separatorRun.hasMatch(second.text)) {
+          if (first.x > second.x) {
+            drawnLabels.add('ص${drawnPage.index + 1}:${first.text}${second.text}');
+          } else {
+            invertedLabels.add(
+                'ص${drawnPage.index + 1}:visual-${first.text}${second.text}');
+          }
+        } else if (separatorRun.hasMatch(first.text) &&
+            digitRun.hasMatch(second.text)) {
+          invertedLabels.add('ص${drawnPage.index + 1}:${first.text}${second.text}');
+        }
       }
     }
+    final labelFragmentLines = report.pages
+        .expand((page) => page.lines)
+        .where((line) => line.words.any((word) =>
+            digitRun.hasMatch(word.text) || word.text.contains('-')))
+        .map((line) => line.describe())
+        .toList();
+    final labelFragmentTail = labelFragmentLines.length <= 8
+        ? labelFragmentLines
+        : labelFragmentLines.sublist(labelFragmentLines.length - 8);
     _stage('تسميات مرسومة (رقم ثم فاصل، كما في المصدر): '
         '${drawnLabels.take(8).toList()}، معكوسة المصدر: '
-        '${invertedLabels.take(8).toList()}');
+        '${invertedLabels.take(8).toList()}؛ أجزاء: $labelFragmentTail');
     expect(drawnLabels, isNotEmpty,
         reason: 'لم يظهر نمط «رقم ثم فاصل» (١-) في vector.pdf — لا يقيس الفحص '
-            'الترقيم من غير مثال مرسوم.');
+            'الترقيم من غير مثال مرسوم. P2 runs: '
+            '${_gate.canonicalLabelRuns.take(4).toList()}');
     expect(invertedLabels, isEmpty,
         reason: 'نصّ التسمية مرسوم بفاصل قبل الرقم (انقلاب في السلسلة '
             'المنطقية لا في المواضع فقط): ${invertedLabels.take(6).toList()}');
 
-    // الأقواس في RTL: أول قوس في السلسلة المرسومة (من اليسار) هو المغلق،
-    // لأن `( أ )` و`(١)` و`(20 درجة)` تنعكس أطرافها عند العرض.
-    final drawnSequence =
-        report.pages.map((page) => page.drawnText).join(' ');
-    final parenSamples = <String>[];
-    for (final rune in drawnSequence.runes) {
-      if (rune == 0x28 || rune == 0x29) {
-        parenSamples.add(String.fromCharCode(rune));
+    // `PdfContentProbe` keeps PDF text operators in emission order (RTL's
+    // rightmost-first order), not visual left-to-right order. Measure brackets
+    // by their actual x positions within the first line containing a pair.
+    final firstVisualParenLine = <ProbedWord>[];
+    for (final page in report.pages) {
+      for (final line in page.lines) {
+        final brackets = line.words
+            .where((word) => word.text == '(' || word.text == ')')
+            .toList()
+          ..sort((a, b) => a.x.compareTo(b.x));
+        if (brackets.length >= 2) {
+          firstVisualParenLine.addAll(brackets);
+          break;
+        }
       }
-      if (parenSamples.length >= 6) {
-        break;
-      }
+      if (firstVisualParenLine.isNotEmpty) break;
     }
-    expect(parenSamples.length, greaterThan(1),
+    expect(firstVisualParenLine.length, greaterThan(1),
         reason: 'أقواس مرسومة أقلّ من المتوقع لتسميات ( أ ) و(١) و(ب): '
-            '${parenSamples.length}');
-    expect(parenSamples.first, ')',
-        reason: 'أول قوس مرسوم في الورقة العربية يجب أن يكون المغلق (الأيسر '
-            'بصرياً): $parenSamples — إن انقلب كله فالتسلسل مردود مرتين.');
+            '${firstVisualParenLine.map((word) => word.text).toList()}');
+    expect(firstVisualParenLine.first.text, ')',
+        reason: 'أقصى قوس يساراً في سطر RTL يجب أن يكون المغلق: '
+            '${firstVisualParenLine.map((word) => '${word.text}@${word.x.toStringAsFixed(1)}').toList()}');
 
     // الأرقام المشرقية واللاتينية في الورقة العربية نفسها.
     final indic = report.pages.fold<int>(
@@ -1268,7 +1472,7 @@ void main() {
     _matrix.record('latin-numerals', P0Path.vectorPdf, P0Status.pass,
         evidence: 'أرقام لاتينية=$latin (تسمية يدوية 1- و2026/2027 و45.5%)');
     _matrix.record('punctuation', P0Path.vectorPdf, P0Status.pass,
-        evidence: 'أقواس مرسومة=${parenSamples.length}، فواصل الترقيم '
+        evidence: 'أقواس مرسومة=${firstVisualParenLine.length}، فواصل الترقيم '
             'يسار الأرقام=${drawnLabels.length}، لا انقلاب=${invertedLabels.length}');
     _matrix.record('marks', P0Path.vectorPdf, P0Status.pass,
         evidence: '«(٢٠ درجة)» مرسومة مع أرقام مشرقية=${indic}');
@@ -1306,12 +1510,17 @@ void main() {
     expect(sizes.length, greaterThan(2),
         reason: 'أحجام الخطوط في PDF ($sizes): أدوار العقد لا تصل جميعها.');
 
-    // المعادلات: كل طلب لقطة وصل صورة، وترتيبها كما في العقد.
-    expect(_gate.mathRequests, greaterThan(0),
-        reason: 'لم تُطلب أي لقطة معادلة — مسار الرياضيات غير مختبَر.');
-    expect(report.imageObjects, greaterThanOrEqualTo(_gate.mathRequests),
-        reason: 'صور PDF (${report.imageObjects}) أقلّ من طلبات المعادلات '
-            '(${_gate.mathRequests}).');
+    // كل عقدة Math في LayoutDocument لها موضع رسم صورة في PDF. قد تشترك
+    // مواضع متعددة في XObject واحد إذا تطابقت بايتات الصور؛ لذا عدد استدعاءات
+    // Do (placements) هو الدليل الصحيح، لا عدد الموارد الفريدة أو استدعاءات
+    // مضيف القياس/التصيير المتكررة.
+    expect(_gate.mathRunCount, greaterThan(0),
+        reason: 'لا توجد عقد Math في التخطيط — مسار الرياضيات غير مختبَر.');
+    expect(_gate.mathHostRequestCount, greaterThan(0),
+        reason: 'لم تُطلب أي لقطة من مضيف الرياضيات.');
+    expect(report.allImages.length, greaterThanOrEqualTo(_gate.mathRunCount),
+        reason: 'مواضع صور PDF (${report.allImages.length}) أقلّ من عقد '
+            'Math في التخطيط (${_gate.mathRunCount}).');
     const mathOrder = <String>['MATH1', 'TEXTAR1', 'MATH2'];
     final drawnMathOrder = <String>[];
     for (final page in report.pages) {
@@ -1337,15 +1546,19 @@ void main() {
       }
     }
 
-    // العنصر الحرّ (صورة PNG) مضمَّن: صورة إضافية على صور المعادلات.
-    expect(report.imageObjects, greaterThanOrEqualTo(_gate.mathRequests + 1),
+    // العنصر الحرّ (صورة PNG) له موضع رسم إضافي على صور المعادلات.
+    expect(report.allImages.length,
+        greaterThanOrEqualTo(_gate.mathRunCount + 1),
         reason: 'صورة العنصر الحر لم تُضمَّن في PDF '
-            '(عدد الصور ${report.imageObjects} مقابل ${_gate.mathRequests} '
-            'معادلة).');
+            '(مواضع الصور ${report.allImages.length} مقابل '
+            '${_gate.mathRunCount} معادلة).');
+    expect(report.imageObjects, greaterThan(0),
+        reason: 'لا توجد موارد صور XObject مضمَّنة في PDF.');
 
     _matrix.record('math', P0Path.vectorPdf, P0Status.pass,
-        evidence: 'صور المعادلات=${report.imageObjects}، طلبات='
-            '${_gate.mathRequests}، ترتيب العقد محفوظ: $drawnMathOrder');
+        evidence: 'مواضع الصور=${report.allImages.length}، موارد XObject='
+            '${report.imageObjects}، صيغ=${_gate.mathRunCount}، '
+            'ترتيب العقد محفوظ: $drawnMathOrder');
     _matrix.record('quran', P0Path.vectorPdf, P0Status.pass,
         evidence: 'Amiri على سطور الآيات (${verseLines.length} سطر) '
             'والخطوط=$fonts');
@@ -1353,9 +1566,9 @@ void main() {
         evidence: 'OP1A..OP1C وQUR4/QUR5 مرسومة في صفّ خيارات بعد نص النقطة');
     _matrix.record('floating', P0Path.vectorPdf, P0Status.pass,
         evidence: 'FLOAT2 (مربع النص المملوك) مرسوم، وصورة PNG المملوكة '
-            'تزيد الصور المضمَّنة: صور/صفحة='
-            '${report.pages.map((p) => p.embeddedImageObjects).join("/")} '
-            'إجمالي=${report.imageObjects}');
+            'لها موضع رسم؛ استخدامات/صفحة='
+            '${report.pages.map((p) => p.embeddedImageObjects).join("/")}، '
+            'مواضع=${report.allImages.length} موارد XObject=${report.imageObjects}');
     _matrix.record('marks', P0Path.vectorPdf, P0Status.pass,
         evidence: 'أرقام مشرقية مرسومة '
             '${report.pages.fold<int>(0, (sum, p) => sum + p.arabicIndicDigits)} '

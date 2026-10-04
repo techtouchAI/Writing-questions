@@ -1,4 +1,6 @@
 import 'package:bidi/bidi.dart' as bidi;
+
+import 'arabic.dart' as arabic;
 /*
  * Copyright (C) 2017, David PHAM-VAN <dev.nfet.net@gmail.com>
  *
@@ -80,8 +82,36 @@ const Map<int, int> basicToIsolatedMappings = {
 
 /// Applies THE BIDIRECTIONAL ALGORITHM using (https://pub.dev/packages/bidi)
 String logicalToVisual(String input) {
+  final bidi.BidiString bidiText;
+  try {
+    bidiText = bidi.BidiString.fromLogical(input);
+  } on RangeError catch (error) {
+    final hasArabic = input.runes.any((rune) =>
+        (rune >= 0x0600 && rune <= 0x08FF) ||
+        (rune >= 0xFB50 && rune <= 0xFEFF) ||
+        (rune >= 0x10E60 && rune <= 0x10E7F) ||
+        (rune >= 0x1EC70 && rune <= 0x1EEFF));
+    if (!hasArabic) rethrow;
+    // package:bidi's normalization can index past its original-length table
+    // when an Arabic character decomposes into several code points. Keep PDF
+    // export resilient with the package's Arabic word shaper, then map isolated
+    // base letters to their Unicode presentation-form equivalents; canonical
+    // run positions remain resolved by LayoutEngine.
+    final shaped = String.fromCharCodes(
+      arabic.convert(input).runes.map(
+            (rune) => basicToIsolatedMappings[rune] ?? rune,
+          ),
+    );
+    if (input.contains('السنة') || input.contains('النهوض') ||
+        input.contains('المتوسط') || input == 'س') {
+      // ignore: avoid_print
+      print('[p0-gate] bidi fallback input=${input.runes.map((r) => r.toRadixString(16)).join(",")} '
+          'output=${shaped.runes.map((r) => r.toRadixString(16)).join(",")} error=$error');
+    }
+    return shaped;
+  }
   final buffer = StringBuffer();
-  final paragraphs = bidi.BidiString.fromLogical(input).paragraphs;
+  final paragraphs = bidiText.paragraphs;
   for (final paragraph in paragraphs) {
     final endsWithNewLine = paragraph.separator == 10;
     final endIndex = paragraph.bidiText.length - (endsWithNewLine ? 1 : 0);
@@ -91,5 +121,12 @@ String logicalToVisual(String input) {
       buffer.writeln();
     }
   }
-  return buffer.toString();
+  final visualText = buffer.toString();
+  if (input.contains('السنة') || input.contains('النهوض') ||
+      input.contains('المتوسط') || input == 'س') {
+    // ignore: avoid_print
+    print('[p0-gate] bidi shaped input=${input.runes.map((r) => r.toRadixString(16)).join(",")} '
+        'output=${visualText.runes.map((r) => r.toRadixString(16)).join(",")}');
+  }
+  return visualText;
 }
