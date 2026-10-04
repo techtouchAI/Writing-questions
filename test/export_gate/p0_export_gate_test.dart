@@ -1430,11 +1430,13 @@ void main() {
             canonicalQuranRunsInSourceOrder[index];
       }
     }
+    final canonicalQuranRunDiagnostics = canonicalQuranRunsInSourceOrder
+        .map((run) => '${run.id}:${run.text}@${run.x.toStringAsFixed(3)}+'
+            '${run.width.toStringAsFixed(3)}')
+        .join('|');
     debugPrint('::notice title=p0-gate canonical Quran token map::'
         'PDF indices=$pdfQuranWordIndices; '
-        'canonical=${canonicalQuranRunsInSourceOrder.map((run) => '
-            '${run.id}:${run.text}@${run.x.toStringAsFixed(3)}+'
-            '${run.width.toStringAsFixed(3)}').join('|')}');
+        'canonical=$canonicalQuranRunDiagnostics');
     for (final index in titleLine.adjacencyIndices) {
       final rightWord = titleLine.words[index];
       final leftWord = titleLine.words[index + 1];
