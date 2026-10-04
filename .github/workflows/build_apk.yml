@@ -246,7 +246,23 @@ jobs:
             lines="${lines//$'\n'/%0A}"
             echo "::error title=Dart compiler errors ($count)::$lines"
           }
+          # ملاحظات `warning`/`info` تُفشل الخطوة بـ`--fatal-infos` أيضاً، لكن
+          # النشر كان يقتصر على `error` فيصل الفشل بلا رقم ولا قاعدة. هنا
+          # تُنشر القاعدتان (كل واحدة بحد 60 سطراً) مع حصيلة لكل قاعدة.
+          publish_analyzer_tally() {
+            local file="$1" tally total
+            [ -f "$file" ] || return 0
+            total="$(grep -cE '^[[:space:]]+(error|warning|info) • ' "$file" || true)"
+            [ -n "$total" ] && [ "$total" -gt 0 ] || return 0
+            tally="$({ grep -oE '• [a-z_]+$' "$file" || true; } \
+              | sort | uniq -c | sort -rn | tr -s ' ' | tr '\n' ';' || true)"
+            tally="${tally//%/%25}"
+            echo "::notice title=Analyzer findings tally (total=$total)::$tally"
+          }
           publish_analyzer_findings "$RUNNER_TEMP/flutter-analyze.log" 'error' 'Analyzer errors' 80
+          publish_analyzer_findings "$RUNNER_TEMP/flutter-analyze.log" 'warning' 'Analyzer warnings' 60
+          publish_analyzer_findings "$RUNNER_TEMP/flutter-analyze.log" 'info' 'Analyzer infos' 60
+          publish_analyzer_tally "$RUNNER_TEMP/flutter-analyze.log"
           publish_compile_errors "$RUNNER_TEMP/flutter-test.log"
           publish_gate_stages() {
             local file="$1" lines count
