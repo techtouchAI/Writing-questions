@@ -58,6 +58,7 @@ class CanonicalLayoutPdfPainter {
           ],
           fonts: fonts,
           mathRasters: mathRasters,
+          pageWidth: pageWidth,
         ),
       ),
       for (final placement in page.floatingElements)
@@ -87,9 +88,10 @@ class CanonicalLayoutPdfPainter {
   /// justification is performed here.
   pw.Widget _paintCanonicalLines(
     pw.Context context,
-    Iterable<LayoutLine> lines, {
+          Iterable<LayoutLine> lines, {
     required ExamFonts fonts,
     required PdfMathRasters mathRasters,
+    required double pageWidth,
   }) {
     final children = <pw.Widget>[];
     for (final line in lines) {
@@ -145,6 +147,19 @@ class CanonicalLayoutPdfPainter {
       }
 
       final origins = _mappedRunOrigins(line, runs, advances);
+      if (List<int>.generate(runs.length, (index) => index).any(
+        (index) => origins[index] < 0 ||
+            origins[index] + advances[index] > pageWidth,
+      )) {
+        // ignore: avoid_print
+        print('[pdf-map-overflow] line=${line.id} '
+            'align=${line.alignment} dir=${line.direction} '
+            'rect=${line.rect.left}+${line.rect.width} '
+            'runs=${List<String>.generate(runs.length, (index) => '
+                '${runs[index].id} "${runs[index].text}" '
+                'c=${runs[index].x}+${runs[index].width} '
+                'p=${origins[index]}+${advances[index]}').join(' | ')}');
+      }
       final originById = <String, double>{
         for (var index = 0; index < runs.length; index++)
           runs[index].id: origins[index],
