@@ -17,7 +17,8 @@ Baseline and evidence sources
 | P1 merge (semantic/DocumentIR) | `d392018c60d8c38b4aafabd8e16287a07f9310aa` — "P1: unify preview and exports through DocumentIR" (18 files, +3316/−507) |
 | P2 merge (canonical layout) | `c1d74f2d859e9569a55203ad7da3ae27f60889e3` — PR #36, 27 files, +6365/−602 |
 | CI run inspected on the baseline | `37202705105` (`main` @ `c1d74f2`): Analyze+test+APK **success**, Visual regression **success**, release-attach *skipped* (tag-only) |
-| Test count reported by CI | **607 tests passed**, 0 failed, 0 skipped |
+| Test count reported by CI (baseline) | **607 tests passed**, 0 failed, 0 skipped |
+| Test count after this change set | **610 tests passed**, 0 failed, 0 skipped (run `37206836683`, SHA `ade75254`) |
 | P0 gate matrix (60 cells) | `PASS=32 FAIL=0 DEFERRED_TO_P1=25 NOT_APPLICABLE=3 UNMEASURED=0` |
 | Visual parity on the baseline | PDF p1–p3 RMSE **0** (cap 0.02); Word embedded pixels **byte-identical**; Word rendered RMSE 0.05891 / 0.0685479 / 0.0611121 (cap 0.12) |
 | Artifacts / job logs | **not downloadable from this environment** (blob storage unreachable); evidence is read from check-run annotations and the run/job API |
@@ -120,7 +121,7 @@ Legend: **Path columns** are the four measured passes of the P0 gate
 
 | Area | Requirement | Current State | Evidence | Missing | Action | Test |
 |---|---|---|---|---|---|---|
-| CI | analyze `--fatal-infos`, tests, gate, visual parity, APK on every push | PASS | baseline run 37202705105 | `test/**` is excluded from analysis by a temporary comment in `analysis_options.yaml` (F5) | decide: re-enable and fix lints | workflow file |
+| CI | analyze `--fatal-infos` (source **and tests**), tests, gate, visual parity, APK on every push | PASS | baseline run `37202705105` and final run `37206836683` | — (the `test/**` exclusion was removed and the 24 findings fixed, F5) | — | workflow file |
 | Android release | `flutter build apk --release` artifact | PASS on baseline | job "Analyze, test, and build APK" success; `writing-questions-release-apk` uploaded | — | — | workflow |
 | Backward compatibility | existing documents/exports unchanged | PASS per gate cells (options/marks/RTL/LTR/multi-page) | GATE-02…11 | — | — | documented tests |
 | third_party/pdf | vendored patch preserved | PASS | workflow step `verify_vendored_pdf_patch.dart` in the baseline run | — | — | tool script |
@@ -192,13 +193,24 @@ node as a paragraph (F3); (c) product decisions (F2, F6).
 
 ### F5 — Gaps that remain (not hidden)
 
-* `analysis_options.yaml` excludes `test/**` with a "TEMPORARY (removed before
-  the final commit)" comment; that exclusion is still present.
+* ~~`analysis_options.yaml` excluded `test/**` with a "TEMPORARY (removed before
+  the final commit)" comment~~ — **closed**: the exclusion is removed,
+  `flutter analyze --fatal-infos` covers the tests again, and the 24 findings the
+  analyzer reported on first exposure are fixed. Rule tally published by the
+  workflow: 5 `unnecessary_brace_in_string_interps`, 5
+  `prefer_adjacent_string_concatenation`, 4 `unused_import`, 4
+  `unnecessary_string_escapes`, 3 `prefer_interpolation_to_compose_strings`,
+  3 `prefer_const_declarations`, 2 `unnecessary_import`, 1 `unused_element`,
+  1 `unnecessary_non_null_assertion`, 1 `prefer_const_constructors`. Evidence:
+  run `37206645457` (findings) → run `37206836683` (analyze clean, tests green).
 * Visual regression runs on one fixture document (three pages); content-level
   coverage of the 18 cases listed in the request is spread across the P0 gate
   probes and the canonical/metrics tests rather than one image suite.
-* The gate prints its full matrix as a CI notice but the per-cell *evidence*
-  strings live in `matrix.txt`/`summary.txt` artifacts.
+* ~~The gate prints its full matrix as a CI notice but the per-cell *evidence*
+  strings live in `matrix.txt`/`summary.txt` artifacts~~ — **closed**: since this
+  change set `build/export_gate/summary.txt` is published as a second check-run
+  notice, so the per-cell numbers are readable from the API without artifacts
+  (`matrix.txt`/`summary.txt` remain uploaded as artifacts).
 
 ### F6 — DOCX deferrals that are product-level
 
@@ -208,15 +220,74 @@ node as a paragraph (F3); (c) product decisions (F2, F6).
   to Word's maths default (`math/editableDocx`).
 Both are recorded with reasons; neither is weakened by this audit.
 
+## Change set of this session (what changed and why)
+
+| # | Change | Files | Evidence |
+|---|---|---|---|
+| 1 | `GATE-06` measures every header field in its raw **and** digit-localized form and now **fails** if a field is absent in both; the recorded `header-footer/editableDocx` deferral keeps only the structural reason (no `word/header*.xml`). `GATE-99` requires the registration to name the localized forms and the cell status to follow the measured header-part structure. | `test/export_gate/p0_export_gate_test.dart` | run `37206836683`: `missingAnywhere` empty; matrix tally unchanged `PASS=32 FAIL=0 DEFERRED=25 N/A=3 UNMEASURED=0`; the deferral annotation names `HDRV/HDC١/HDC٢/HDG١/HDT١` |
+| 2 | New canonical NBSP suite: measurement + justification, differential line-breaking (ordinary space vs NBSP at 13 widths), page assignment across 4 page heights with `splitQuestion=true` | `test/layout/canonical/canonical_nbsp_page_assignment_test.dart` (new, 3 tests) | run `37206836683`: `space=2.652 nbsp=2.652 pair=43.608 sum=40.956 justifiedLines=19/21`; `spaceSplitWidths=9 nbspMovedAsUnit=9 nbspLineCounts=[1,2]`; `240pt→13ص 320pt→8ص 420pt→6ص 520pt→5ص` |
+| 3 | The NBSP suite harness follows the repo's proven pattern (`TestWidgetsFlutterBinding` + plain `test()` + fonts in `setUpAll`) with explicit 3-minute budgets | same file | first run `37203941994` timed out twice (10 min each) inside `testWidgets`; after the harness change all three tests run and pass (`37206836683`) |
+| 4 | `test/**` analyzed again; the 24 reported findings fixed mechanically (identical string values, unused imports removed, `const` where constant, one unused private regex deleted, one redundant `!` dropped) | `analysis_options.yaml` + 9 test files | run `37206645457` published the tally (total=24) → run `37206836683` reports no analyzer finding |
+| 5 | CI diagnostics: publish `build/export_gate/summary.txt` as a notice; publish analyzer warnings/infos with a per-rule tally (previously only errors were published, so `--fatal-infos` failures arrived without rule or count) | `.github/workflows/build_apk.yml` | run `37206836683` carries the `P0 gate — summary` and (when needed) the analyzer notices |
+| 6 | Historical P0 report carries a measured correction of the "missing DOCX header fields" claim (F1) instead of leaving it as the only "real regression" | `docs/export_p0_gate_report.md` | this document, F1/F2 |
+
 ## Verification performed for this change set
 
-* Local: **no Flutter/Dart toolchain in this environment** (and the SDK hosts are
-  unreachable), so nothing is claimed as locally verified.
-* CI on the audit branch: analyzer, full test suite, P0 gate, visual parity and
-  the release APK build must be green on the final SHA — results are recorded in
-  the pull request and in the final report accompanying this document.
-* Added test: `test/layout/canonical/canonical_nbsp_page_assignment_test.dart`
-  (NBSP measurement, line breaking across a width sweep, page assignment across
-  four page heights with a split question).
-* Changed gate: `P0GateFixture.headerMarkers` are now matched in their raw *and*
+* Local: **no Flutter/Dart toolchain in this environment** (SDK hosts are
+  unreachable), so nothing is claimed as locally verified; every number below
+  comes from GitHub Actions.
+* Green runs on the branch: `37206149727` (SHA `74a077ac`) and `37206836683`
+  (SHA `ade75254`) — both jobs `success` (`Analyze, test, and build APK`,
+  `Visual regression`), `Attach APK to GitHub release` skipped by design
+  (tag-only).
+* Test count: **610 passed, 0 failed** (607 baseline + 3 new NBSP tests).
+* P0 gate: 60 cells, `PASS=32 FAIL=0 DEFERRED_TO_P1=25 NOT_APPLICABLE=3
+  UNMEASURED=0`, unchanged by this change set — the deferrals are the ones
+  documented in F2/F3/F6, not new ones.
+* Visual parity: `tool/verify_visual_parity.sh` green (PDF pages RMSE 0 against
+  the 0.02 cap; the Word render of `exact.docx` within the 0.12 cap).
+* Android: `flutter build apk --release` success; artifact
+  `writing-questions-release-apk` (28,510,271 bytes) plus `p0-export-gate` and
+  `visual-parity` artifacts on run `37206836683`.
+* Changed gate: `P0GateFixture.headerMarkers` are matched in their raw *and*
   digit-localized forms; a genuinely missing field fails `GATE-06`.
+
+## Remaining issues (pre-existing deferrals, with the exact next fix)
+
+None of these is a regression introduced by this change set; each is already
+recorded in the gate with a named reason. They are listed here with the fix path
+so the next session does not have to re-derive the root cause.
+
+1. **Editable DOCX header is a first-page body block, not a Word header part**
+   (F2; gate cell `header-footer/editableDocx` = `DEFERRED_TO_P1`). Next fix:
+   emit `word/header1.xml` with the header table, reference it from `sectPr` as
+   `w:type="first"` next to `<w:titlePg/>`, stop writing `_buildHeaderTable()`
+   into the body (line 401) and subtract the header height from the first page's
+   capacity in the legacy plan. Requires a Word/LibreOffice render check, which
+   this environment cannot provide.
+2. **Interactive editor preview still measures widget heights** (F3; gate cells
+   `pagination/vectorPdf`, `arabic|justification|ltr-document/preview`). Next
+   fix: paint `CanonicalLayoutPreviewPage` for the editing surface as well and
+   feed `PaginationEngine` from the canonical page plan, so one layout decision
+   serves both paints. `test/visual/visual_parity_fixture_test.dart` already
+   renders the interactive preview, so the migration is measured by it.
+3. **DOCX floats have no `wp:anchor`, OMML runs have no direction**
+   (F6; `floating/editableDocx`, `math/editableDocx`). Next fix: write authored
+   float geometry as `wp:anchor` positioning and add `w:rtl`/`w:bidi` inside
+   `m:r` for Arabic math runs; then both cells can move from `DEFERRED_TO_P1` to
+   a measured `PASS`.
+4. **LTR paper keeps document-level direction for side blocks and paragraphs**
+   (gate cells `ltr-document/vectorPdf`, `ltr-document/editableDocx`). Next fix:
+   derive paragraph/run direction from the paragraph's own strong text in
+   `PdfPaperBuilder` and `LegacyBlueprintProjection` (the canonical metrics
+   layer already resolves per-span direction through `_bidiDirectionFor`). Note
+   that the gate criterion `rtlRunLeak` ("no `w:rtl` run anywhere in an LTR
+   paper") must then be re-expressed as "an LTR paragraph must not carry
+   `w:rtl`", otherwise the fix and the criterion contradict each other.
+5. **Three Preview cells are `NOT_APPLICABLE`** (`arabic-numerals`,
+   `latin-numerals`, `punctuation`): the widget tree exposes no semantic token
+   for them. They become measurable with fix 2 (the canonical layout carries
+   per-run content kinds).
+6. **The 15 Exact cells are `DEFERRED_TO_P1` by design**: the Exact files are
+   page images, so no structural claim can be measured on them; the visual
+   parity script is the authority for those paths.
