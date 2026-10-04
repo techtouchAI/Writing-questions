@@ -913,20 +913,9 @@ void main() {
                 '@${ilma.first.x.toStringAsFixed(3)}+'
                 '${ilma.first.width.toStringAsFixed(3)}',
         ];
-        final quranTitleRunGeometry = <String>[
-          for (final line in quranTitleLines)
-            for (final run in line.runs)
-              if (run.isQuran)
-                'line=${line.lineIndex} "${run.text}" '
-                    '@${run.x.toStringAsFixed(3)}+'
-                    '${run.width.toStringAsFixed(3)} '
-                    'dir=${run.direction.name} '
-                    'font=${run.style.font.family} size=${run.style.fontSizePt} '
-                    'id=${run.id}',
-        ];
         _stage('P2 Quran run geometry: $quranRunGeometry; '
-            'p0q1/title runs=$quranTitleRunGeometry; '
-            'canonical gap زدني/علما=$quranTitleWordGap');
+            'p0q1/title canonical gap زدني/علما=$quranTitleWordGap '
+            'runs=${_gate.canonicalQuranTitlePairGeometry}');
         _gate.rtlVectorPdf = await pdfEngine.generate(
           document: rtlDocument,
           layoutDocument: canonicalLayout,
@@ -1298,11 +1287,11 @@ void main() {
 
     // الفجوات: لا تباعد سحري ولا تراكب.
     //
-    // السقف الأعلى لا يُطلب من كل فجوة: في PDF يوزّع `pw.TextAlign.justify`
-    // فائض السطر على فجواته، ففجوة سطر من كلمتين قد تتجاوز أي حدّ مطلق
-    // مشروعاً. لذلك يُقاس: (1) لا تراكب، (2) غالبية الفجوات عند عرض المسافة
-    // الطبيعية للخط، (3) سطر غير مضبوط (عنوان STA1) فجواته كلها طبيعية —
-    // وهذا ما يكشف التباعد السحري أو الرقعة في `realign`.
+    // لا يُطلب سقف ثابت لكل فجوة: LayoutDocument يوزّع فائض سطر الضبط على
+    // فرصه القانونية، وPDF يحفظ تلك المواقع بلا حساب مستقل. لذلك يُقاس:
+    // (1) لا تراكب، (2) غالبية الفجوات عند عرض المسافة الطبيعية للخط،
+    // (3) سطر غير مضبوط (عنوان STA1) فجواته كلها طبيعية — وهذا ما يكشف
+    // التباعد السحري أو الرقعة في مواءمة advances.
     // أزواج متجاورة فعلاً داخل المقطع نفسه (adjacencyIndices)، لا كل زوج على
     // نفس الخط: سطر الصفحة قد يجمع كتلتين، وفجوة بينهما ليست مسافة كلمة.
     final gaps = <double>[
@@ -1326,6 +1315,14 @@ void main() {
     // (for example «أجب» followed by «:»). Check every adjacent lexical pair;
     // punctuation placement and ordering have their own assertions below.
     final titleLine = titleLines.first;
+    final canonicalQuranGap = _gate.canonicalQuranTitleWordGap;
+    expect(canonicalQuranGap, isNotNull,
+        reason: 'غياب زوج «زدني/علما» من canonical p0q1/title: '
+            '${_gate.canonicalQuranTitlePairGeometry}');
+    expect(canonicalQuranGap!, inInclusiveRange(1.0, 6.0),
+        reason: 'القياس canonical نفسه لا يحفظ مسافة معجمية صحيحة بين '
+            '«زدني/علما»: ${canonicalQuranGap.toStringAsFixed(3)}pt '
+            'geometry=${_gate.canonicalQuranTitlePairGeometry}');
     final titleGaps = <double>[
       for (final index in titleLine.adjacencyIndices)
         if (!_isPunctuationOnlyPdfToken(titleLine.words[index].text) &&

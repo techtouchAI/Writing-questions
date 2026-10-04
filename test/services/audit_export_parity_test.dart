@@ -170,23 +170,8 @@ void main() {
           text: 'سطر أخير قصير جدا',
           style: const PaperTextStyle(align: PaperAlign.justify)),
     ]);
-    final pdfEngine = PaginatedPdfExamEngine();
-    final pdfFonts = await ExamFonts.load();
-    final canonicalLayout = await pdfEngine.resolveLayoutDocument(
-      document: document,
-      fonts: pdfFonts,
-    );
-    final q4CanonicalLines = canonicalLayout.allLines
-        .where((line) => line.semanticNodeId == 'q4/branch/q4b/body')
-        .toList()
-      ..sort((a, b) => a.lineIndex.compareTo(b.lineIndex));
-    final canonicalFinalLine =
-        q4CanonicalLines.isEmpty ? null : q4CanonicalLines.last;
-    final bytes = await pdfEngine.generate(
-      document: document,
-      layoutDocument: canonicalLayout,
-      fonts: pdfFonts,
-    );
+    final bytes =
+        await PaginatedPdfExamEngine().generate(document: document);
     final probe = PdfContentProbe.fromBytes(bytes);
 
     // صندوق المحتوى: هوامش 15مم على A4 → 42.52 … 552.76 نقطة.
@@ -240,39 +225,6 @@ void main() {
     final justifyLines = body.sublist(3, body.length - 1);
     expect(justifyLines.length, greaterThanOrEqualTo(3),
         reason: 'AUD-PDF-02: نص الضبط يجب أن يلتف على ≥3 أسطر لقياس التمدّد.');
-    final lastJustifyLine = justifyLines.last;
-    final canonicalRuns = canonicalFinalLine?.runs ?? const [];
-    final compactCanonicalRuns = <String>[
-      for (final run in canonicalRuns)
-        'v${run.visualIndex}:"${run.text}"@'
-            '${run.x.toStringAsFixed(3)}+'
-            '${run.width.toStringAsFixed(3)}',
-    ];
-    final pdfFocusWords = lastJustifyLine.words
-        .where((word) => word.x >= 350 && word.x <= 435)
-        .map((word) => '"${word.text}"@${word.x.toStringAsFixed(3)}+'
-            '${word.advanceWidth.toStringAsFixed(3)}')
-        .toList(growable: false);
-    final pdfFocusGaps = <String>[
-      for (final index in lastJustifyLine.adjacencyIndices)
-        if (lastJustifyLine.words[index].x >= 350 &&
-            lastJustifyLine.words[index].x <= 435)
-          '${lastJustifyLine.words[index].text} '
-              'gap=${lastJustifyLine.gapAfter(index).toStringAsFixed(3)}',
-    ];
-    debugPrint(
-      '[AUD-PDF-02 canonical-vs-PDF geometry] '
-      'line=${canonicalFinalLine?.id} '
-      'rtl/${canonicalFinalLine?.alignment?.name} '
-      'justified=${canonicalFinalLine?.isJustified} '
-      'natural/resolved=${canonicalFinalLine?.naturalWidth.toStringAsFixed(3)}/'
-      '${canonicalFinalLine?.resolvedWidth.toStringAsFixed(3)}pt '
-      'canonicalRuns(v#index,text,x,width)=$compactCanonicalRuns; '
-      'PDF space=${natural.toStringAsFixed(4)}pt '
-      'targetWords(x,advance)=$pdfFocusWords gaps=$pdfFocusGaps; '
-      'PDF line=${lastJustifyLine.describe()}',
-      wrapWidth: 2000,
-    );
 
     // الأسطر الملتفّة: يمتد كل سطر متوسط حتى حافة مساحة نص الفرع
     // (MSO: الضبط يملأ السطر من الحافة إلى الحافة).
@@ -295,6 +247,7 @@ void main() {
     }
 
     // السطر الأخير من الضبط: غير ممدود (MSO: لا يُشدّ السطر الأخير).
+    final lastJustifyLine = justifyLines.last;
     for (final index in lastJustifyLine.adjacencyIndices) {
       expect(
         lastJustifyLine.gapAfter(index),

@@ -83,7 +83,8 @@ class PaginatedPdfExamEngine {
           margin: pw.EdgeInsets.zero,
           textDirection: direction,
           theme: theme,
-          build: (_) => painter.paintPage(
+          build: (context) => painter.paintPage(
+            context: context,
             page: page,
             sourceDocument: document,
             fonts: loadedFonts,
