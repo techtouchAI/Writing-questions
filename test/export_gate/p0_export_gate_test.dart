@@ -1444,7 +1444,12 @@ void main() {
             'pdf=${pdfGap.toStringAsFixed(3)}pt '
             'canonical=${canonicalGap.toStringAsFixed(3)}pt '
             'delta=${(pdfGap - canonicalGap).toStringAsFixed(3)}pt '
-            'runs=${rightRun.id}|${leftRun.id}');
+            'adv-delta=${(rightWord.advanceWidth - rightRun.width).toStringAsFixed(3)}/'
+            '${(leftWord.advanceWidth - leftRun.width).toStringAsFixed(3)}pt '
+            'runs="${rightRun.text}"@${rightRun.x.toStringAsFixed(3)}+'
+            '${rightRun.width.toStringAsFixed(3)}|'
+            '"${leftRun.text}"@${leftRun.x.toStringAsFixed(3)}+'
+            '${leftRun.width.toStringAsFixed(3)}');
       }
     }
     debugPrint('::notice title=p0-gate canonical title spacing::'
