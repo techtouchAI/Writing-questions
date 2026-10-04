@@ -87,7 +87,7 @@ class CanonicalLayoutPdfPainter {
   /// justification is performed here.
   pw.Widget _paintCanonicalLines(
     pw.Context context,
-          Iterable<LayoutLine> lines, {
+    Iterable<LayoutLine> lines, {
     required ExamFonts fonts,
     required PdfMathRasters mathRasters,
   }) {

@@ -39,6 +39,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
+import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/paper_metrics.dart';
 import 'package:writing_questions_app/layout/visual/visual_content.dart';
 import 'package:writing_questions_app/layout/visual/visual_flutter_style.dart';
@@ -107,6 +108,83 @@ const Set<String> _punctuationOnlyPdfTokens = <String>{
 bool _isPunctuationOnlyPdfToken(String text) =>
     _punctuationOnlyPdfTokens.contains(text.trim());
 
+const int _canonicalLogicalOffsetStride = 1000000;
+
+bool _isCanonicalWhitespaceRune(int rune) => switch (rune) {
+      0x0009 || 0x000A || 0x000D || 0x0020 || 0x0085 || 0x00A0 || 0x1680 ||
+      0x2000 || 0x2001 || 0x2002 || 0x2003 || 0x2004 || 0x2005 || 0x2006 ||
+      0x2007 || 0x2008 || 0x2009 || 0x200A || 0x2028 || 0x2029 || 0x202F ||
+      0x205F || 0x3000 => true,
+      _ => false,
+    };
+
+bool _hasCanonicalWhitespace(String text) =>
+    text.runes.any(_isCanonicalWhitespaceRune);
+
+/// PDF may expose bidi fragments of one canonical token as separate text
+/// operators (for example the Arabic question prefix «س» and its attached
+/// digit «١»). Such fragments are not word-space samples. Only classify a
+/// pair as non-lexical when the canonical source node and source offsets prove
+/// that no whitespace lies between the fragments; ambiguous pairs remain in
+/// the lexical-spacing assertion.
+bool _isContiguousCanonicalTokenPair(LayoutRun first, LayoutRun second) {
+  if (first.id == second.id) {
+    return !_hasCanonicalWhitespace(first.text);
+  }
+  if (first.semanticNodeId != second.semanticNodeId ||
+      first.logicalIndex ~/ _canonicalLogicalOffsetStride !=
+          second.logicalIndex ~/ _canonicalLogicalOffsetStride) {
+    return false;
+  }
+
+  final firstOffset = first.logicalIndex % _canonicalLogicalOffsetStride;
+  final secondOffset = second.logicalIndex % _canonicalLogicalOffsetStride;
+  final firstIsEarlier = firstOffset <= secondOffset;
+  final earlier = firstIsEarlier ? first : second;
+  final later = firstIsEarlier ? second : first;
+  final earlierOffset = firstIsEarlier ? firstOffset : secondOffset;
+  final laterOffset = firstIsEarlier ? secondOffset : firstOffset;
+  final gapStart = earlierOffset + earlier.text.length;
+  if (gapStart > laterOffset ||
+      _hasCanonicalWhitespace(earlier.text) ||
+      _hasCanonicalWhitespace(later.text)) {
+    return false;
+  }
+
+  final source = earlier.semanticNode?.legacyText;
+  if (source == null ||
+      gapStart > source.length ||
+      laterOffset > source.length) {
+    return false;
+  }
+  return !_hasCanonicalWhitespace(source.substring(gapStart, laterOffset));
+}
+
+LayoutRun? _canonicalRunForPdfWord(LayoutLine line, ProbedWord word) {
+  LayoutRun? closest;
+  var closestDistance = double.infinity;
+  final pdfCenter = word.x + word.advanceWidth / 2;
+  for (final run in line.runs) {
+    if (run.text.isEmpty || run.text.runes.every(_isCanonicalWhitespaceRune)) {
+      continue;
+    }
+    final canonicalCenter = run.x + run.width / 2;
+    final distance = (canonicalCenter - pdfCenter).abs() +
+        (run.width - word.advanceWidth).abs() * 0.05;
+    if (distance < closestDistance) {
+      closest = run;
+      closestDistance = distance;
+    }
+  }
+  return closest;
+}
+
+double _canonicalGapBetween(LayoutRun first, LayoutRun second) {
+  final right = first.x >= second.x ? first : second;
+  final left = identical(right, first) ? second : first;
+  return right.x - (left.x + left.width);
+}
+
 /// قياسات القطع والممرّات، مشتركة بين اختبارات هذا الملف (ترتيب التنفيذ
 /// مضمون: اختبار القطع أولاً، ثم الفحوص البنيوية، ثم المصفوفة).
 class _Gate {
@@ -132,6 +210,7 @@ class _Gate {
   List<String> canonicalLabelRuns = <String>[];
   List<String> canonicalQuranTitlePairGeometry = <String>[];
   double? canonicalQuranTitleWordGap;
+  LayoutLine? canonicalQuestionTitleLine;
   // التقاط المعاينة الثقيل يُقاس مرة واحدة ويُخزَّن: لا يُعاد في كل اختبار،
   // ولا يبقى سببُه مختبئاً خلف اختبار القطع.
   _PreviewCapture? rtlCapture;
@@ -880,6 +959,9 @@ void main() {
         final quranTitleLines = canonicalLayout.allLines
             .where((line) => line.semanticNodeId == 'p0q1/title')
             .toList(growable: false);
+        _gate.canonicalQuestionTitleLine = quranTitleLines.isEmpty
+            ? null
+            : quranTitleLines.first;
         final quranTitleRuns = quranTitleLines
             .expand((line) => line.runs)
             .where((run) => run.isQuran)
@@ -1323,12 +1405,50 @@ void main() {
         reason: 'القياس canonical نفسه لا يحفظ مسافة معجمية صحيحة بين '
             '«زدني/علما»: ${canonicalQuranGap.toStringAsFixed(3)}pt '
             'geometry=${_gate.canonicalQuranTitlePairGeometry}');
-    final titleGaps = <double>[
-      for (final index in titleLine.adjacencyIndices)
-        if (!_isPunctuationOnlyPdfToken(titleLine.words[index].text) &&
-            !_isPunctuationOnlyPdfToken(titleLine.words[index + 1].text))
-          titleLine.gapAfter(index),
-    ];
+    final titleGaps = <double>[];
+    final titleGapDiagnostics = <String>[];
+    final canonicalTitleLine = _gate.canonicalQuestionTitleLine;
+    for (final index in titleLine.adjacencyIndices) {
+      final rightWord = titleLine.words[index];
+      final leftWord = titleLine.words[index + 1];
+      if (_isPunctuationOnlyPdfToken(rightWord.text) ||
+          _isPunctuationOnlyPdfToken(leftWord.text)) {
+        continue;
+      }
+      final rightRun = canonicalTitleLine == null
+          ? null
+          : _canonicalRunForPdfWord(canonicalTitleLine, rightWord);
+      final leftRun = canonicalTitleLine == null
+          ? null
+          : _canonicalRunForPdfWord(canonicalTitleLine, leftWord);
+      final pdfGap = titleLine.gapAfter(index);
+      if (rightRun != null &&
+          leftRun != null &&
+          _isContiguousCanonicalTokenPair(rightRun, leftRun)) {
+        titleGapDiagnostics.add(
+            '${rightWord.text}/${leftWord.text}=same canonical token '
+            '${rightRun.semanticNodeId} source="'
+            '${rightRun.semanticNode?.legacyText ?? rightRun.text}"');
+        continue;
+      }
+
+      titleGaps.add(pdfGap);
+      if (rightRun == null || leftRun == null) {
+        titleGapDiagnostics.add(
+            '${rightWord.text}/${leftWord.text}: pdf=${pdfGap.toStringAsFixed(3)}pt '
+            'canonical-run=unmatched');
+      } else {
+        final canonicalGap = _canonicalGapBetween(rightRun, leftRun);
+        titleGapDiagnostics.add(
+            '${rightWord.text}/${leftWord.text}: '
+            'pdf=${pdfGap.toStringAsFixed(3)}pt '
+            'canonical=${canonicalGap.toStringAsFixed(3)}pt '
+            'delta=${(pdfGap - canonicalGap).toStringAsFixed(3)}pt '
+            'runs=${rightRun.id}|${leftRun.id}');
+      }
+    }
+    debugPrint('::notice title=p0-gate canonical title spacing::'
+        '${titleGapDiagnostics.join('; ')}');
     if (titleGaps.isNotEmpty) {
       expect(titleGaps.every((gap) => gap >= 1.0 && gap <= 6.0), isTrue,
           reason: 'فجوات الكلمات في السطر غير المضبوط خارج نطاق المسافة '
@@ -1337,6 +1457,7 @@ void main() {
               'canonical p0q1/title Quran pair gap='
               '${_gate.canonicalQuranTitleWordGap?.toStringAsFixed(3)}pt '
               'runs=${_gate.canonicalQuranTitlePairGeometry}; '
+              'canonical/pdf=$titleGapDiagnostics; '
               'مسافة الكلمة لا تُطابق عرض المسافة للخط (انحدار realign).');
     }
 
