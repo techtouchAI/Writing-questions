@@ -151,14 +151,17 @@ class CanonicalLayoutPdfPainter {
         (index) => origins[index] < 0 ||
             origins[index] + advances[index] > pageWidth,
       )) {
+        final runDiagnostics = <String>[
+          for (var index = 0; index < runs.length; index++)
+            '${runs[index].id} "${runs[index].text}" '
+                'c=${runs[index].x}+${runs[index].width} '
+                'p=${origins[index]}+${advances[index]}',
+        ].join(' | ');
         // ignore: avoid_print
         print('[pdf-map-overflow] line=${line.id} '
             'align=${line.alignment} dir=${line.direction} '
             'rect=${line.rect.left}+${line.rect.width} '
-            'runs=${List<String>.generate(runs.length, (index) => '
-                '${runs[index].id} "${runs[index].text}" '
-                'c=${runs[index].x}+${runs[index].width} '
-                'p=${origins[index]}+${advances[index]}').join(' | ')}');
+            'runs=$runDiagnostics');
       }
       final originById = <String, double>{
         for (var index = 0; index < runs.length; index++)
