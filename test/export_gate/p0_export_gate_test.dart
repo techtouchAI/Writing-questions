@@ -1413,7 +1413,9 @@ void main() {
     };
     final canonicalQuranRunsInSourceOrder = <LayoutRun>[
       for (final id in canonicalTitleLine?.logicalRunIds ?? const <String>[])
-        if (canonicalRunsById[id]?.isQuran ?? false) canonicalRunsById[id]!,
+        if ((canonicalRunsById[id]?.isQuran ?? false) &&
+            canonicalRunsById[id]!.text != ' ')
+          canonicalRunsById[id]!,
     ];
     final pdfQuranWordIndices = <int>[];
     var insideTitleVerse = false;
@@ -1423,6 +1425,7 @@ void main() {
       if (insideTitleVerse) pdfQuranWordIndices.add(index);
       if (insideTitleVerse && text == '﴾') break;
     }
+    final pdfQuranWordIndexSet = pdfQuranWordIndices.toSet();
     final canonicalQuranRunByPdfWordIndex = <int, LayoutRun>{};
     if (canonicalQuranRunsInSourceOrder.length == pdfQuranWordIndices.length) {
       for (var index = 0; index < pdfQuranWordIndices.length; index++) {
@@ -1445,13 +1448,14 @@ void main() {
         continue;
       }
       final rightRun = canonicalQuranRunByPdfWordIndex[index] ??
-          (canonicalTitleLine == null
-              ? null
-              : _canonicalRunForPdfWord(canonicalTitleLine, rightWord));
+          (!pdfQuranWordIndexSet.contains(index) && canonicalTitleLine != null
+              ? _canonicalRunForPdfWord(canonicalTitleLine, rightWord)
+              : null);
       final leftRun = canonicalQuranRunByPdfWordIndex[index + 1] ??
-          (canonicalTitleLine == null
-              ? null
-              : _canonicalRunForPdfWord(canonicalTitleLine, leftWord));
+          (!pdfQuranWordIndexSet.contains(index + 1) &&
+                  canonicalTitleLine != null
+              ? _canonicalRunForPdfWord(canonicalTitleLine, leftWord)
+              : null);
       final pdfGap = titleLine.gapAfter(index);
       if (rightRun != null &&
           leftRun != null &&
