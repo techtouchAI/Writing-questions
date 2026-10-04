@@ -1150,8 +1150,9 @@ void main() {
           reason: 'محتوى يتجاوز عرض الصفحة: maxX=${bounds[2]} '
               'width=${page.pageWidth}; furthest=$furthestWord '
               'font=${furthestWord.baseFont} size=${furthestWord.fontSize} '
-              'page=${page.index + 1}; pdf-geometry='
-              '${CanonicalLayoutPdfPainter.debugTextRuns.take(50).join(' | ')}');
+              'page=${page.index + 1}; p0q1-geometry='
+              '${CanonicalLayoutPdfPainter.debugTextRuns.where((entry) =>
+                  entry.contains('p0q1/title')).join(' | ')}');
       expect(bounds[1], greaterThanOrEqualTo(0),
           reason: 'محتوى تحت حد الصفحة: minY=${bounds[1]}');
       expect(bounds[3], lessThanOrEqualTo(page.pageHeight),
