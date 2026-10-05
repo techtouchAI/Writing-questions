@@ -233,7 +233,7 @@ void main() {
       const bodyPart =
           'هذا نص عربي طويل يختبر حدود الصفحة والانتقال بين الصفحات مع سلامة '
           'الهندسة ومواقع الكلمات في المعاينة القانونية.';
-      final label = 'ملاحظة MixedCase42 — نهاية';
+      const label = 'ملاحظة MixedCase42 — نهاية';
       final document = ExamDocument(
         name: 'RTL floating text hit',
         header: ExamHeaderModel.initial(subject: 'اللغة العربية'),

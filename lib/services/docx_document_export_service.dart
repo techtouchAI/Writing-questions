@@ -716,7 +716,7 @@ class _DocxBuilder {
           sourceIr: documentIr,
         );
     if (!identical(layout.source, documentIr)) {
-      throw ExportException(
+      throw const ExportException(
         'تعذر تخطيط ملف Word: هندسة القياس لا تخص DocumentIR الحالي.',
       );
     }
@@ -739,7 +739,7 @@ class _DocxBuilder {
         ),
       );
       if (!identical(layout.source, documentIr) || hasSplitQuestion(layout)) {
-        throw ExportException(
+        throw const ExportException(
           'تعذر قياس كتل Word كاملة من DocumentIR قبل إعادة تقسيم PaginationEngine.',
         );
       }

@@ -432,11 +432,35 @@ void main() {
 
       // Editable DOCX مستقل: DocumentIR → LegacyDocxAdapter → PaginationEngine.
       // لا نمرر إليه تعيين صفحات PDF canonical؛ Exact يبقى مساراً آخر أدناه.
+      _stage('Editable DOCX build started');
       final editableDocxBytes =
           await DocxDocumentExportService.buildDocumentDocxBytes(
         document: controller.document,
-        shapeRasterizer: ShapeImageRenderer.asRasterizer,
-        mathRasterizer: MathImageRenderer.asRasterizer,
+        shapeRasterizer: (element, widthPx, heightPx) async {
+          _stage('Editable DOCX shape rasterization started: ${element.id}');
+          final raster = await ShapeImageRenderer.rasterize(
+            element,
+            widthPx,
+            heightPx,
+          ).timeout(const Duration(seconds: 30));
+          _stage(
+            'Editable DOCX shape rasterization completed: ${element.id} '
+            '(${raster?.length ?? 0} bytes)',
+          );
+          return raster;
+        },
+        mathRasterizer: (latex, fontSizePt) async {
+          _stage('Editable DOCX math rasterization started: $latex');
+          final raster = await MathImageRenderer.rasterize(
+            latex,
+            fontSizePt,
+          ).timeout(const Duration(seconds: 30));
+          _stage(
+            'Editable DOCX math rasterization completed: $latex '
+            '(${raster?.pngBytes.length ?? 0} bytes)',
+          );
+          return raster;
+        },
         legacyPaginationInput: editablePaginationInput,
       ).timeout(const Duration(minutes: 2));
       _stage('Editable DOCX generated: ${editableDocxBytes.length} bytes');
