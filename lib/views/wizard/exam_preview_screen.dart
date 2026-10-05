@@ -656,6 +656,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 document: sourceDocument,
                 sourceIr: sourceIr,
               );
+        if (!identical(layout.source, sourceIr)) {
+          throw const ExportException(
+            'تعذر عرض المعاينة: التخطيط القانوني لا يخص مصدر المستند الحالي.',
+          );
+        }
         final assetLoader = widget.canonicalPreviewAssetLoader;
         final assets = assetLoader == null
             ? await CanonicalLayoutPreviewAssets.load(
@@ -2489,10 +2494,24 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         await DocxDocumentExportService.shareDocxFile(file);
         return;
       }
+      final sourceIr = controller.documentIr;
+      final measurementLayout =
+          identical(_canonicalPreviewSourceDocument, document)
+              ? _canonicalPreviewLayout
+              : null;
       final editablePaginationInput =
           await DocxDocumentExportService.resolveEditablePaginationInput(
         document: document,
+        sourceIr: sourceIr,
+        measurementLayout: measurementLayout,
       );
+      if (!mounted ||
+          !identical(_controller, controller) ||
+          !identical(controller.document, document)) {
+        throw const ExportException(
+          'تغيّر المستند أثناء إعداد مسار Word القابل للتحرير. أعد المحاولة.',
+        );
+      }
       final file = await DocxDocumentExportService.exportDocumentToDocx(
         document: document,
         shapeRasterizer: ShapeImageRenderer.asRasterizer,

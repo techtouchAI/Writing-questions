@@ -219,9 +219,13 @@ class DocxDocumentExportService {
   /// DOCX/legacy adapter path and consumed by PaginationEngine.
   static Future<PaginationInput> resolveEditablePaginationInput({
     required ExamDocument document,
+    DocumentIR? sourceIr,
+    LayoutDocument? measurementLayout,
   }) async {
     final builder = _DocxBuilder(
       document: document,
+      sourceIr: sourceIr,
+      measurementLayout: measurementLayout,
       shapeRasterizer: null,
       mathRasterizer: null,
       legacyPaginationInput: null,
@@ -380,18 +384,37 @@ class _RunProperties {
 class _DocxBuilder {
   factory _DocxBuilder({
     required ExamDocument document,
+    DocumentIR? sourceIr,
+    LayoutDocument? measurementLayout,
     required ShapeRasterizer? shapeRasterizer,
     required MathRasterizer? mathRasterizer,
     required PaginationInput? legacyPaginationInput,
     required Uint8List? frameImage,
   }) {
-    final documentIr = DocumentIR.fromBlueprint(
-      blueprint: ExamBlueprint.from(document),
-      document: document,
-    );
+    if (measurementLayout != null && sourceIr == null) {
+      throw ArgumentError.value(
+        measurementLayout,
+        'measurementLayout',
+        'A measured layout must be paired with its DocumentIR source.',
+      );
+    }
+    final documentIr = sourceIr ??
+        DocumentIR.fromBlueprint(
+          blueprint: ExamBlueprint.from(document),
+          document: document,
+        );
+    if (measurementLayout != null &&
+        !identical(measurementLayout.source, documentIr)) {
+      throw ArgumentError.value(
+        measurementLayout,
+        'measurementLayout',
+        'The measured layout must belong to the supplied DocumentIR instance.',
+      );
+    }
     return _DocxBuilder._(
       document: document,
       documentIr: documentIr,
+      measurementLayout: measurementLayout,
       blueprint: LegacyDocxAdapter.adapt(
         documentIr: documentIr,
         sourceDocument: document,
@@ -406,6 +429,7 @@ class _DocxBuilder {
   _DocxBuilder._({
     required this.document,
     required this.documentIr,
+    required this.measurementLayout,
     required this.blueprint,
     required this.shapeRasterizer,
     required this.mathRasterizer,
@@ -415,6 +439,7 @@ class _DocxBuilder {
 
   final ExamDocument document;
   final DocumentIR documentIr;
+  final LayoutDocument? measurementLayout;
   final ExamBlueprint blueprint;
   final ShapeRasterizer? shapeRasterizer;
   final MathRasterizer? mathRasterizer;
@@ -678,24 +703,47 @@ class _DocxBuilder {
   }
 
   /// Direct/service DOCX callers may not have the editor's measured widget
-  /// heights. Measure the shared semantic question blocks on an unpaginated,
-  /// tall canvas, then build fresh PageBlocks and let the legacy PaginationEngine
-  /// decide Word page ownership. The tall layout is used only for block metrics;
-  /// no PDF page assignments or PDF page boundaries are consumed here.
+  /// heights. Measure the shared semantic question blocks from the canonical
+  /// source geometry (or resolve it once on A4), summing any page fragments by
+  /// question ID. Fresh PageBlocks are then handed to PaginationEngine, which
+  /// decides editable Word page ownership independently of PDF page indices.
   Future<PaginationInput> _fallbackPaginationInput(
     Set<String> expectedIds,
   ) async {
-    final layout = await CanonicalLayoutService.resolve(
-      document: document,
-      sourceIr: documentIr,
-      // Measure the legacy DOCX blocks on one very tall page, then calculate
-      // the editable page plan afresh with PaginationEngine below. No PDF page
-      // assignments or PDF page boundaries enter this path.
-      pageSize: LayoutSize(
-        width: LayoutUnits.a4.width,
-        height: LayoutUnits.a4.height * 1000,
-      ),
-    );
+    var layout = measurementLayout ??
+        await CanonicalLayoutService.resolve(
+          document: document,
+          sourceIr: documentIr,
+        );
+    if (!identical(layout.source, documentIr)) {
+      throw ExportException(
+        'تعذر تخطيط ملف Word: هندسة القياس لا تخص DocumentIR الحالي.',
+      );
+    }
+    bool hasSplitQuestion(LayoutDocument measured) => measured.pages
+        .expand((page) => page.blocks)
+        .any((block) =>
+            block.kind == LayoutBlockKind.question && block.split.isSplit);
+
+    if (hasSplitQuestion(layout)) {
+      // A4 geometry can fragment an oversized question across pages. Re-measure
+      // on one dynamically tall page so the gaps at canonical page boundaries
+      // remain part of its full DOCX block height. This canvas is only a metric
+      // pass; PaginationEngine still calculates the editable page assignments.
+      layout = await CanonicalLayoutService.resolve(
+        document: document,
+        sourceIr: documentIr,
+        pageSize: LayoutSize(
+          width: layout.pageSize.width,
+          height: layout.pageSize.height * (layout.pageCount + 2),
+        ),
+      );
+      if (!identical(layout.source, documentIr) || hasSplitQuestion(layout)) {
+        throw ExportException(
+          'تعذر قياس كتل Word كاملة من DocumentIR قبل إعادة تقسيم PaginationEngine.',
+        );
+      }
+    }
     final questionHeights = <String, double>{};
     for (final page in layout.pages) {
       for (final block in page.blocks) {

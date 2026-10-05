@@ -341,6 +341,21 @@ void main() {
     expect(pageCount, greaterThan(1),
         reason: 'التركيبة يجب أن تكون متعددة الصفحات لتغطية الترقيم.');
 
+    // Resolve the independent editable-Word plan in its own real-async window.
+    // Do not nest this resolver inside the later export runAsync callback: font
+    // and math metric work there used to trigger a reentrant test binding call.
+    _stage('Resolving editable DOCX pagination');
+    final editablePaginationResult = await tester.runAsync(
+      () => DocxDocumentExportService.resolveEditablePaginationInput(
+        document: controller.document,
+        sourceIr: canonicalLayout.source,
+        measurementLayout: canonicalLayout,
+      ).timeout(const Duration(minutes: 2)),
+    );
+    expect(editablePaginationResult, isNotNull);
+    final editablePaginationInput = editablePaginationResult!;
+    _stage('Editable DOCX pagination resolved');
+
     // (2) نافذة تكفي لعرض كل الصفحات دفعة واحدة: كل الصفحات تُبنى في `Column`
     // غير كسول، لكن اللقط يحتاج الصفحة **مرسومة فعلاً**، وما خرج من نافذة
     // التمرير لا يُرسم. الارتفاع يُقدَّر ثم يُوسَّع حتى يُرسم آخر جذر لقط —
@@ -417,12 +432,6 @@ void main() {
 
       // Editable DOCX مستقل: DocumentIR → LegacyDocxAdapter → PaginationEngine.
       // لا نمرر إليه تعيين صفحات PDF canonical؛ Exact يبقى مساراً آخر أدناه.
-      _stage('Resolving editable DOCX pagination');
-      final editablePaginationInput =
-          await DocxDocumentExportService.resolveEditablePaginationInput(
-        document: controller.document,
-      ).timeout(const Duration(minutes: 2));
-      _stage('Editable DOCX pagination resolved');
       final editableDocxBytes =
           await DocxDocumentExportService.buildDocumentDocxBytes(
         document: controller.document,

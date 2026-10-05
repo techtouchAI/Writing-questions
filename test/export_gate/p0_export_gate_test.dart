@@ -27,7 +27,6 @@
 //
 // لا «تقريباً صحيح» ولا RMSE: كل خلاصة مبنية على بايتات الملف نفسه.
 // =============================================================================
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -690,13 +689,42 @@ Future<_PreviewCapture> _capturePreviewOf(
 ) async {
   final controller = ExamWizardController(document: document);
   addTearDown(controller.dispose);
-  final previewWorkFinished = Completer<void>();
-  Object? previewFailure;
 
   tester.view.physicalSize = const Size(1600, 1240);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
+
+  // Resolve the actual source geometry and renderer assets once outside
+  // FakeAsync. The widget receives those exact objects through its documented
+  // test seams; this avoids racing image decoding while preserving the real
+  // CanonicalLayoutService and CanonicalLayoutPreviewAssets implementations.
+  final preparation = await tester.runAsync(() async {
+    final sourceIr = controller.documentIr;
+    final layout = await CanonicalLayoutService.resolve(
+      document: document,
+      sourceIr: sourceIr,
+    );
+    final assets = await CanonicalLayoutPreviewAssets.load(
+      layout: layout,
+      document: document,
+    );
+    final paginationInput =
+        await DocxDocumentExportService.resolveEditablePaginationInput(
+      document: document,
+      sourceIr: sourceIr,
+      measurementLayout: layout,
+    );
+    return (
+      layout: layout,
+      assets: assets,
+      paginationInput: paginationInput,
+    );
+  });
+  expect(preparation, isNotNull);
+  final prepared = preparation!;
+  addTearDown(prepared.assets.dispose);
+  _stage('Canonical layout resolved: ${prepared.layout.pageCount} pages');
 
   await tester.pumpWidget(
     MaterialApp(
@@ -707,54 +735,17 @@ Future<_PreviewCapture> _capturePreviewOf(
           canonicalLayoutResolver: ({
             required document,
             required sourceIr,
-          }) async {
-            _stage('Canonical layout requested for ${document.name}');
-            try {
-              final layout = await CanonicalLayoutService.resolve(
-                document: document,
-                sourceIr: sourceIr,
-              );
-              _stage('Canonical layout resolved: ${layout.pageCount} pages');
-              return layout;
-            } catch (error) {
-              previewFailure = error;
-              if (!previewWorkFinished.isCompleted) {
-                previewWorkFinished.complete();
-              }
-              rethrow;
-            }
-          },
+          }) async => prepared.layout,
           canonicalPreviewAssetLoader: ({
             required layout,
             required document,
-          }) async {
-            _stage('Canonical assets requested: ${document.name}');
-            try {
-              return await CanonicalLayoutPreviewAssets.load(
-                layout: layout,
-                document: document,
-              );
-            } catch (error) {
-              previewFailure = error;
-              rethrow;
-            } finally {
-              if (!previewWorkFinished.isCompleted) {
-                previewWorkFinished.complete();
-              }
-            }
-          },
+          }) async => prepared.assets,
         ),
       ),
     ),
   );
   await tester.pump(const Duration(milliseconds: 100));
-  await tester.runAsync(
-    () => previewWorkFinished.future.timeout(const Duration(seconds: 60)),
-  );
-  await tester.pump();
-  if (previewFailure != null) {
-    fail('Canonical preview preparation failed: $previewFailure');
-  }
+  await tester.pumpAndSettle();
   final previewElements =
       find.byType(CanonicalLayoutPreviewPage).evaluate().toList(growable: false);
   expect(previewElements, isNotEmpty,
@@ -793,13 +784,7 @@ Future<_PreviewCapture> _capturePreviewOf(
       expect(footer.bottom, lessThanOrEqualTo(page.pageSize.height));
     }
   }
-  final legacyPaginationResult = await tester.runAsync(
-    () => DocxDocumentExportService.resolveEditablePaginationInput(
-      document: document,
-    ),
-  );
-  expect(legacyPaginationResult, isNotNull);
-  final legacyPaginationInput = legacyPaginationResult!;
+  final legacyPaginationInput = prepared.paginationInput;
   final legacyPages = legacyPaginationInput.paginate().pages
       .map((page) => page.blockIds
           .where((id) => id != PaperMetrics.headerBlockId)

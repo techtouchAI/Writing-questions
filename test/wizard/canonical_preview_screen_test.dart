@@ -10,6 +10,7 @@ import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/document_ir.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
+import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
@@ -221,6 +222,237 @@ void main() {
     },
   );
 
+  testWidgets(
+    'canonical page tap maps RTL mixed floating text on its owned page to source offsets',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      const bodyPart =
+          'هذا نص عربي طويل يختبر حدود الصفحة والانتقال بين الصفحات مع سلامة '
+          'الهندسة ومواقع الكلمات في المعاينة القانونية.';
+      final label = 'ملاحظة MixedCase42 — نهاية';
+      final document = ExamDocument(
+        name: 'RTL floating text hit',
+        header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
+        floatingElements: <FloatingElement>[
+          FloatingElement(
+            id: 'rtl-floating-note',
+            type: FloatingElementType.shape,
+            shape: FloatingShapeType.textBox,
+            dx: 110,
+            dy: 170,
+            pageIndex: 1,
+            width: 300,
+            height: 96,
+            label: label,
+            framed: true,
+          ),
+        ],
+        questions: <QuestionModel>[
+          QuestionModel(
+            id: 'long-rtl-question',
+            questionNumber: 1,
+            statement: 'تمهيد عربي English 123',
+            body: List<String>.filled(72, bodyPart).join(' '),
+          ),
+        ],
+      );
+      final controller = ExamWizardController(document: document);
+      addTearDown(controller.dispose);
+      final layout = await tester.runAsync(
+        () => CanonicalLayoutService.resolve(
+          document: document,
+          sourceIr: controller.documentIr,
+        ),
+      );
+      expect(layout, isNotNull);
+      final canonical = layout!;
+      expect(canonical.pageCount, greaterThan(2));
+      expect(identical(canonical.source, controller.documentIr), isTrue);
+      final page = canonical.pages[1];
+      final placement = page.floatingElements.singleWhere(
+        (candidate) => candidate.reference.id == 'rtl-floating-note',
+      );
+      expect(placement.pageIndex, 1);
+      final target = <({LayoutLine line, LayoutRun run})>[
+        for (final line in placement.labelLines)
+          for (final run in line.runs)
+            if (run.text.contains('MixedCase42')) (line: line, run: run),
+      ].single;
+      expect(target.run.direction.name, 'ltr');
+      expect(
+        label.substring(
+          target.run.sourceStartOffset,
+          target.run.sourceEndOffset,
+        ),
+        target.run.text,
+      );
+
+      final pageXPt = target.run.x + target.run.width / 2;
+      final pageYPt = target.line.baseline -
+          target.run.baselineOffset +
+          target.run.height / 2;
+      final events = <CanonicalPagePointerEvent>[];
+      final assets = CanonicalLayoutPreviewAssets();
+      addTearDown(assets.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: CanonicalLayoutPreviewPage(
+              key: const ValueKey<String>('floating-page-hit'),
+              layoutDocument: canonical,
+              page: page,
+              document: document,
+              assets: assets,
+              onTap: events.add,
+            ),
+          ),
+        ),
+      );
+
+      final pageRect = tester.getRect(
+        find.byKey(const ValueKey<String>('floating-page-hit')),
+      );
+      final transform = CanonicalPageTransform(
+        screenLeft: pageRect.left,
+        screenTop: pageRect.top,
+        screenWidth: pageRect.width,
+        screenHeight: pageRect.height,
+        pageWidthPt: page.pageSize.width,
+        pageHeightPt: page.pageSize.height,
+      );
+      final screen = transform.screenPointFromPage(pageXPt, pageYPt);
+      final roundTrip = transform.pagePointFromScreen(screen.x, screen.y);
+      expect(roundTrip.x, closeTo(pageXPt, 0.02));
+      expect(roundTrip.y, closeTo(pageYPt, 0.02));
+
+      await tester.tapAt(Offset(screen.x, screen.y));
+      await tester.pump();
+
+      expect(events, hasLength(1));
+      final event = events.single;
+      expect(event.pagePositionPt.dx, closeTo(pageXPt, 0.02));
+      expect(event.pagePositionPt.dy, closeTo(pageYPt, 0.02));
+      final hit = event.hit;
+      expect(hit, isNotNull);
+      expect(hit!.pageIndex, 1);
+      expect(hit.floatingElementId, 'rtl-floating-note');
+      expect(hit.runId, target.run.id);
+      expect(hit.semanticNodeId, target.run.semanticNodeId);
+      expect(hit.sourceStartOffset, target.run.sourceStartOffset);
+      expect(hit.sourceEndOffset, target.run.sourceEndOffset);
+      expect(hit.sourceOffset, isNotNull);
+      expect(
+        hit.sourceOffset,
+        inInclusiveRange(
+          label.indexOf('MixedCase42'),
+          label.indexOf('MixedCase42') + 'MixedCase42'.length,
+        ),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('canonical floating drag resolves and changes the destination page',
+      (tester) async {
+    tester.view.physicalSize = const Size(1200, 5400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const bodyPart =
+        'هذا نص طويل يحافظ على حدود الصفحات ويضمن وجود صفحة هدف مستقلة '
+        'لتحريك العنصر العائم إليها.';
+    final document = ExamDocument(
+      name: 'RTL floating page drag',
+      header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
+      floatingElements: <FloatingElement>[
+        FloatingElement(
+          id: 'drag-to-later-page',
+          type: FloatingElementType.shape,
+          shape: FloatingShapeType.square,
+          dx: 120,
+          dy: 220,
+          pageIndex: 1,
+          width: 90,
+          height: 80,
+        ),
+      ],
+      questions: <QuestionModel>[
+        QuestionModel(
+          id: 'drag-pagination-question',
+          questionNumber: 1,
+          statement: 'ابدأ من RTL ثم English 123',
+          body: List<String>.filled(72, bodyPart).join(' '),
+        ),
+      ],
+    );
+    final controller = ExamWizardController(document: document);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_screen(controller));
+    await _pumpUntilCanonicalPage(tester);
+    await tester.pumpAndSettle();
+
+    final preview = tester.widget<CanonicalLayoutPreviewPage>(
+      find.byKey(const ValueKey<String>('canonical-preview-page-1')),
+    );
+    final layout = preview.layoutDocument;
+    expect(layout.pageCount, greaterThan(2));
+    expect(identical(layout.source, controller.documentIr), isTrue);
+    final sourcePage = layout.pages[1];
+    final targetPage = layout.pages[2];
+    final float = sourcePage.floatingElements.singleWhere(
+      (placement) => placement.reference.id == 'drag-to-later-page',
+    );
+    final sourcePageRect = tester.getRect(
+      find.byKey(const ValueKey<String>('canonical-preview-page-1')),
+    );
+    final targetPageRect = tester.getRect(
+      find.byKey(const ValueKey<String>('canonical-preview-page-2')),
+    );
+    final sourceTransform = CanonicalPageTransform(
+      screenLeft: sourcePageRect.left,
+      screenTop: sourcePageRect.top,
+      screenWidth: sourcePageRect.width,
+      screenHeight: sourcePageRect.height,
+      pageWidthPt: sourcePage.pageSize.width,
+      pageHeightPt: sourcePage.pageSize.height,
+    );
+    final targetTransform = CanonicalPageTransform(
+      screenLeft: targetPageRect.left,
+      screenTop: targetPageRect.top,
+      screenWidth: targetPageRect.width,
+      screenHeight: targetPageRect.height,
+      pageWidthPt: targetPage.pageSize.width,
+      pageHeightPt: targetPage.pageSize.height,
+    );
+    final start = sourceTransform.screenPointFromPage(
+      float.rect.left + float.rect.width / 2,
+      float.rect.top + float.rect.height / 2,
+    );
+    final destination = targetTransform.screenPointFromPage(
+      targetPage.pageSize.width / 2,
+      targetPage.pageSize.height / 2,
+    );
+
+    final gesture = await tester.startGesture(Offset(start.x, start.y));
+    await gesture.moveTo(Offset(destination.x, destination.y));
+    await tester.pump(const Duration(milliseconds: 20));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(
+      controller.document.floatingElements.single.pageIndex,
+      2,
+      reason: 'The canonical pointer must resolve the later page under the drag.',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('canonical preparation failure shows a retry that can succeed',
       (tester) async {
     final controller = ExamWizardController(document: _document());
@@ -269,7 +501,10 @@ void main() {
     final initial = _document(statement: 'Old $_hitMarker source');
     final controller = ExamWizardController(document: initial);
     addTearDown(controller.dispose);
-    final oldLayout = await CanonicalLayoutService.resolve(document: initial);
+    final oldLayout = await CanonicalLayoutService.resolve(
+      document: initial,
+      sourceIr: controller.documentIr,
+    );
     final oldLayoutResult = Completer<LayoutDocument>();
     final firstResolutionStarted = Completer<void>();
 
@@ -331,7 +566,10 @@ void main() {
     addTearDown(controller.dispose);
     final pendingLayout = Completer<LayoutDocument>();
     final resolutionStarted = Completer<void>();
-    final layout = await CanonicalLayoutService.resolve(document: document);
+    final layout = await CanonicalLayoutService.resolve(
+      document: document,
+      sourceIr: controller.documentIr,
+    );
 
     await tester.pumpWidget(
       _screen(
