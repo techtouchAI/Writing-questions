@@ -4114,7 +4114,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       if (interactive &&
           currentBinding != null &&
           pageHasActiveNode &&
-          activeNodeId != null &&
           selectionToPaint != null)
         Positioned.fill(
           child: IgnorePointer(

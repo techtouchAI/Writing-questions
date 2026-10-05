@@ -18,6 +18,7 @@
 // ومنفصلة (كسر، جذر، أس، مؤشر، مصفوفة)، آية قرآنية، اختيار من متعدد،
 // درجات، غامق/مائل/تحته خط، خطوط وأحجام وألوان ومحاذاة وتباعدات مختلفة،
 // ترويسة وتذييل وإطار، وعناصر حرة (شكل، صيغة، صورة)، ومستند متعدد الصفحات.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -44,6 +45,7 @@ import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/pdf_engine/exam_fonts.dart';
 import 'package:writing_questions_app/layout/canonical/canonical_layout_preview.dart';
+import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/services/docx_document_export_service.dart';
@@ -247,6 +249,8 @@ void main() {
 
     final controller = ExamWizardController(document: _fixtureDocument());
     addTearDown(controller.dispose);
+    final previewWorkFinished = Completer<void>();
+    Object? previewFailure;
 
     // (1) إطار أول بمقاس عرض عادي: يقيس الراسم كتل الورقة في الإطار التالي.
     tester.view.physicalSize = const Size(1600, 1240);
@@ -258,15 +262,58 @@ void main() {
       MaterialApp(
         home: ChangeNotifierProvider<ExamWizardController>.value(
           value: controller,
-          child: ExamPreviewScreen(onBackToQuestions: () {}),
+          child: ExamPreviewScreen(
+            onBackToQuestions: () {},
+            canonicalLayoutResolver: ({
+              required document,
+              required sourceIr,
+            }) async {
+              _stage('Canonical layout requested');
+              try {
+                final layout = await CanonicalLayoutService.resolve(
+                  document: document,
+                  sourceIr: sourceIr,
+                );
+                _stage('Canonical layout resolved: ${layout.pageCount} pages');
+                return layout;
+              } catch (error) {
+                previewFailure = error;
+                if (!previewWorkFinished.isCompleted) {
+                  previewWorkFinished.complete();
+                }
+                rethrow;
+              }
+            },
+            canonicalPreviewAssetLoader: ({
+              required layout,
+              required document,
+            }) async {
+              _stage('Canonical preview assets requested');
+              try {
+                return await CanonicalLayoutPreviewAssets.load(
+                  layout: layout,
+                  document: document,
+                );
+              } catch (error) {
+                previewFailure = error;
+                rethrow;
+              } finally {
+                if (!previewWorkFinished.isCompleted) {
+                  previewWorkFinished.complete();
+                }
+              }
+            },
+          ),
         ),
       ),
     );
-    for (var frame = 0;
-        frame < 40 &&
-            find.byType(CanonicalLayoutPreviewPage).evaluate().isEmpty;
-        frame++) {
-      await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.runAsync(
+      () => previewWorkFinished.future.timeout(const Duration(seconds: 60)),
+    );
+    await tester.pump();
+    if (previewFailure != null) {
+      fail('Canonical preview preparation failed: $previewFailure');
     }
 
     final renderedPageElements =
