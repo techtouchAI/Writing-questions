@@ -93,6 +93,9 @@ typedef MathRasterizer = Future<MathRaster?> Function(
   double fontSizePt,
 );
 
+/// Optional observer for meaningful stages in an editable DOCX build.
+typedef DocxBuildProgress = void Function(String stage);
+
 /// صورة مضمّنة في حزمة docx (أصلية أو مرسومة من شكل/معادلة).
 class _EmbeddedImage {
   _EmbeddedImage({
@@ -139,6 +142,7 @@ class DocxDocumentExportService {
     List<List<String>>? pageAssignments,
     PaginationInput? legacyPaginationInput,
     Uint8List? frameImage,
+    DocxBuildProgress? onProgress,
   }) async {
     final bytes = await buildDocumentDocxBytes(
       document: document,
@@ -147,6 +151,7 @@ class DocxDocumentExportService {
       pageAssignments: pageAssignments,
       legacyPaginationInput: legacyPaginationInput,
       frameImage: frameImage,
+      onProgress: onProgress,
     );
     return ExportFileService.writeExportFile(
       baseName: fileName ?? '${document.name}_ورقة_الامتحان',
@@ -165,6 +170,7 @@ class DocxDocumentExportService {
     List<List<String>>? pageAssignments,
     PaginationInput? legacyPaginationInput,
     Uint8List? frameImage,
+    DocxBuildProgress? onProgress,
   }) async {
     // صورة الإطار تُقرأ من مسارها عند عدم تمريرها (التصدير من المعاينة).
     final frame = document.settings.pageBorder
@@ -176,8 +182,11 @@ class DocxDocumentExportService {
       mathRasterizer: mathRasterizer,
       legacyPaginationInput: legacyPaginationInput,
       frameImage: frame,
+      onProgress: onProgress,
     );
+    onProgress?.call('builder created');
     await builder.build();
+    onProgress?.call('builder completed');
     final archive = Archive();
     _addTextFile(archive, '[Content_Types].xml', builder.contentTypesXml);
     _addTextFile(archive, '_rels/.rels', _globalRelationshipsXml);
@@ -390,6 +399,7 @@ class _DocxBuilder {
     required MathRasterizer? mathRasterizer,
     required PaginationInput? legacyPaginationInput,
     required Uint8List? frameImage,
+    DocxBuildProgress? onProgress,
   }) {
     if (measurementLayout != null && sourceIr == null) {
       throw ArgumentError.value(
@@ -423,6 +433,7 @@ class _DocxBuilder {
       mathRasterizer: mathRasterizer,
       legacyPaginationInput: legacyPaginationInput,
       frameImage: frameImage,
+      onProgress: onProgress,
     );
   }
 
@@ -435,6 +446,7 @@ class _DocxBuilder {
     required this.mathRasterizer,
     required this.legacyPaginationInput,
     required this.frameImage,
+    required this.onProgress,
   });
 
   final ExamDocument document;
@@ -444,6 +456,7 @@ class _DocxBuilder {
   final ShapeRasterizer? shapeRasterizer;
   final MathRasterizer? mathRasterizer;
   final PaginationInput? legacyPaginationInput;
+  final DocxBuildProgress? onProgress;
 
   /// صورة PNG الإطار (`null` = إطار متجه عند تفعيل «إطار حول الصفحة»).
   final Uint8List? frameImage;
@@ -456,6 +469,8 @@ class _DocxBuilder {
         documentIr: documentIr,
         sourceElement: source,
       );
+
+  void _reportProgress(String stage) => onProgress?.call(stage);
 
   /// صيغ LaTeX المكتشفة في النصوص عند كتابة الفقرات، بترتيب ظهورها — تُرسم
   /// وتُستبدل علاماتها بعد اكتمال النص (انظر [_resolveMath]).
@@ -477,36 +492,47 @@ class _DocxBuilder {
   static const int _pageHeightTwips = 16838;
 
   Future<void> build() async {
+    _reportProgress('fonts:started');
     await FlutterTextMetrics.ensureFontsLoaded();
+    _reportProgress('fonts:completed');
     final body = StringBuffer();
     body.write(_buildHeaderTable());
     final headerSpacingAfter = (PaperMetrics.pt(PaperMetrics.blockSpacingPx) * 20).round();
     body.write('<w:p><w:pPr><w:spacing w:after="$headerSpacingAfter"/></w:pPr></w:p>');
     final questionPages = await _resolvedQuestionPages();
+    _reportProgress('pagination:completed pages=${questionPages.length}');
     for (var pageIndex = 0; pageIndex < questionPages.length; pageIndex++) {
       if (pageIndex > 0) {
         _writePageBreak(body);
       }
+      _reportProgress('page $pageIndex floating-elements:started');
       await _buildFloatingElementsForPage(
         body,
         pageIndex,
         pageCount: questionPages.length,
       );
+      _reportProgress('page $pageIndex floating-elements:completed');
       final pageQuestions = questionPages[pageIndex];
       for (var index = 0; index < pageQuestions.length; index++) {
         final question = pageQuestions[index];
+        _reportProgress('question ${question.model.id}:started');
         await _buildQuestion(body, question);
+        _reportProgress('question ${question.model.id}:completed');
         if (index < pageQuestions.length - 1) {
           _writeQuestionSpacing(body, question.model.spacingAfter);
         }
       }
     }
     // التذييل بعد آخر سؤال مباشرةً، مثبّتاً أسفل آخر صفحة.
+    _reportProgress('footer:started');
     _buildFooterTable(body);
+    _reportProgress('footer:completed');
 
     // بعد اكتمال كل النصوص: تُرسم صيغ LaTeX ($...$ و$$...$$) وتُستبدل
     // علاماتها برسوم مضمّنة — قبل بناء قوائم الصور في الحزمة.
+    _reportProgress('math-resolution:started count=${_mathQueue.length}');
     final resolvedBody = await _resolveMath(body.toString());
+    _reportProgress('math-resolution:completed images=${images.length}');
 
     final marginTwips = (document.settings.marginMm / 25.4 * 1440).round();
     if (document.settings.pageBorder && frameImage != null && frameImage!.isNotEmpty) {
@@ -1271,6 +1297,7 @@ class _DocxBuilder {
     // الترتيب مطابق للوحة المعاينة ومحرك الـ PDF حرفياً:
     // القسم ← سطر العنوان ← النص ← نقاط السؤال ← الفروع.
     if (data.section != null) {
+      _reportProgress('question ${question.id} section:started');
       // سطر القسم: 12.5pt ومحاذاته من النموذج (`categoryAlign`) — نفس مقاس
       // المعاينة ومحرك PDF ونفس قرار المحاذاة، وبلا فجوة قبله أو بعده
       // (المعاينة تلصقه بسطر العنوان).
@@ -1285,9 +1312,11 @@ class _DocxBuilder {
             ? null
             : _semanticRuns(data.category!.content),
       );
+      _reportProgress('question ${question.id} section:completed');
     }
     // سطر العنوان: الرقم ← المنطوق ← الدرجة **جريانات مستقلة** (لا نص
     // مدموج) بفجوات المسافات نفسها التي تفصل عناصر المعاينة.
+    _reportProgress('question ${question.id} title:started');
     _writeStyledParagraph(
       body,
       data.title.line,
@@ -1305,7 +1334,9 @@ class _DocxBuilder {
         color: titleStyle.colorHex,
       ),
     );
+    _reportProgress('question ${question.id} title:completed');
     if (data.body != null) {
+      _reportProgress('question ${question.id} body:started');
       _writeStyledParagraph(
         body,
         data.body!,
@@ -1319,7 +1350,9 @@ class _DocxBuilder {
         after: 0,
         runs: bodyContent == null ? null : _semanticRuns(bodyContent),
       );
+      _reportProgress('question ${question.id} body:completed');
     }
+    _reportProgress('question ${question.id} points:started');
     _writePoints(
       body,
       data.points,
@@ -1327,16 +1360,27 @@ class _DocxBuilder {
       indent: _pointIndentTwips,
       firstGapPx: VisualMetrics.elementGapPx,
     );
+    _reportProgress('question ${question.id} points:completed');
     for (final branch in data.branches) {
+      _reportProgress(
+        'question ${question.id} branch ${branch.model.id}:started',
+      );
       await _buildBranch(
         body,
         branch,
         questionParagraphSpacing: question.style.paragraphSpacing,
       );
+      _reportProgress(
+        'question ${question.id} branch ${branch.model.id}:completed',
+      );
     }
+    _reportProgress('question ${question.id} attachments:started');
     await _buildAttachments(body, question.attachments);
+    _reportProgress('question ${question.id} attachments:completed');
     // العناصر المرتبطة بهذا السؤال تُكتب مع فقراته (مرساة نسبية للفقرة).
+    _reportProgress('question ${question.id} owned-elements:started');
     await _buildOwnedElements(body, question.id);
+    _reportProgress('question ${question.id} owned-elements:completed');
     _buildDivider(body, question.dividerAfter);
   }
 
@@ -1481,12 +1525,15 @@ class _DocxBuilder {
         continue;
       }
       final element = _legacyFloatingElement(sourceElement);
+      _reportProgress('attachment ${element.id}:started');
       if (element.isTextBox) {
         _buildTextBox(body, element);
+        _reportProgress('attachment ${element.id}:completed');
         continue;
       }
       if (element.isFormula) {
         await _buildFormulaElement(body, element);
+        _reportProgress('attachment ${element.id}:completed');
         continue;
       }
       if (element.type == FloatingElementType.image) {
@@ -1495,6 +1542,7 @@ class _DocxBuilder {
           continue;
         }
         _embedImage(body, Uint8List.fromList(bytes), element.width, element.height);
+        _reportProgress('attachment ${element.id}:completed');
         continue;
       }
       // شكل متجه: يُرسم صورة عند توفر المرسّم، وإلا عنصر نصي بديل.
@@ -1519,6 +1567,7 @@ class _DocxBuilder {
           after: 60,
         );
       }
+      _reportProgress('attachment ${element.id}:completed');
     }
   }
 
@@ -1668,11 +1717,14 @@ class _DocxBuilder {
     StringBuffer body,
     FloatingElement element,
   ) async {
+    _reportProgress('formula ${element.id}:started');
     final label = element.label.trim();
     if (label.isEmpty) {
+      _reportProgress('formula ${element.id}:empty');
       return;
     }
     final mathZone = _formulaMathZone(element);
+    _reportProgress('formula ${element.id}:omml=${mathZone != null}');
     if (mathZone != null) {
       // معادلة Word حقيقية في فقرة مستقلة (محاذاة كما في باقي المرفقات).
       body.write(
@@ -1680,6 +1732,7 @@ class _DocxBuilder {
         '<w:jc w:val="center"/><w:spacing w:before="60" w:after="60"/>'
         '</w:pPr>$mathZone</w:p>',
       );
+      _reportProgress('formula ${element.id}:completed');
       return;
     }
     final boxWidthPt = PaperMetrics.pt(element.width);
@@ -1698,6 +1751,7 @@ class _DocxBuilder {
         before: 60,
         after: 60,
       );
+      _reportProgress('formula ${element.id}:fallback-text');
       return;
     }
     final naturalWidth = raster.widthPt;
@@ -1716,6 +1770,7 @@ class _DocxBuilder {
       '<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:jc w:val="center"/><w:spacing w:before="120" w:after="120"/></w:pPr>'
       '<w:r>${_drawingXml(raster.pngBytes, widthPt, heightPt)}</w:r></w:p>',
     );
+    _reportProgress('formula ${element.id}:completed');
   }
 
   /// XML رسم مضمّن (بلا فقرة وبلا run) مع تسجيل الصورة في حزمة الملف.

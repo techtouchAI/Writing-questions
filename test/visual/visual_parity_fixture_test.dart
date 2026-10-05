@@ -462,6 +462,7 @@ void main() {
           return raster;
         },
         legacyPaginationInput: editablePaginationInput,
+        onProgress: (stage) => _stage('Editable DOCX: $stage'),
       ).timeout(const Duration(minutes: 2));
       _stage('Editable DOCX generated: ${editableDocxBytes.length} bytes');
 
