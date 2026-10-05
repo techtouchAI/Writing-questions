@@ -405,29 +405,48 @@ void main() {
         reason: 'لقطة لكل صفحة معاينة (${snapshotList.length}/$pageCount).');
     snapshots.addAll(snapshotList);
 
-    // Vector PDF يستهلك كائن LayoutDocument الحي نفسه — لا يحسب تدفقاً ثانياً.
-    final vectorPdfBytes = await PdfExportService.buildDocumentPdfBytes(
-      document: controller.document,
-      layoutDocument: canonicalLayout,
-    );
+    // التحويلات غير المتزامنة تعمل خارج fake-async الخاص بـtestWidgets:
+    // تشترك مسارات التصدير في مصادرها الحقيقية، لكن لا تُعلَّق عمليات الضغط/الخطوط.
+    final exportArtifacts = await tester.runAsync(() async {
+      // Vector PDF يستهلك كائن LayoutDocument الحي نفسه — لا يحسب تدفقاً ثانياً.
+      final vectorPdfBytes = await PdfExportService.buildDocumentPdfBytes(
+        document: controller.document,
+        layoutDocument: canonicalLayout,
+      );
+      _stage('Vector PDF generated: ${vectorPdfBytes.length} bytes');
 
-    // Editable DOCX مستقل: DocumentIR → LegacyDocxAdapter → PaginationEngine.
-    // لا نمرر إليه تعيين صفحات PDF canonical؛ Exact يبقى مساراً آخر أدناه.
-    final editablePaginationInput =
-        await DocxDocumentExportService.resolveEditablePaginationInput(
-      document: controller.document,
-    );
-    final editableDocxBytes =
-        await DocxDocumentExportService.buildDocumentDocxBytes(
-      document: controller.document,
-      shapeRasterizer: ShapeImageRenderer.asRasterizer,
-      mathRasterizer: MathImageRenderer.asRasterizer,
-      legacyPaginationInput: editablePaginationInput,
-    );
+      // Editable DOCX مستقل: DocumentIR → LegacyDocxAdapter → PaginationEngine.
+      // لا نمرر إليه تعيين صفحات PDF canonical؛ Exact يبقى مساراً آخر أدناه.
+      final editablePaginationInput =
+          await DocxDocumentExportService.resolveEditablePaginationInput(
+        document: controller.document,
+      );
+      final editableDocxBytes =
+          await DocxDocumentExportService.buildDocumentDocxBytes(
+        document: controller.document,
+        shapeRasterizer: ShapeImageRenderer.asRasterizer,
+        mathRasterizer: MathImageRenderer.asRasterizer,
+        legacyPaginationInput: editablePaginationInput,
+      );
+      _stage('Editable DOCX generated: ${editableDocxBytes.length} bytes');
 
-    // Exact: صفحات الصور الملتقطة أعلاه فقط — مستقل عن vector/editable.
-    final exactPdfBytes = await ExactExportService.buildPdfFromSnapshots(snapshots);
-    final exactDocxBytes = ExactExportService.buildDocxFromSnapshots(snapshots);
+      // Exact: صفحات الصور الملتقطة أعلاه فقط — مستقل عن vector/editable.
+      final exactPdfBytes =
+          await ExactExportService.buildPdfFromSnapshots(snapshots);
+      final exactDocxBytes = ExactExportService.buildDocxFromSnapshots(snapshots);
+      _stage('Exact PDF/DOCX generated');
+      return (
+        vectorPdfBytes: vectorPdfBytes,
+        editableDocxBytes: editableDocxBytes,
+        exactPdfBytes: exactPdfBytes,
+        exactDocxBytes: exactDocxBytes,
+      );
+    });
+    expect(exportArtifacts, isNotNull);
+    final vectorPdfBytes = exportArtifacts!.vectorPdfBytes;
+    final editableDocxBytes = exportArtifacts.editableDocxBytes;
+    final exactPdfBytes = exportArtifacts.exactPdfBytes;
+    final exactDocxBytes = exportArtifacts.exactDocxBytes;
     final manifest = <String, Object?>{
       'pageCount': snapshots.length,
       'widthPx': snapshots.first.widthPx,

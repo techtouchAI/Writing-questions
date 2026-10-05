@@ -27,6 +27,7 @@
 //
 // لا «تقريباً صحيح» ولا RMSE: كل خلاصة مبنية على بايتات الملف نفسه.
 // =============================================================================
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -39,6 +40,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:writing_questions_app/layout/canonical/canonical_layout_preview.dart';
+import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/layout/document_direction.dart';
@@ -688,6 +690,8 @@ Future<_PreviewCapture> _capturePreviewOf(
 ) async {
   final controller = ExamWizardController(document: document);
   addTearDown(controller.dispose);
+  final previewWorkFinished = Completer<void>();
+  Object? previewFailure;
 
   tester.view.physicalSize = const Size(1600, 1240);
   tester.view.devicePixelRatio = 1;
@@ -698,15 +702,58 @@ Future<_PreviewCapture> _capturePreviewOf(
     MaterialApp(
       home: ChangeNotifierProvider<ExamWizardController>.value(
         value: controller,
-        child: ExamPreviewScreen(onBackToQuestions: () {}),
+        child: ExamPreviewScreen(
+          onBackToQuestions: () {},
+          canonicalLayoutResolver: ({
+            required document,
+            required sourceIr,
+          }) async {
+            _stage('Canonical layout requested for ${document.name}');
+            try {
+              final layout = await CanonicalLayoutService.resolve(
+                document: document,
+                sourceIr: sourceIr,
+              );
+              _stage('Canonical layout resolved: ${layout.pageCount} pages');
+              return layout;
+            } catch (error) {
+              previewFailure = error;
+              if (!previewWorkFinished.isCompleted) {
+                previewWorkFinished.complete();
+              }
+              rethrow;
+            }
+          },
+          canonicalPreviewAssetLoader: ({
+            required layout,
+            required document,
+          }) async {
+            _stage('Canonical assets requested: ${document.name}');
+            try {
+              return await CanonicalLayoutPreviewAssets.load(
+                layout: layout,
+                document: document,
+              );
+            } catch (error) {
+              previewFailure = error;
+              rethrow;
+            } finally {
+              if (!previewWorkFinished.isCompleted) {
+                previewWorkFinished.complete();
+              }
+            }
+          },
+        ),
       ),
     ),
   );
-  for (var frame = 0;
-      frame < 80 &&
-          find.byType(CanonicalLayoutPreviewPage).evaluate().isEmpty;
-      frame++) {
-    await tester.pump(const Duration(milliseconds: 100));
+  await tester.pump(const Duration(milliseconds: 100));
+  await tester.runAsync(
+    () => previewWorkFinished.future.timeout(const Duration(seconds: 60)),
+  );
+  await tester.pump();
+  if (previewFailure != null) {
+    fail('Canonical preview preparation failed: $previewFailure');
   }
   final previewElements =
       find.byType(CanonicalLayoutPreviewPage).evaluate().toList(growable: false);
@@ -746,10 +793,13 @@ Future<_PreviewCapture> _capturePreviewOf(
       expect(footer.bottom, lessThanOrEqualTo(page.pageSize.height));
     }
   }
-  final legacyPaginationInput =
-      await DocxDocumentExportService.resolveEditablePaginationInput(
-    document: document,
+  final legacyPaginationResult = await tester.runAsync(
+    () => DocxDocumentExportService.resolveEditablePaginationInput(
+      document: document,
+    ),
   );
+  expect(legacyPaginationResult, isNotNull);
+  final legacyPaginationInput = legacyPaginationResult!;
   final legacyPages = legacyPaginationInput.paginate().pages
       .map((page) => page.blockIds
           .where((id) => id != PaperMetrics.headerBlockId)
