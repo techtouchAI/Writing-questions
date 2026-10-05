@@ -2760,7 +2760,7 @@ void _recordPreviewCells(_PreviewCapture rtl, _PreviewCapture ltr) {
     }
   }
 
-  final ltrExpected = P0GateFixture.ltrBodyMarkers;
+  const ltrExpected = P0GateFixture.ltrBodyMarkers;
   final reachableLtr = <String>{...ltr.texts.keys};
   expect(reachableLtr, containsAll(ltrExpected),
       reason: 'LayoutDocument LTR فقد وسوماً: '

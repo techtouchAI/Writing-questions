@@ -3661,7 +3661,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       if (question.index < 0 || question.index >= controller.questions.length) continue;
       final model = controller.questions[question.index];
       final questionIndex = question.index;
-      final questionLongPress = () => _longPressQuestion(questionIndex);
+      void questionLongPress() => _longPressQuestion(questionIndex);
       bind(
         question.content,
         fieldKey: _statementKey(model.id),
@@ -3726,7 +3726,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           questionIndex: questionIndex,
           branchIndex: branch.index,
         );
-        final branchLongPress = () => _longPressBranch(branchRef);
+        void branchLongPress() => _longPressBranch(branchRef);
         bind(
           branch.content,
           fieldKey: _branchStatementKey(branch.id),
@@ -3974,12 +3974,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         }
       }
     }
+    final currentBinding = activeBinding;
     final activeNodeId = _activeCanonicalSemanticNodeId;
-    final activeFieldController = activeBinding == null
+    final activeFieldController = currentBinding == null
         ? null
-        : _fields[activeBinding.fieldKey];
-    final activeOffset = activeFieldController?.selection.isValid == true
-        ? activeFieldController!.selection.extentOffset
+        : _fields[currentBinding.fieldKey];
+    final activeSelection = activeFieldController?.selection;
+    final selectionToPaint = activeSelection != null && activeSelection.isValid
+        ? activeSelection
+        : null;
+    final activeOffset = activeSelection != null && activeSelection.isValid
+        ? activeSelection.extentOffset
         : null;
     final activePageIndex = _canonicalPageForCursor(
       layout,
@@ -4073,7 +4078,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               placement,
             ),
       if (interactive &&
-          activeBinding != null &&
+          currentBinding != null &&
           pageHasActiveNode &&
           page.index == activePageIndex)
         Positioned(
@@ -4082,37 +4087,42 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           width: 1,
           height: 1,
           child: PaperField(
-            key: ValueKey<String>(activeBinding.fieldKey),
+            key: ValueKey<String>(currentBinding.fieldKey),
             controller: _field(
-              activeBinding.fieldKey,
-              activeBinding.sourceText,
-              activeBinding.onEdit,
+              currentBinding.fieldKey,
+              currentBinding.sourceText,
+              currentBinding.onEdit,
             ),
             style: const TextStyle(fontSize: 12),
-            semanticContent: activeBinding.content,
+            semanticContent: currentBinding.content,
             canonicalInteractionOnly: true,
             autofocus: true,
             onActivate: () => _activateField(
-              activeBinding.fieldKey,
-              _fields[activeBinding.fieldKey]!,
+              currentBinding.fieldKey,
+              _field(
+                currentBinding.fieldKey,
+                currentBinding.sourceText,
+                currentBinding.onEdit,
+              ),
             ),
-            onEditFormula: () => _editEquationInField(activeBinding.fieldKey),
-            onLongPress: activeBinding.onLongPress,
+            onEditFormula: () => _editEquationInField(currentBinding.fieldKey),
+            onLongPress: currentBinding.onLongPress,
             allowTextSelection: !_multiSelect,
             renderBuilder: (_) => const SizedBox.shrink(),
           ),
         ),
       if (interactive &&
-          activeBinding != null &&
+          currentBinding != null &&
           pageHasActiveNode &&
-          _fields[activeBinding.fieldKey]?.selection.isValid == true)
+          activeNodeId != null &&
+          selectionToPaint != null)
         Positioned.fill(
           child: IgnorePointer(
             child: CustomPaint(
               painter: _CanonicalSelectionPainter(
                 page: page,
-                semanticNodeId: activeNodeId!,
-                selection: _fields[activeBinding.fieldKey]!.selection,
+                semanticNodeId: activeNodeId,
+                selection: selectionToPaint,
               ),
             ),
           ),
@@ -4307,7 +4317,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             LayoutUnits.ptToPx(placement.rect.width / 2),
             LayoutUnits.ptToPx(placement.rect.height / 2),
           )
-        : Offset(local.local.dx - left, local.local.dy - top);
+        : Offset(local.dx - left, local.dy - top);
     _dragMoved = false;
   }
 

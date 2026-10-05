@@ -117,7 +117,7 @@ void main() {
 
     // Model the actual fitted/zoomed page viewport, including a non-zero
     // screen origin. The round-trip must not depend on a parallel widget layout.
-    const transform = CanonicalPageTransform(
+    final transform = CanonicalPageTransform(
       screenLeft: 47,
       screenTop: 83,
       screenWidth: 721,
@@ -286,7 +286,7 @@ void main() {
     final outside = transform.pagePointFromScreen(-90, 930);
     expect(outside.x, 0);
     expect(outside.y, 595);
-    final pageCenter = (x: 210.0, y: 297.5);
+    const pageCenter = (x: 210.0, y: 297.5);
     final screenCenter = transform.screenPointFromPage(pageCenter.x, pageCenter.y);
     final roundTrip = transform.pagePointFromScreen(screenCenter.x, screenCenter.y);
     expect(roundTrip.x, closeTo(pageCenter.x, 1e-9));
