@@ -1350,9 +1350,11 @@ class ExamWizardController extends ChangeNotifier {
 
   double? blockHeight(String blockId) => _blockHeights[blockId];
 
-  /// هل قيست كل الكتل (الترويسة وكل الأسئلة)؟
+  /// هل قيست كل الكتل التي تؤثر في توزيع DOCX (الترويسة، كل الأسئلة،
+  /// والتذييل الذي يحجز مساحة أسفل الصفحة الأخيرة)؟
   bool get isFullyMeasured =>
       _blockHeights.containsKey(PaperMetrics.headerBlockId) &&
+      _blockHeights.containsKey(PaperMetrics.footerBlockId) &&
       questions.every((question) => _blockHeights.containsKey(question.id));
 
   /// ارتفاع التذييل المحجوز أسفل آخر كتلة (مقاسه + المسافة التي تفصله عنها)؛
@@ -1367,25 +1369,29 @@ class ExamWizardController extends ChangeNotifier {
   /// الترويسة كتلة ثابتة في الصفحة الأولى؛ كل سؤال كتلة لا تتجزأ؛ والتذييل
   /// يحجز مكانه تحت آخر كتلة في آخر صفحة. الكتل غير المقاسة بعد تُعامل
   /// بارتفاع صفر حتى تُقاس في الإطار التالي.
-  PaginationResult get pagination {
-    return _paginationCache ??= PaginationEngine.paginate(
-      blocks: <PageBlock>[
-        PageBlock(
-          id: PaperMetrics.headerBlockId,
-          height: _blockHeights[PaperMetrics.headerBlockId] ?? 0,
-        ),
-        for (final question in questions)
+  /// Reproducible input to the legacy paginator, including the actual measured
+  /// widget heights used by the interactive editing surface.
+  PaginationInput get paginationInput => PaginationInput(
+        blocks: <PageBlock>[
           PageBlock(
-            id: question.id,
-            height: _blockHeights[question.id] ?? 0,
-            spacingAfter: question.spacingAfter,
+            id: PaperMetrics.headerBlockId,
+            height: _blockHeights[PaperMetrics.headerBlockId] ?? 0,
           ),
-      ],
-      pageHeight: PaperMetrics.pageContentHeightFor(_document.settings.marginMm),
-      spacing: PaperMetrics.blockSpacingPx,
-      lastPageReserve: footerReserve,
-    );
-  }
+          for (final question in questions)
+            PageBlock(
+              id: question.id,
+              height: _blockHeights[question.id] ?? 0,
+              spacingAfter: question.spacingAfter,
+            ),
+        ],
+        pageHeight: PaperMetrics.pageContentHeightFor(_document.settings.marginMm),
+        spacing: PaperMetrics.blockSpacingPx,
+        lastPageReserve: footerReserve,
+        footerMeasured: _blockHeights.containsKey(PaperMetrics.footerBlockId),
+      );
+
+  PaginationResult get pagination =>
+      _paginationCache ??= paginationInput.paginate();
 
   /// توزيع الأسئلة على الصفحات (معرّفات الأسئلة لكل صفحة) — يُمرَّر إلى محرك
   /// الـ PDF ليطبع **نفس** التقسيم المعروض على الشاشة دون انحراف.

@@ -8,9 +8,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:provider/provider.dart';
 
+import '../../layout/document_direction.dart';
 import '../../layout/document_ir.dart';
+import '../../layout/canonical/canonical_layout_interaction.dart';
 import '../../layout/canonical/canonical_layout_preview.dart';
+import '../../layout/canonical/canonical_layout_service.dart';
 import '../../layout/canonical/layout_document.dart';
+import '../../layout/canonical/layout_units.dart';
 import '../../layout/pagination_engine.dart';
 import '../../layout/semantic/inline_nodes.dart';
 import '../../layout/paper_metrics.dart';
@@ -71,6 +75,139 @@ class _AttachmentRef {
 
   bool get isGlobal => questionIndex < 0;
   bool get isQuestionLevel => !isGlobal && branchIndex == null;
+}
+
+class _CanonicalFieldBinding {
+  const _CanonicalFieldBinding({
+    required this.fieldKey,
+    required this.sourceText,
+    required this.content,
+    required this.onEdit,
+    required this.onLongPress,
+  });
+
+  final String fieldKey;
+  final String sourceText;
+  final InlineContent content;
+  final ValueChanged<String> onEdit;
+  final VoidCallback onLongPress;
+}
+
+class _CanonicalSelectionPainter extends CustomPainter {
+  const _CanonicalSelectionPainter({
+    required this.page,
+    required this.semanticNodeId,
+    required this.selection,
+  });
+
+  final LayoutPage page;
+  final String semanticNodeId;
+  final TextSelection selection;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final block in page.blocks) {
+      for (final line in block.allLines) {
+        for (final run in line.runs) {
+          if (run.semanticNodeId != semanticNodeId || run.isMath || run.text.isEmpty) {
+            continue;
+          }
+          final painter = TextPainter(
+            text: TextSpan(
+              text: run.text,
+              style: TextStyle(
+                fontFamily: run.style.font.family,
+                fontSize: LayoutUnits.ptToPx(run.style.fontSizePt),
+                fontWeight: run.style.bold ? FontWeight.w700 : FontWeight.w400,
+                fontStyle: run.style.italic ? FontStyle.italic : FontStyle.normal,
+                letterSpacing: run.style.letterSpacingPt == null
+                    ? null
+                    : LayoutUnits.ptToPx(run.style.letterSpacingPt!),
+                height: run.style.lineHeightFactor,
+                decoration:
+                    run.style.underline ? TextDecoration.underline : null,
+              ),
+            ),
+            textDirection: run.direction == DocumentDirection.rtl
+                ? TextDirection.rtl
+                : TextDirection.ltr,
+            textScaler: TextScaler.noScaling,
+            maxLines: 1,
+          )..layout(maxWidth: double.infinity);
+          try {
+            final start = _localOffset(run, selection.start);
+            final end = _localOffset(run, selection.end);
+            final runLeft = LayoutUnits.ptToPx(run.x);
+            final runTop = LayoutUnits.ptToPx(line.baseline - run.baselineOffset);
+            final runHeight = LayoutUnits.ptToPx(run.height);
+            if (!selection.isCollapsed && start != end) {
+              final boxes = painter.getBoxesForSelection(
+                TextSelection(baseOffset: start, extentOffset: end),
+              );
+              for (final box in boxes) {
+                canvas.drawRect(
+                  Rect.fromLTRB(
+                    runLeft + box.left,
+                    runTop + box.top,
+                    runLeft + box.right,
+                    runTop + box.bottom,
+                  ),
+                  Paint()..color = const Color(0x553B82F6),
+                );
+              }
+            } else if (selection.isCollapsed &&
+                selection.extentOffset >= run.sourceStartOffset &&
+                selection.extentOffset <= _sourceEnd(run)) {
+              final caret = painter.getOffsetForCaret(
+                TextPosition(offset: start),
+                Rect.zero,
+              );
+              final x = runLeft + caret.dx;
+              canvas.drawLine(
+                Offset(x, runTop),
+                Offset(x, runTop + runHeight),
+                Paint()
+                  ..color = const Color(0xFF2563EB)
+                  ..strokeWidth = 1.25,
+              );
+            }
+          } finally {
+            painter.dispose();
+          }
+        }
+      }
+    }
+  }
+
+  static int _sourceEnd(LayoutRun run) =>
+      run.sourceEndOffset > run.sourceStartOffset
+          ? run.sourceEndOffset
+          : run.sourceStartOffset + run.text.length;
+
+  static int _localOffset(LayoutRun run, int sourceOffset) {
+    final sourceMap = run.sourceOffsetMap;
+    if (sourceMap != null && sourceMap.isNotEmpty) {
+      var nearest = 0;
+      var nearestDistance = (sourceMap.first - sourceOffset).abs();
+      for (var index = 1; index < sourceMap.length; index++) {
+        final distance = (sourceMap[index] - sourceOffset).abs();
+        if (distance < nearestDistance) {
+          nearest = index;
+          nearestDistance = distance;
+        }
+      }
+      return nearest;
+    }
+    return (sourceOffset - run.sourceStartOffset)
+        .clamp(0, run.text.length)
+        .toInt();
+  }
+
+  @override
+  bool shouldRepaint(covariant _CanonicalSelectionPainter oldDelegate) =>
+      oldDelegate.page != page ||
+      oldDelegate.semanticNodeId != semanticNodeId ||
+      oldDelegate.selection != selection;
 }
 
 /// حوار إدخال نصي/رقمي مشترك يملك دورة حياة الـ controller داخليًا.
@@ -161,6 +298,7 @@ class _PreviewUiSnapshot {
     required this.selectedDividerKey,
     required this.activeItemFieldKey,
     required this.activeFieldKey,
+    required this.activeCanonicalSemanticNodeId,
     required this.stagedFormula,
     required this.stagedFormulaIsBlock,
   });
@@ -173,16 +311,30 @@ class _PreviewUiSnapshot {
   final String? selectedDividerKey;
   final String? activeItemFieldKey;
   final String? activeFieldKey;
+  final String? activeCanonicalSemanticNodeId;
   final String? stagedFormula;
   final bool stagedFormulaIsBlock;
 }
 
-/// الخطوة 3: محرك المعاينة والتحرير البصري (WYSIWYG A4 Engine).
+typedef CanonicalPreviewLayoutResolver = Future<LayoutDocument> Function({
+  required ExamDocument document,
+  required DocumentIR sourceIr,
+});
+
+typedef CanonicalPreviewAssetLoader =
+    Future<CanonicalLayoutPreviewAssets> Function({
+  required LayoutDocument layout,
+  required ExamDocument document,
+});
+
+/// الخطوة 3: معاينة A4 تفاعلية ترسم هندسة [LayoutDocument] مباشرةً.
 ///
-/// - **التقسيم الورقي الديناميكي**: كل كتلة (الترويسة/السؤال الكامل) تُقاس
-///   عبر [MeasureSize] وتُبلّغ [ExamWizardController] الذي يعيد التوزيع عبر
-///   `PaginationEngine` — السؤال لا يُفصل عن فروعه أبداً.
-/// - **التحرير المباشر**: كل نص على الورقة حقل مسطّح قابل للكتابة في مكانه.
+/// - **مصدر الهندسة**: [CanonicalLayoutService] يحسم الأسطر والمواضع والصفحات؛
+///   يرسم [CanonicalLayoutPreviewPage] هذه الهندسة بلا إعادة التفاف أو تقسيم.
+/// - **التحرير المباشر**: نقرات canonical تتحول إلى source offset، ويُستخدم
+///   حقل IME مخفي للإدخال من دون طبقة نص ثانية.
+/// - **المسار القديم**: تبقى أدوات القياس/الترقيم الخاصة بالمحرر متاحة للتوافق،
+///   لكنها لا تقرر هندسة المعاينة الحية أو تصدير Word القابل للتحرير.
 /// - **التحديد والتنسيق**: تحديد سؤال/فرع/ترويسة/مربع نص (منفرد أو متعدد)
 ///   ثم تنسيقه من شريط المعاينة (خط/حجم/عريض/محاذاة/إطار).
 /// - **إعادة الترتيب**: سحب سؤال كامل أو فرع داخل سؤاله؛ الإفلات على فرع
@@ -193,9 +345,16 @@ class _PreviewUiSnapshot {
 ///   إطار، حذف — والنقرة المزدوجة على مربع النص تفتح محرّره.
 /// - **العرض**: تكبير/تصغير/ملاءمة/توسيط، وقفل يمنع التحريك العرضي.
 class ExamPreviewScreen extends StatefulWidget {
-  const ExamPreviewScreen({super.key, required this.onBackToQuestions});
+  const ExamPreviewScreen({
+    super.key,
+    required this.onBackToQuestions,
+    this.canonicalLayoutResolver,
+    this.canonicalPreviewAssetLoader,
+  });
 
   final VoidCallback onBackToQuestions;
+  final CanonicalPreviewLayoutResolver? canonicalLayoutResolver;
+  final CanonicalPreviewAssetLoader? canonicalPreviewAssetLoader;
 
   @override
   State<ExamPreviewScreen> createState() => _ExamPreviewScreenState();
@@ -214,7 +373,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// يجمّد زخارف التحرير ويُظهر حاجباً أثناء التقاط صفحات المعاينة الأصلية.
   bool _exactCaptureInProgress = false;
   LayoutDocument? _canonicalCaptureLayout;
+  ExamDocument? _canonicalCaptureSourceDocument;
   CanonicalLayoutPreviewAssets? _canonicalCaptureAssets;
+
+  /// The live preview uses the same canonical point geometry as PDF. This is
+  /// independent of the legacy controller's measurement-driven pagination.
+  LayoutDocument? _canonicalPreviewLayout;
+  CanonicalLayoutPreviewAssets? _canonicalPreviewAssets;
+  ExamDocument? _canonicalPreviewSourceDocument;
+  ExamDocument? _canonicalPreviewPendingDocument;
+  ExamDocument? _canonicalPreviewFailedDocument;
+  Timer? _canonicalPreviewDebounce;
+  int _canonicalPreviewRevision = 0;
 
   /// يكبح زخارف التحديد من صورة Exact (إطارات التحديد ومقابض العناصر).
   bool _suppressSelectionChrome = false;
@@ -227,6 +397,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   String? _selectedDividerKey;
   String? _activeItemFieldKey;
   String? _activeFieldKey;
+  String? _activeCanonicalSemanticNodeId;
   final Map<String, PaperAlign> _fieldAlignments = <String, PaperAlign>{};
   bool _isBusy = false;
 
@@ -288,23 +459,25 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (!identical(controller, _controller)) {
       _controller?.removeListener(_syncFieldsFromModel);
       _controller = controller..addListener(_syncFieldsFromModel);
+      _ensureCanonicalPreview();
     }
   }
 
   @override
   void dispose() {
     _controller?.removeListener(_syncFieldsFromModel);
+    _canonicalPreviewDebounce?.cancel();
+    _canonicalPreviewRevision++;
+    _canonicalPreviewPendingDocument = null;
+    _canonicalPreviewAssets?.dispose();
     _canonicalCaptureAssets?.dispose();
+    _canonicalCaptureSourceDocument = null;
     for (final field in _fields.values) {
       field.dispose();
     }
     _vScroll.dispose();
     _hScroll.dispose();
     super.dispose();
-  }
-
-  void _trimPageKeys(Iterable<PaginatedPage> pages) {
-    _trimPageKeysByIndices(pages.map((page) => page.index));
   }
 
   void _trimPageKeysByIndices(Iterable<int> indices) {
@@ -322,6 +495,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         selectedDividerKey: _selectedDividerKey,
         activeItemFieldKey: _activeItemFieldKey,
         activeFieldKey: _activeFieldKey,
+        activeCanonicalSemanticNodeId: _activeCanonicalSemanticNodeId,
         stagedFormula: _stagedFormula,
         stagedFormulaIsBlock: _stagedFormulaIsBlock,
       );
@@ -339,24 +513,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _selectedDividerKey = snapshot.selectedDividerKey;
     _activeItemFieldKey = snapshot.activeItemFieldKey;
     _activeFieldKey = snapshot.activeFieldKey;
+    _activeCanonicalSemanticNodeId = snapshot.activeCanonicalSemanticNodeId;
     _stagedFormula = snapshot.stagedFormula;
     _stagedFormulaIsBlock = snapshot.stagedFormulaIsBlock;
-  }
-
-  Future<void> _awaitStablePreviewLayout() async {
-    final controller = _controller!;
-    var previousPageCount = controller.pagination.pageCount;
-    for (var attempt = 0; attempt < 12; attempt++) {
-      await SchedulerBinding.instance.endOfFrame;
-      final pageCount = controller.pagination.pageCount;
-      if (controller.isFullyMeasured && pageCount == previousPageCount) {
-        return;
-      }
-      previousPageCount = pageCount;
-    }
-    throw StateError(
-      'لم يكتمل قياس صفحات المعاينة بعد. انتظر لحظة ثم أعد المحاولة.',
-    );
   }
 
   // ------------------------------------------------------------------
@@ -433,7 +592,118 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       _disposeStaleFields(document);
     } finally {
       _syncingFields = false;
+      _ensureCanonicalPreview();
     }
+  }
+
+  /// Makes the visible preview converge on the current document without ever
+  /// showing geometry/assets resolved for an older document. Build calls this
+  /// as a fallback, while model notifications call it after field sync.
+  void _ensureCanonicalPreview([ExamWizardController? owner]) {
+    final controller = owner ?? _controller;
+    if (controller == null || _exactCaptureInProgress) return;
+    final sourceDocument = controller.document;
+    if (identical(_canonicalPreviewSourceDocument, sourceDocument) &&
+        _canonicalPreviewLayout != null &&
+        _canonicalPreviewAssets != null) {
+      return;
+    }
+    if (identical(_canonicalPreviewFailedDocument, sourceDocument) ||
+        identical(_canonicalPreviewPendingDocument, sourceDocument)) {
+      return;
+    }
+    _scheduleCanonicalPreviewRefresh();
+  }
+
+  void _retryCanonicalPreview() {
+    if (_canonicalPreviewFailedDocument == null) return;
+    setState(() => _canonicalPreviewFailedDocument = null);
+    _ensureCanonicalPreview();
+  }
+
+  void _scheduleCanonicalPreviewRefresh() {
+    final controller = _controller;
+    if (controller == null || _exactCaptureInProgress) return;
+    final sourceDocument = controller.document;
+    if (identical(_canonicalPreviewSourceDocument, sourceDocument) &&
+        _canonicalPreviewLayout != null &&
+        _canonicalPreviewAssets != null) {
+      return;
+    }
+    if (identical(_canonicalPreviewPendingDocument, sourceDocument)) return;
+    _canonicalPreviewDebounce?.cancel();
+    final revision = ++_canonicalPreviewRevision;
+    _canonicalPreviewFailedDocument = null;
+    _canonicalPreviewPendingDocument = sourceDocument;
+    _canonicalPreviewDebounce = Timer(const Duration(milliseconds: 70), () async {
+      if (!mounted ||
+          !identical(_controller, controller) ||
+          !identical(controller.document, sourceDocument)) {
+        if (identical(_canonicalPreviewPendingDocument, sourceDocument)) {
+          _canonicalPreviewPendingDocument = null;
+        }
+        return;
+      }
+      try {
+        final sourceIr = controller.documentIr;
+        final layoutResolver = widget.canonicalLayoutResolver;
+        final layout = layoutResolver == null
+            ? await CanonicalLayoutService.resolve(
+                document: sourceDocument,
+                sourceIr: sourceIr,
+              )
+            : await layoutResolver(
+                document: sourceDocument,
+                sourceIr: sourceIr,
+              );
+        final assetLoader = widget.canonicalPreviewAssetLoader;
+        final assets = assetLoader == null
+            ? await CanonicalLayoutPreviewAssets.load(
+                layout: layout,
+                document: sourceDocument,
+              )
+            : await assetLoader(
+                layout: layout,
+                document: sourceDocument,
+              );
+        if (!mounted ||
+            revision != _canonicalPreviewRevision ||
+            !identical(_controller, controller) ||
+            !identical(controller.document, sourceDocument)) {
+          assets.dispose();
+          return;
+        }
+        final oldAssets = _canonicalPreviewAssets;
+        setState(() {
+          _canonicalPreviewLayout = layout;
+          _canonicalPreviewAssets = assets;
+          _canonicalPreviewSourceDocument = sourceDocument;
+          _canonicalPreviewPendingDocument = null;
+          _canonicalPreviewFailedDocument = null;
+        });
+        if (oldAssets != null && !identical(oldAssets, assets)) {
+          SchedulerBinding.instance.addPostFrameCallback((_) => oldAssets.dispose());
+        }
+      } catch (error, stackTrace) {
+        ExportFileService.logError('Canonical preview layout failed', error, stackTrace);
+        if (mounted &&
+            revision == _canonicalPreviewRevision &&
+            identical(_controller, controller) &&
+            identical(controller.document, sourceDocument)) {
+          final oldAssets = _canonicalPreviewAssets;
+          setState(() {
+            _canonicalPreviewLayout = null;
+            _canonicalPreviewAssets = null;
+            _canonicalPreviewSourceDocument = null;
+            _canonicalPreviewPendingDocument = null;
+            _canonicalPreviewFailedDocument = sourceDocument;
+          });
+          if (oldAssets != null) {
+            SchedulerBinding.instance.addPostFrameCallback((_) => oldAssets.dispose());
+          }
+        }
+      }
+    });
   }
 
   /// يتخلّص من تحكمات الحقول التي حُذف أصحابها (سؤال أو فرع أو نقطة) فلا
@@ -514,6 +784,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _selectedDividerKey = null;
     _activeItemFieldKey = null;
     _activeFieldKey = null;
+    _activeCanonicalSemanticNodeId = null;
   }
 
   void _tapQuestion(int index) {
@@ -2002,15 +2273,26 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// التحرير وإطار/ظل الشاشة، ثم تُستعاد حالة التحديد والتمرير كما كانت.
   Future<List<PageSnapshot>> _capturePreviewPages() async {
     final controller = _controller!;
+    final sourceDocument = controller.document;
     FocusManager.instance.primaryFocus?.unfocus();
-    await _awaitStablePreviewLayout();
-    final canonicalLayout = await PdfExportService.resolveLayoutDocument(
-      document: controller.document,
-    );
+    final currentPreviewLayout =
+        identical(_canonicalPreviewSourceDocument, sourceDocument)
+            ? _canonicalPreviewLayout
+            : null;
+    final canonicalLayout = currentPreviewLayout ??
+        await PdfExportService.resolveLayoutDocument(document: sourceDocument);
     final previewAssets = await CanonicalLayoutPreviewAssets.load(
       layout: canonicalLayout,
-      document: controller.document,
+      document: sourceDocument,
     );
+    if (!mounted ||
+        !identical(_controller, controller) ||
+        !identical(controller.document, sourceDocument)) {
+      previewAssets.dispose();
+      throw const ExportException(
+        'تغيّر المستند أثناء تجهيز صفحات Exact. أعد المحاولة.',
+      );
+    }
     final pages = canonicalLayout.pages.toList()
       ..sort((left, right) => left.index.compareTo(right.index));
     if (pages.isEmpty) {
@@ -2023,6 +2305,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final horizontalOffset = _hScroll.hasClients ? _hScroll.offset : null;
     setState(() {
       _canonicalCaptureLayout = canonicalLayout;
+      _canonicalCaptureSourceDocument = sourceDocument;
       _canonicalCaptureAssets = previewAssets;
       _suppressSelectionChrome = true;
       _exactCaptureInProgress = true;
@@ -2036,18 +2319,31 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       final snapshots = <PageSnapshot>[];
       for (final page in pages) {
         try {
+          if (!mounted ||
+              !identical(_controller, controller) ||
+              !identical(controller.document, sourceDocument)) {
+            throw const ExportException(
+              'تغيّر المستند أثناء التقاط صفحات Exact. أعد المحاولة.',
+            );
+          }
           final boundaryKey = _pageSnapshotKeys[page.index];
           if (boundaryKey == null) {
             throw StateError(
               'لم تُبنَ لوحة صفحة المعاينة ${page.index + 1}.',
             );
           }
-          snapshots.add(
-            await PageSnapshotService.captureVisiblePage(
-              boundaryKey,
-              pageIndex: page.index,
-            ),
+          final snapshot = await PageSnapshotService.captureVisiblePage(
+            boundaryKey,
+            pageIndex: page.index,
           );
+          if (!mounted ||
+              !identical(_controller, controller) ||
+              !identical(controller.document, sourceDocument)) {
+            throw const ExportException(
+              'تغيّر المستند أثناء التقاط صفحات Exact. أعد المحاولة.',
+            );
+          }
+          snapshots.add(snapshot);
         } catch (error, stackTrace) {
           PageSnapshotService.logCaptureFailure(error, stackTrace, page.index);
           Error.throwWithStackTrace(
@@ -2071,10 +2367,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         setState(() {
           _exactCaptureInProgress = false;
           _canonicalCaptureLayout = null;
+          _canonicalCaptureSourceDocument = null;
           _canonicalCaptureAssets = null;
           _suppressSelectionChrome = false;
           _restoreUiState(uiSnapshot);
         });
+        _ensureCanonicalPreview();
         // ننتظر تحديث مدى التمرير قبل استعادة الإزاحة أو تحرير صور اللقط.
         await SchedulerBinding.instance.endOfFrame;
         _restoreScrollOffset(_vScroll, verticalOffset);
@@ -2107,6 +2405,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final useExact = exact ?? _exactExport;
     setState(() => _isBusy = true);
     try {
+      if (!useExact &&
+          layoutDocument != null &&
+          !identical(layoutDocument.source, controller.documentIr)) {
+        throw const ExportException(
+          'تغيّر المستند بعد حساب صفحات المراجعة. افتح المراجعة مجدداً.',
+        );
+      }
       final bytes = useExact
           ? await ExactExportService.buildPdfFromSnapshots(
               await _capturePreviewPages(),
@@ -2158,7 +2463,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// - **Exact** (اختياري): كل صفحة صورة صفحتها النهائية — مطابق للمعاينة
   ///   بالبناء، وغير قابل للتحرير (يُعلَن ذلك في الواجهة).
   Future<void> _exportWord({
-    List<List<String>>? pageAssignments,
     bool? exact,
   }) async {
     if (_isBusy) {
@@ -2185,14 +2489,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         await DocxDocumentExportService.shareDocxFile(file);
         return;
       }
-      final printAssignments = pageAssignments ??
-          await PdfExportService.resolvePageAssignments(document: document);
-      if (!mounted) return;
+      final editablePaginationInput =
+          await DocxDocumentExportService.resolveEditablePaginationInput(
+        document: document,
+      );
       final file = await DocxDocumentExportService.exportDocumentToDocx(
         document: document,
         shapeRasterizer: ShapeImageRenderer.asRasterizer,
-        pageAssignments: printAssignments,
-        // معادلات LaTeX تُرسم صوراً في Word (لا أكواد خامة) بنفس مرسّم PDF.
+        legacyPaginationInput: editablePaginationInput,
+        // تُصدر المعادلات القابلة للتمثيل كـ OMML قابل للتحرير؛ المرسم احتياط.
         mathRasterizer: MathImageRenderer.asRasterizer,
       );
       if (!mounted) {
@@ -2560,11 +2865,22 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     LayoutDocument? canonicalReviewLayout;
     setState(() => _isBusy = true);
     try {
-      // اعرض عدد الصفحات الفعلي للتصدير، لا صفحات مساحة التحرير التي قد
-      // تحتوي على أسئلة فارغة غير قابلة للطباعة.
-      canonicalReviewLayout = await PdfExportService.resolveLayoutDocument(
+      // Reuse the live preview object whenever it belongs to this exact source
+      // document; the review/PDF path must not silently create parallel geometry.
+      canonicalReviewLayout =
+          identical(_canonicalPreviewSourceDocument, document)
+              ? _canonicalPreviewLayout
+              : null;
+      canonicalReviewLayout ??= await CanonicalLayoutService.resolve(
         document: document,
+        sourceIr: controller.documentIr,
       );
+      if (!mounted ||
+          !identical(_controller, controller) ||
+          !identical(controller.document, document) ||
+          !identical(canonicalReviewLayout.source, controller.documentIr)) {
+        return;
+      }
       pageAssignments = canonicalReviewLayout.questionPageAssignments;
     } catch (error, stackTrace) {
       ExportFileService.logError('Preview pagination failed', error, stackTrace);
@@ -2680,10 +2996,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           FilledButton.tonalIcon(
             onPressed: () {
               Navigator.of(dialogContext).pop();
-              _exportWord(
-                pageAssignments: pageAssignments,
-                exact: _exactExport,
-              );
+              _exportWord(exact: _exactExport);
             },
             icon: const Icon(Icons.description_outlined, size: 18),
             label: const Text('تصدير Word'),
@@ -3058,15 +3371,19 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<ExamWizardController>();
-    final layout = controller.layout;
-    final pagination = controller.pagination;
-    final canonicalCapture = _exactCaptureInProgress ? _canonicalCaptureLayout : null;
-    if (canonicalCapture == null) {
-      _trimPageKeys(pagination.pages);
-    } else {
-      _trimPageKeysByIndices(canonicalCapture.pages.map((page) => page.index));
-    }
     final document = controller.document;
+    if (!_exactCaptureInProgress) _ensureCanonicalPreview(controller);
+    final canonicalCapture = _exactCaptureInProgress ? _canonicalCaptureLayout : null;
+    final canonicalPreview = canonicalCapture ??
+        (identical(_canonicalPreviewSourceDocument, document)
+            ? _canonicalPreviewLayout
+            : null);
+    final canonicalAssets = canonicalCapture != null
+        ? _canonicalCaptureAssets
+        : _canonicalPreviewAssets;
+    if (canonicalPreview != null) {
+      _trimPageKeysByIndices(canonicalPreview.pages.map((page) => page.index));
+    }
     final activeStyle = _activeStyle();
 
     return Scaffold(
@@ -3215,10 +3532,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               builder: (context, constraints) {
                 _viewportWidth = constraints.maxWidth;
                 SchedulerBinding.instance.addPostFrameCallback((_) => _maybeAutoFit());
-                final contentWidth = (_viewportWidth > ExamCanvasGeometry.width * _zoom + 24
-                        ? _viewportWidth
-                        : ExamCanvasGeometry.width * _zoom + 24)
-                    .toDouble();
+                final pageCanvasWidth = canonicalPreview?.pages.fold<double>(
+                      0,
+                      (largest, page) => math.max(
+                        largest,
+                        LayoutUnits.ptToPx(page.pageSize.width),
+                      ),
+                    ) ??
+                    ExamCanvasGeometry.width;
+                final contentWidth = math.max(
+                  _viewportWidth,
+                  pageCanvasWidth * _zoom + 24,
+                );
                 return Stack(
                   children: <Widget>[
                     SingleChildScrollView(
@@ -3233,23 +3558,50 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                           width: contentWidth,
                           child: Column(
                             children: <Widget>[
-                              if (canonicalCapture != null)
-                                for (final page in canonicalCapture.pages)
+                              if (canonicalPreview != null &&
+                                  canonicalAssets != null)
+                                for (final page in canonicalPreview.pages)
                                   _buildZoomedPage(
                                     controller,
-                                    layout,
-                                    _pageShellForCanonical(page),
-                                    canonicalCapture.pageCount,
-                                    canonicalPage: page,
-                                  )
-                              else
-                                for (final page in pagination.pages)
-                                  _buildZoomedPage(
-                                    controller,
-                                    layout,
+                                    canonicalPreview,
                                     page,
-                                    pagination.pageCount,
+                                    canonicalAssets,
+                                    interactive: canonicalCapture == null,
+                                  )
+                              else if (identical(
+                                _canonicalPreviewFailedDocument,
+                                document,
+                              ))
+                                SizedBox(
+                                  width: 794,
+                                  height: 320,
+                                  child: Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: <Widget>[
+                                        const Icon(
+                                          Icons.error_outline,
+                                          color: Colors.redAccent,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        const Text('تعذّر تجهيز المعاينة القانونية.'),
+                                        TextButton.icon(
+                                          onPressed: _retryCanonicalPreview,
+                                          icon: const Icon(Icons.refresh),
+                                          label: const Text('إعادة المحاولة'),
+                                        ),
+                                      ],
+                                    ),
                                   ),
+                                )
+                              else
+                                const SizedBox(
+                                  width: 794,
+                                  height: 320,
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
@@ -3276,79 +3628,840 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  PaginatedPage _pageShellForCanonical(LayoutPage page) => PaginatedPage(
-        index: page.index,
-        blockIds: List<String>.unmodifiable(
-          page.blocks.map((block) => block.semanticNodeId),
-        ),
-        usedHeight: page.usedBodyHeight,
-        overflows: page.scaleFactor < 1,
-      );
-
-  Widget _buildZoomedPage(
+  Map<InlineNode, _CanonicalFieldBinding> _canonicalFieldBindings(
     ExamWizardController controller,
-    SubjectLayoutTemplate layout,
-    PaginatedPage page,
-    int pageCount, {
-    LayoutPage? canonicalPage,
+    DocumentIR source,
+  ) {
+    final result = <InlineNode, _CanonicalFieldBinding>{};
+    void bind(
+      InlineContent content, {
+      required String fieldKey,
+      required String sourceText,
+      required ValueChanged<String> onEdit,
+      required VoidCallback onLongPress,
+    }) {
+      final binding = _CanonicalFieldBinding(
+        fieldKey: fieldKey,
+        sourceText: sourceText,
+        content: content,
+        onEdit: onEdit,
+        onLongPress: onLongPress,
+      );
+      void addNodes(Iterable<InlineNode> nodes) {
+        for (final node in nodes) {
+          result[node] = binding;
+          if (node is LabelNode) addNodes(node.content.nodes);
+        }
+      }
+
+      addNodes(content.nodes);
+    }
+
+    for (final question in source.questions) {
+      if (question.index < 0 || question.index >= controller.questions.length) continue;
+      final model = controller.questions[question.index];
+      final questionIndex = question.index;
+      final questionLongPress = () => _longPressQuestion(questionIndex);
+      bind(
+        question.content,
+        fieldKey: _statementKey(model.id),
+        sourceText: model.statement,
+        onEdit: (value) => controller.updateQuestionStatement(questionIndex, value),
+        onLongPress: questionLongPress,
+      );
+      final body = question.body;
+      if (body != null) {
+        bind(
+          body.content,
+          fieldKey: _bodyKey(model.id),
+          sourceText: model.body,
+          onEdit: (value) => controller.updateQuestionBody(questionIndex, value),
+          onLongPress: questionLongPress,
+        );
+      }
+      final category = question.category;
+      if (category != null) {
+        bind(
+          category.content,
+          fieldKey: _categoryKey(model.id),
+          sourceText: model.category,
+          onEdit: (value) => controller.updateQuestionCategory(questionIndex, value),
+          onLongPress: questionLongPress,
+        );
+      }
+      final questionOwner = PointsOwner.question(questionIndex);
+      for (final point in question.points) {
+        final itemIndex = model.items.indexWhere((value) => value.id == point.id);
+        if (itemIndex < 0) continue;
+        final item = model.items[itemIndex];
+        bind(
+          point.content,
+          fieldKey: _itemKey(item.id),
+          sourceText: item.text,
+          onEdit: (value) => controller.updatePointText(questionOwner, item.id, value),
+          onLongPress: questionLongPress,
+        );
+        final options = point.options?.options ?? const <OptionNode>[];
+        for (final option in options) {
+          if (option.index < 0 || option.index >= item.options.length) continue;
+          bind(
+            option.content,
+            fieldKey: _optionKey(item.id, option.index),
+            sourceText: item.options[option.index].text,
+            onEdit: (value) => controller.updatePointOptionText(
+              questionOwner,
+              item.id,
+              option.index,
+              value,
+            ),
+            onLongPress: questionLongPress,
+          );
+        }
+      }
+
+      for (final branch in question.branches) {
+        if (branch.index < 0 || branch.index >= model.branches.length) continue;
+        final branchModel = model.branches[branch.index];
+        final branchRef = BranchRef(
+          questionIndex: questionIndex,
+          branchIndex: branch.index,
+        );
+        final branchLongPress = () => _longPressBranch(branchRef);
+        bind(
+          branch.content,
+          fieldKey: _branchStatementKey(branch.id),
+          sourceText: branchModel.content.statement,
+          onEdit: (value) => controller.updateBranchStatement(branchRef, value),
+          onLongPress: branchLongPress,
+        );
+        final branchBody = branch.body;
+        if (branchBody != null) {
+          bind(
+            branchBody.content,
+            fieldKey: _branchBodyKey(branch.id),
+            sourceText: branchModel.content.body,
+            onEdit: (value) => controller.updateBranchBody(branchRef, value),
+            onLongPress: branchLongPress,
+          );
+        }
+        final branchOwner = PointsOwner.branch(branchRef);
+        for (final point in branch.points) {
+          final itemIndex = branchModel.content.items
+              .indexWhere((value) => value.id == point.id);
+          if (itemIndex < 0) continue;
+          final item = branchModel.content.items[itemIndex];
+          bind(
+            point.content,
+            fieldKey: _itemKey(item.id),
+            sourceText: item.text,
+            onEdit: (value) => controller.updatePointText(branchOwner, item.id, value),
+            onLongPress: branchLongPress,
+          );
+          for (final option in point.options?.options ?? const <OptionNode>[]) {
+            if (option.index < 0 || option.index >= item.options.length) continue;
+            bind(
+              option.content,
+              fieldKey: _optionKey(item.id, option.index),
+              sourceText: item.options[option.index].text,
+              onEdit: (value) => controller.updatePointOptionText(
+                branchOwner,
+                item.id,
+                option.index,
+                value,
+              ),
+              onLongPress: branchLongPress,
+            );
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  LayoutRun? _canonicalRunById(LayoutPage page, String? runId) {
+    if (runId == null) return null;
+    for (final block in page.blocks) {
+      for (final line in block.allLines) {
+        for (final run in line.runs) {
+          if (run.id == runId) return run;
+        }
+      }
+    }
+    for (final placement in page.floatingElements) {
+      for (final line in placement.labelLines) {
+        for (final run in line.runs) {
+          if (run.id == runId) return run;
+        }
+      }
+    }
+    return null;
+  }
+
+  void _handleCanonicalPageTap(
+    ExamWizardController controller,
+    LayoutDocument layout,
+    LayoutPage page,
+    Map<InlineNode, _CanonicalFieldBinding> bindings,
+    CanonicalPagePointerEvent event,
+  ) {
+    if (_exactCaptureInProgress) return;
+    if (_stagedFormula != null && !_locked) {
+      _placeStagedFormula(event.localPositionPx, pageIndex: page.index);
+      return;
+    }
+    final hit = event.hit;
+    if (hit == null || hit.isFloatingElement) return;
+    final run = _canonicalRunById(page, hit.runId);
+    final binding = run?.semanticNode == null ? null : bindings[run!.semanticNode];
+    if (binding != null && run != null) {
+      final field = _field(binding.fieldKey, binding.sourceText, binding.onEdit);
+      final offset = (hit.sourceOffset ?? 0).clamp(0, field.text.length).toInt();
+      field.selection = TextSelection.collapsed(offset: offset);
+      _activateField(
+        binding.fieldKey,
+        field,
+        canonicalSemanticNodeId: hit.semanticNodeId,
+      );
+      if (run.isMath && binding.content.hasMath) {
+        unawaited(_editEquationInField(binding.fieldKey));
+      }
+      return;
+    }
+    _selectCanonicalBlock(controller, layout.source, hit);
+  }
+
+  void _handleCanonicalPageLongPress(
+    ExamWizardController controller,
+    LayoutDocument layout,
+    LayoutPage page,
+    Map<InlineNode, _CanonicalFieldBinding> bindings,
+    CanonicalPagePointerEvent event,
+  ) {
+    final hit = event.hit;
+    if (hit == null || hit.isFloatingElement) return;
+    final run = _canonicalRunById(page, hit.runId);
+    final binding = run?.semanticNode == null ? null : bindings[run!.semanticNode];
+    if (binding != null && run != null) {
+      if (_activeFieldKey == binding.fieldKey && !_multiSelect && !run.isMath) {
+        final field = _fields[binding.fieldKey];
+        if (field != null) {
+          final selection = _wordSelectionAt(
+            field.text,
+            (hit.sourceOffset ?? 0).clamp(0, field.text.length).toInt(),
+          );
+          field.selection = selection;
+          return;
+        }
+      }
+      binding.onLongPress();
+      return;
+    }
+    _selectCanonicalBlock(controller, layout.source, hit, longPress: true);
+  }
+
+  TextSelection _wordSelectionAt(String text, int offset) {
+    if (text.isEmpty) return const TextSelection.collapsed(offset: 0);
+    var start = offset.clamp(0, text.length).toInt();
+    var end = start;
+    bool isWordUnit(int index) {
+      final unit = text.substring(index, index + 1);
+      return !RegExp(r'\s').hasMatch(unit);
+    }
+
+    if (start == text.length && start > 0) start--;
+    if (start < text.length && isWordUnit(start)) {
+      end = start + 1;
+      while (start > 0 && isWordUnit(start - 1)) {
+        start--;
+      }
+      while (end < text.length && isWordUnit(end)) {
+        end++;
+      }
+      return TextSelection(baseOffset: start, extentOffset: end);
+    }
+    return TextSelection.collapsed(offset: offset);
+  }
+
+  void _selectCanonicalBlock(
+    ExamWizardController controller,
+    DocumentIR source,
+    CanonicalHitTestResult hit, {
+    bool longPress = false,
   }) {
-    final canonicalAssets = _canonicalCaptureAssets;
-    if (canonicalPage != null && canonicalAssets != null) {
-      return Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        child: SizedBox(
-          width: ExamCanvasGeometry.width * _zoom,
-          height: ExamCanvasGeometry.height * _zoom,
-          child: FittedBox(
-            fit: BoxFit.fill,
-            child: SizedBox(
-              width: ExamCanvasGeometry.width,
-              height: ExamCanvasGeometry.height,
-              child: RepaintBoundary(
-                key: _pageSnapshotKeys.putIfAbsent(
-                  page.index,
-                  () => GlobalKey(
-                    debugLabel: 'canonical-page-snapshot-${page.index}',
-                  ),
-                ),
-                child: Container(
-                  width: ExamCanvasGeometry.width,
-                  height: ExamCanvasGeometry.height,
-                  clipBehavior: Clip.antiAlias,
-                  decoration: const BoxDecoration(color: Colors.white),
-                  child: CanonicalLayoutPreviewPage(
-                    page: canonicalPage,
-                    document: controller.document,
-                    assets: canonicalAssets,
+    if (hit.semanticNodeId == 'header' ||
+        hit.semanticNodeId.startsWith('header/')) {
+      _tapHeader();
+      return;
+    }
+    if (hit.semanticNodeId == 'footer' ||
+        hit.semanticNodeId.startsWith('footer/')) {
+      unawaited(_editHeaderAndFooter());
+      return;
+    }
+    for (final question in source.questions) {
+      for (final branch in question.branches) {
+        if (hit.semanticNodeId == branch.id ||
+            hit.semanticNodeId.startsWith('${branch.id}/') ||
+            hit.blockId == branch.id ||
+            (hit.blockId?.startsWith('${branch.id}/') ?? false)) {
+          final ref = BranchRef(
+            questionIndex: question.index,
+            branchIndex: branch.index,
+          );
+          if (longPress) {
+            _longPressBranch(ref);
+          } else {
+            _tapBranch(ref);
+          }
+          return;
+        }
+      }
+      if (hit.semanticNodeId == question.id ||
+          hit.semanticNodeId.startsWith('${question.id}/') ||
+          hit.blockId == question.id ||
+          (hit.blockId?.startsWith('${question.id}/') ?? false)) {
+        if (longPress) {
+          _longPressQuestion(question.index);
+        } else {
+          _tapQuestion(question.index);
+        }
+        return;
+      }
+    }
+  }
+
+  int? _canonicalPageForCursor(
+    LayoutDocument layout,
+    String? semanticNodeId,
+    int? sourceOffset,
+  ) {
+    if (semanticNodeId == null || sourceOffset == null) return null;
+    for (final page in layout.pages) {
+      for (final block in page.blocks) {
+        for (final line in block.allLines) {
+          for (final run in line.runs) {
+            if (run.semanticNodeId != semanticNodeId || run.isMath) continue;
+            final end = run.sourceEndOffset > run.sourceStartOffset
+                ? run.sourceEndOffset
+                : run.sourceStartOffset + run.text.length;
+            if (sourceOffset >= run.sourceStartOffset && sourceOffset <= end) {
+              return page.index;
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  Widget _buildCanonicalPage(
+    ExamWizardController controller,
+    LayoutDocument layout,
+    LayoutPage page,
+    CanonicalLayoutPreviewAssets assets, {
+    required bool interactive,
+  }) {
+    final sourceDocument = identical(_canonicalCaptureLayout, layout)
+        ? (_canonicalCaptureSourceDocument ?? controller.document)
+        : controller.document;
+    final bindings = _canonicalFieldBindings(controller, layout.source);
+    _CanonicalFieldBinding? activeBinding;
+    if (_activeFieldKey != null) {
+      for (final binding in bindings.values) {
+        if (binding.fieldKey == _activeFieldKey) {
+          activeBinding = binding;
+          break;
+        }
+      }
+    }
+    final activeNodeId = _activeCanonicalSemanticNodeId;
+    final activeFieldController = activeBinding == null
+        ? null
+        : _fields[activeBinding.fieldKey];
+    final activeOffset = activeFieldController?.selection.isValid == true
+        ? activeFieldController!.selection.extentOffset
+        : null;
+    final activePageIndex = _canonicalPageForCursor(
+      layout,
+      activeNodeId,
+      activeOffset,
+    );
+    final pageHasActiveNode = activeNodeId != null &&
+        page.blocks.any((block) => block.allLines.any((line) =>
+            line.runs.any((run) => run.semanticNodeId == activeNodeId)));
+    final pageWidth = LayoutUnits.ptToPx(page.pageSize.width);
+    final pageHeight = LayoutUnits.ptToPx(page.pageSize.height);
+    final selectionDecorations = <Widget>[];
+    void collectSelectionDecorations(Iterable<LayoutBlock> blocks) {
+      for (final block in blocks) {
+        var selected = false;
+        if (block.kind == LayoutBlockKind.question) {
+          final question = layout.source.questionById(block.semanticNodeId);
+          selected = question != null && _isQuestionSelected(question.index);
+        } else if (block.kind == LayoutBlockKind.branch) {
+          for (final question in layout.source.questions) {
+            for (final branch in question.branches) {
+              if (branch.id == block.semanticNodeId) {
+                selected = _isBranchSelected(BranchRef(
+                  questionIndex: question.index,
+                  branchIndex: branch.index,
+                ));
+              }
+            }
+          }
+        }
+        if (selected) {
+          selectionDecorations.add(
+            Positioned.fromRect(
+              rect: Rect.fromLTWH(
+                LayoutUnits.ptToPx(block.rect.left),
+                LayoutUnits.ptToPx(block.rect.top),
+                LayoutUnits.ptToPx(block.rect.width),
+                LayoutUnits.ptToPx(block.rect.height),
+              ),
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0x0C2563EB),
+                    border: Border.all(color: PaperStyles.accent, width: 1.2),
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
               ),
             ),
-          ),
-        ),
-      );
+          );
+        }
+        collectSelectionDecorations(block.children);
+      }
     }
-    // FittedBox بنفس نسبة الأبعاد = تكبير تخطيطي صحيح (القياس الداخلي
-    // يبقى بالمقاس الحقيقي، والتفاعل مع الحقول يعمل تحت كل تكبير).
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: SizedBox(
-        width: ExamCanvasGeometry.width * _zoom,
-        height: ExamCanvasGeometry.height * _zoom,
-        child: FittedBox(
-          fit: BoxFit.fill,
-          child: SizedBox(
-            width: ExamCanvasGeometry.width,
-            height: ExamCanvasGeometry.height,
-            child: _buildPage(
+    collectSelectionDecorations(page.blocks);
+
+    final children = <Widget>[
+      CanonicalLayoutPreviewPage(
+        key: ValueKey<String>('canonical-preview-page-${page.index}'),
+        layoutDocument: layout,
+        page: page,
+        document: sourceDocument,
+        assets: assets,
+        onTap: interactive
+            ? (event) => _handleCanonicalPageTap(
+                  controller,
+                  layout,
+                  page,
+                  bindings,
+                  event,
+                )
+            : null,
+        onLongPress: interactive
+            ? (event) => _handleCanonicalPageLongPress(
+                  controller,
+                  layout,
+                  page,
+                  bindings,
+                  event,
+                )
+            : null,
+      ),
+      if (interactive) ...selectionDecorations,
+      if (interactive)
+        for (final placement in page.floatingElements)
+          if (placement.deferredReason == null)
+            _buildCanonicalFloatingInteraction(
               controller,
               layout,
               page,
-              pageCount,
-              snapshotKeys: _pageSnapshotKeys,
-              canvasKeys: _pageCanvasKeys,
-              interactive: !_exactCaptureInProgress,
-              showPreviewChrome: !_exactCaptureInProgress,
+              placement,
+            ),
+      if (interactive &&
+          activeBinding != null &&
+          pageHasActiveNode &&
+          page.index == activePageIndex)
+        Positioned(
+          left: 0,
+          top: 0,
+          width: 1,
+          height: 1,
+          child: PaperField(
+            key: ValueKey<String>(activeBinding.fieldKey),
+            controller: _field(
+              activeBinding.fieldKey,
+              activeBinding.sourceText,
+              activeBinding.onEdit,
+            ),
+            style: const TextStyle(fontSize: 12),
+            semanticContent: activeBinding.content,
+            canonicalInteractionOnly: true,
+            autofocus: true,
+            onActivate: () => _activateField(
+              activeBinding.fieldKey,
+              _fields[activeBinding.fieldKey]!,
+            ),
+            onEditFormula: () => _editEquationInField(activeBinding.fieldKey),
+            onLongPress: activeBinding.onLongPress,
+            allowTextSelection: !_multiSelect,
+            renderBuilder: (_) => const SizedBox.shrink(),
+          ),
+        ),
+      if (interactive &&
+          activeBinding != null &&
+          pageHasActiveNode &&
+          _fields[activeBinding.fieldKey]?.selection.isValid == true)
+        Positioned.fill(
+          child: IgnorePointer(
+            child: CustomPaint(
+              painter: _CanonicalSelectionPainter(
+                page: page,
+                semanticNodeId: activeNodeId!,
+                selection: _fields[activeBinding.fieldKey]!.selection,
+              ),
+            ),
+          ),
+        ),
+    ];
+
+    final pageCanvas = Container(
+      key: _pageCanvasKeys.putIfAbsent(
+        page.index,
+        () => GlobalKey(debugLabel: 'canonical-page-canvas-${page.index}'),
+      ),
+      width: pageWidth,
+      height: pageHeight,
+      clipBehavior: Clip.antiAlias,
+      decoration: const BoxDecoration(color: Colors.white),
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
+        children: children,
+      ),
+    );
+    return Directionality(
+      textDirection: layout.direction == DocumentDirection.ltr
+          ? TextDirection.ltr
+          : TextDirection.rtl,
+      child: pageCanvas,
+    );
+  }
+
+  Widget _buildCanonicalFloatingInteraction(
+    ExamWizardController controller,
+    LayoutDocument layout,
+    LayoutPage page,
+    LayoutFloatPlacement placement,
+  ) {
+    final ref = _attachmentRefForId(controller.document, placement.reference.id);
+    final element = _findAttachment(controller.document, ref);
+    if (element == null || placement.rect.isEmpty) return const SizedBox.shrink();
+    final selected = _selectedAttachment?.elementId == ref.elementId;
+    final rect = Rect.fromLTWH(
+      LayoutUnits.ptToPx(placement.rect.left),
+      LayoutUnits.ptToPx(placement.rect.top),
+      LayoutUnits.ptToPx(placement.rect.width),
+      LayoutUnits.ptToPx(placement.rect.height),
+    );
+    final input = RawGestureDetector(
+      behavior: HitTestBehavior.opaque,
+      gestures: <Type, GestureRecognizerFactory>{
+        if (!_locked)
+          EagerGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
+            () => EagerGestureRecognizer(),
+            (EagerGestureRecognizer instance) {},
+          ),
+      },
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (event) {
+          _lastPointerDownTime = event.timeStamp;
+          _beginCanonicalAttachmentDrag(
+            ref,
+            element,
+            page,
+            placement,
+            event.pointer,
+            event.position,
+          );
+        },
+        onPointerMove: (event) =>
+            _updateCanonicalAttachmentDrag(event.pointer, event.position, layout),
+        onPointerUp: (event) {
+          if (event.pointer == _dragPointer && !_dragMoved) {
+            _selectAttachment(ref);
+            final current = _findAttachment(_controller!.document, ref) ?? element;
+            _noteAttachmentTap(ref, current, _lastPointerDownTime);
+          }
+          _endAttachmentDrag(event.pointer);
+        },
+        onPointerCancel: (event) => _endAttachmentDrag(event.pointer),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: selected
+                ? Border.all(color: PaperStyles.accent, width: 1.5)
+                : null,
+          ),
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
+    return Positioned.fromRect(
+      rect: rect,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          Positioned.fill(child: input),
+          if (selected && !_locked && (element.isTextBox || element.isFormula))
+            Positioned(
+              right: 0,
+              top: 0,
+              child: _elementHandle(
+                key: ValueKey<String>('canonical-edit-element-${element.id}'),
+                icon: Icons.edit,
+                tooltip: element.isFormula ? 'تحرير المعادلة' : 'تحرير مربع النص',
+                color: PaperStyles.accent,
+                onTap: () => element.isFormula
+                    ? _editFormulaElement(ref)
+                    : _editTextBox(ref),
+              ),
+            ),
+          if (selected && !_locked)
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: _elementHandle(
+                key: ValueKey<String>('canonical-resize-element-${element.id}'),
+                icon: Icons.south_east,
+                tooltip: 'اسحب لتغيير الحجم',
+                color: PaperStyles.accent,
+                onTap: () => _scaleAttachment(ref, element, 1.1),
+                onPanUpdate: (details) =>
+                    _resizeAttachmentByDrag(ref, element, details),
+              ),
+            ),
+          if (selected &&
+              !_locked &&
+              !element.isTextBox &&
+              !element.isImage)
+            Positioned(
+              left: 0,
+              bottom: 0,
+              child: _elementHandle(
+                key: ValueKey<String>('canonical-rotate-element-${element.id}'),
+                icon: Icons.rotate_right,
+                tooltip: 'تدوير العنصر 45°',
+                color: PaperStyles.accent,
+                onTap: () => _updateAttachmentElement(
+                  ref,
+                  element.copyWith(
+                    rotationDegrees: (element.rotationDegrees + 45) % 360,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  _AttachmentRef _attachmentRefForId(ExamDocument document, String elementId) {
+    if (document.floatingElements.any((element) => element.id == elementId)) {
+      return _AttachmentRef.global(elementId);
+    }
+    for (var questionIndex = 0;
+        questionIndex < document.questions.length;
+        questionIndex++) {
+      final question = document.questions[questionIndex];
+      if (question.attachments.any((element) => element.id == elementId)) {
+        return _AttachmentRef(questionIndex: questionIndex, elementId: elementId);
+      }
+      for (var branchIndex = 0; branchIndex < question.branches.length; branchIndex++) {
+        final branch = question.branches[branchIndex];
+        if (branch.attachments.any((element) => element.id == elementId)) {
+          return _AttachmentRef(
+            questionIndex: questionIndex,
+            branchIndex: branchIndex,
+            elementId: elementId,
+          );
+        }
+      }
+    }
+    return _AttachmentRef.global(elementId);
+  }
+
+  void _beginCanonicalAttachmentDrag(
+    _AttachmentRef ref,
+    FloatingElement element,
+    LayoutPage page,
+    LayoutFloatPlacement placement,
+    int pointer,
+    Offset screenPosition,
+  ) {
+    final local = _localPositionOnPage(page.index, screenPosition);
+    final left = LayoutUnits.ptToPx(placement.rect.left);
+    final top = LayoutUnits.ptToPx(placement.rect.top);
+    _dragPointer = pointer;
+    _dragRef = ref;
+    _dragStartScreen = screenPosition;
+    _dragLastScreen = screenPosition;
+    _dragLastPaper = Offset(left, top);
+    _dragPageIndex = page.index;
+    _dragAnchorWithinElement = local == null
+        ? Offset(
+            LayoutUnits.ptToPx(placement.rect.width / 2),
+            LayoutUnits.ptToPx(placement.rect.height / 2),
+          )
+        : Offset(local.local.dx - left, local.local.dy - top);
+    _dragMoved = false;
+  }
+
+  void _updateCanonicalAttachmentDrag(
+    int pointer,
+    Offset screenPosition,
+    LayoutDocument layout,
+  ) {
+    final start = _dragStartScreen;
+    final previousScreen = _dragLastScreen;
+    final previousPaper = _dragLastPaper;
+    final anchor = _dragAnchorWithinElement;
+    final ref = _dragRef;
+    final controller = _controller;
+    if (controller == null ||
+        start == null ||
+        previousScreen == null ||
+        previousPaper == null ||
+        anchor == null ||
+        ref == null ||
+        pointer != _dragPointer ||
+        _locked) {
+      return;
+    }
+    if (!_dragMoved && (screenPosition - start).distance <= kTouchSlop) return;
+    _dragMoved = true;
+    final element = _findAttachment(controller.document, ref);
+    if (element == null) return;
+
+    final targetPage = _pageAtGlobalPosition(screenPosition);
+    final int pageIndex;
+    final Offset target;
+    if (targetPage != null) {
+      pageIndex = targetPage.pageIndex;
+      target = Offset(
+        targetPage.local.dx - anchor.dx,
+        targetPage.local.dy - anchor.dy,
+      );
+    } else {
+      pageIndex = _dragPageIndex ?? element.pageIndex;
+      final delta = (screenPosition - previousScreen) / _zoom;
+      target = previousPaper + delta;
+    }
+    _moveCanonicalAttachmentTo(layout, ref, element, target, pageIndex);
+    _dragLastPaper = target;
+    _dragLastScreen = screenPosition;
+  }
+
+  void _moveCanonicalAttachmentTo(
+    LayoutDocument layout,
+    _AttachmentRef ref,
+    FloatingElement element,
+    Offset physicalTopLeftPx,
+    int pageIndex,
+  ) {
+    final controller = _controller;
+    if (controller == null) return;
+    final pageWidthPx = LayoutUnits.ptToPx(layout.pageSize.width);
+    final marginPx = LayoutUnits.ptToPx(
+      layout.pages.first.contentBounds.left,
+    );
+    final maxLeft = pageWidthPx - 24;
+    final maxTop = LayoutUnits.ptToPx(layout.pageSize.height) - 24;
+    final left = physicalTopLeftPx.dx
+        .clamp(24 - element.width, maxLeft)
+        .toDouble();
+    final top = physicalTopLeftPx.dy
+        .clamp(24 - element.height, maxTop)
+        .toDouble();
+    final ownerId = element.ownerQuestionId;
+    if (ownerId == null) {
+      final logicalDx = layout.direction == DocumentDirection.rtl
+          ? pageWidthPx - left - element.width
+          : left;
+      _updateAttachmentElement(
+        ref,
+        element.copyWith(pageIndex: pageIndex, dx: logicalDx, dy: top),
+        preservePageIndex: true,
+      );
+      return;
+    }
+
+    LayoutBlock? ownerBlock;
+    LayoutPage? ownerPage;
+    for (final page in layout.pages) {
+      if (page.index != pageIndex) continue;
+      final candidates = <LayoutBlock>[];
+      void collect(Iterable<LayoutBlock> blocks) {
+        for (final block in blocks) {
+          candidates.add(block);
+          collect(block.children);
+        }
+      }
+
+      collect(page.blocks);
+      for (final candidate in candidates) {
+        if (candidate.semanticNodeId == ownerId) {
+          ownerBlock = candidate;
+          ownerPage = page;
+          break;
+        }
+      }
+      if (ownerBlock != null) break;
+    }
+    if (ownerBlock == null || ownerPage == null) return;
+    final logicalDx = layout.direction == DocumentDirection.rtl
+        ? pageWidthPx - left - element.width - marginPx
+        : left - marginPx;
+    _updateAttachmentElement(
+      ref,
+      element.copyWith(
+        pageIndex: ownerPage.index,
+        dx: logicalDx.clamp(0.0, pageWidthPx).toDouble(),
+        dy: (top - LayoutUnits.ptToPx(ownerBlock.rect.top))
+            .clamp(0.0, maxTop)
+            .toDouble(),
+      ),
+      preservePageIndex: true,
+    );
+  }
+
+  Widget _buildZoomedPage(
+    ExamWizardController controller,
+    LayoutDocument layout,
+    LayoutPage page,
+    CanonicalLayoutPreviewAssets assets, {
+    required bool interactive,
+  }) {
+    final width = LayoutUnits.ptToPx(page.pageSize.width);
+    final height = LayoutUnits.ptToPx(page.pageSize.height);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: SizedBox(
+        width: width * _zoom,
+        height: height * _zoom,
+        child: FittedBox(
+          fit: BoxFit.fill,
+          child: SizedBox(
+            width: width,
+            height: height,
+            child: RepaintBoundary(
+              key: _pageSnapshotKeys.putIfAbsent(
+                page.index,
+                () => GlobalKey(
+                  debugLabel: 'canonical-page-snapshot-${page.index}',
+                ),
+              ),
+              child: _buildCanonicalPage(
+                controller,
+                layout,
+                page,
+                assets,
+                interactive: interactive,
+              ),
             ),
           ),
         ),
@@ -3356,6 +4469,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
+  // مرحّل قديم غير مستخدم: المعاينة النشطة ترسم LayoutDocument مباشرة؛
+  // يُحتفظ به مؤقتاً لتسهيل إزالة المكونات التفاعلية القديمة تدريجياً.
+  // ignore: unused_element
   Widget _buildPage(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
@@ -5781,8 +6897,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _inserter.insert(text);
   }
 
-  void _activateField(String key, TextEditingController field) {
+  void _activateField(
+    String key,
+    TextEditingController field, {
+    String? canonicalSemanticNodeId,
+  }) {
     _inserter.controller = field;
+    final activeCanonicalNodeId = canonicalSemanticNodeId ??
+        (_activeFieldKey == key ? _activeCanonicalSemanticNodeId : null);
     final controller = _controller!;
     final document = controller.document;
     // هل المفتاح لنقطة من [points] (نصها أو أحد خياراتها)؟
@@ -5796,6 +6918,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         _activeItemFieldKey = null;
       }
       _activeFieldKey = key;
+      _activeCanonicalSemanticNodeId = activeCanonicalNodeId;
       for (var q = 0; q < document.questions.length; q++) {
         final question = document.questions[q];
         final isQuestionPoint = belongsToPoints(question.items);

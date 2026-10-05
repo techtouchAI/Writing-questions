@@ -32,6 +32,8 @@ class PaperField extends StatefulWidget {
     this.onEditFormula,
     this.allowTextSelection = true,
     this.onLongPress,
+    this.canonicalInteractionOnly = false,
+    this.autofocus = false,
   });
 
   /// متحكم النص (نفسه في وضعَي العرض والتحرير).
@@ -74,6 +76,14 @@ class PaperField extends StatefulWidget {
   /// فتُحدَّد من أي موضع على الورقة، بينما يبقى تأشير النص متاحاً داخل حقل
   /// مفعّل قيد الكتابة.
   final VoidCallback? onLongPress;
+
+  /// تفعيل قناة إدخال مخفية فوق العارض القانوني. لا تُرسم نسخة نصية ثانية،
+  /// ولا يُستخدم قياس TextField أو التفافه لترتيب الصفحة؛ LayoutDocument فقط
+  /// يملك حدود العرض. تستعمل الإيماءات الخارجية المصدر وإحداثياته القانونية.
+  final bool canonicalInteractionOnly;
+
+  /// تركيز تلقائي لحقل الإدخال المخفي عند اختياره من هندسة الصفحة القانونية.
+  final bool autofocus;
 
   @override
   State<PaperField> createState() => _PaperFieldState();
@@ -247,6 +257,23 @@ class _PaperFieldState extends State<PaperField> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.canonicalInteractionOnly) {
+      // The canonical painter is the sole visible text renderer. This tiny,
+      // transparent editor owns only the IME/controller; tap, caret, selection,
+      // wrapping, and pagination geometry are supplied by LayoutDocument.
+      return TextField(
+        controller: widget.controller,
+        focusNode: _focusNode,
+        autofocus: widget.autofocus,
+        maxLines: null,
+        showCursor: false,
+        cursorWidth: 0,
+        enableInteractiveSelection: false,
+        style: widget.style.copyWith(color: Colors.transparent),
+        decoration: const InputDecoration.collapsed(hintText: ''),
+        onTap: widget.onActivate,
+      );
+    }
     return LayoutBuilder(
       builder: (context, constraints) {
         final effectiveStyle = _resolveEffectiveStyle(constraints, context);

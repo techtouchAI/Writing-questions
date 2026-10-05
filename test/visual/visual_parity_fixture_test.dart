@@ -3,13 +3,16 @@
 // تُنتج هذه الركيزة **قطع المقارنة** التي تستهلكها مهمّة CI البصرية:
 //   * `build/visual_parity/preview_page-N.png` — كل صفحة معاينة كما رسمها
 //     Flutter (96dpi = بكسل اللوحة نفسه).
-//   * `build/visual_parity/exact.pdf` و`exact.docx` — التصدير الدقيق من
-//     اللقطات نفسها.
+//   * `build/visual_parity/vector.pdf` — PDF متجهي مرسوم من LayoutDocument
+//     نفسه الذي عُرض في المعاينة.
+//   * `build/visual_parity/editable.docx` — Word قابل للتحرير من مسار
+//     DocumentIR → LegacyDocxAdapter → PaginationEngine.
+//   * `build/visual_parity/exact.pdf` و`exact.docx` — مسار Exact المنفصل
+//     المبني من لقطات المعاينة نفسها.
 //   * `build/visual_parity/manifest.json` — عدد الصفحات وأبعادها.
 //
-// ثم يصيّر CI ملفَّي المخرجات (poppler لـPDF، LibreOffice ثم poppler لـWord)
-// ويقارن كل صفحة مصيَّرة بلقطة المعاينة المقابلة بمقياس RMSE — فالمقارنة
-// **بالصور لا بالنصوص** كما تقتضي أعلى معايير التحقق البصري.
+// ثم يصيّر CI كل مسار مستقل (poppler لـPDF، LibreOffice ثم poppler لـWord)
+// ويقارن كل صفحة مصيَّرة بلقطة المعاينة المقابلة بمقياس RMSE الفعلي.
 //
 // التركيبة تغطي قائمة التحقق: عربية RTL، إنجليزية LTR، أرقام، صيغ سطرية
 // ومنفصلة (كسر، جذر، أس، مؤشر، مصفوفة)، آية قرآنية، اختيار من متعدد،
@@ -40,9 +43,15 @@ import 'package:writing_questions_app/models/point_kind.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/pdf_engine/exam_fonts.dart';
+import 'package:writing_questions_app/layout/canonical/canonical_layout_preview.dart';
+import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
+import 'package:writing_questions_app/services/docx_document_export_service.dart';
 import 'package:writing_questions_app/services/exact_export_service.dart';
+import 'package:writing_questions_app/services/math_image_renderer.dart';
 import 'package:writing_questions_app/services/page_snapshot_service.dart';
+import 'package:writing_questions_app/services/pdf_export_service.dart';
+import 'package:writing_questions_app/services/shape_image_renderer.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 
 /// مجلد القطع الذي يقرؤه سكربت التحقق البصري في CI.
@@ -253,19 +262,35 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
-
-    // الارتفاعات تُقاس بعد أول رسم (`MeasureSize`) فتُعاد جدولة التقسيم،
-    // ولا يُقرأ عدد الصفحات قبل اكتمال القياس (وإلا كان صفحة واحدة دائماً).
-    for (var frame = 0; frame < 10 && !controller.isFullyMeasured; frame++) {
-      await tester.pump();
+    for (var frame = 0;
+        frame < 40 &&
+            find.byType(CanonicalLayoutPreviewPage).evaluate().isEmpty;
+        frame++) {
+      await tester.pump(const Duration(milliseconds: 100));
     }
-    _stage('اكتمال القياس: ${controller.isFullyMeasured}');
-    expect(controller.isFullyMeasured, isTrue,
-        reason: 'لم يكتمل قياس كتل الورقة، فلا معنى لعدد الصفحات.');
 
-    final pageCount = controller.pagination.pageCount;
-    _stage('عدد الصفحات: $pageCount');
+    final renderedPageElements =
+        find.byType(CanonicalLayoutPreviewPage).evaluate().toList();
+    expect(renderedPageElements, isNotEmpty,
+        reason: 'المعاينة canonical لم تُجهّز صفحاتها.');
+    final firstPreview =
+        renderedPageElements.first.widget as CanonicalLayoutPreviewPage;
+    final canonicalLayout = firstPreview.layoutDocument;
+    expect(identical(canonicalLayout.source, controller.documentIr), isTrue,
+        reason: 'The preview fixture must capture the current DocumentIR source.');
+    final pageCount = canonicalLayout.pageCount;
+    expect(renderedPageElements, hasLength(pageCount),
+        reason: 'المعاينة يجب أن تعرض كل صفحات LayoutDocument.');
+    expect(
+      renderedPageElements.every((element) =>
+          identical(
+            (element.widget as CanonicalLayoutPreviewPage).layoutDocument,
+            canonicalLayout,
+          )),
+      isTrue,
+      reason: 'صفحات المعاينة يجب أن تشترك في LayoutDocument نفسه.',
+    );
+    _stage('LayoutDocument pages: $pageCount');
     expect(pageCount, greaterThan(1),
         reason: 'التركيبة يجب أن تكون متعددة الصفحات لتغطية الترقيم.');
 
@@ -278,11 +303,15 @@ void main() {
     await tester.pumpAndSettle();
 
     // جذور اللقط بترتيب الشجرة = ترتيب الصفحات.
+    final referenceWidth =
+        LayoutUnits.ptToPx(canonicalLayout.pages.first.pageSize.width);
+    final referenceHeight =
+        LayoutUnits.ptToPx(canonicalLayout.pages.first.pageSize.height);
     final boundaries = tester
         .renderObjectList<RenderRepaintBoundary>(find.byType(RepaintBoundary))
         .where((boundary) =>
-            boundary.size.width == ExamCanvasGeometry.width &&
-            boundary.size.height == ExamCanvasGeometry.height)
+            (boundary.size.width - referenceWidth).abs() < 0.1 &&
+            (boundary.size.height - referenceHeight).abs() < 0.1)
         .toList(growable: false);
     // التوسيع حتى تُرسم كل الصفحات (صفحة خارج نافذة التمرير لا تُرسم، ولقطها
     // يفشل) — شرط `debugNeedsPaint` هو نفس شرط `toImage` نفسه.
@@ -329,15 +358,37 @@ void main() {
         reason: 'لقطة لكل صفحة معاينة (${snapshotList.length}/$pageCount).');
     snapshots.addAll(snapshotList);
 
-    // (1) قطع المقارنة: صفحات المعاينة.
-    final pdfBytes = await ExactExportService.buildPdfFromSnapshots(snapshots);
-    final docxBytes = ExactExportService.buildDocxFromSnapshots(snapshots);
+    // Vector PDF يستهلك كائن LayoutDocument الحي نفسه — لا يحسب تدفقاً ثانياً.
+    final vectorPdfBytes = await PdfExportService.buildDocumentPdfBytes(
+      document: controller.document,
+      layoutDocument: canonicalLayout,
+    );
+
+    // Editable DOCX مستقل: DocumentIR → LegacyDocxAdapter → PaginationEngine.
+    // لا نمرر إليه تعيين صفحات PDF canonical؛ Exact يبقى مساراً آخر أدناه.
+    final editablePaginationInput =
+        await DocxDocumentExportService.resolveEditablePaginationInput(
+      document: controller.document,
+    );
+    final editableDocxBytes =
+        await DocxDocumentExportService.buildDocumentDocxBytes(
+      document: controller.document,
+      shapeRasterizer: ShapeImageRenderer.asRasterizer,
+      mathRasterizer: MathImageRenderer.asRasterizer,
+      legacyPaginationInput: editablePaginationInput,
+    );
+
+    // Exact: صفحات الصور الملتقطة أعلاه فقط — مستقل عن vector/editable.
+    final exactPdfBytes = await ExactExportService.buildPdfFromSnapshots(snapshots);
+    final exactDocxBytes = ExactExportService.buildDocxFromSnapshots(snapshots);
     final manifest = <String, Object?>{
       'pageCount': snapshots.length,
       'widthPx': snapshots.first.widthPx,
       'heightPx': snapshots.first.heightPx,
       'dpi': PageSnapshotService.canvasDpi,
       'files': <String>[
+        'vector.pdf',
+        'editable.docx',
         'exact.pdf',
         'exact.docx',
         for (var index = 0; index < snapshots.length; index++)
@@ -353,8 +404,10 @@ void main() {
       File('$_artifactDir/preview_page_${index + 1}.png')
           .writeAsBytesSync(snapshots[index].pngBytes);
     }
-    File('$_artifactDir/exact.pdf').writeAsBytesSync(pdfBytes);
-    File('$_artifactDir/exact.docx').writeAsBytesSync(docxBytes);
+    File('$_artifactDir/vector.pdf').writeAsBytesSync(vectorPdfBytes);
+    File('$_artifactDir/editable.docx').writeAsBytesSync(editableDocxBytes);
+    File('$_artifactDir/exact.pdf').writeAsBytesSync(exactPdfBytes);
+    File('$_artifactDir/exact.docx').writeAsBytesSync(exactDocxBytes);
     File('$_artifactDir/manifest.json')
         .writeAsStringSync(const JsonEncoder.withIndent('  ').convert(manifest));
 

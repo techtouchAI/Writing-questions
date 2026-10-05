@@ -582,6 +582,17 @@ void main() {
       );
       expect(_blueprintSignature(pdfBlueprint), _irPrintableSignature(previewIr));
       expect(_blueprintSignature(sourceBlueprint), _irPrintableSignature(previewIr));
+      final projectedTitle = docxBlueprint.questions.single.title;
+      expect(projectedTitle.numberNode?.direction, DocumentDirection.rtl);
+      expect(projectedTitle.separatorNode?.direction, DocumentDirection.rtl);
+      expect(
+        projectedTitle.statementContent!.nodes.first.direction,
+        DocumentDirection.auto,
+      );
+      expect(
+        docxBlueprint.questions.single.bodyContent!.nodes.first.direction,
+        DocumentDirection.auto,
+      );
       controller.dispose();
     });
 

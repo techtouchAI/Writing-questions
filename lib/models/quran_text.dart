@@ -45,7 +45,9 @@ abstract final class QuranText {
       return const <QuranSegment>[];
     }
     if (!containsQuran(source)) {
-      return <QuranSegment>[QuranSegment.plain(source)];
+      return <QuranSegment>[
+        QuranSegment.plain(source, startOffset: 0, endOffset: source.length),
+      ];
     }
 
     final segments = <QuranSegment>[];
@@ -55,16 +57,34 @@ abstract final class QuranText {
       if (open == -1) {
         final rest = source.substring(cursor);
         if (rest.isNotEmpty) {
-          segments.add(QuranSegment.plain(rest));
+          segments.add(
+            QuranSegment.plain(
+              rest,
+              startOffset: cursor,
+              endOffset: source.length,
+            ),
+          );
         }
         break;
       }
       if (open > cursor) {
-        segments.add(QuranSegment.plain(source.substring(cursor, open)));
+        segments.add(
+          QuranSegment.plain(
+            source.substring(cursor, open),
+            startOffset: cursor,
+            endOffset: open,
+          ),
+        );
       }
       final close = source.indexOf(closeMarker, open + openMarker.length);
       final end = close == -1 ? source.length : close + closeMarker.length;
-      segments.add(QuranSegment.quran(source.substring(open, end)));
+      segments.add(
+        QuranSegment.quran(
+          source.substring(open, end),
+          startOffset: open,
+          endOffset: end,
+        ),
+      );
       cursor = end;
     }
     return segments;
@@ -86,12 +106,24 @@ abstract final class QuranText {
 
 /// مقطع واحد من النص: نص عادي أو آية قرآنية (بقوسيها).
 class QuranSegment {
-  const QuranSegment.plain(this.text) : isQuran = false;
+  const QuranSegment.plain(
+    this.text, {
+    this.startOffset = 0,
+    this.endOffset = 0,
+  }) : isQuran = false;
 
-  const QuranSegment.quran(this.text) : isQuran = true;
+  const QuranSegment.quran(
+    this.text, {
+    this.startOffset = 0,
+    this.endOffset = 0,
+  }) : isQuran = true;
 
   /// نص المقطع؛ في الآية يشمل قوسَي المصحف.
   final String text;
+
+  /// UTF-16 source interval within the string passed to [QuranText.split].
+  final int startOffset;
+  final int endOffset;
 
   /// هل المقطع آية قرآنية؟
   final bool isQuran;

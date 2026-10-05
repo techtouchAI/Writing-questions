@@ -14,6 +14,8 @@ import 'layout_math_metrics_resolver.dart';
 abstract final class CanonicalLayoutService {
   static Future<LayoutDocument> resolve({
     required ExamDocument document,
+    DocumentIR? sourceIr,
+    LayoutSize? pageSize,
     FontMetricsProvider fontMetrics = const FlutterTextMetrics(),
     bool quranFontAvailable = true,
     List<List<String>>? questionPageAssignments,
@@ -21,12 +23,14 @@ abstract final class CanonicalLayoutService {
     if (fontMetrics is FlutterTextMetrics) {
       await FlutterTextMetrics.ensureFontsLoaded();
     }
-    final ir = DocumentIR.fromBlueprint(
-      blueprint: ExamBlueprint.from(document),
-      document: document,
-    );
+    final ir = sourceIr ??
+        DocumentIR.fromBlueprint(
+          blueprint: ExamBlueprint.from(document),
+          document: document,
+        );
     final configuration = ExamDocumentLayoutAdapter.configurationFor(
       document,
+      pageSize: pageSize,
       quranFontAvailable: quranFontAvailable,
     );
     const engine = LayoutEngine();

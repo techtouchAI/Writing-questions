@@ -1,18 +1,13 @@
 #!/usr/bin/env bash
-# التحقق البصري الخارجي (Visual Regression): يصيّر مخرجات النمط الدقيق ببرامج
-# مستقلة عن التطبيق — poppler لملف PDF، وLibreOffice ثم poppler لملف Word —
-# ثم يقارن كل صفحة مصيَّرة بلقطة المعاينة المقابلة بمقياس RMSE.
+# التحقق البصري الخارجي: يصيّر Exact وVector PDF وEditable/Exact DOCX
+# بمحركات مستقلة، ثم يقارن كل صفحة بلقطة المعاينة المقابلة بمقياس RMSE.
+# الفحص على ملفات الإخراج الفعلية (لا callbacks أو صور screenshots بديلة).
 #
-# لماذا خارجياً؟ لأن الادّعاء «الملف مطابق للمعاينة» لا يُثبته إلا تصيير
-# الملف بمحرّك آخر: `flutter test` يقارن البايتات، وهذا يقارن **الصورة**.
+# المدخلات (تنتجها test/visual/visual_parity_fixture_test.dart):
+#   manifest.json, preview_page_N.png, vector.pdf, editable.docx,
+#   exact.pdf, exact.docx
 #
-# المدخلات (تنتجها ركيزة الاختبار test/visual/visual_parity_fixture_test.dart):
-#   build/visual_parity/manifest.json
-#   build/visual_parity/preview_page_N.png
-#   build/visual_parity/exact.pdf
-#   build/visual_parity/exact.docx
-#
-# الاستعمال:  tool/verify_visual_parity.sh [مجلد القطع] [سقف PDF] [سقف Word]
+# الاستعمال: tool/verify_visual_parity.sh [مجلد القطع] [سقف PDF] [سقف Word]
 set -euo pipefail
 
 ARTIFACTS="${1:-build/visual_parity}"
@@ -58,7 +53,9 @@ fi
 RENDERED="$ARTIFACTS/rendered"
 REPORT="$ARTIFACTS/report.txt"
 rm -rf "$RENDERED"
-mkdir -p "$RENDERED/pdf" "$RENDERED/docx" "$RENDERED/docx_pdf" "$RENDERED/norm"
+mkdir -p "$RENDERED/vector_pdf" "$RENDERED/exact_pdf" \
+  "$RENDERED/editable_docx" "$RENDERED/exact_docx" \
+  "$RENDERED/editable_docx_pdf" "$RENDERED/exact_docx_pdf" "$RENDERED/norm"
 
 # التقرير يُفتح هنا (لا بعد التصيير): لو فشل أمر خارجي يبقى سببه مكتوباً
 # وقابلاً للنشر بدل أن يضيع مع رقم الخروج.
@@ -112,34 +109,44 @@ echo "الصفحات: $PAGES، المقاس المرجعي: ${WIDTH}x${HEIGHT} (
 
 # ------------------------------ التصيير ------------------------------
 
-# PDF: poppler يصيّر صفحات الملف بدقة 96dpi (بكسل لوحة المعاينة نفسه).
-if ! render_pdf "$ARTIFACTS/exact.pdf" "$RENDERED/pdf/page" "تصيير PDF"; then
-  echo "::error title=تصيير PDF::تعذّر تصيير exact.pdf بأدوات poppler — انظر $REPORT."
-  exit 1
-fi
+# تصيير كل PDF بدقة 96dpi (بكسل لوحة المعاينة نفسه): المتجهي وExact.
+for track in vector exact; do
+  if ! render_pdf "$ARTIFACTS/$track.pdf" \
+      "$RENDERED/${track}_pdf/page" "تصيير PDF $track"; then
+    echo "::error title=تصيير PDF $track::تعذّر تصيير $track.pdf بأدوات poppler — انظر $REPORT."
+    exit 1
+  fi
+done
 
-# Word: LibreOffice يحوّل DOCX إلى PDF ثم poppler يصيّره. ملف تعريف
-# LibreOffice في /tmp حتى لا يحتاج مجلد المستخدم في بيئة نظيفة.
-# ضغط بلا فقد وإيقاف تصغير دقة الصور في تصدير LibreOffice: الفشل الافتراضي
-# (JPEG) يُدخل ضجيج ضغط يُقرأ خطأً كفرق تخطيط، والمقارنة تقيس **ملفنا** لا
-# إعدادات المُصدِّر الوسيط.
+# LibreOffice يحوّل كلا مساري Word إلى PDF ثم poppler يصيّرهما. إعداد ملف
+# تعريف منفصل يمنع تعارض القفل، مع تعطيل الضغط الفاقد/تصغير الصور الوسيطة.
 LO_EXPORT_OPTIONS='pdf:writer_pdf_Export:{"UseLosslessCompression":{"type":"boolean","value":"true"},"ReduceImageResolution":{"type":"boolean","value":"false"}}'
-soffice_output="$("$SOFFICE" --headless --norestore --nolockcheck \
-  -env:UserInstallation="file:///tmp/lo-visual-parity" \
-  --convert-to "$LO_EXPORT_OPTIONS" --outdir "$RENDERED/docx_pdf" \
-  "$ARTIFACTS/exact.docx" 2>&1)" || true
-{
-  echo '[تحويل Word (LibreOffice)]'
-  printf '%s\n' "$soffice_output"
-} >>"$REPORT"
-if [ ! -f "$RENDERED/docx_pdf/exact.pdf" ]; then
-  echo "::error title=تحويل Word::تعذّر على LibreOffice إنتاج PDF من exact.docx: $(printf '%s' "$soffice_output" | head -c 600 | tr '\n' ' ')"
-  exit 1
-fi
-if ! render_pdf "$RENDERED/docx_pdf/exact.pdf" "$RENDERED/docx/page" "تصيير Word"; then
-  echo "::error title=تصيير Word::تعذّر تصيير PDF الناتج من LibreOffice — انظر $REPORT."
-  exit 1
-fi
+convert_docx() { # <editable|exact>
+  local track="$1"
+  local outdir="$RENDERED/${track}_docx_pdf"
+  local output="$outdir/$track.pdf"
+  local profile="file:///tmp/lo-visual-parity-$track"
+  local soffice_output
+  soffice_output="$("$SOFFICE" --headless --norestore --nolockcheck \
+    -env:UserInstallation="$profile" \
+    --convert-to "$LO_EXPORT_OPTIONS" --outdir "$outdir" \
+    "$ARTIFACTS/$track.docx" 2>&1)" || true
+  {
+    echo "[تحويل $track.docx (LibreOffice)]"
+    printf '%s\n' "$soffice_output"
+  } >>"$REPORT"
+  if [ ! -f "$output" ]; then
+    echo "::error title=تحويل Word $track::تعذّر إنتاج $output: $(printf '%s' "$soffice_output" | head -c 600 | tr '\n' ' ')"
+    return 1
+  fi
+  if ! render_pdf "$output" "$RENDERED/${track}_docx/page" \
+      "تصيير Word $track"; then
+    echo "::error title=تصيير Word $track::تعذّر تصيير PDF الناتج من $track.docx — انظر $REPORT."
+    return 1
+  fi
+}
+convert_docx editable
+convert_docx exact
 
 # ------------------------------ المقارنة ------------------------------
 
@@ -250,14 +257,16 @@ check_track() { # <وسم> <مجلد التصيير> <سقف>
 }
 
 {
-  echo "مسار PDF: تصيير poppler لملفنا — يجب أن يكون بكسلياً (RMSE ≈ 0)."
-  echo "مسار Word: (أ) بايتات الصور المضمّنة في الحزمة = بايتات اللقطات (تطابق تام)،"
-  echo "           (ب) تصيير LibreOffice — سقف خارجي $DOCX_THRESHOLD يشمل إعادة عيّنات المحرّك."
+  echo "Vector PDF: RMSE ≤ $PDF_THRESHOLD مقابل لقطة الصفحة نفسها."
+  echo "Editable DOCX وExact DOCX: RMSE ≤ $DOCX_THRESHOLD."
+  echo "Exact DOCX يحتفظ أيضاً بفحص بايتات الصور المضمّنة (تطابق تام)."
   echo
 } >>"$REPORT"
-check_track "PDF" "$RENDERED/pdf" "$PDF_THRESHOLD" 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
+check_track "Vector-PDF" "$RENDERED/vector_pdf" "$PDF_THRESHOLD" 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
+check_track "Exact-PDF" "$RENDERED/exact_pdf" "$PDF_THRESHOLD" 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
+check_track "Editable-Word" "$RENDERED/editable_docx" "$DOCX_THRESHOLD" 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
+check_track "Exact-Word" "$RENDERED/exact_docx" "$DOCX_THRESHOLD" 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
 check_embedded_media 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
-check_track "Word" "$RENDERED/docx" "$DOCX_THRESHOLD" 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
 
 {
   echo
