@@ -417,17 +417,19 @@ void main() {
 
       // Editable DOCX مستقل: DocumentIR → LegacyDocxAdapter → PaginationEngine.
       // لا نمرر إليه تعيين صفحات PDF canonical؛ Exact يبقى مساراً آخر أدناه.
+      _stage('Resolving editable DOCX pagination');
       final editablePaginationInput =
           await DocxDocumentExportService.resolveEditablePaginationInput(
         document: controller.document,
-      );
+      ).timeout(const Duration(minutes: 2));
+      _stage('Editable DOCX pagination resolved');
       final editableDocxBytes =
           await DocxDocumentExportService.buildDocumentDocxBytes(
         document: controller.document,
         shapeRasterizer: ShapeImageRenderer.asRasterizer,
         mathRasterizer: MathImageRenderer.asRasterizer,
         legacyPaginationInput: editablePaginationInput,
-      );
+      ).timeout(const Duration(minutes: 2));
       _stage('Editable DOCX generated: ${editableDocxBytes.length} bytes');
 
       // Exact: صفحات الصور الملتقطة أعلاه فقط — مستقل عن vector/editable.

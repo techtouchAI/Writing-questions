@@ -985,8 +985,6 @@ void main() {
       'P0-GATE-00: مرجع المعاينة — RTL و LTR: لقطات كل صفحة وقياس كل وسم',
       (tester) async {
     await _loadAppFonts();
-    final mathHost = FakeMathHost()..attach();
-    addTearDown(mathHost.detach);
 
     final rtlDocument = P0GateFixture.rtl();
     final ltrDocument = P0GateFixture.ltr();
