@@ -46,6 +46,7 @@ import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/pdf_engine/exam_fonts.dart';
 import 'package:writing_questions_app/layout/canonical/canonical_layout_preview.dart';
 import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
+import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/services/docx_document_export_service.dart';
@@ -337,9 +338,25 @@ void main() {
       ),
     );
     await tester.pump(const Duration(milliseconds: 100));
-    await tester.runAsync(
-      () => previewWorkFinished.future.timeout(const Duration(seconds: 60)),
-    );
+    // مسار المعاينة يمزج ما لا تُنجزه وسيلة واحدة: منطق ودجت ومهل تُدفع
+    // بـfake-async، وقراءة/فكّ صور وفكّ خطوط تحتاج حلقة أحداث حقيقية لا
+    // تعمل داخل منطقة الاختبار. نافذة `runAsync` وحدها تجمّد الأول، ومضخة
+    // وحدها لا تُكمل الثاني؛ فتُتبادل المضخةُ والنافذةُ حتى ينتهي العمل فعلاً
+    // — وهي الحالة التي يبلغها المستخدم في التطبيق بلا انتظار.
+    for (var attempt = 0;
+        attempt < 120 && !previewWorkFinished.isCompleted;
+        attempt++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+    }
+    if (!previewWorkFinished.isCompleted) {
+      fail(
+        'Canonical preview preparation did not finish inside the driven window '
+        '(${120 * 50}ms of frames + ${120 * 10}ms of real async).',
+      );
+    }
     await tester.pump();
     if (previewFailure != null) {
       fail('Canonical preview preparation failed: $previewFailure');
@@ -448,6 +465,19 @@ void main() {
     expect(snapshotList, hasLength(pageCount),
         reason: 'لقطة لكل صفحة معاينة (${snapshotList.length}/$pageCount).');
     snapshots.addAll(snapshotList);
+
+    // تشخيص: هل جهوزية الخطوط (المذكورة مرة واحدة لكل عملية) مكتملة قبل
+    // نافذة التصدير؟ التسجيل الذي يبدأ داخل منطقة الاختبار لا يجوز أن يترك
+    // من ينتظره في نافذة لاحقة معلّقاً.
+    var fontsReadyBeforeExport = false;
+    unawaited(FlutterTextMetrics.ensureFontsLoaded()
+        .then((_) => fontsReadyBeforeExport = true));
+    await tester.pump();
+    _stage(
+      'fonts ready before export: $fontsReadyBeforeExport '
+      '(starts=${FlutterTextMetrics.debugRegistrationStarts}, '
+      'completed=${FlutterTextMetrics.debugRegistrationCompleted})',
+    );
 
     // التحويلات غير المتزامنة تعمل خارج fake-async الخاص بـtestWidgets:
     // تشترك مسارات التصدير في مصادرها الحقيقية، لكن لا تُعلَّق عمليات الضغط/الخطوط.

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/painting.dart';
@@ -23,11 +24,42 @@ class FlutterTextMetrics implements FontMetricsProvider {
 
   static Future<void>? _fontRegistration;
 
+  /// كم مرة بدأ تسجيل فعلي (يُقرأ في الاختبارات فقط: التسجيل يجب أن يبدأ
+  /// مرة واحدة لكل عملية مهما تعدّد المستدعون).
+  static int debugRegistrationStarts = 0;
+
+  /// هل انتهى آخر تسجيل بنجاح؟ (تشخيص الاختبارات فقط.)
+  static bool debugRegistrationCompleted = false;
+
   /// Register the same application font files used by PDF before TextPainter
   /// measures canonical runs. This is normally satisfied by the preview's
   /// first paint, but exports and headless tests may resolve layout directly.
-  static Future<void> ensureFontsLoaded() =>
-      _fontRegistration ??= _registerFonts();
+  ///
+  /// التسجيل كله يجري في منطقة الجذر: من يناديه من منطقة `FakeAsync` —
+  /// كما يفعل اختبار ودجت عند أول معاينة — لو حجز اكتماله في طابور
+  /// microtasks تلك المنطقة لتعطّل كل من ينتظره لاحقاً داخل نافذة
+  /// `tester.runAsync` (التي لا تُدفع فيها طوابير منطقة الاختبار). فينتهي
+  /// التسجيل مع I/O الحقيقي، وتُسلَّم النتيجة لكل مستدع في أي منطقة.
+  static Future<void> ensureFontsLoaded() {
+    final pending = _fontRegistration;
+    if (pending != null) {
+      return pending;
+    }
+    final completer = Completer<void>();
+    _fontRegistration = completer.future;
+    debugRegistrationStarts += 1;
+    unawaited(Zone.root.run(() async {
+      try {
+        await _registerFonts();
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+        return;
+      }
+      debugRegistrationCompleted = true;
+      completer.complete();
+    }));
+    return completer.future;
+  }
 
   /// Resolve source-ordered directional runs with Flutter's Unicode bidi
   /// shaping, keeping every source code unit (including neutral punctuation,
