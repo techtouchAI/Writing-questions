@@ -72,6 +72,28 @@ Widget _screen(ExamWizardController controller, {
       ),
     );
 
+/// Canonical surface with the production resolver/loader, injected
+/// explicitly: the seam-free screen default is the interactive paper.
+Widget _screenCanonical(ExamWizardController controller) => _screen(
+      controller,
+      resolver: ({
+        required ExamDocument document,
+        required DocumentIR sourceIr,
+      }) =>
+          CanonicalLayoutService.resolve(
+        document: document,
+        sourceIr: sourceIr,
+      ),
+      assetLoader: ({
+        required LayoutDocument layout,
+        required ExamDocument document,
+      }) =>
+          CanonicalLayoutPreviewAssets.load(
+        layout: layout,
+        document: document,
+      ),
+    );
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -108,7 +130,7 @@ void main() {
       final controller = ExamWizardController(document: document);
       addTearDown(controller.dispose);
 
-      await tester.pumpWidget(_screen(controller));
+      await tester.pumpWidget(_screenCanonical(controller));
       await _pumpUntilCanonicalPage(tester);
 
       final pageFinders = find.byType(CanonicalLayoutPreviewPage);
@@ -393,7 +415,7 @@ void main() {
     final controller = ExamWizardController(document: document);
     addTearDown(controller.dispose);
 
-    await tester.pumpWidget(_screen(controller));
+    await tester.pumpWidget(_screenCanonical(controller));
     await _pumpUntilCanonicalPage(tester);
     await tester.pumpAndSettle();
 
