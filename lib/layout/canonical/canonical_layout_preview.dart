@@ -10,6 +10,7 @@ import '../../models/exam_document.dart';
 import '../../models/floating_element.dart';
 import '../../services/math_snapshot_renderer.dart';
 import '../document_direction.dart';
+import 'canonical_layout_interaction.dart';
 import 'layout_document.dart';
 import 'layout_units.dart';
 
@@ -123,28 +124,91 @@ final class CanonicalLayoutPreviewAssets {
 class CanonicalLayoutPreviewPage extends StatelessWidget {
   const CanonicalLayoutPreviewPage({
     super.key,
+    required this.layoutDocument,
     required this.page,
     required this.document,
     required this.assets,
+    this.onTap,
+    this.onLongPress,
   });
 
+  final LayoutDocument layoutDocument;
   final LayoutPage page;
   final ExamDocument document;
   final CanonicalLayoutPreviewAssets assets;
+  final ValueChanged<CanonicalPagePointerEvent>? onTap;
+  final ValueChanged<CanonicalPagePointerEvent>? onLongPress;
 
   @override
   Widget build(BuildContext context) {
+    assert(page.index >= 0 && page.index < layoutDocument.pages.length);
+    assert(identical(layoutDocument.pages[page.index], page));
     final width = LayoutUnits.ptToPx(page.pageSize.width);
     final height = LayoutUnits.ptToPx(page.pageSize.height);
+    final canvas = CustomPaint(
+      painter: _CanonicalLayoutPreviewPainter(
+        page: page,
+        document: document,
+        assets: assets,
+      ),
+    );
     return SizedBox(
       width: width,
       height: height,
-      child: CustomPaint(
-        painter: _CanonicalLayoutPreviewPainter(
-          page: page,
-          document: document,
-          assets: assets,
-        ),
+      child: onTap == null && onLongPress == null
+          ? canvas
+          : GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapUp: onTap == null
+                  ? null
+                  : (details) => _dispatchHit(
+                        details.localPosition,
+                        width,
+                        height,
+                        onTap!,
+                      ),
+              onLongPressStart: onLongPress == null
+                  ? null
+                  : (details) => _dispatchHit(
+                        details.localPosition,
+                        width,
+                        height,
+                        onLongPress!,
+                      ),
+              child: canvas,
+            ),
+    );
+  }
+
+  void _dispatchHit(
+    Offset localPosition,
+    double screenWidth,
+    double screenHeight,
+    ValueChanged<CanonicalPagePointerEvent> callback,
+  ) {
+    final transform = CanonicalPageTransform(
+      screenLeft: 0,
+      screenTop: 0,
+      screenWidth: screenWidth,
+      screenHeight: screenHeight,
+      pageWidthPt: page.pageSize.width,
+      pageHeightPt: page.pageSize.height,
+    );
+    final point = transform.pagePointFromScreen(
+      localPosition.dx,
+      localPosition.dy,
+    );
+    final result = CanonicalLayoutHitTester.hitTest(
+      page: page,
+      pageIndex: page.index,
+      xPt: point.x,
+      yPt: point.y,
+    );
+    callback(
+      CanonicalPagePointerEvent(
+        localPositionPx: localPosition,
+        pagePositionPt: Offset(point.x, point.y),
+        hit: result,
       ),
     );
   }

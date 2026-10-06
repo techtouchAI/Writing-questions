@@ -83,6 +83,9 @@ class VisualRun {
     this.text, {
     this.style,
     this.isBlockMath = false,
+    this.sourceStartOffset = 0,
+    this.sourceEndOffset = 0,
+    this.sourceOffsetMap,
   });
 
   final VisualRunKind kind;
@@ -99,6 +102,16 @@ class VisualRun {
   /// رياضية منفصلة، وPDF يرثها من المعاينة.
   final bool isBlockMath;
 
+  /// UTF-16 source offsets in the complete editable field. For math this
+  /// interval includes the source delimiters; plain-run offsets exclude no
+  /// visible characters.
+  final int sourceStartOffset;
+  final int sourceEndOffset;
+
+  /// Optional boundary map when displayed text differs from source text, such
+  /// as an escaped literal dollar (`\\$` → `$`).
+  final List<int>? sourceOffsetMap;
+
   bool get isMath => kind == VisualRunKind.math;
   bool get isQuran => kind == VisualRunKind.quran;
   bool get isText => kind == VisualRunKind.text;
@@ -111,6 +124,9 @@ class VisualRun {
           text,
           style: (style ?? const VisualRunStyle()).merge(extra),
           isBlockMath: isBlockMath,
+          sourceStartOffset: sourceStartOffset,
+          sourceEndOffset: sourceEndOffset,
+          sourceOffsetMap: sourceOffsetMap,
         );
 
   @override
@@ -159,24 +175,39 @@ class RichContent {
     }
     final runs = <VisualRun>[];
     for (final segment in TexContent.split(text)) {
-      if (segment.text.isEmpty) {
-        continue;
-      }
+      if (segment.text.isEmpty) continue;
       if (segment.isMath) {
         runs.add(
           VisualRun(
             VisualRunKind.math,
             segment.text,
             isBlockMath: segment.isBlock,
+            sourceStartOffset: segment.startOffset,
+            sourceEndOffset: segment.endOffset,
           ),
         );
         continue;
       }
-      // النص العادي نفسه قد يحمل آيات موسومة بقوسَي المصحف.
-      for (final piece in QuranText.split(segment.text)) {
-        if (piece.text.isEmpty) {
-          continue;
+      int sourceOffsetAt(int localOffset) {
+        final offsets = segment.sourceOffsets;
+        if (localOffset >= 0 && localOffset < offsets.length) {
+          return offsets[localOffset];
         }
+        return segment.startOffset + localOffset;
+      }
+
+      // النص العادي نفسه قد يحمل آيات موسومة بقوسَي المصحف. استعمل
+      // الحدود ذاتها التي أعادها محلّل القرآن المشترك، ثم مرّرها إلى IR.
+      for (final piece in QuranText.split(segment.text)) {
+        if (piece.text.isEmpty) continue;
+        final sourceStart = sourceOffsetAt(piece.startOffset);
+        final sourceEnd = sourceOffsetAt(piece.endOffset);
+        final localMap = segment.sourceOffsets;
+        final sourceMap = localMap.length > piece.endOffset
+            ? List<int>.unmodifiable(
+                localMap.sublist(piece.startOffset, piece.endOffset + 1),
+              )
+            : null;
         if (piece.isQuran) {
           // الخط القرآني جزء من **معنى المقطع** لا من قرار الراسم: يصل إلى
           // المعاينة وPDF وWord من مصدر واحد، فيُطبع بتنسيقه المعلن هنا.
@@ -185,11 +216,22 @@ class RichContent {
               VisualRunKind.quran,
               piece.text,
               style: const VisualRunStyle(font: PaperFont.amiri),
+              sourceStartOffset: sourceStart,
+              sourceEndOffset: sourceEnd,
+              sourceOffsetMap: sourceMap,
             ),
           );
           continue;
         }
-        runs.add(VisualRun(VisualRunKind.text, piece.text));
+        runs.add(
+          VisualRun(
+            VisualRunKind.text,
+            piece.text,
+            sourceStartOffset: sourceStart,
+            sourceEndOffset: sourceEnd,
+            sourceOffsetMap: sourceMap,
+          ),
+        );
       }
     }
     return List<VisualRun>.unmodifiable(runs);

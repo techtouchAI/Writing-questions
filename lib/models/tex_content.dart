@@ -22,54 +22,90 @@ abstract final class TexContent {
 
   /// يقسم [source] إلى مقاطع نص/معادلات بالترتيب نفسه تظهر في الورقة.
   ///
-  /// الشرطة المائلة `\$` تُعامَل كعلامة دولار حرفية ولا تبدأ صيغة.
+  /// تُعاد حدود المصدر إلى جانب كل مقطع من محلّل الصيغ المشترك نفسه؛ بذلك
+  /// لا تعيد المعاينة أو hit testing تخمين موضع المقطع من نصه بعد إسقاط
+  /// محددات LaTeX أو تهريب الدولار الحرفي.
   static List<TexSegment> split(String source) {
-    final normalized = source.replaceAll(r'\$', '\u0000');
-    final segments = <TexSegment>[];
+    if (source.isEmpty) return const <TexSegment>[];
+    final spans = findSpans(source);
+    if (spans.isEmpty) {
+      final plain = _decodePlainRange(source, 0, source.length);
+      return <TexSegment>[
+        TexSegment.plain(
+          plain.text,
+          startOffset: 0,
+          endOffset: source.length,
+          sourceOffsets: plain.sourceOffsets,
+        ),
+      ];
+    }
 
+    final segments = <TexSegment>[];
     var cursor = 0;
-    for (final match in _blockPattern.allMatches(normalized)) {
-      if (match.start > cursor) {
-        segments.addAll(_splitInline(normalized.substring(cursor, match.start)));
+    for (final span in spans) {
+      if (span.start > cursor) {
+        final plain = _decodePlainRange(source, cursor, span.start);
+        if (plain.text.isNotEmpty) {
+          segments.add(
+            TexSegment.plain(
+              plain.text,
+              startOffset: cursor,
+              endOffset: span.start,
+              sourceOffsets: plain.sourceOffsets,
+            ),
+          );
+        }
       }
       segments.add(
         TexSegment.math(
-          (match.group(1) ?? '').replaceAll('\u0000', r'\$'),
-          isBlock: true,
+          span.latex,
+          isBlock: span.isBlock,
+          startOffset: span.start,
+          endOffset: span.end,
         ),
       );
-      cursor = match.end;
-    }
-    if (cursor < normalized.length) {
-      segments.addAll(_splitInline(normalized.substring(cursor)));
-    }
-
-    return segments
-        .map((segment) => segment.isMath
-            // داخل الصيغة يعود الدولار الحرفي `\$` (صيغته في LaTeX)،
-            // وفي النص العادي يعود دولاراً عادياً بلا أي شرطة مائلة.
-            ? TexSegment.math(
-                segment.text.replaceAll('\u0000', r'\$'),
-                isBlock: segment.isBlock,
-              )
-            : TexSegment.plain(segment.text.replaceAll('\u0000', r'$')))
-        .toList(growable: false);
-  }
-
-  static List<TexSegment> _splitInline(String source) {
-    final segments = <TexSegment>[];
-    var cursor = 0;
-    for (final match in _inlinePattern.allMatches(source)) {
-      if (match.start > cursor) {
-        segments.add(TexSegment.plain(source.substring(cursor, match.start)));
-      }
-      segments.add(TexSegment.math(match.group(1) ?? ''));
-      cursor = match.end;
+      cursor = span.end;
     }
     if (cursor < source.length) {
-      segments.add(TexSegment.plain(source.substring(cursor)));
+      final plain = _decodePlainRange(source, cursor, source.length);
+      if (plain.text.isNotEmpty) {
+        segments.add(
+          TexSegment.plain(
+            plain.text,
+            startOffset: cursor,
+            endOffset: source.length,
+            sourceOffsets: plain.sourceOffsets,
+          ),
+        );
+      }
     }
-    return segments;
+    return List<TexSegment>.unmodifiable(segments);
+  }
+
+  /// Decodes literal `\\$` using the same source grammar while retaining an
+  /// insertion-point map for UTF-16 caret coordinates.
+  static ({String text, List<int> sourceOffsets}) _decodePlainRange(
+    String source,
+    int start,
+    int end,
+  ) {
+    final text = StringBuffer();
+    final offsets = <int>[start];
+    var cursor = start;
+    while (cursor < end) {
+      if (source[cursor] == '\\' &&
+          cursor + 1 < end &&
+          source[cursor + 1] == r'$') {
+        text.write(r'$');
+        cursor += 2;
+        offsets.add(cursor);
+      } else {
+        text.writeCharCode(source.codeUnitAt(cursor));
+        cursor++;
+        offsets.add(cursor);
+      }
+    }
+    return (text: text.toString(), sourceOffsets: List<int>.unmodifiable(offsets));
   }
 
   /// يحدد مواقع صيغ LaTeX داخل [source] بفهارسها الأصلية.
@@ -168,12 +204,33 @@ class TexMathSpan {
 
 /// مقطع واحد من نص علمي: إما نص عادي أو صيغة LaTeX.
 class TexSegment {
-  const TexSegment.plain(this.text) : isMath = false, isBlock = false;
+  const TexSegment.plain(
+    this.text, {
+    this.startOffset = 0,
+    this.endOffset = 0,
+    this.sourceOffsets = const <int>[],
+  }) : isMath = false,
+       isBlock = false;
 
-  const TexSegment.math(this.text, {this.isBlock = false}) : isMath = true;
+  const TexSegment.math(
+    this.text, {
+    this.isBlock = false,
+    this.startOffset = 0,
+    this.endOffset = 0,
+  }) : isMath = true,
+       sourceOffsets = const <int>[];
 
   /// نص المقطع؛ لصيغ LaTeX يكون هو جسم الصيغة بدون علامات الدولارات.
   final String text;
+
+  /// UTF-16 source interval in the original String passed to [TexContent.split].
+  /// Math intervals include their dollar delimiters.
+  final int startOffset;
+  final int endOffset;
+
+  /// For plain text, maps every displayed UTF-16 caret boundary to source.
+  /// Literal escaped dollars consume two source units and one displayed unit.
+  final List<int> sourceOffsets;
 
   /// هل هو صيغة LaTeX؟
   final bool isMath;

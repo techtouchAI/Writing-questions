@@ -1023,6 +1023,31 @@ class _LayoutBuilder {
       for (var visualIndex = 0; visualIndex < fragments.length; visualIndex++) {
         final item = fragments[visualIndex];
         final fragment = item.fragment;
+        final sourceMap = item.span.sourceOffsetMap;
+        int sourceOffsetAt(int localOffset) {
+          if (sourceMap != null &&
+              localOffset >= 0 &&
+              localOffset < sourceMap.length) {
+            return sourceMap[localOffset];
+          }
+          return item.span.sourceStartOffset + localOffset;
+        }
+        final hasExplicitMathRange = item.span.isMath &&
+            item.span.sourceEndOffset > item.span.sourceStartOffset;
+        final sourceStart = hasExplicitMathRange
+            ? item.span.sourceStartOffset
+            : sourceOffsetAt(fragment.startOffset);
+        final sourceEnd = hasExplicitMathRange
+            ? item.span.sourceEndOffset
+            : sourceOffsetAt(fragment.endOffset);
+        final runSourceMap = sourceMap != null &&
+                !item.span.isMath &&
+                fragment.startOffset >= 0 &&
+                fragment.endOffset < sourceMap.length
+            ? List<int>.unmodifiable(
+                sourceMap.sublist(fragment.startOffset, fragment.endOffset + 1),
+              )
+            : null;
         final run = LayoutRun(
           id: '${item.span.semanticNodeId}/line/${measured.index}/fragment/$visualIndex',
           semanticNodeId: item.span.semanticNodeId,
@@ -1041,6 +1066,9 @@ class _LayoutBuilder {
           style: item.span.style,
           logicalIndex: item.span.logicalIndex * 1000000 + fragment.startOffset,
           visualIndex: visualIndex,
+          sourceStartOffset: sourceStart,
+          sourceEndOffset: sourceEnd,
+          sourceOffsetMap: runSourceMap,
           mathBox: item.span.mathBox,
           measurementSource: item.span.mathBox?.source ??
               (item.span.isMath ? 'fallbackEstimate' : 'fontMetrics'),
@@ -1212,6 +1240,9 @@ class _LayoutBuilder {
           direction: _spanDirection(node.direction, direction),
           mathBox: mathBox,
           isBlockMath: node.run.isBlockMath,
+          sourceStartOffset: node.run.sourceStartOffset,
+          sourceEndOffset: node.run.sourceEndOffset,
+          sourceOffsetMap: node.run.sourceOffsetMap,
         ),
       ];
     }
@@ -1234,6 +1265,9 @@ class _LayoutBuilder {
         direction: _spanDirection(node.direction, direction),
         mathBox: run.isMath ? mathMetrics['$path/run/${index - 1}'] : null,
         isBlockMath: run.isBlockMath,
+        sourceStartOffset: run.sourceStartOffset,
+        sourceEndOffset: run.sourceEndOffset,
+        sourceOffsetMap: run.sourceOffsetMap,
       ));
     }
     return spans;
@@ -1258,6 +1292,9 @@ class _LayoutBuilder {
     required DocumentDirection direction,
     LayoutMathBox? mathBox,
     bool isBlockMath = false,
+    int sourceStartOffset = 0,
+    int sourceEndOffset = 0,
+    List<int>? sourceOffsetMap,
   }) =>
       MetricSpan(
         semanticNodeId: id,
@@ -1270,6 +1307,9 @@ class _LayoutBuilder {
         logicalIndex: _logicalRunSerial++,
         mathBox: mathBox,
         isBlockMath: isBlockMath,
+        sourceStartOffset: sourceStartOffset,
+        sourceEndOffset: sourceEndOffset,
+        sourceOffsetMap: sourceOffsetMap,
       );
 
   MetricSpan _fixedSpacer(
@@ -2006,6 +2046,9 @@ LayoutBlock _scaleBlock(
         style: scaleStyle(run.style),
         logicalIndex: run.logicalIndex,
         visualIndex: run.visualIndex,
+        sourceStartOffset: run.sourceStartOffset,
+        sourceEndOffset: run.sourceEndOffset,
+        sourceOffsetMap: run.sourceOffsetMap,
         mathBox: scaleMath(run.mathBox),
         measurementSource: run.measurementSource,
       );
@@ -2095,6 +2138,9 @@ LayoutLine _moveLine(LayoutLine line, double dx, double dy) =>
               style: run.style,
               logicalIndex: run.logicalIndex,
               visualIndex: run.visualIndex,
+              sourceStartOffset: run.sourceStartOffset,
+              sourceEndOffset: run.sourceEndOffset,
+              sourceOffsetMap: run.sourceOffsetMap,
               mathBox: run.mathBox,
               measurementSource: run.measurementSource,
             )),

@@ -18,6 +18,9 @@ class MetricSpan {
     this.mathBox,
     this.fixedAdvancePt,
     this.isBlockMath = false,
+    this.sourceStartOffset = 0,
+    this.sourceEndOffset = 0,
+    this.sourceOffsetMap,
   });
 
   final String semanticNodeId;
@@ -31,6 +34,9 @@ class MetricSpan {
   final LayoutMathBox? mathBox;
   final double? fixedAdvancePt;
   final bool isBlockMath;
+  final int sourceStartOffset;
+  final int sourceEndOffset;
+  final List<int>? sourceOffsetMap;
 
   bool get isFixedAdvance => fixedAdvancePt != null;
   bool get isMath => contentKind == LayoutContentKind.math;

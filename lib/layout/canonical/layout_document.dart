@@ -225,6 +225,9 @@ class LayoutRun {
     required this.style,
     required this.logicalIndex,
     required this.visualIndex,
+    this.sourceStartOffset = 0,
+    this.sourceEndOffset = 0,
+    this.sourceOffsetMap,
     this.mathBox,
     this.measurementSource = 'fontMetrics',
   });
@@ -244,6 +247,18 @@ class LayoutRun {
   final LayoutTextStyle style;
   final int logicalIndex;
   final int visualIndex;
+
+  /// UTF-16 source interval for this measured fragment, relative to the
+  /// semantic inline span's source text; the end offset is exclusive. Unlike
+  /// [logicalIndex], these values are directly usable for source highlighting
+  /// and are preserved unchanged by geometry scaling/translation.
+  final int sourceStartOffset;
+  final int sourceEndOffset;
+
+  /// Optional insertion-point map from run-local UTF-16 offsets back to the
+  /// editable field source (needed when source escapes are not rendered).
+  final List<int>? sourceOffsetMap;
+
   final LayoutMathBox? mathBox;
   final String measurementSource;
 

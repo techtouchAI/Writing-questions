@@ -80,12 +80,14 @@ abstract final class LegacyBlueprintProjection {
     final branches = <BranchBlueprint>[
       for (final branch in source.branches) _branch(branch, document),
     ];
-    return QuestionBlueprint(
+    return QuestionBlueprint.semantic(
       model: model,
       index: source.index,
-      section: source.category?.content.legacyText,
+      category: source.category == null
+          ? null
+          : CategoryBlueprint(content: source.category!.content),
       title: _title(source.title),
-      body: source.body?.content.legacyText,
+      bodyContent: source.body?.content,
       points: <PointBlueprint>[
         for (final point in source.points)
           _point(point, model.items[point.index]),
@@ -120,28 +122,35 @@ abstract final class LegacyBlueprintProjection {
             .map((option) => _option(option, item.options[option.index]))
             .toList(growable: false) ??
         const <OptionBlueprint>[];
-    return PointBlueprint(
+    return PointBlueprint.semantic(
       item: item,
       index: source.index,
-      label: source.labelContent.legacyText,
-      text: source.content.legacyText,
-      trailer: source.trailer?.legacyText,
-      marks: source.marks?.legacyText,
+      labelNode: source.labelOrNumber,
+      labelSeparator: source.separator,
+      content: source.content,
+      trailerContent: source.trailer,
+      marksNode: source.marks,
       options: options,
+      allOptions: options,
     );
   }
 
   static OptionBlueprint _option(OptionNode source, QuestionOption option) =>
-      OptionBlueprint(
+      OptionBlueprint.semantic(
         index: source.index,
         option: option,
-        label: source.labelContent.legacyText,
+        labelNode: source.label,
+        labelPrefix: source.labelPrefix,
+        labelSuffix: source.labelSuffix,
+        labelTextSeparator: source.labelTextSeparator,
+        content: source.content,
       );
 
   static TitleLineBlueprint _title(TitleParagraphBlock source) =>
-      TitleLineBlueprint(
-        number: '${source.label.legacyText}${source.separator?.legacyText ?? ''}',
-        statement: source.statement.legacyText,
-        marks: source.marks?.legacyText,
+      TitleLineBlueprint.semantic(
+        numberNode: source.label,
+        separatorNode: source.separator,
+        statementContent: source.statement,
+        marksNode: source.marks,
       );
 }

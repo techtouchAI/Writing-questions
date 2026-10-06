@@ -8,12 +8,15 @@ import 'font_metrics.dart';
 import 'layout_document.dart';
 import 'layout_engine.dart';
 import 'layout_math_metrics_resolver.dart';
+import 'layout_units.dart';
 
 /// Convenience pipeline used by Preview and PDF: ExamDocument → frozen P1 IR
 /// → non-semantic layout configuration → canonical point geometry.
 abstract final class CanonicalLayoutService {
   static Future<LayoutDocument> resolve({
     required ExamDocument document,
+    DocumentIR? sourceIr,
+    LayoutSize? pageSize,
     FontMetricsProvider fontMetrics = const FlutterTextMetrics(),
     bool quranFontAvailable = true,
     List<List<String>>? questionPageAssignments,
@@ -21,12 +24,14 @@ abstract final class CanonicalLayoutService {
     if (fontMetrics is FlutterTextMetrics) {
       await FlutterTextMetrics.ensureFontsLoaded();
     }
-    final ir = DocumentIR.fromBlueprint(
-      blueprint: ExamBlueprint.from(document),
-      document: document,
-    );
+    final ir = sourceIr ??
+        DocumentIR.fromBlueprint(
+          blueprint: ExamBlueprint.from(document),
+          document: document,
+        );
     final configuration = ExamDocumentLayoutAdapter.configurationFor(
       document,
+      pageSize: pageSize,
       quranFontAvailable: quranFontAvailable,
     );
     const engine = LayoutEngine();

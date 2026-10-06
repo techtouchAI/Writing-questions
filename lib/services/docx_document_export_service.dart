@@ -8,7 +8,14 @@ import 'package:archive/archive.dart';
 import '../docx/omml_from_equation.dart';
 import '../layout/adapters/legacy_docx_adapter.dart';
 import '../layout/blueprint/exam_blueprint.dart';
+import '../layout/canonical/canonical_layout_service.dart';
+import '../layout/canonical/flutter_text_metrics.dart';
+import '../layout/canonical/layout_document.dart';
+import '../layout/canonical/layout_units.dart';
 import '../layout/document_ir.dart';
+import '../layout/document_direction.dart';
+import '../layout/pagination_engine.dart';
+import '../layout/semantic/inline_nodes.dart';
 import '../layout/paper_metrics.dart';
 import '../layout/visual/visual_metrics.dart';
 import '../layout/visual/visual_content.dart';
@@ -21,7 +28,6 @@ import '../models/floating_element.dart';
 import '../models/paper_divider.dart';
 import '../models/paper_font.dart';
 import '../models/paper_text_style.dart';
-import '../pdf_engine/paginated_pdf_exam_engine.dart';
 import 'export_file_service.dart';
 import 'math_snapshot_renderer.dart' show MathRaster;
 import 'page_frame_store.dart';
@@ -52,6 +58,8 @@ class DocxRunSpec {
     this.size,
     this.color,
     this.font,
+    this.rtl,
+    this.visualRun,
   });
 
   final String text;
@@ -68,6 +76,12 @@ class DocxRunSpec {
   final String? color;
 
   final String? font;
+
+  /// Explicit semantic direction. `null` means infer from strong script.
+  final bool? rtl;
+
+  /// Existing semantic visual run, when projected directly from DocumentIR.
+  final VisualRun? visualRun;
 }
 
 /// مخصّص تحويل صيغة LaTeX إلى صورة نقطية (يُمرَّر من الواجهة حيث يتوفر
@@ -78,6 +92,9 @@ typedef MathRasterizer = Future<MathRaster?> Function(
   String latex,
   double fontSizePt,
 );
+
+/// Optional observer for meaningful stages in an editable DOCX build.
+typedef DocxBuildProgress = void Function(String stage);
 
 /// صورة مضمّنة في حزمة docx (أصلية أو مرسومة من شكل/معادلة).
 class _EmbeddedImage {
@@ -121,15 +138,20 @@ class DocxDocumentExportService {
     Directory? outputDirectory,
     ShapeRasterizer? shapeRasterizer,
     MathRasterizer? mathRasterizer,
+    /// Legacy compatibility parameter; editable Word pagination ignores it.
     List<List<String>>? pageAssignments,
+    PaginationInput? legacyPaginationInput,
     Uint8List? frameImage,
+    DocxBuildProgress? onProgress,
   }) async {
     final bytes = await buildDocumentDocxBytes(
       document: document,
       shapeRasterizer: shapeRasterizer,
       mathRasterizer: mathRasterizer,
       pageAssignments: pageAssignments,
+      legacyPaginationInput: legacyPaginationInput,
       frameImage: frameImage,
+      onProgress: onProgress,
     );
     return ExportFileService.writeExportFile(
       baseName: fileName ?? '${document.name}_ورقة_الامتحان',
@@ -143,8 +165,12 @@ class DocxDocumentExportService {
     required ExamDocument document,
     ShapeRasterizer? shapeRasterizer,
     MathRasterizer? mathRasterizer,
+    /// Legacy API parameter retained for callers; it is ignored. The editable
+    /// document always obtains page ownership from PaginationEngine.
     List<List<String>>? pageAssignments,
+    PaginationInput? legacyPaginationInput,
     Uint8List? frameImage,
+    DocxBuildProgress? onProgress,
   }) async {
     // صورة الإطار تُقرأ من مسارها عند عدم تمريرها (التصدير من المعاينة).
     final frame = document.settings.pageBorder
@@ -154,10 +180,13 @@ class DocxDocumentExportService {
       document: document,
       shapeRasterizer: shapeRasterizer,
       mathRasterizer: mathRasterizer,
-      pageAssignments: pageAssignments,
+      legacyPaginationInput: legacyPaginationInput,
       frameImage: frame,
+      onProgress: onProgress,
     );
+    onProgress?.call('builder created');
     await builder.build();
+    onProgress?.call('builder completed');
     final archive = Archive();
     _addTextFile(archive, '[Content_Types].xml', builder.contentTypesXml);
     _addTextFile(archive, '_rels/.rels', _globalRelationshipsXml);
@@ -192,6 +221,34 @@ class DocxDocumentExportService {
       throw StateError('فشل ضغط ملف Word.');
     }
     return Uint8List.fromList(zipBytes);
+  }
+
+  /// Resolve the editable Word pagination plan without consulting canonical
+  /// PDF page assignments. The returned measured blocks are owned by this
+  /// DOCX/legacy adapter path and consumed by PaginationEngine.
+  static Future<PaginationInput> resolveEditablePaginationInput({
+    required ExamDocument document,
+    DocumentIR? sourceIr,
+    LayoutDocument? measurementLayout,
+  }) async {
+    final builder = _DocxBuilder(
+      document: document,
+      sourceIr: sourceIr,
+      measurementLayout: measurementLayout,
+      shapeRasterizer: null,
+      mathRasterizer: null,
+      legacyPaginationInput: null,
+      frameImage: null,
+    );
+    final globalElementIds =
+        document.floatingElements.map((element) => element.id).toSet();
+    final expectedIds = builder.blueprint.questions
+        .where((question) => question.isPrintable(
+              ignoredAttachmentIds: globalElementIds,
+            ))
+        .map((question) => question.model.id)
+        .toSet();
+    return builder._paginationInputFor(expectedIds);
   }
 
   static Future<void> shareDocxFile(File file, {String? subject}) {
@@ -286,6 +343,17 @@ class _RunProperties {
 
   final bool rtl;
 
+  _RunProperties withRtl(bool value) => _RunProperties(
+        bold: bold,
+        italic: italic,
+        underline: underline,
+        highlight: highlight,
+        color: color,
+        size: size,
+        font: font,
+        rtl: value,
+      );
+
   /// يدمج تنسيق مقطع من العقد فوق خصائص الفقرة: المعلَن يستبدل الموروث،
   /// و`null` يعني «اتبع الفقرة».
   _RunProperties merge(VisualRunStyle? style) {
@@ -325,45 +393,70 @@ class _RunProperties {
 class _DocxBuilder {
   factory _DocxBuilder({
     required ExamDocument document,
+    DocumentIR? sourceIr,
+    LayoutDocument? measurementLayout,
     required ShapeRasterizer? shapeRasterizer,
     required MathRasterizer? mathRasterizer,
-    required List<List<String>>? pageAssignments,
+    required PaginationInput? legacyPaginationInput,
     required Uint8List? frameImage,
+    DocxBuildProgress? onProgress,
   }) {
-    final documentIr = DocumentIR.fromBlueprint(
-      blueprint: ExamBlueprint.from(document),
-      document: document,
-    );
+    if (measurementLayout != null && sourceIr == null) {
+      throw ArgumentError.value(
+        measurementLayout,
+        'measurementLayout',
+        'A measured layout must be paired with its DocumentIR source.',
+      );
+    }
+    final documentIr = sourceIr ??
+        DocumentIR.fromBlueprint(
+          blueprint: ExamBlueprint.from(document),
+          document: document,
+        );
+    if (measurementLayout != null &&
+        !identical(measurementLayout.source, documentIr)) {
+      throw ArgumentError.value(
+        measurementLayout,
+        'measurementLayout',
+        'The measured layout must belong to the supplied DocumentIR instance.',
+      );
+    }
     return _DocxBuilder._(
       document: document,
       documentIr: documentIr,
+      measurementLayout: measurementLayout,
       blueprint: LegacyDocxAdapter.adapt(
         documentIr: documentIr,
         sourceDocument: document,
       ),
       shapeRasterizer: shapeRasterizer,
       mathRasterizer: mathRasterizer,
-      pageAssignments: pageAssignments,
+      legacyPaginationInput: legacyPaginationInput,
       frameImage: frameImage,
+      onProgress: onProgress,
     );
   }
 
   _DocxBuilder._({
     required this.document,
     required this.documentIr,
+    required this.measurementLayout,
     required this.blueprint,
     required this.shapeRasterizer,
     required this.mathRasterizer,
-    required this.pageAssignments,
+    required this.legacyPaginationInput,
     required this.frameImage,
+    required this.onProgress,
   });
 
   final ExamDocument document;
   final DocumentIR documentIr;
+  final LayoutDocument? measurementLayout;
   final ExamBlueprint blueprint;
   final ShapeRasterizer? shapeRasterizer;
   final MathRasterizer? mathRasterizer;
-  final List<List<String>>? pageAssignments;
+  final PaginationInput? legacyPaginationInput;
+  final DocxBuildProgress? onProgress;
 
   /// صورة PNG الإطار (`null` = إطار متجه عند تفعيل «إطار حول الصفحة»).
   final Uint8List? frameImage;
@@ -376,6 +469,8 @@ class _DocxBuilder {
         documentIr: documentIr,
         sourceElement: source,
       );
+
+  void _reportProgress(String stage) => onProgress?.call(stage);
 
   /// صيغ LaTeX المكتشفة في النصوص عند كتابة الفقرات، بترتيب ظهورها — تُرسم
   /// وتُستبدل علاماتها بعد اكتمال النص (انظر [_resolveMath]).
@@ -397,35 +492,47 @@ class _DocxBuilder {
   static const int _pageHeightTwips = 16838;
 
   Future<void> build() async {
+    _reportProgress('fonts:started');
+    await FlutterTextMetrics.ensureFontsLoaded();
+    _reportProgress('fonts:completed');
     final body = StringBuffer();
     body.write(_buildHeaderTable());
     final headerSpacingAfter = (PaperMetrics.pt(PaperMetrics.blockSpacingPx) * 20).round();
     body.write('<w:p><w:pPr><w:spacing w:after="$headerSpacingAfter"/></w:pPr></w:p>');
     final questionPages = await _resolvedQuestionPages();
+    _reportProgress('pagination:completed pages=${questionPages.length}');
     for (var pageIndex = 0; pageIndex < questionPages.length; pageIndex++) {
       if (pageIndex > 0) {
         _writePageBreak(body);
       }
+      _reportProgress('page $pageIndex floating-elements:started');
       await _buildFloatingElementsForPage(
         body,
         pageIndex,
         pageCount: questionPages.length,
       );
+      _reportProgress('page $pageIndex floating-elements:completed');
       final pageQuestions = questionPages[pageIndex];
       for (var index = 0; index < pageQuestions.length; index++) {
         final question = pageQuestions[index];
+        _reportProgress('question ${question.model.id}:started');
         await _buildQuestion(body, question);
+        _reportProgress('question ${question.model.id}:completed');
         if (index < pageQuestions.length - 1) {
           _writeQuestionSpacing(body, question.model.spacingAfter);
         }
       }
     }
     // التذييل بعد آخر سؤال مباشرةً، مثبّتاً أسفل آخر صفحة.
+    _reportProgress('footer:started');
     _buildFooterTable(body);
+    _reportProgress('footer:completed');
 
     // بعد اكتمال كل النصوص: تُرسم صيغ LaTeX ($...$ و$$...$$) وتُستبدل
     // علاماتها برسوم مضمّنة — قبل بناء قوائم الصور في الحزمة.
+    _reportProgress('math-resolution:started count=${_mathQueue.length}');
     final resolvedBody = await _resolveMath(body.toString());
+    _reportProgress('math-resolution:completed images=${images.length}');
 
     final marginTwips = (document.settings.marginMm / 25.4 * 1440).round();
     if (document.settings.pageBorder && frameImage != null && frameImage!.isNotEmpty) {
@@ -549,34 +656,180 @@ class _DocxBuilder {
       for (final question in printableQuestions) question.model.id: question,
     };
     final expectedIds = questionsById.keys.toSet();
-    var candidate = pageAssignments;
-    var validAssignments = candidate != null && candidate.isNotEmpty;
-    if (candidate != null) {
-      final assignedIds = <String>{};
-      for (final page in candidate) {
-        for (final id in page) {
-          if (!questionsById.containsKey(id) || !assignedIds.add(id)) {
-            validAssignments = false;
-          }
-        }
-      }
-      validAssignments = validAssignments &&
-          assignedIds.length == expectedIds.length &&
-          assignedIds.containsAll(expectedIds);
-    }
-    if (!validAssignments) {
-      candidate = await PaginatedPdfExamEngine().resolveQuestionPages(
-        document: document,
-      );
-    }
 
-    final pageIds = candidate!.map((page) => List<String>.of(page)).toList(growable: true);
-    if (pageIds.isEmpty) {
-      pageIds.add(<String>[]);
-    }
+    // Editable Word page ownership is always recomputed by PaginationEngine;
+    // PDF page assignments never enter this editable export path.
+    final paginationInput = await _paginationInputFor(expectedIds);
+    final pageIds = _questionPageIds(paginationInput.paginate(), expectedIds);
+
     return pageIds
         .map((page) => page.map((id) => questionsById[id]!).toList(growable: false))
         .toList(growable: false);
+  }
+
+  Future<PaginationInput> _paginationInputFor(Set<String> expectedIds) async {
+    final supplied = legacyPaginationInput;
+    if (supplied != null) {
+      final sourceQuestionIds =
+          blueprint.questions.map((question) => question.model.id).toSet();
+      final allowedIds = <String>{
+        ...sourceQuestionIds,
+        PaperMetrics.headerBlockId,
+      };
+      final hasUnknownBlock =
+          supplied.blocks.any((block) => !allowedIds.contains(block.id));
+      final filtered = supplied.retainBlockIds(<String>{
+        ...expectedIds,
+        PaperMetrics.headerBlockId,
+      });
+      final expectedBlockIds = <String>[
+        PaperMetrics.headerBlockId,
+        for (final question in blueprint.questions)
+          if (expectedIds.contains(question.model.id)) question.model.id,
+      ];
+      final actualBlockIds =
+          filtered.blocks.map((block) => block.id).toList(growable: false);
+      if (!hasUnknownBlock &&
+          _sameIds(actualBlockIds, expectedBlockIds) &&
+          _hasValidPaginationGeometry(filtered)) {
+        return filtered;
+      }
+    }
+    return _fallbackPaginationInput(expectedIds);
+  }
+
+  bool _sameIds(List<String> left, List<String> right) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (left[index] != right[index]) return false;
+    }
+    return true;
+  }
+
+  bool _hasValidPaginationGeometry(PaginationInput input) {
+    if (!input.pageHeight.isFinite ||
+        input.pageHeight <= 0 ||
+        (input.firstPageHeight != null &&
+            (!input.firstPageHeight!.isFinite || input.firstPageHeight! <= 0)) ||
+        !input.spacing.isFinite ||
+        input.spacing < 0 ||
+        !input.lastPageReserve.isFinite ||
+        input.lastPageReserve < 0 ||
+        !input.footerMeasured) {
+      return false;
+    }
+    return input.blocks.every(
+      (block) =>
+          block.id.isNotEmpty &&
+          block.height.isFinite &&
+          block.height >= 0 &&
+          block.spacingAfter.isFinite &&
+          block.spacingAfter >= 0,
+    );
+  }
+
+  /// Direct/service DOCX callers may not have the editor's measured widget
+  /// heights. Measure the shared semantic question blocks from the canonical
+  /// source geometry (or resolve it once on A4), summing any page fragments by
+  /// question ID. Fresh PageBlocks are then handed to PaginationEngine, which
+  /// decides editable Word page ownership independently of PDF page indices.
+  Future<PaginationInput> _fallbackPaginationInput(
+    Set<String> expectedIds,
+  ) async {
+    var layout = measurementLayout ??
+        await CanonicalLayoutService.resolve(
+          document: document,
+          sourceIr: documentIr,
+        );
+    if (!identical(layout.source, documentIr)) {
+      throw const ExportException(
+        'تعذر تخطيط ملف Word: هندسة القياس لا تخص DocumentIR الحالي.',
+      );
+    }
+    bool hasSplitQuestion(LayoutDocument measured) => measured.pages
+        .expand((page) => page.blocks)
+        .any((block) =>
+            block.kind == LayoutBlockKind.question && block.split.isSplit);
+
+    if (hasSplitQuestion(layout)) {
+      // A4 geometry can fragment an oversized question across pages. Re-measure
+      // on one dynamically tall page so the gaps at canonical page boundaries
+      // remain part of its full DOCX block height. This canvas is only a metric
+      // pass; PaginationEngine still calculates the editable page assignments.
+      layout = await CanonicalLayoutService.resolve(
+        document: document,
+        sourceIr: documentIr,
+        pageSize: LayoutSize(
+          width: layout.pageSize.width,
+          height: layout.pageSize.height * (layout.pageCount + 2),
+        ),
+      );
+      if (!identical(layout.source, documentIr) || hasSplitQuestion(layout)) {
+        throw const ExportException(
+          'تعذر قياس كتل Word كاملة من DocumentIR قبل إعادة تقسيم PaginationEngine.',
+        );
+      }
+    }
+    final questionHeights = <String, double>{};
+    for (final page in layout.pages) {
+      for (final block in page.blocks) {
+        if (block.kind != LayoutBlockKind.question ||
+            !expectedIds.contains(block.semanticNodeId)) {
+          continue;
+        }
+        questionHeights.update(
+          block.semanticNodeId,
+          (height) => height + LayoutUnits.ptToPx(block.rect.height),
+          ifAbsent: () => LayoutUnits.ptToPx(block.rect.height),
+        );
+      }
+    }
+
+    final unmeasuredIds = expectedIds
+        .where((id) => !questionHeights.containsKey(id))
+        .toList(growable: false);
+    if (unmeasuredIds.isNotEmpty) {
+      throw ExportException(
+        'تعذر قياس كتل الأسئلة قبل تخطيط ملف Word: ${unmeasuredIds.join(', ')}',
+      );
+    }
+
+    final headerHeight = layout.headerBlock?.rect.height ?? 0.0;
+    final footerHeight = layout.footerBlock?.rect.height ?? 0.0;
+    return PaginationInput(
+      blocks: <PageBlock>[
+        PageBlock(
+          id: PaperMetrics.headerBlockId,
+          height: LayoutUnits.ptToPx(headerHeight),
+        ),
+        for (final question in blueprint.questions)
+          if (expectedIds.contains(question.model.id))
+            PageBlock(
+              id: question.model.id,
+              height: questionHeights[question.model.id] ?? 0,
+              spacingAfter: question.model.spacingAfter,
+            ),
+      ],
+      pageHeight: PaperMetrics.pageContentHeightFor(document.settings.marginMm),
+      spacing: PaperMetrics.blockSpacingPx,
+      lastPageReserve: footerHeight <= 0
+          ? 0
+          : LayoutUnits.ptToPx(footerHeight) + PaperMetrics.blockSpacingPx,
+      footerMeasured: true,
+    );
+  }
+
+  List<List<String>> _questionPageIds(
+    PaginationResult result,
+    Set<String> expectedIds,
+  ) {
+    final pages = <List<String>>[
+      for (final page in result.pages)
+        page.blockIds
+            .where(expectedIds.contains)
+            .toList(growable: false),
+    ].where((page) => page.isNotEmpty).toList(growable: false);
+    return pages.isEmpty ? <List<String>>[<String>[]] : pages;
   }
 
   void _writePageBreak(StringBuffer body) {
@@ -1040,9 +1293,11 @@ class _DocxBuilder {
       align: () => question.titleAlign ?? question.style.align,
       color: () => question.effectiveTitleColor,
     );
+    final bodyContent = data.semanticBody;
     // الترتيب مطابق للوحة المعاينة ومحرك الـ PDF حرفياً:
     // القسم ← سطر العنوان ← النص ← نقاط السؤال ← الفروع.
     if (data.section != null) {
+      _reportProgress('question ${question.id} section:started');
       // سطر القسم: 12.5pt ومحاذاته من النموذج (`categoryAlign`) — نفس مقاس
       // المعاينة ومحرك PDF ونفس قرار المحاذاة، وبلا فجوة قبله أو بعده
       // (المعاينة تلصقه بسطر العنوان).
@@ -1050,13 +1305,18 @@ class _DocxBuilder {
         body,
         data.section!,
         role: VisualRole.category,
-        alignmentOverride: _wordAlign(question.categoryAlign),
+        alignmentOverride: question.categoryAlign,
         before: 0,
         after: 0,
+        runs: data.category == null
+            ? null
+            : _semanticRuns(data.category!.content),
       );
+      _reportProgress('question ${question.id} section:completed');
     }
     // سطر العنوان: الرقم ← المنطوق ← الدرجة **جريانات مستقلة** (لا نص
     // مدموج) بفجوات المسافات نفسها التي تفصل عناصر المعاينة.
+    _reportProgress('question ${question.id} title:started');
     _writeStyledParagraph(
       body,
       data.title.line,
@@ -1074,7 +1334,9 @@ class _DocxBuilder {
         color: titleStyle.colorHex,
       ),
     );
+    _reportProgress('question ${question.id} title:completed');
     if (data.body != null) {
+      _reportProgress('question ${question.id} body:started');
       _writeStyledParagraph(
         body,
         data.body!,
@@ -1086,8 +1348,11 @@ class _DocxBuilder {
             ? PaperMetrics.twips(VisualMetrics.elementGapPx)
             : 0,
         after: 0,
+        runs: bodyContent == null ? null : _semanticRuns(bodyContent),
       );
+      _reportProgress('question ${question.id} body:completed');
     }
+    _reportProgress('question ${question.id} points:started');
     _writePoints(
       body,
       data.points,
@@ -1095,16 +1360,27 @@ class _DocxBuilder {
       indent: _pointIndentTwips,
       firstGapPx: VisualMetrics.elementGapPx,
     );
+    _reportProgress('question ${question.id} points:completed');
     for (final branch in data.branches) {
+      _reportProgress(
+        'question ${question.id} branch ${branch.model.id}:started',
+      );
       await _buildBranch(
         body,
         branch,
         questionParagraphSpacing: question.style.paragraphSpacing,
       );
+      _reportProgress(
+        'question ${question.id} branch ${branch.model.id}:completed',
+      );
     }
+    _reportProgress('question ${question.id} attachments:started');
     await _buildAttachments(body, question.attachments);
+    _reportProgress('question ${question.id} attachments:completed');
     // العناصر المرتبطة بهذا السؤال تُكتب مع فقراته (مرساة نسبية للفقرة).
+    _reportProgress('question ${question.id} owned-elements:started');
     await _buildOwnedElements(body, question.id);
+    _reportProgress('question ${question.id} owned-elements:completed');
     _buildDivider(body, question.dividerAfter);
   }
 
@@ -1208,6 +1484,9 @@ class _DocxBuilder {
             ? PaperMetrics.twips(VisualMetrics.branchGapPx)
             : 0,
         after: 0,
+        runs: data.bodyContent == null
+            ? null
+            : _semanticRuns(data.bodyContent!),
       );
     }
     _writePoints(
@@ -1246,12 +1525,15 @@ class _DocxBuilder {
         continue;
       }
       final element = _legacyFloatingElement(sourceElement);
+      _reportProgress('attachment ${element.id}:started');
       if (element.isTextBox) {
         _buildTextBox(body, element);
+        _reportProgress('attachment ${element.id}:completed');
         continue;
       }
       if (element.isFormula) {
         await _buildFormulaElement(body, element);
+        _reportProgress('attachment ${element.id}:completed');
         continue;
       }
       if (element.type == FloatingElementType.image) {
@@ -1260,6 +1542,7 @@ class _DocxBuilder {
           continue;
         }
         _embedImage(body, Uint8List.fromList(bytes), element.width, element.height);
+        _reportProgress('attachment ${element.id}:completed');
         continue;
       }
       // شكل متجه: يُرسم صورة عند توفر المرسّم، وإلا عنصر نصي بديل.
@@ -1284,6 +1567,7 @@ class _DocxBuilder {
           after: 60,
         );
       }
+      _reportProgress('attachment ${element.id}:completed');
     }
   }
 
@@ -1433,11 +1717,14 @@ class _DocxBuilder {
     StringBuffer body,
     FloatingElement element,
   ) async {
+    _reportProgress('formula ${element.id}:started');
     final label = element.label.trim();
     if (label.isEmpty) {
+      _reportProgress('formula ${element.id}:empty');
       return;
     }
     final mathZone = _formulaMathZone(element);
+    _reportProgress('formula ${element.id}:omml=${mathZone != null}');
     if (mathZone != null) {
       // معادلة Word حقيقية في فقرة مستقلة (محاذاة كما في باقي المرفقات).
       body.write(
@@ -1445,6 +1732,7 @@ class _DocxBuilder {
         '<w:jc w:val="center"/><w:spacing w:before="60" w:after="60"/>'
         '</w:pPr>$mathZone</w:p>',
       );
+      _reportProgress('formula ${element.id}:completed');
       return;
     }
     final boxWidthPt = PaperMetrics.pt(element.width);
@@ -1463,6 +1751,7 @@ class _DocxBuilder {
         before: 60,
         after: 60,
       );
+      _reportProgress('formula ${element.id}:fallback-text');
       return;
     }
     final naturalWidth = raster.widthPt;
@@ -1481,6 +1770,7 @@ class _DocxBuilder {
       '<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:jc w:val="center"/><w:spacing w:before="120" w:after="120"/></w:pPr>'
       '<w:r>${_drawingXml(raster.pngBytes, widthPt, heightPt)}</w:r></w:p>',
     );
+    _reportProgress('formula ${element.id}:completed');
   }
 
   /// XML رسم مضمّن (بلا فقرة وبلا run) مع تسجيل الصورة في حزمة الملف.
@@ -1580,7 +1870,7 @@ class _DocxBuilder {
     String text, {
     required VisualRole role,
     PaperTextStyle? style,
-    String? alignmentOverride,
+    PaperAlign? alignmentOverride,
     String? color,
     int? indent,
     int? before,
@@ -1589,6 +1879,11 @@ class _DocxBuilder {
     List<DocxRunSpec>? runs,
   }) {
     final resolved = _roleStyle(role, override: style);
+    final paragraphRtl = _paragraphDirection(
+      text,
+      runs,
+      fallbackRtl: !document.layout.isLtr,
+    );
     _writeParagraph(
       body,
       text,
@@ -1607,16 +1902,22 @@ class _DocxBuilder {
           ? after
           : _paragraphSpacingTwips(style!.paragraphSpacing!),
       lineHeight: resolved.lineHeight,
-      alignment: alignmentOverride ?? _wordAlign(style?.align),
+      alignment: _wordAlign(
+        alignmentOverride ?? style?.align,
+        alignmentRtl: documentIr.direction == DocumentDirection.rtl,
+      ),
       font: DocxDocumentExportService._fontName(resolved.font),
+      directionRtl: paragraphRtl,
     );
   }
 
-  /// محاذاة Word من محاذاة النموذج — بمراعاة **اتجاه الورقة**: `start`/`end`
-  /// يتبعان اتجاه المستند كما يتبعهما `TextAlign.start/end` في المعاينة و
-  /// `pw.TextAlign` في PDF، فلا تنحرف ورقة LTR عن ورقة RTL.
-  String _wordAlign(PaperAlign? align) {
-    final isLtr = document.layout.isLtr;
+  /// محاذاة Word من محاذاة النموذج — بمراعاة **اتجاه كتلة LayoutDocument**:
+  /// `start`/`end` يتبعان اتجاه الكتلة حتى إن احتوت فقرتها مقطعاً يبدأ بنص
+  /// لاتيني (اتجاه BiDi للجريان لا يغيّر معنى المحاذاة المنطقية للكتلة).
+  String _wordAlign(PaperAlign? align, {bool? alignmentRtl}) {
+    final isLtr = alignmentRtl == null
+        ? document.layout.isLtr
+        : !alignmentRtl;
     switch (align) {
       case null:
         // «بلا محاذاة» = بداية السطر حسب **اتجاه الورقة**، وهو ما تفعله
@@ -1655,17 +1956,28 @@ class _DocxBuilder {
     int? after,
     String? alignment,
     String? font,
+    bool? directionRtl,
     List<DocxRunSpec>? runs,
   }) {
-    // غياب المحاذاة = بداية السطر باتجاه الورقة (`_wordAlign(null)`)، لا
-    // «right» المطلقة: نفس قرار المعاينة وPDF في الفقرة نفسها.
-    final effectiveAlignment = alignment ?? _wordAlign(null);
+    // The paragraph takes the direction of its first strong character, falling
+    // back to the document direction only when the text has no strong script.
+    final paragraphRtl = directionRtl ??
+        _paragraphDirection(
+          text,
+          runs,
+          fallbackRtl: !document.layout.isLtr,
+        );
+    final effectiveAlignment = alignment ??
+        _wordAlign(
+          null,
+          alignmentRtl: documentIr.direction == DocumentDirection.rtl,
+        );
     final effectiveSize = scaleSize
         ? (size * document.settings.fontScale).round().clamp(12, 96)
         : size.clamp(12, 96);
     // تباعد أسطر العنصر المخصص يسود، وإلا العام من إعدادات الورقة (240 = مفرد).
     final line = (240 * (lineHeight ?? document.settings.lineSpacing)).round();
-    body.write('<w:p><w:pPr>${document.layout.isLtr ? '' : '<w:bidi/>'}<w:jc w:val="$effectiveAlignment"/>');
+    body.write('<w:p><w:pPr>${paragraphRtl ? '<w:bidi/>' : ''}<w:jc w:val="$effectiveAlignment"/>');
     if (border) {
       body.write(
         '<w:pBdr><w:top w:val="single" w:sz="6" w:space="4" w:color="000000"/>'
@@ -1681,7 +1993,7 @@ class _DocxBuilder {
       // الملف). ويُكتب معه المفتاح الفيزيائي لجهة البداية في الاتجاه الحالي
       // ليقرأه أي محرر لا يدعم الصيغة الاتجاهية — فلا ينخفض الحد في Word قديم
       // ولا يُجعَل `w:right` حلاً عالمياً: كان يُزاح فقرات LTR إلى اليمين.
-      final startSide = document.layout.isLtr ? 'w:left' : 'w:right';
+      final startSide = paragraphRtl ? 'w:right' : 'w:left';
       body.write('<w:ind w:start="$indent" $startSide="$indent"/>');
     }
     body.write(
@@ -1692,7 +2004,6 @@ class _DocxBuilder {
     // يظهر أي تغيير في الحجم على الورقة العربية مهما ضبطه المدرس.
     final fontName =
         font ?? DocxDocumentExportService._fontName(document.settings.defaultFont);
-    final rtl = !document.layout.isLtr;
     body.write('</w:pPr>');
     if (runs == null) {
       body.write(
@@ -1706,7 +2017,7 @@ class _DocxBuilder {
             color: color,
             size: effectiveSize,
             font: fontName,
-            rtl: rtl,
+            rtl: paragraphRtl,
           ),
           effectiveSize / 2,
         ),
@@ -1726,9 +2037,11 @@ class _DocxBuilder {
               color: run.color ?? color,
               size: runSize,
               font: run.font ?? fontName,
-              rtl: rtl,
+              rtl: run.rtl ?? paragraphRtl,
             ),
             runSize / 2,
+            forceRtl: run.rtl,
+            visualRun: run.visualRun,
           ),
         );
       }
@@ -1736,64 +2049,122 @@ class _DocxBuilder {
     body.write('</w:p>');
   }
 
-  /// جريان نصّي واحد داخل فقرة Word (النص وتنسيقه الخاص).
-  static List<DocxRunSpec> _titleRuns(
+  /// Title parts remain distinct Word runs, retaining DocumentIR's direction
+  /// and each source-authored VisualRun (including math and Quran styling).
+  List<DocxRunSpec> _titleRuns(
     TitleLineBlueprint title, {
     bool bold = true,
     int? size,
     String? color,
     String? font,
   }) {
-    // الفصل بمسافة (لا دمج): الأجزاء جريانات مستقلة، والمسافة بينها هي
-    // مقابِل [VisualMetrics.titleGapPx] في المعاينة وPDF.
-    final parts = <String>[
-      if (title.number.trim().isNotEmpty) title.number,
-      if (title.hasStatement) title.statement,
-      if (title.marks != null) title.marks!,
-    ];
-    return <DocxRunSpec>[
-      for (var index = 0; index < parts.length; index++)
-        DocxRunSpec(
-          index == 0 ? parts[index] : ' ${parts[index]}',
+    final parts = <List<DocxRunSpec>>[];
+    if (title.number.trim().isNotEmpty) {
+      parts.add(<DocxRunSpec>[
+        ..._semanticNodeRuns(title.semanticNumber),
+        if (title.separatorNode != null)
+          ..._semanticNodeRuns(title.separatorNode!),
+      ]);
+    }
+    if (title.hasStatement) {
+      parts.add(_semanticRuns(title.semanticStatement));
+    }
+    if (title.marks != null) {
+      parts.add(
+        title.marksNode == null
+            ? <DocxRunSpec>[DocxRunSpec(title.marks!)]
+            : _semanticNodeRuns(title.marksNode!).toList(growable: false),
+      );
+    }
+
+    DocxRunSpec styled(DocxRunSpec run) => DocxRunSpec(
+          run.text,
           bold: bold,
           size: size,
           color: color,
           font: font,
-        ),
-    ];
+          rtl: run.rtl,
+          visualRun: run.visualRun,
+        );
+
+    final runs = <DocxRunSpec>[];
+    for (var index = 0; index < parts.length; index++) {
+      final part = parts[index];
+      if (part.isEmpty) continue;
+      if (runs.isNotEmpty) {
+        runs.add(styled(DocxRunSpec(' ', rtl: part.first.rtl)));
+      }
+      runs.addAll(part.map(styled));
+    }
+    return runs;
   }
 
-  /// أجزاء سطر النقطة: الرقم (غامق) ← النص ← القوسان ← الدرجة.
-  static List<DocxRunSpec> _pointRuns(
+  /// Point parts keep source direction/style while the label remains bold.
+  List<DocxRunSpec> _pointRuns(
     PointBlueprint point, {
     bool bold = false,
     int? size,
     String? color,
     String? font,
   }) {
-    // التسمية غامقة وحدها، وبقية الأجزاء جريانات مستقلة تفصلها مسافة واحدة
-    // (مقابِل فراغ [VisualMetrics.pointLabelGapPx] في المعاينة).
-    final parts = <(String, bool)>[
-      if (point.label.trim().isNotEmpty) (point.label, true),
-      if (point.text.trim().isNotEmpty) (point.text, bold),
-      if (point.trailer != null) (point.trailer!, bold),
-      if (point.marks != null) (point.marks!, bold),
-    ];
-    return <DocxRunSpec>[
-      for (var index = 0; index < parts.length; index++)
-        DocxRunSpec(
-          index == 0 ? parts[index].$1 : ' ${parts[index].$1}',
-          bold: parts[index].$2,
+    final parts = <({List<DocxRunSpec> runs, bool bold})>[];
+    if (point.label.trim().isNotEmpty) {
+      parts.add((runs: _semanticRuns(point.semanticLabel), bold: true));
+    }
+    if (point.text.trim().isNotEmpty) {
+      parts.add((runs: _semanticRuns(point.semanticText), bold: bold));
+    }
+    if (point.trailer != null) {
+      final trailer = point.trailerContent;
+      parts.add((
+        runs: trailer == null
+            ? <DocxRunSpec>[DocxRunSpec(point.trailer!) ]
+            : _semanticRuns(trailer),
+        bold: bold,
+      ));
+    }
+    if (point.marks != null) {
+      final marks = point.marksNode;
+      parts.add((
+        runs: marks == null
+            ? <DocxRunSpec>[DocxRunSpec(point.marks!) ]
+            : _semanticNodeRuns(marks).toList(growable: false),
+        bold: bold,
+      ));
+    }
+
+    DocxRunSpec styled(DocxRunSpec run, bool partBold) => DocxRunSpec(
+          run.text,
+          bold: partBold,
           size: size,
           color: color,
           font: font,
-        ),
-    ];
+          rtl: run.rtl,
+          visualRun: run.visualRun,
+        );
+
+    final runs = <DocxRunSpec>[];
+    for (final part in parts) {
+      if (part.runs.isEmpty) continue;
+      if (runs.isNotEmpty) {
+        runs.add(
+          DocxRunSpec(
+            ' ',
+            bold: bold,
+            size: size,
+            color: color,
+            font: font,
+            rtl: part.runs.first.rtl,
+          ),
+        );
+      }
+      runs.addAll(part.runs.map((run) => styled(run, part.bold)));
+    }
+    return runs;
   }
 
-  /// أجزاء سطر الخيارات: تسمية كل خيار ثم نصه، وبين الخيارات فاصل من
-  /// المسافات غير القابلة للقطع بقدر ما تفصله المعاينة أفقيًا.
-  static List<DocxRunSpec> _optionRuns(
+  /// Option labels/content retain semantic direction and visual-run metadata.
+  List<DocxRunSpec> _optionRuns(
     List<OptionBlueprint> options, {
     bool bold = false,
     int? size,
@@ -1806,16 +2177,54 @@ class _DocxBuilder {
         runs.add(const DocxRunSpec(_optionSeparator + _optionSeparator));
       }
       if (option.label.trim().isNotEmpty) {
-        runs.add(DocxRunSpec(option.label, bold: bold, size: size, color: color, font: font));
+        runs.addAll(
+          _semanticRuns(option.semanticLabel).map(
+            (run) => _styledSemanticRun(
+              run,
+              bold: bold,
+              size: size,
+              color: color,
+              font: font,
+            ),
+          ),
+        );
       }
       if (option.text.trim().isNotEmpty) {
-        // مسافة بين التسمية والنص كما في المعاينة (`optionLabelGapPx`).
-        final text = option.label.trim().isEmpty ? option.text : ' ${option.text}';
-        runs.add(DocxRunSpec(text, bold: bold, size: size, color: color, font: font));
+        if (option.label.trim().isNotEmpty) {
+          runs.add(DocxRunSpec(' ', bold: bold, size: size, color: color, font: font));
+        }
+        runs.addAll(
+          _semanticRuns(option.semanticText).map(
+            (run) => _styledSemanticRun(
+              run,
+              bold: bold,
+              size: size,
+              color: color,
+              font: font,
+            ),
+          ),
+        );
       }
     }
     return runs;
   }
+
+  DocxRunSpec _styledSemanticRun(
+    DocxRunSpec run, {
+    required bool bold,
+    int? size,
+    String? color,
+    String? font,
+  }) =>
+      DocxRunSpec(
+        run.text,
+        bold: bold,
+        size: size,
+        color: color,
+        font: font,
+        rtl: run.rtl,
+        visualRun: run.visualRun,
+      );
 
   /// فاصل الخيارات في Word: Word لا يضع خيارات الصف الواحد في سطر كالمعاينة
   /// وPDF (لا Wrap فيه)، فيُفصل بينها بمسافات غير قابلة للقطع بعدد يقارب
@@ -1838,6 +2247,109 @@ class _DocxBuilder {
   /// تقرؤه المعاينة — لا بتحليل نصي ثانٍ.
   ///
   /// لكل مقطع تنسيقه المعلن في العقد (خط الآية القرآني مثلاً)، والصيغ تُبنى
+  static bool? _rtlForDirection(DocumentDirection direction) => switch (direction) {
+        DocumentDirection.rtl => true,
+        DocumentDirection.ltr => false,
+        DocumentDirection.auto || DocumentDirection.inherit => null,
+      };
+
+  bool _paragraphDirection(
+    String text,
+    List<DocxRunSpec>? runs, {
+    required bool fallbackRtl,
+  }) {
+    final paragraphText = runs == null
+        ? text
+        : runs
+            .where((run) => !(run.visualRun?.isMath ?? false))
+            .map((run) => run.visualRun?.text ?? run.text)
+            .join();
+    return _directionalChunks(paragraphText, fallbackRtl).first.rtl;
+  }
+
+  List<DocxRunSpec> _semanticRuns(InlineContent content) => <DocxRunSpec>[
+        for (final node in content.nodes) ..._semanticNodeRuns(node),
+      ];
+
+  Iterable<DocxRunSpec> _semanticNodeRuns(
+    InlineNode node, {
+    bool? inheritedRtl,
+  }) sync* {
+    final rtl = _rtlForDirection(node.direction) ?? inheritedRtl;
+    if (node is LabelNode) {
+      for (final child in node.content.nodes) {
+        yield* _semanticNodeRuns(child, inheritedRtl: rtl);
+      }
+      return;
+    }
+    if (node is MarksNode) {
+      yield* _semanticNodeRuns(node.opening, inheritedRtl: rtl);
+      yield* _semanticNodeRuns(node.number, inheritedRtl: rtl);
+      yield* _semanticNodeRuns(node.numberUnitGap, inheritedRtl: rtl);
+      yield* _semanticNodeRuns(node.unit, inheritedRtl: rtl);
+      yield* _semanticNodeRuns(node.closing, inheritedRtl: rtl);
+      return;
+    }
+    if (node is RichRunNode) {
+      if (node.run.text.isNotEmpty) {
+        yield DocxRunSpec(
+          node.run.text,
+          rtl: rtl,
+          visualRun: node.run,
+        );
+      }
+      return;
+    }
+    for (final run in node.visualRuns) {
+      if (run.text.isNotEmpty) {
+        yield DocxRunSpec(run.text, rtl: rtl, visualRun: run);
+      }
+    }
+  }
+
+  List<({String text, bool rtl})> _directionalChunks(
+    String text,
+    bool fallbackRtl,
+  ) {
+    final resolved = FlutterTextMetrics.resolveDirectionalRuns(
+      text,
+      fallbackDirection: fallbackRtl
+          ? DocumentDirection.rtl
+          : DocumentDirection.ltr,
+    );
+    if (resolved.isEmpty) {
+      return <({String text, bool rtl})>[(text: text, rtl: fallbackRtl)];
+    }
+    return resolved
+        .map(
+          (run) => (
+            text: run.text,
+            rtl: run.direction == DocumentDirection.rtl,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  String _directionalTextXml(
+    String text,
+    _RunProperties properties, {
+    VisualRunStyle? style,
+    bool? forceRtl,
+  }) {
+    final chunks = forceRtl == null
+        ? _directionalChunks(text, properties.rtl)
+        : <({String text, bool rtl})>[(text: text, rtl: forceRtl)];
+    final buffer = StringBuffer();
+    for (final chunk in chunks) {
+      final runProperties = properties.withRtl(chunk.rtl).merge(style).toXml();
+      buffer.write(
+        '<w:r>$runProperties<w:t xml:space="preserve">'
+        '${_escapeXml(chunk.text)}</w:t></w:r>',
+      );
+    }
+    return buffer.toString();
+  }
+
   /// **معادلات Word أصلية** `<m:oMath>` داخل الفقرة نفسها (تُحرَّر في Word
   /// كما تُحرَّر من أداتها، بلا صورة) — انظر [OmmlFromEquation]. وعند تعذّر
   /// تمثيل صيغة بُنيةً (مصفوفة، أسطر متعددة…) تُرسَم تلك الصيغة وحدها بمعامل
@@ -1845,20 +2357,34 @@ class _DocxBuilder {
   /// [_resolveMath] بالرسم بعد رسمه (فتبقى في مكانها من السطر وبالترتيب
   /// نفسه). وبدون مرسّم تُكتب نصاً رياضياً مقروءاً، وهو آخر ارتداد: لا يظهر
   /// كود LaTeX الخام في أي ملف.
-  String _runsXml(String text, _RunProperties properties, double fontSizePt) {
-    final content = RichContent.parse(text);
+  String _runsXml(
+    String text,
+    _RunProperties properties,
+    double fontSizePt, {
+    bool? forceRtl,
+    VisualRun? visualRun,
+  }) {
+    final sourceRuns = visualRun == null
+        ? RichContent.parse(text).runs
+        : <VisualRun>[visualRun];
     final runProperties = properties.toXml();
     // مسار سريع حين لا يغيّر العقد شيئاً: نص واحد يطابق الأصل حرفياً.
     // (وهو أيضاً ما يجعل الدولار المهروب `\$` يُكتب `$` كما في المعاينة، بلا
     // شرطة مائلة لا أصل لها على الورقة.)
-    if (content.runs.length == 1 &&
-        content.runs.single.isText &&
-        content.runs.single.text == text) {
-      return '<w:r>$runProperties<w:t xml:space="preserve">${_escapeXml(text)}</w:t></w:r>';
+    if (sourceRuns.length == 1 &&
+        sourceRuns.single.isText &&
+        sourceRuns.single.text == text) {
+      return _directionalTextXml(
+        text,
+        properties,
+        style: sourceRuns.single.style,
+        forceRtl: forceRtl,
+      );
     }
     final mathRunProperties = _mathRunProperties(runProperties);
+    final ltrMathProperties = properties.withRtl(false).toXml();
     final buffer = StringBuffer();
-    for (final run in content.runs) {
+    for (final run in sourceRuns) {
       if (run.text.isEmpty) {
         continue;
       }
@@ -1880,20 +2406,24 @@ class _DocxBuilder {
         if (mathRasterizer != null) {
           final index = _mathQueue.length;
           _mathQueue.add(_MathPlaceholder(run.text, fontSizePt));
-          buffer.write('<w:r>$runProperties${_mathMarker(index)}</w:r>');
+          buffer.write('<w:r>$ltrMathProperties${_mathMarker(index)}</w:r>');
           continue;
         }
         buffer.write(
-          '<w:r>$runProperties<w:t xml:space="preserve">'
+          '<w:r>$ltrMathProperties<w:t xml:space="preserve">'
           '${_escapeXml(EquationModel.readableText(run.text))}</w:t></w:r>',
         );
         continue;
       }
-      // تنسيق المقطع المعلن في العقد (خط الآية مثلاً) يتقدم على تنسيق
-      // الفقرة — ومنه تصل الآية إلى Word بالخط القرآني نفسه الذي في المعاينة.
-      final runXmlProperties = properties.merge(run.style).toXml();
+      // Split mixed Arabic/Latin text by strong-script runs. Source-authored
+      // styling (for example the Quran font) remains inherited on each run.
       buffer.write(
-        '<w:r>$runXmlProperties<w:t xml:space="preserve">${_escapeXml(run.text)}</w:t></w:r>',
+        _directionalTextXml(
+          run.text,
+          properties,
+          style: run.style,
+          forceRtl: forceRtl,
+        ),
       );
     }
     return buffer.toString();

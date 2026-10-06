@@ -2,7 +2,7 @@
 //
 // الميزة تمرّ: Model ← Controller ← المعاينة/PDF/Word. والاختبار يقيس الأثر
 // الفعلي لا وجود الشيفرة:
-//   * المعاينة: `TextAlign` الفعلي لحقل القسم في الشاشة.
+//   * المعاينة: موضع run القسم ومحاذاة السطر في `LayoutDocument` الذي ترسمه الشاشة.
 //   * PDF: موضع كلمة القسم المرسومة بالنسبة لحدود صندوق المحتوى.
 //   * Word: قيمة `w:jc` في فقرة القسم وحدها.
 // ويُعاد للعربية (RTL) والإنجليزية (LTR) لأن `start/end` يتبعان الاتجاه.
@@ -19,6 +19,8 @@ import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/paper_settings.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/question_model.dart';
+import 'package:writing_questions_app/layout/canonical/canonical_layout_preview.dart';
+import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/pdf_engine/paginated_pdf_exam_engine.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/services/docx_document_export_service.dart';
@@ -128,18 +130,20 @@ void main() {
     });
   });
 
-  group('المعاينة: TextAlign الفعلي لحقل القسم', () {
-    Future<TextAlign> previewAlign(
+  group('المعاينة: محاذاة هندسة LayoutDocument الفعلية', () {
+    Future<({LayoutPage page, LayoutLine line, LayoutRun run})> categoryGeometry(
       WidgetTester tester,
-      PaperAlign align,
-    ) async {
+      PaperAlign align, {
+      String subject = 'اللغة العربية',
+    }) async {
       tester.view.physicalSize = const Size(1500, 1400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       final controller = ExamWizardController(
-        document: _document(align: align, subject: 'اللغة العربية'),
+        document: _document(align: align, subject: subject),
       );
+      addTearDown(controller.dispose);
       await tester.pumpWidget(
         MaterialApp(
           home: ChangeNotifierProvider<ExamWizardController>.value(
@@ -148,21 +152,89 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
-      final field = tester.widget<TextField>(
-        find.descendant(
-          of: find.byKey(const ValueKey<String>('category-q1')),
-          matching: find.byType(TextField),
-        ),
+      for (var frame = 0;
+          frame < 40 &&
+              find.byType(CanonicalLayoutPreviewPage).evaluate().isEmpty;
+          frame++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      final preview = tester.widget<CanonicalLayoutPreviewPage>(
+        find.byType(CanonicalLayoutPreviewPage).first,
       );
-      return field.textAlign;
+      final matches = <({LayoutPage page, LayoutLine line, LayoutRun run})>[
+        for (final page in preview.layoutDocument.pages)
+          for (final block in page.blocks)
+            for (final line in block.allLines)
+              for (final run in line.runs)
+                if (run.text.contains('Cat'))
+                  (page: page, line: line, run: run),
+      ];
+      expect(matches, hasLength(1));
+      return matches.single;
     }
 
-    testWidgets('left/center/right تصل إلى حقل القسم في الشاشة',
+    void expectEdgeAlignment(
+      ({LayoutPage page, LayoutLine line, LayoutRun run}) geometry,
+      PaperAlign align,
+      bool rtl,
+    ) {
+      final content = geometry.page.contentBounds;
+      expect(geometry.line.alignment, align);
+      switch (align) {
+        case PaperAlign.left:
+          expect(geometry.run.x, closeTo(content.left, 0.1));
+          break;
+        case PaperAlign.right:
+          expect(geometry.run.x + geometry.run.width,
+              closeTo(content.right, 0.1));
+          break;
+        case PaperAlign.center:
+          expect(geometry.run.x + geometry.run.width / 2,
+              closeTo((content.left + content.right) / 2, 0.1));
+          break;
+        case PaperAlign.start:
+          final actualEdge = rtl
+              ? geometry.run.x + geometry.run.width
+              : geometry.run.x;
+          expect(actualEdge, closeTo(rtl ? content.right : content.left, 0.1));
+          break;
+        case PaperAlign.end:
+          final actualEdge = rtl
+              ? geometry.run.x
+              : geometry.run.x + geometry.run.width;
+          expect(actualEdge, closeTo(rtl ? content.left : content.right, 0.1));
+          break;
+        case PaperAlign.justify:
+          fail('Category fixture does not request justified alignment.');
+      }
+    }
+
+    testWidgets('left/center/right are painted at their canonical x positions',
         (tester) async {
-      expect(await previewAlign(tester, PaperAlign.left), TextAlign.left);
-      expect(await previewAlign(tester, PaperAlign.center), TextAlign.center);
-      expect(await previewAlign(tester, PaperAlign.right), TextAlign.right);
+      for (final align in <PaperAlign>[
+        PaperAlign.left,
+        PaperAlign.center,
+        PaperAlign.right,
+      ]) {
+        final geometry = await categoryGeometry(tester, align);
+        expectEdgeAlignment(geometry, align, true);
+      }
+    });
+
+    testWidgets('start/end follow RTL and LTR page direction', (tester) async {
+      for (final (subject, rtl) in <(String, bool)>[
+        ('اللغة العربية', true),
+        ('English', false),
+      ]) {
+        for (final align in <PaperAlign>[PaperAlign.start, PaperAlign.end]) {
+          final geometry = await categoryGeometry(
+            tester,
+            align,
+            subject: subject,
+          );
+          expectEdgeAlignment(geometry, align, rtl);
+        }
+      }
     });
   });
 }

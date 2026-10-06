@@ -387,6 +387,7 @@ void main() {
       controller.reportBlockHeight(ids[0], pageHeight * 0.5);
       controller.reportBlockHeight(ids[1], pageHeight * 0.45);
       controller.reportBlockHeight(ids[2], pageHeight * 0.3);
+      controller.reportBlockHeight(PaperMetrics.footerBlockId, 20);
 
       expect(controller.isFullyMeasured, isTrue);
       final pages = controller.pageAssignments;
@@ -405,9 +406,12 @@ void main() {
       controller.reportBlockHeight(id, pageHeight - 100 - PaperMetrics.blockSpacingPx - 5);
       // بلا تذييل مقيس: تتسع كل الكتل في صفحة واحدة.
       expect(controller.footerReserve, 0);
+      expect(controller.isFullyMeasured, isFalse,
+          reason: 'The zero footer reserve is provisional until the footer is measured.');
       expect(controller.pagination.pageCount, 1);
 
       controller.reportBlockHeight(PaperMetrics.footerBlockId, 60);
+      expect(controller.isFullyMeasured, isTrue);
       expect(controller.footerReserve, 60 + PaperMetrics.blockSpacingPx);
       // السؤال الأخير لم يعد يتسع مع التذييل فانتقل كاملاً لصفحة جديدة.
       expect(controller.pagination.pageCount, 2);

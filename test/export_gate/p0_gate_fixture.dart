@@ -738,7 +738,8 @@ abstract final class P0GateFixture {
   /// الوسم داخل نص: حروف لاتينية وأرقام، مسبوقة بحدّ حرفي ومتبوعة بحدّ حرفي.
   static final RegExp _markerPattern = RegExp(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9]{2,})(?![A-Za-z0-9])');
 
-  /// وسوم الترويسة (كل صفحة في PDF، و`word/header*.xml` في DOCX).
+  /// وسوم الترويسة: مرة في الصفحة الأولى من Preview/PDF وفي تدفق متن DOCX.
+  /// جزء `word/header*.xml` الاختياري مخصص لصورة إطار الصفحة لا لمحتوى الحقول.
   static const List<String> headerMarkers = <String>[
     'HDRV',
     'HDC1',

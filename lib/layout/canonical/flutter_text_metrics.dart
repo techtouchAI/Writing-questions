@@ -29,6 +29,87 @@ class FlutterTextMetrics implements FontMetricsProvider {
   static Future<void> ensureFontsLoaded() =>
       _fontRegistration ??= _registerFonts();
 
+  /// Resolve source-ordered directional runs with Flutter's Unicode bidi
+  /// shaping, keeping every source code unit (including neutral punctuation,
+  /// whitespace, combining marks, and controls) exactly once. Export adapters
+  /// may consume these directions, but must not use the result to reflow or
+  /// paginate content.
+  static List<({String text, DocumentDirection direction})> resolveDirectionalRuns(
+    String text, {
+    required DocumentDirection fallbackDirection,
+  }) {
+    if (text.isEmpty) return const [];
+    final painter = TextPainter(
+      text: TextSpan(text: text),
+      textDirection: fallbackDirection == DocumentDirection.rtl
+          ? ui.TextDirection.rtl
+          : ui.TextDirection.ltr,
+      textScaler: TextScaler.noScaling,
+    )..layout(maxWidth: double.infinity);
+    try {
+      final lines = painter.computeLineMetrics();
+      if (lines.isEmpty) {
+        return <({String text, DocumentDirection direction})>[
+          (text: text, direction: fallbackDirection),
+        ];
+      }
+      final fragments = const FlutterTextMetrics()._directionalTextFragments(
+        painter,
+        text,
+        0,
+        text.length,
+        lines,
+      );
+      if (fragments.isEmpty) {
+        return <({String text, DocumentDirection direction})>[
+          (text: text, direction: fallbackDirection),
+        ];
+      }
+
+      final resolved = <({String text, DocumentDirection direction})>[];
+      var coveredUntil = 0;
+      DocumentDirection? precedingDirection;
+      void append(int start, int end, DocumentDirection direction) {
+        if (end <= start) return;
+        final piece = text.substring(start, end);
+        if (resolved.isNotEmpty && resolved.last.direction == direction) {
+          final previous = resolved.removeLast();
+          resolved.add((text: '${previous.text}$piece', direction: direction));
+        } else {
+          resolved.add((text: piece, direction: direction));
+        }
+        precedingDirection = direction;
+      }
+
+      for (final fragment in fragments) {
+        final start =
+            fragment.startOffset.clamp(coveredUntil, text.length).toInt();
+        final end = fragment.endOffset.clamp(start, text.length).toInt();
+        if (start > coveredUntil) {
+          append(
+            coveredUntil,
+            start,
+            precedingDirection ?? fragment.direction,
+          );
+        }
+        append(start, end, fragment.direction);
+        if (end > coveredUntil) coveredUntil = end;
+      }
+      if (coveredUntil < text.length) {
+        append(
+          coveredUntil,
+          text.length,
+          precedingDirection ?? fallbackDirection,
+        );
+      }
+      return List<({String text, DocumentDirection direction})>.unmodifiable(
+        resolved,
+      );
+    } finally {
+      painter.dispose();
+    }
+  }
+
   static Future<void> _registerFonts() async {
     for (final font in PaperFont.values) {
       final loader = FontLoader(font.family)

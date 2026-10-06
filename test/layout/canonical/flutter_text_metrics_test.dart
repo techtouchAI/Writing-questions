@@ -8,6 +8,33 @@ import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 
 void main() {
+  testWidgets('directional runs preserve mixed bidi source text losslessly', (_) async {
+    const source = '، قبل (MIX 123) بعد\u00a0؛';
+    for (final fallback in <DocumentDirection>[
+      DocumentDirection.rtl,
+      DocumentDirection.ltr,
+    ]) {
+      final runs = FlutterTextMetrics.resolveDirectionalRuns(
+        source,
+        fallbackDirection: fallback,
+      );
+      expect(runs, isNotEmpty);
+      expect(runs.every((run) => run.text.isNotEmpty), isTrue);
+      expect(runs.map((run) => run.text).join(), source);
+      expect(
+        runs.any((run) =>
+            run.direction == DocumentDirection.rtl && run.text.contains('قبل')),
+        isTrue,
+      );
+      expect(
+        runs.any((run) =>
+            run.direction == DocumentDirection.ltr && run.text.contains('MIX')),
+        isTrue,
+      );
+      expect(runs.map((run) => run.text).join(), contains('\u00a0'));
+    }
+  });
+
   testWidgets(
     'alignment offsets are part of canonical run geometry for Preview and PDF',
     (_) async {

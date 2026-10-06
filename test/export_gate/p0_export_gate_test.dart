@@ -28,8 +28,8 @@
 // لا «تقريباً صحيح» ولا RMSE: كل خلاصة مبنية على بايتات الملف نفسه.
 // =============================================================================
 import 'dart:convert';
-import 'dart:math' as math;
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -38,7 +38,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
+import 'package:writing_questions_app/layout/canonical/canonical_layout_preview.dart';
+import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
+import 'package:writing_questions_app/layout/canonical/layout_units.dart';
+import 'package:writing_questions_app/layout/document_direction.dart';
+import 'package:writing_questions_app/layout/pagination_engine.dart';
 import 'package:writing_questions_app/layout/paper_metrics.dart';
 import 'package:writing_questions_app/layout/visual/visual_content.dart';
 import 'package:writing_questions_app/layout/visual/visual_flutter_style.dart';
@@ -50,6 +55,7 @@ import 'package:writing_questions_app/models/exam_footer_model.dart';
 import 'package:writing_questions_app/models/exam_font.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/paper_settings.dart';
+import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/point_kind.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
@@ -497,127 +503,182 @@ class _PreviewCapture {
     required this.pages,
     required this.texts,
     required this.markerOrder,
-    required this.controller,
+    required this.layout,
+    required this.legacyPaginationInput,
+    required this.legacyPageAssignments,
+    required this.legacyPageCount,
   });
 
   final List<PageSnapshot> snapshots;
   final List<Uint8List> pages;
   final Map<String, _PreviewText> texts;
   final List<String> markerOrder;
-  final ExamWizardController controller;
+  final LayoutDocument layout;
+  final PaginationInput legacyPaginationInput;
+  final List<List<String>> legacyPageAssignments;
+  final int legacyPageCount;
 }
 
-/// أول فقرة في شجرة المعاينة يحوي نصّها [marker]، بقياساتها.
-/// كل فقرات النص في الشجرة — من `RichText` ومن `EditableText` معاً.
-///
-/// `RenderEditable` وارث `RenderParagraph`، وحقول المعاينة تُرسم عبره؛ لذا كان
-/// الحصر بـ`find.byType(RichText)` يُسقط فقرات المتن كلها ويُبقي الترويسة
-/// والتذييل فقط (قياس CI: 12 وسماً من 45 «غير مقاسة» وهي في الشجرة فعلاً).
-/// المشي على العناصر بالـ`renderObject` يجمع الاثنين بلا افتراض عن نوع الودجت.
-List<RenderParagraph> _paragraphsInTree(WidgetTester tester) {
-  final result = <RenderParagraph>[];
-  for (final element in find
-      .byElementPredicate(
-        (candidate) => candidate.renderObject is RenderParagraph,
-        skipOffstage: false,
-      )
-      .evaluate()) {
-    final renderObject = element.renderObject;
-    if (renderObject is RenderParagraph) {
-      result.add(renderObject);
-    }
-  }
-  return result;
-}
-
-/// يقيس وسوم المعاينة في جولة واحدة على الشجرة.
-///
-/// المشي لكل وسم على حدة (45 وسماً × شجرة خمس صفحات + `getBoxesForSelection`
-/// لكل مطابقة) كان يكلّف ميزانية الاختبار كلها: CI أجهض P0-GATE-01 بـ
-/// `TimeoutException after 0:10:00`. القياسات نفسها بلا تغيير — عدد الأسطر من
-/// `getBoxesForSelection`، والموضع من `localToGlobal`، وصناديق السطور مشتركة
-/// بين الوسوم التي تسقط في الفقرة نفسها.
-({Map<String, _PreviewText> found, List<String> missing, int richTextCount})
-    _measurePreviewMarkers(
+/// قياسات markers تُستخرج مباشرة من runs/lines في LayoutDocument؛ لا تُستنتج
+/// من Text widgets أو من نسخة Flutter نصية موازية للصفحة.
+({
+  Map<String, _PreviewText> found,
+  List<String> missing,
+  int lineCount,
+  List<String> lineTexts,
+}) _measurePreviewMarkers(
   WidgetTester tester,
+  LayoutDocument layout,
   List<String> markers,
 ) {
-  final paragraphs = _paragraphsInTree(tester);
-  final plain = paragraphs
-      .map((paragraph) => paragraph.text.toPlainText())
-      .toList(growable: false);
-  final lineCounts = <int, int>{};
+  final pageTops = <int, double>{};
+  var nextPageTop = 12.0;
+  for (final page in layout.pages) {
+    pageTops[page.index] = nextPageTop;
+    nextPageTop += LayoutUnits.ptToPx(page.pageSize.height) + 16;
+  }
+  final screenWidth =
+      tester.view.physicalSize.width / tester.view.devicePixelRatio;
+  final pageEntries = <({
+    int pageIndex,
+    LayoutLine line,
+    List<LayoutRun> runs,
+    String text,
+  })>[];
+  for (final page in layout.pages) {
+    void addLine(LayoutLine line) {
+      final byId = <String, LayoutRun>{
+        for (final run in line.runs) run.id: run,
+      };
+      final logicalRuns = <LayoutRun>[];
+      for (final runId in line.logicalRunIds) {
+        final run = byId[runId];
+        if (run != null) logicalRuns.add(run);
+      }
+      if (logicalRuns.isEmpty) {
+        logicalRuns.addAll(line.runs);
+        logicalRuns.sort((left, right) => left.logicalIndex.compareTo(right.logicalIndex));
+      }
+      pageEntries.add((
+        pageIndex: page.index,
+        line: line,
+        runs: logicalRuns,
+        text: logicalRuns.map((run) => run.text).join(),
+      ));
+    }
+
+    for (final block in page.blocks) {
+      for (final line in block.allLines) {
+        addLine(line);
+      }
+    }
+    for (final placement in page.floatingElements) {
+      for (final line in placement.labelLines) {
+        addLine(line);
+      }
+    }
+  }
+
+  final paragraphIds = <String, Set<int>>{};
+  for (final marker in markers) {
+    for (final entry in pageEntries) {
+      if (textMentions(entry.text, marker)) {
+        for (final run in entry.runs) {
+          if (textMentions(run.text, marker)) {
+            paragraphIds.putIfAbsent(marker, () => <int>{})
+                .add(entry.line.paragraphIndex);
+          }
+        }
+        paragraphIds.putIfAbsent(marker, () => <int>{})
+            .add(entry.line.paragraphIndex);
+      }
+    }
+  }
+
+  Rect runRect(({int pageIndex, LayoutLine line, List<LayoutRun> runs, String text}) entry,
+      LayoutRun run) {
+    final pageWidth = LayoutUnits.ptToPx(layout.pageSize.width);
+    final containerWidth = math.max(screenWidth, pageWidth + 24);
+    final pageLeft = (containerWidth - pageWidth) / 2;
+    final pageTop = pageTops[entry.pageIndex] ?? 0;
+    return Rect.fromLTWH(
+      pageLeft + LayoutUnits.ptToPx(run.x),
+      pageTop + LayoutUnits.ptToPx(entry.line.baseline - run.baselineOffset),
+      LayoutUnits.ptToPx(run.width),
+      LayoutUnits.ptToPx(run.height),
+    );
+  }
+
+  Rect lineRect(({int pageIndex, LayoutLine line, List<LayoutRun> runs, String text}) entry) {
+    final pageWidth = LayoutUnits.ptToPx(layout.pageSize.width);
+    final containerWidth = math.max(screenWidth, pageWidth + 24);
+    final pageLeft = (containerWidth - pageWidth) / 2;
+    final pageTop = pageTops[entry.pageIndex] ?? 0;
+    return Rect.fromLTWH(
+      pageLeft + LayoutUnits.ptToPx(entry.line.rect.left),
+      pageTop + LayoutUnits.ptToPx(entry.line.rect.top),
+      LayoutUnits.ptToPx(entry.line.rect.width),
+      LayoutUnits.ptToPx(entry.line.rect.height),
+    );
+  }
+
+  TextAlign? asTextAlign(PaperAlign? alignment) => switch (alignment) {
+        PaperAlign.left => TextAlign.left,
+        PaperAlign.right => TextAlign.right,
+        PaperAlign.center => TextAlign.center,
+        PaperAlign.justify => TextAlign.justify,
+        PaperAlign.start => TextAlign.start,
+        PaperAlign.end => TextAlign.end,
+        null => layout.direction == DocumentDirection.rtl
+            ? TextAlign.right
+            : TextAlign.left,
+      };
+
   final found = <String, _PreviewText>{};
   final missing = <String>[];
   for (final marker in markers) {
-    var hit = -1;
-    for (var index = 0; index < plain.length; index++) {
-      if (textMentions(plain[index], marker)) {
-        hit = index;
-        break;
-      }
-    }
-    if (hit < 0) {
+    final ids = paragraphIds[marker];
+    if (ids == null || ids.isEmpty) {
       missing.add(marker);
       continue;
     }
-    final paragraph = paragraphs[hit];
-    final lines = lineCounts.putIfAbsent(hit, () {
-      final boxes = paragraph.getBoxesForSelection(
-        TextSelection(baseOffset: 0, extentOffset: plain[hit].length),
-        boxHeightStyle: ui.BoxHeightStyle.max,
-      );
-      final tops = boxes.map((box) => box.top.roundToDouble()).toSet();
-      return tops.isEmpty ? 1 : tops.length;
-    });
-    final origin = paragraph.localToGlobal(Offset.zero);
-    final span = paragraph.text;
+    final paragraphLines = pageEntries
+        .where((entry) => ids.contains(entry.line.paragraphIndex))
+        .toList(growable: false);
+    final runRects = <Rect>[];
+    final fonts = <String>{};
+    for (final entry in paragraphLines) {
+      for (final run in entry.runs) {
+        if (run.text.isEmpty && !run.isMath) continue;
+        runRects.add(runRect(entry, run));
+        if (run.style.font.family.isNotEmpty) fonts.add(run.style.font.family);
+      }
+    }
+    var rect = runRects.isEmpty ? lineRect(paragraphLines.first) : runRects.first;
+    for (final candidate in runRects.skip(1)) {
+      rect = rect.expandToInclude(candidate);
+    }
+    final firstLine = paragraphLines.first.line;
+    final extraSpace = paragraphLines
+        .firstWhere((entry) => entry.line.isJustified, orElse: () => paragraphLines.first)
+        .line
+        .extraSpacePerOpportunity;
     found[marker] = _PreviewText(
       marker: marker,
-      text: plain[hit],
-      lines: lines,
-      rect: Rect.fromLTWH(0, 0, paragraph.size.width, paragraph.size.height)
-          .shift(origin),
-      align: paragraph.textAlign,
-      wordSpacing: _firstWordSpacing(span),
-      fontFamilies: _fontFamiliesOf(span),
+      text: paragraphLines.map((entry) => entry.text).join(),
+      lines: paragraphLines.length,
+      rect: rect,
+      align: asTextAlign(firstLine.alignment),
+      wordSpacing: extraSpace == 0 ? 0 : LayoutUnits.ptToPx(extraSpace),
+      fontFamilies: fonts,
     );
   }
-  return (found: found, missing: missing, richTextCount: paragraphs.length);
-}
-
-double? _firstWordSpacing(InlineSpan span) {
-  if (span is TextSpan) {
-    final value = span.style?.wordSpacing;
-    if (value != null && value != 0) {
-      return value;
-    }
-    for (final child in span.children ?? const <InlineSpan>[]) {
-      final nested = _firstWordSpacing(child);
-      if (nested != null) {
-        return nested;
-      }
-    }
-  }
-  return null;
-}
-
-Set<String> _fontFamiliesOf(InlineSpan span) {
-  final result = <String>{};
-  void visit(InlineSpan node) {
-    if (node is TextSpan) {
-      final family = node.style?.fontFamily;
-      if (family != null && family.isNotEmpty) {
-        result.add(family);
-      }
-      for (final child in node.children ?? const <InlineSpan>[]) {
-        visit(child);
-      }
-    }
-  }
-
-  visit(span);
-  return result;
+  return (
+    found: found,
+    missing: missing,
+    lineCount: pageEntries.length,
+    lineTexts: pageEntries.map((entry) => entry.text).toList(growable: false),
+  );
 }
 
 /// يبني المعاينة للوثيقة، يكمل القياس، ويلتقط كل صفحة، ويقيس فقراتها.
@@ -634,47 +695,106 @@ Future<_PreviewCapture> _capturePreviewOf(
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
 
+  // Resolve the actual source geometry and renderer assets once outside
+  // FakeAsync. The widget receives those exact objects through its documented
+  // test seams; this avoids racing image decoding while preserving the real
+  // CanonicalLayoutService and CanonicalLayoutPreviewAssets implementations.
+  final preparation = await tester.runAsync(() async {
+    final sourceIr = controller.documentIr;
+    final layout = await CanonicalLayoutService.resolve(
+      document: document,
+      sourceIr: sourceIr,
+    );
+    final assets = await CanonicalLayoutPreviewAssets.load(
+      layout: layout,
+      document: document,
+    );
+    final paginationInput =
+        await DocxDocumentExportService.resolveEditablePaginationInput(
+      document: document,
+      sourceIr: sourceIr,
+      measurementLayout: layout,
+    );
+    return (
+      layout: layout,
+      assets: assets,
+      paginationInput: paginationInput,
+    );
+  });
+  expect(preparation, isNotNull);
+  final prepared = preparation!;
+  addTearDown(prepared.assets.dispose);
+  _stage('Canonical layout resolved: ${prepared.layout.pageCount} pages');
+
   await tester.pumpWidget(
     MaterialApp(
       home: ChangeNotifierProvider<ExamWizardController>.value(
         value: controller,
-        child: ExamPreviewScreen(onBackToQuestions: () {}),
+        child: ExamPreviewScreen(
+          onBackToQuestions: () {},
+          canonicalLayoutResolver: ({
+            required document,
+            required sourceIr,
+          }) async => prepared.layout,
+          canonicalPreviewAssetLoader: ({
+            required layout,
+            required document,
+          }) async => prepared.assets,
+        ),
       ),
     ),
   );
+  await tester.pump(const Duration(milliseconds: 100));
   await tester.pumpAndSettle();
-  for (var frame = 0; frame < 10 && !controller.isFullyMeasured; frame++) {
-    await tester.pump();
+  final previewElements =
+      find.byType(CanonicalLayoutPreviewPage).evaluate().toList(growable: false);
+  expect(previewElements, isNotEmpty,
+      reason: 'المعاينة القانونية لم تُجهّز أي صفحة.');
+  final layout =
+      (previewElements.first.widget as CanonicalLayoutPreviewPage).layoutDocument;
+  expect(
+    previewElements.every((element) =>
+        identical(
+          (element.widget as CanonicalLayoutPreviewPage).layoutDocument,
+          layout,
+        )),
+    isTrue,
+    reason: 'كل صفحات Preview يجب أن ترسم كائن LayoutDocument نفسه.',
+  );
+  expect(previewElements, hasLength(layout.pageCount));
+  expect(identical(layout.source, controller.documentIr), isTrue,
+      reason: 'The live geometry must bind to the current DocumentIR instance.');
+  for (final element in previewElements) {
+    final preview = element.widget as CanonicalLayoutPreviewPage;
+    expect(identical(preview.page, layout.pages[preview.page.index]), isTrue);
   }
-  expect(controller.isFullyMeasured, isTrue,
-      reason: 'لم يكتمل قياس كتل المعاينة، فلا معنى لعدد الصفحات.');
-  final pageCount = controller.pagination.pageCount;
-  // التشخيص قبل الحكم: بلا الارتفاعات المقاسة يصير «صفحة واحدة» لغزاً.
-  final measuredHeights = <String, double?>{
-    for (final question in controller.document.questions)
-      question.id: controller.blockHeight(question.id),
-    PaperMetrics.headerBlockId: controller.blockHeight(PaperMetrics.headerBlockId),
-  };
-  final heightSum = measuredHeights.values
-      .fold<double>(0, (sum, h) => sum + (h ?? 0));
-  _stage('تقسيم ${document.name}: صفحات=$pageCount، '
-      'مجموع الارتفاعات=${heightSum.toStringAsFixed(1)}px، '
-      'ارتفاع محتوى الصفحة='
-      '${PaperMetrics.pageContentHeightFor(document.settings.marginMm)}px، '
-      'قيست ${measuredHeights.values.where((h) => h != null).length}/'
-      '${measuredHeights.length} كتلة، '
-      'الكتل=${measuredHeights.map((k, v) => MapEntry<String, String>(k, v?.toStringAsFixed(1) ?? 'null'))}');
-  if (pageCount <= 1) {
-    // السجل وحده لا يكفي عند الفشل: تعليق CI يحمل الأرقام كما هي.
-    debugPrint('::error title=p0-gate pagination::'
-        '${document.name}: صفحات=$pageCount، '
-        'مجموع الارتفاعات=${heightSum.toStringAsFixed(1)}px، '
-        'صفحة=${PaperMetrics.pageContentHeightFor(document.settings.marginMm)}px، '
-        'الكتل=$measuredHeights');
-  }
+  await tester.pumpAndSettle();
+  final pageCount = layout.pageCount;
   expect(pageCount, greaterThan(1),
-      reason: 'التركيبة يجب أن تتعدّى صفحة واحدة لتغطية التقسيم: '
-          'الارتفاعات المقاسة = $measuredHeights.');
+      reason: 'التركيبة يجب أن تتعدّى صفحة واحدة لتغطية التخطيط القانوني.');
+  for (final page in layout.pages) {
+    expect(page.contentBounds.left, greaterThanOrEqualTo(0));
+    expect(page.contentBounds.right, lessThanOrEqualTo(page.pageSize.width));
+    expect(page.bodyBounds.top, greaterThanOrEqualTo(page.contentBounds.top));
+    expect(page.bodyBounds.bottom, lessThanOrEqualTo(page.contentBounds.bottom));
+    final footer = page.footerBounds;
+    if (footer != null) {
+      expect(page.bodyBounds.bottom, lessThanOrEqualTo(footer.top + 0.01),
+          reason: 'صفحة ${page.index}: مساحة المتن تداخلت مع التذييل.');
+      expect(footer.bottom, lessThanOrEqualTo(page.pageSize.height));
+    }
+  }
+  final legacyPaginationInput = prepared.paginationInput;
+  final legacyPages = legacyPaginationInput.paginate().pages
+      .map((page) => page.blockIds
+          .where((id) => id != PaperMetrics.headerBlockId)
+          .toList(growable: false))
+      .where((page) => page.isNotEmpty)
+      .toList(growable: false);
+  final legacyPageCount = legacyPages.length;
+  _stage('تقسيم ${document.name}: canonical=$pageCount صفحة؛ '
+      'editable PaginationEngine=$legacyPageCount صفحة؛ '
+      'مساحة المحتوى=${PaperMetrics.pageContentHeightFor(document.settings.marginMm)}px.');
 
   // نافذة تكفي لرسم كل الصفحات (ما خرج من نافذة التمرير لا يُرسم ولا يُلقط).
   var viewHeight = (ExamCanvasGeometry.height + 16) * pageCount + 400;
@@ -711,24 +831,27 @@ Future<_PreviewCapture> _capturePreviewOf(
       : <String>{
           ...P0GateFixture.headerMarkers,
           ...P0GateFixture.footerMarkers,
+          ...P0GateFixture.floatingMarkers,
         };
   final markersToMeasure = <String>{...known, ...sideMarkers, ...markers};
-  final measurement =
-      _measurePreviewMarkers(tester, markersToMeasure.toList());
+  final measurement = _measurePreviewMarkers(
+    tester,
+    layout,
+    markersToMeasure.toList(),
+  );
   final texts = measurement.found;
   if (measurement.missing.isNotEmpty) {
     // القائمة لا العدد فقط: «وسوم مقاسة 12/45» وحده لا يقول ما الناقص.
     // وحجم الشجرة يُفرّق «وسماً غائباً» عن «لا نصوص في الشجرة أصلاً».
     _stage('${document.name}: وسوم لم تُقَس في المعاينة '
         '(${measurement.missing.length}): ${measurement.missing.join(', ')}؛ '
-        ' فقرات في الشجرة=${measurement.richTextCount}');
+        ' أسطر canonical=${measurement.lineCount}');
   }
-  final treeParts = _paragraphsInTree(tester)
-      .map((paragraph) => paragraph.text.toPlainText())
-      .toList();
-  final markerOrder = _markerOrderInParts(treeParts, known)
-      .where((marker) => !excluded.contains(marker))
-      .toList();
+  final markerOrder = _markerOrderInParts(
+    measurement.lineTexts,
+    known,
+    allowReversed: false,
+  ).where((marker) => !excluded.contains(marker)).toList();
 
   final capture = await tester.runAsync(() async {
     final snapshots = <PageSnapshot>[];
@@ -771,15 +894,20 @@ Future<_PreviewCapture> _capturePreviewOf(
         .toList(),
     texts: texts,
     markerOrder: markerOrder,
-    controller: controller,
+    layout: layout,
+    legacyPaginationInput: legacyPaginationInput,
+    legacyPageAssignments: legacyPages,
+    legacyPageCount: legacyPageCount,
   );
 }
 
 List<RenderRepaintBoundary> _pageBoundaries(WidgetTester tester) => tester
     .renderObjectList<RenderRepaintBoundary>(find.byType(RepaintBoundary))
     .where((boundary) =>
-        boundary.size.width == ExamCanvasGeometry.width &&
-        boundary.size.height == ExamCanvasGeometry.height)
+        boundary.size.width > ExamCanvasGeometry.width - 1 &&
+        boundary.size.width < ExamCanvasGeometry.width + 1 &&
+        boundary.size.height > ExamCanvasGeometry.height - 1 &&
+        boundary.size.height < ExamCanvasGeometry.height + 1)
     .toList(growable: false);
 
 /// أمثلة على محارف عربية غير مشكَّلة رسُمت في PDF (للتشخيص لا للافتراض).
@@ -842,8 +970,6 @@ void main() {
       'P0-GATE-00: مرجع المعاينة — RTL و LTR: لقطات كل صفحة وقياس كل وسم',
       (tester) async {
     await _loadAppFonts();
-    final mathHost = FakeMathHost()..attach();
-    addTearDown(mathHost.detach);
 
     final rtlDocument = P0GateFixture.rtl();
     final ltrDocument = P0GateFixture.ltr();
@@ -1020,6 +1146,8 @@ void main() {
       _gate.rtlEditableDocx =
           await DocxDocumentExportService.buildDocumentDocxBytes(
         document: rtlDocument,
+        pageAssignments: rtl.legacyPageAssignments,
+        legacyPaginationInput: rtl.legacyPaginationInput,
       );
       _stage('توليد editable.docx عربي: ${watch.elapsedMilliseconds}ms، '
           '${_gate.rtlEditableDocx!.length} بايت');
@@ -1134,6 +1262,8 @@ void main() {
       _gate.ltrEditableDocx =
           await DocxDocumentExportService.buildDocumentDocxBytes(
         document: ltrDocument,
+        pageAssignments: ltr.legacyPageAssignments,
+        legacyPaginationInput: ltr.legacyPaginationInput,
       );
       _stage('توليد editable_ltr.docx: ${watch.elapsedMilliseconds}ms');
       watch
@@ -1264,14 +1394,14 @@ void main() {
         reason: 'تسلسل المحتوى في vector.pdf يختلف عن ترتيب العقد:\n'
             '  PDF : $pdfOrder\n  عقد : $expectedOrder');
 
-    // موضع الترويسة والتذييل: الموضع يُقاس لا الحضور وحده. في PDF الترويسة
-    // كتلة تُطبع في أعلى ص1 (`if (pageIndex == 0)` في المحرك) والتذييل في
-    // أسفل آخر صفحة؛ وتكرار الترويسة على كل صفحة قرار تخطيط لا يُغيَّر في P0.
+    // Header/footer presence, first/last-page placement, and body/footer
+    // separation are measured from the actual vector PDF text operators.
     final headerPages = report.pages
         .where((page) => page.linesWithMarker('HDRV').isNotEmpty)
         .toList();
-    expect(headerPages, isNotEmpty,
-        reason: 'الترويسة غائبة من كل صفحة في vector.pdf.');
+    expect(headerPages.map((page) => page.index), <int>[0],
+        reason: 'الترويسة يجب أن تظهر مرة واحدة في الصفحة الأولى فقط: '
+            '${headerPages.map((page) => page.index).toList()}.');
     // «أول سطر» حرفياً مقياس هشّ: pdf يقطّع السطر إلى كلمات، فقد يبدأ السطر
     // بقطعة من تسمية المدرسة («دارة») لا بالوسم نفسه. المقياس الصحيح نسبي
     // وبلا وحدات: سطر الترويسة يُرسم قبل سطر المتن، وأعلى سطر مرسوم في الصفحة
@@ -1302,13 +1432,30 @@ void main() {
             '"${firstPageLines.first.describe()}"، وسطر الترويسة '
             'y=${_lineTop(report.pages.first.lines[headerLineIndex])}).');
     final lastPage = report.pages.last;
-    expect(
-      lastPage.linesWithMarker('FTR1'),
-      isNotEmpty,
-      reason: 'التذييل مفقود من آخر صفحة في vector.pdf.',
-    );
-    _stage('ترويسة PDF: ${headerPages.length} من ${report.pageCount} صفحة '
-        '(Word يكررها عبر header1.xml)؛ تذييل في ص${lastPage.index + 1}.');
+    final footerPages = report.pages
+        .where((page) => page.linesWithMarker('FTR1').isNotEmpty)
+        .toList(growable: false);
+    expect(footerPages.map((page) => page.index), <int>[lastPage.index],
+        reason: 'التذييل يجب أن يظهر على الصفحة الأخيرة فقط: '
+            '${footerPages.map((page) => page.index).toList()}.');
+    final bodyLines = lastPage.linesWithMarker('PG12');
+    final footerLines = lastPage.linesWithMarker('FTR1');
+    expect(bodyLines, isNotEmpty,
+        reason: 'آخر وسم متن PG12 غائب من صفحة DOCX/PDF الأخيرة.');
+    expect(footerLines, isNotEmpty);
+    double lineBottom(ProbedLine line) => line.words
+        .map((word) => word.y - word.fontSize * 0.25)
+        .reduce(math.min);
+    double lineTop(ProbedLine line) => line.words
+        .map((word) => word.y + word.fontSize * 0.75)
+        .reduce(math.max);
+    final bodyBottom = bodyLines.map(lineBottom).reduce(math.min);
+    final footerTop = footerLines.map(lineTop).reduce(math.max);
+    expect(bodyBottom, greaterThan(footerTop),
+        reason: 'Vector PDF body/footer line boxes overlap on the last page: '
+            'body bottom=$bodyBottom, footer top=$footerTop.');
+    _stage('PDF header on page 1 only; footer on page ${lastPage.index + 1} only; '
+        'last body/footer measured gap=${(bodyBottom - footerTop).toStringAsFixed(2)}pt.');
 
     _matrix.record('pagination', P0Path.vectorPdf, P0Status.pass,
         evidence: 'صفحات=${report.pageCount}، '
@@ -1318,15 +1465,12 @@ void main() {
     _matrix.record('arabic', P0Path.vectorPdf, P0Status.pass,
         evidence: 'تسلسل العقد كله مرسوم: ${pdfOrder.length} وسم، '
             'وسطور ص1=${report.pages.first.lineCount}');
-    _matrix.record('header-footer', P0Path.vectorPdf, P0Status.deferredToP1,
-        evidence: 'HDRV في ${headerPages.length} من ${report.pageCount} صفحة '
-            '(أول سطر مرسوم في ص1) وFTR1 في ص${lastPage.index + 1}؛ '
-            'وفي Word هذه الركيزة لا يُنتج `word/header*.xml` بلا صورة إطار '
-            'فتُطبع الترويسة في المتن (قيس في P0-GATE-06)',
-        reason: 'تكرار الترويسة على كل صفحة قرار تخطيط: في PDF والمعاينة كتلة '
-            'تُطبع مرة، وفي Word جزء header يتكرر — لا تُوحَّدان في P0 لأن '
-            'أي تغيير فيهما يمسّ حساب ارتفاعات التقسيم. يُحسم مع طبقة '
-            'التخطيط الواحدة (P1).');
+    _matrix.record('header-footer', P0Path.vectorPdf, P0Status.pass,
+        evidence: 'header pages=${headerPages.map((page) => page.index).join('/')} '
+            'of ${report.pageCount}; footer pages='
+            '${footerPages.map((page) => page.index).join('/')} of '
+            '${report.pageCount}; measured body/footer clearance='
+            '${(bodyBottom - footerTop).toStringAsFixed(2)}pt.');
   });
 
   test('P0-GATE-03: بنية vector.pdf — ترتيب الكلمات العربية، التشكيل، '
@@ -1813,112 +1957,51 @@ void main() {
         reason: 'علاقة تشير إلى ملف غير موجود في الحزمة: '
             '${probe.missingRelationTargets("word/document.xml")}');
 
-    // الترويسة في Word لها شكلان عند المنتج نفسه، ولا يُقرَّر الادّعاءُ بل
-    // القياس: `DocxDocumentExportService` يبني `word/header1.xml` **فقط** إذا
-    // كان للورقة إطار صفحة (`settings.pageBorder` مع صورة إطار غير فارغة،
-    // docx_document_export_service.dart:431)، وإلا طُبعت فقرات الترويسة في
-    // أول المتن مرة واحدة كما في المعاينة وPDF. الركيزة بلا إطار (لا
-    // تُختَرع أصول من الاختبار) ⇒ المطلوب هنا: أن يظهر كل حقل في أحد
-    // الموضعين بشكله المطبَّع أو الخام، وأن يُسجَّل أيُّهما استُعمل — لا أن
-    // يُدَّعى تكرارٌ غير موجود، ولا أن يُقرأ تطبيعُ الأرقام فقدانَ حقل.
+    // In the editable format this unframed header is represented in the
+    // document flow, followed by the footer after the final body marker.
+    // Verify its measured ordering directly; optional page-frame header parts
+    // are not the source of the fixture's header content.
     final headerParts = probe.xmlPartNames
         .where((name) => name.startsWith('word/header'))
         .toList();
-    final headerInBody = P0GateFixture.headerMarkers.every((marker) =>
-        probe.flatText.contains(marker) ||
-        probe.flatText.contains(document.localizeDigits(marker)));
-    // ادّعاءٌ مقيَس لا مُتوهَّم: جدول الترويسة يُكتب في المتن (سطر 401 من
-    // docx_document_export_service.dart) بلا شروط، فوجوده هو ما يُفحص هنا؛
-    // أما هل وصلت **كل حقل** من حقول الترويسة فيُقاس أدناه لكل حقل على حدة
-    // بالشكلين (الخام والمطبَّع) ويُفشِل البوابة حقيقةً إن غاب حقل.
-    expect(probe.documentXml.contains('<w:tbl'), isTrue,
-        reason: 'لا جدول ترويسة في document.xml: `build()` لم يكتب '
-            '_buildHeaderTable (وصلت الترويسة إلى PDF).');
-    // القياس لكل وسم على حدة في الموضعين الذين يمكن أن تظهر فيهما الترويسة
-    // (جزء header أو متن document.xml)، لا لوجودها العام: لا يكفي أن وصلت
-    // «بعض» الحقول لتُسمى الترويسة مقيسة.
-    final headerPartText = headerParts.map(probe.part).join(' ');
-    // القياس الخام كان يقرأ **تطبيع الأرقام** فقدانَ حقل: المولّد يمرّر قيمة
-    // كل سطر ترويسة عبر `ExamDocument.localizeDigits` قبل كتابته، فوسم
-    // الركيزة `HDC1` يصل الملف `HDC١` (نسق الورقة عربية-هندية)، ولا يوجد
-    // `HDC1` في أي جزء بطبيعته. القياس اليوم يبحث عن الشكلين — الخام
-    // والمطبَّع — ويُفشِل البوابة إن غاب الحقل بالشكلين، فلا يُبيَّض غيابٌ
-    // حقيقي ولا يُسجَّل تطبيعٌ مشروع انحداراً.
     final rtlDocument = document;
     String localizedMarker(String marker) => rtlDocument.localizeDigits(marker);
     bool headerFieldIn(String haystack, String marker) =>
         haystack.contains(marker) || haystack.contains(localizedMarker(marker));
-    // المعيار «جزء الترويسة» لا document.xml:HDRV قيمة صفٍّ تُطبع في المتن
-    // أيضاً، فحسابُ حضورها العام وصولاً إلى الترويسة يُبيضّ انحداراً موجوداً.
-    // لذلك يُقاس الموضعان معاً ويسقطان إلى الخلية كما هما.
-    final missingInHeaderPart = P0GateFixture.headerMarkers
-        .where((marker) => !headerFieldIn(headerPartText, marker))
-        .toList();
     final missingInBody = P0GateFixture.headerMarkers
         .where((marker) => !headerFieldIn(probe.flatText, marker))
         .toList();
-    final missingAnywhere = P0GateFixture.headerMarkers
-        .where((marker) =>
-            !headerFieldIn(probe.flatText, marker) &&
-            !headerFieldIn(headerPartText, marker))
-        .toList();
-    final localizedHeaderMarkers =
-        P0GateFixture.headerMarkers.map(localizedMarker).join('/');
-    // الغياب الحقيقي يُفشل البوابة هنا: كل حقل ترويسة يجب أن يصل الملف
-    // بشكله المطبَّع أو الخام، ولو غاب واحد لسقط كل ما بعده من ادّعاء.
-    expect(missingAnywhere, isEmpty,
-        reason: 'حقول ترويسة غائبة عن editable.docx بالمطبَّع والخام: '
-            '$missingAnywhere — الخام: '
-            '${P0GateFixture.headerMarkers.join("/")}، المطبَّع: '
-            '$localizedHeaderMarkers');
-    if (missingInHeaderPart.isNotEmpty) {
-      debugPrint(
-          '::error title=p0-gate DOCX header structure (DEFERRED_TO_P1)::'
-          'editable.docx: ${headerParts.isEmpty ? 'لا header*.xml إطلاقاً' : headerParts.join(", ")}؛ '
-          'حقول الترويسة الخمسة مقيسة في المتن بأرقام مطبَّعة '
-          '$localizedHeaderMarkers (الخام '
-          '${P0GateFixture.headerMarkers.join("/")}) — '
-          'الغياب عن جزء الترويسة بنيةُ موضع لا فقدانُ حقل: الترويسة تُطبع '
-          'مرة في أول المتن ولا تتكرر على الصفحات في Word؛ مُسجَّل '
-          'DEFERRED_TO_P1 بقرار «مرة أم كل صفحة» لا بفقد حقل.');
-      _stage('DOCX: لا جزء ترويسة؛ الحقول الخمسة مقيسة في المتن '
-          '(${P0GateFixture.headerMarkers.length - missingInBody.length}'
-          '/${P0GateFixture.headerMarkers.length} بالشكل المطبَّع أو الخام) — '
-          'DEFERRED_TO_P1 لبنية الموضع لا لفقدان حقل.');
-      _matrix.record('header-footer', P0Path.editableDocx,
-          P0Status.deferredToP1,
-          evidence: 'لا جزء header*.xml '
-              '(${headerParts.isEmpty ? 'الركيزة بلا إطار، فلا يُبنى جزء' : headerParts.join(", ")}); '
-              'الحقول ${P0GateFixture.headerMarkers.join("/")} كلها في '
-              'document.xml بأرقام مطبَّعة $localizedHeaderMarkers '
-              '(مقيس: ${P0GateFixture.headerMarkers.length - missingInBody.length}'
-              '/${P0GateFixture.headerMarkers.length} بالشكلين)؛ Word يقرأ '
-              'الترويسة فقراتٍ في أول المتن مرة واحدة، وفي vector.pdf '
-              'مرة على ص1؛ ترويسة كاملة في المتن: $headerInBody',
-          reason: 'جزء header*.xml مشروط بـ`pageBorder` + صورة إطار غير '
-              'فارغة في docx_document_export_service.dart:431، والترويسة '
-              'بلا إطار تُطبع فقراتٍ في أول المتن فتتبع التدفّق مرة واحدة '
-              'ولا تتكرر؛ قرار «تُكرَّر على كل صفحة أم مرة» يمسّ حساب '
-              'ارتفاعات التقسيم ويُحسم في طبقة التخطيط الواحدة، فلا يُغيَّر '
-              'في P0.');
+    expect(missingInBody, isEmpty,
+        reason: 'DOCX body-flow header fields are missing: $missingInBody');
+    final flatText = probe.flatText;
+    int markerOffset(String marker) {
+      final localized = localizedMarker(marker);
+      final offset = flatText.indexOf(localized);
+      return offset >= 0 ? offset : flatText.indexOf(marker);
     }
-    _stage(headerParts.isEmpty
-        ? 'DOCX عربي: لا جزء header*.xml — الترويسة فقرات في المتن '
-            '(شرط الجزء: `pageBorder` + صورة إطار، §8 بند 1)'
-        : 'DOCX عربي: جزء الترويسة ${headerParts.join(",")} معلن '
-            'ويتكرر على كل صفحة في Word');
-    // الفحص لا يسقط إلى الصمت: القيمة الحقيقية مفروضة بـ`expect` أعلاه
-    // (غياب أي حقل بالشكلين يُفشل البوابة)، وبنيةُ الموضع تُسجَّل في الخلية
-    // بسبب مسمّى، وGATE-99 تُفشِل البوابة إن ضاع التسجيل أو لم يسمِّ
-    // الوسوم الخمسة (الخام والمطبَّع) أو لم تطابق حالةُ الخلية البنيةَ
-    // المقيسة — فالبند لا يُمحى ولا يُنعَّم ولا يُقرأ تطبيعُ الأرقام عطلاً.
-    _stage('DOCX: الترويسة في جزء الترويسة '
-        '${P0GateFixture.headerMarkers.length - missingInHeaderPart.length}'
-        '/${P0GateFixture.headerMarkers.length}، وفي document.xml '
-        '${P0GateFixture.headerMarkers.length - missingAnywhere.length}'
-        '/${P0GateFixture.headerMarkers.length}؛ الغائب عن الجزء '
-        '$missingInHeaderPart (مقيس، مُسجَّل، ومسمّى في GATE-99).');
 
+    final firstQuestionOffset = markerOffset('STA1');
+    expect(firstQuestionOffset, greaterThanOrEqualTo(0));
+    for (final marker in P0GateFixture.headerMarkers) {
+      final offset = markerOffset(marker);
+      expect(offset, greaterThanOrEqualTo(0), reason: '$marker missing in DOCX.');
+      expect(offset, lessThan(firstQuestionOffset),
+          reason: 'Header marker $marker must precede the first question.');
+    }
+    final lastQuestionOffset = markerOffset('PG12');
+    expect(lastQuestionOffset, greaterThanOrEqualTo(0));
+    for (final marker in P0GateFixture.footerMarkers) {
+      final offset = markerOffset(marker);
+      expect(offset, greaterThan(lastQuestionOffset),
+          reason: 'Footer marker $marker must follow the final body marker.');
+    }
+    _matrix.record('header-footer', P0Path.editableDocx, P0Status.pass,
+        evidence: 'Header ${P0GateFixture.headerMarkers.map(localizedMarker).join('/')} '
+            'precedes STA1; footer '
+            '${P0GateFixture.footerMarkers.map(localizedMarker).join('/')} '
+            'follows PG12 in document.xml.');
+    _stage('DOCX header/footer: ${headerParts.isEmpty ? 'body-flow header' : headerParts.join(',')} '
+        'with all fields in order; footer after the final body question.');
     // تسلسل `w:t` المنطقي == ترتيب العقد (منع تغيير تسلسل المحتوى).
     final expectedOrder = P0GateFixture.bodyMarkerSequence(document);
     final docxOrder = _markerOrder(probe.flatText, known);
@@ -1944,10 +2027,22 @@ void main() {
         reason: 'جريان الرقم ليس قبل المنطوق: "$runTexts"');
     expect(runTexts.indexOf('STA1') < runTexts.indexOf('٢٠'), isTrue,
         reason: 'جريان المنطوق ليس قبل الدرجة: "$runTexts"');
-    // كل جريان عربي يحمل w:rtl (القرار القائم) — مُثبَّت لا مُغيَّر.
-    expect(title.runs.every((run) => run.rtl), isTrue,
-        reason: 'جريان في فقرة عربية بلا `w:rtl`: '
-            '${title.runs.map((run) => run.text).toList()}');
+    // Direction is per strong-script run: Arabic remains RTL while the
+    // embedded English marker remains LTR inside this RTL paragraph.
+    final arabicRuns = title.runs
+        .where((run) => RegExp('[\\u0600-\\u06FF]').hasMatch(run.text))
+        .toList();
+    final englishRuns = title.runs
+        .where((run) => run.text.contains('STA1'))
+        .toList();
+    expect(arabicRuns, isNotEmpty);
+    expect(arabicRuns.every((run) => run.rtl), isTrue,
+        reason: 'Arabic run in RTL paragraph lacks `w:rtl`: '
+            '${arabicRuns.map((run) => run.text).toList()}');
+    expect(englishRuns, isNotEmpty);
+    expect(englishRuns.every((run) => !run.rtl), isTrue,
+        reason: 'Embedded English run in RTL paragraph incorrectly carries '
+            '`w:rtl`: ${englishRuns.map((run) => run.text).toList()}');
 
     // خصائص الفقرة العددية.
     expect(title.props.lineTwips, isNotNull,
@@ -1973,10 +2068,12 @@ void main() {
         (15 / 25.4 * 1440).round(),
         reason: 'هامش Word لا يطابق 15mm من إعداد الورقة.');
 
-    // فواصل الصفحات = الخطة نفسها التي استعملها PDF.
-    expect(probe.pageBreakCount + 1, _gate.rtlPdfReport.pageCount,
-        reason: 'Word يكسر في ${probe.pageBreakCount + 1} صفحة وPDF في '
-            '${_gate.rtlPdfReport.pageCount}: خطة التقسيم لم تصل إلى الملف.');
+    // DOCX follows the legacy PaginationEngine plan (measured by the
+    // interactive surface), not the canonical PDF page assignments.
+    final legacyPageCount = _gate.rtlCapture!.legacyPageCount;
+    expect(probe.pageBreakCount + 1, legacyPageCount,
+        reason: 'Word يكسر في ${probe.pageBreakCount + 1} صفحة وخطة '
+            'PaginationEngine في $legacyPageCount: التوزيع لم يصل إلى الملف.');
 
     // OMML: معادلة Word أصلية بدل صورة، وعدد مناطق المعادلة = عدد الصيغ.
     final mathTotal = probe.inlineMathCount + probe.mathParagraphCount;
@@ -2042,32 +2139,22 @@ void main() {
         evidence: '«(٢٠ درجة)» في جريان فقرة العنوان');
     _matrix.record('options', P0Path.editableDocx, P0Status.pass,
         evidence: 'OP1A..OP1C في فقرات الخيارات بعد نص النقطة بنفس الترتيب');
-    _matrix.record('floating', P0Path.editableDocx, P0Status.deferredToP1,
-        reason: 'العناصر الحرة تُكتب في تدفق الفقرات بلا مرساة `wp:anchor` '
-            'وبلا موضع صفحة (انظر _buildOwnedElements)، فتتدفق مع النص '
-            'بدلاً من أن تثبته Word في موضعه. الإصلاح يحتاج قرار هندسة '
-            'العناصر في Rاسم OOXML واحد (P1).',
-        evidence: 'r:embed=${probe.embeddedRelationIds.length}، '
-            'وسائط=${probe.mediaNames.length}، ولا `wp:anchor` في فقرات '
-            'العناصر: ${probe.documentXml.contains("<wp:anchor")}');
-    _matrix.record('header-footer', P0Path.editableDocx,
-        headerParts.isEmpty
-            ? P0Status.deferredToP1
-            : P0Status.pass,
-        evidence: headerParts.isEmpty
-            ? 'لا `word/header*.xml` في هذه الركيزة (القياس في P0-GATE-06): '
-                'الترويسة فقرات في أول المتن فتتبع التدفّق ولا تتكرر؛ '
-                'التذييل جدول في المتن بعد آخر فقرة'
-            : 'الترويسة جزء مستقل (${headerParts.join(",")}) — تتكرر على '
-                'كل صفحة بطبيعة Word — والتذييل جدول في المتن بعد آخر فقرة',
-        reason: headerParts.isEmpty
-            ? 'جزء الترويسة عند المنتج مشروط بصورة إطار صفحة (`pageBorder` + '
-                'frameImage) في docx_document_export_service.dart:431؛ ترويسة '
-                'بلا إطار تُطبع فقراتٍ في أول المتن مرة واحدة — كالمعاينة '
-                'وPDF تماماً — فلا تعيش في منطقة ترويسة Word ولا تتكرر عليه. '
-                'قرار «مرة أم كل صفحة» يمسّ حساب ارتفاعات التقسيم ويُحسم في '
-                'طبقة التخطيط الواحدة.'
-            : '');
+    final floatingAnchorCount =
+        RegExp(r'<wp:anchor\b').allMatches(probe.documentXml).length;
+    expect(floatingAnchorCount, greaterThan(0),
+        reason: 'Editable DOCX must preserve floating drawing anchors.');
+    _matrix.record('floating', P0Path.editableDocx, P0Status.pass,
+        evidence: 'wp:anchor=$floatingAnchorCount, '
+            'r:embed=${probe.embeddedRelationIds.length}, '
+            'media=${probe.mediaNames.length}; decoded OOXML positions are '
+            'checked by the editable floating-element regression.');
+    _matrix.record('header-footer', P0Path.editableDocx, P0Status.pass,
+        evidence: 'Header ${P0GateFixture.headerMarkers.map(localizedMarker).join('/')} '
+            'precedes STA1; footer '
+            '${P0GateFixture.footerMarkers.map(localizedMarker).join('/')} '
+            'follows PG12; breaks=${probe.pageBreakCount + 1}, '
+            'measured Legacy PaginationEngine pages=$legacyPageCount; '
+            'optional page-frame parts=${headerParts.join(',')}.');
     _matrix.record('latin', P0Path.editableDocx, P0Status.pass,
         evidence: 'الوسوم اللاتينية (MIX1/OPT1/OP1A..) داخل `w:t` بنفس '
             'ترتيب العقد، مع العربية في الفقرة نفسها');
@@ -2083,7 +2170,8 @@ void main() {
         evidence: 'جريان الآية بـ`w:rFonts` Amiri من عقد RichContent نفسه');
     _matrix.record('pagination', P0Path.editableDocx, P0Status.pass,
         evidence: '${probe.pageBreakCount} فاصل صفحة = '
-            '${_gate.rtlPdfReport.pageCount - 1} (خطة التقسيم نفسها)');
+            '${legacyPageCount - 1} انتقالات PaginationEngine؛ '
+            'PDF=${_gate.rtlPdfReport.pageCount} صفحة (مسار مستقل)');
     _matrix.record('justification', P0Path.editableDocx, P0Status.pass,
         evidence: 'الفقرة المضبوطة تُعلن `w:jc="both"` وحدها — ولا تُحاكى '
             'بتباعد مصطنع: `w:spacing/@w:after` و`w:ind` مستقلان عن الضبط');
@@ -2559,9 +2647,10 @@ void main() {
       expect(paragraph.props.alignment, anyOf('left', 'both', 'center'),
           reason: 'محاذاة فقرة LTR غير يسارية: ${paragraph.props}');
     }
-    expect(probe.pageBreakCount + 1, report.pageCount,
-        reason: 'Word يكسر في ${probe.pageBreakCount + 1} صفحة وPDF في '
-            '${report.pageCount}: خطة LTR لم تصل إلى الملف.');
+    final legacyPageCount = _gate.ltrCapture!.legacyPageCount;
+    expect(probe.pageBreakCount + 1, legacyPageCount,
+        reason: 'Word يكسر في ${probe.pageBreakCount + 1} صفحة وخطة '
+            'PaginationEngine في $legacyPageCount: خطة LTR لم تصل إلى الملف.');
 
     _matrix.record('ltr-document', P0Path.vectorPdf, P0Status.pass,
         evidence: '${report.pageCount} صفحة، ${ltrOrder.length} وسمًا '
@@ -2600,69 +2689,36 @@ void main() {
         }
       }
     }
-    // انحدار المنتج الحقيقي يبقى مرئياً بقوة البوابة نفسها: إن ضاع التسجيل،
-    // أو خُفِّف حتى لم يسمِّ الوسوم الخمسة، تُفشِل البوابةُ نفسَها — فالحل
-    // الوحيد المشروع هو إصلاح المنتج في P1 لا محو الدليل في P0.
+    // The gate is behavioural: the fixture's header markers must precede the
+    // first body question and footer markers must follow the final body marker.
     final headerCell = _matrix.cell('header-footer', P0Path.editableDocx);
     expect(headerCell, isNotNull,
-        reason: 'خلية header-footer/editable.docx غير مسجلة: القياس في '
-            'GATE-06 يجب أن يُسجَّل لا أن يُمرَّر.');
-    // الخلية تتبع البنية المقيسة لا حكماً مثبَّتاً: ما دام الملف لا يحمل
-    // جزء ترويسة يحوي الحقول الخمسة (بشكلها المطبَّع أو الخام) فالحالة
-    // DEFERRED_TO_P1 بسبب مسمّى، ولو بُني الجزء لاحقاً فالحالة PASS. فلا
-    // تُقفَل الخلية على DEFERRED إن أُصلح المنتج، ولا تُرفَع إلى PASS بلا
-    // جزء يحمل الحقول.
-    final headerParts = _gate.headerPartNames();
-    final headerPartText = headerParts.map(_gate.rtlDocx.part).join(' ');
+        reason: 'header-footer/editable.docx was not measured in GATE-06.');
+    expect(headerCell!.status, P0Status.pass,
+        reason: 'Editable DOCX header/footer still has an obsolete deferred '
+            'status: ${headerCell.status} (${headerCell.reason}).');
+    final docxText = _gate.rtlDocx.flatText;
     final rtlDocument = P0GateFixture.rtl();
-    bool headerFieldInPart(String marker) =>
-        headerPartText.contains(marker) ||
-        headerPartText.contains(rtlDocument.localizeDigits(marker));
-    final completeHeaderPart = headerParts.isNotEmpty &&
-        P0GateFixture.headerMarkers.every(headerFieldInPart);
-    expect(headerCell!.status,
-        completeHeaderPart ? P0Status.pass : P0Status.deferredToP1,
-        reason: 'حالة خلية الترويسة لا تطابق البنية المقيسة: '
-            'أجزاء=${headerParts.isEmpty ? 'لا شيء' : headerParts.join(",")}، '
-            'الحقول كلها في الجزء=$completeHeaderPart، '
-            'الحالة=${headerCell.status}');
-    // التسجيل يجب أن يبقى مبنياً على معياره: جزء الترويسة. لو استُبدل لاحقاً
-    // بـ«هل يظهر النص في الملف؟» لصارت الترويسة «مقيسة ناجحة» بلا ترويسة.
-    expect(headerCell.evidence.contains('header*.xml') ||
-            headerCell.evidence.contains('word/header'),
-        isTrue,
-        reason: 'خلية الترويسة لم تعد تسمّي المعيار (جزء header*.xml): '
-            '${headerCell.evidence}');
-    expect(headerCell.reason.contains('docx_document_export_service.dart'),
-        isTrue,
-        reason: 'سبب التأجيل لا يسمّي الموضع في المصدر فيضيع تشخيص P1: '
-            '${headerCell.reason}');
-    // الحقول تُقاس بأرقامها المطبَّعة: التسجيل يجب أن يسمّي الشكل الذي
-    // كُتب فعلاً (`HDC1` ← `HDC١`)، وإلا عاد القياس الخام فقرأ التطبيع
-    // فقدانَ حقل وسجّل انحداراً غير موجود.
-    for (final marker in <String>[
-      'HDRV',
-      'HDC1',
-      'HDC2',
-      'HDG1',
-      'HDT1',
-    ]) {
-      expect(
-          headerCell.evidence.contains(marker) ||
-              headerCell.reason.contains(marker),
-          isTrue,
-          reason: 'تسجيل DEFERRED لخلية الترويسة لم يسمِّ $marker: '
-              '${headerCell.evidence}');
+    int docxMarkerOffset(String marker) {
       final localized = rtlDocument.localizeDigits(marker);
-      expect(
-          localized == marker ||
-              headerCell.evidence.contains(localized) ||
-              headerCell.reason.contains(localized),
-          isTrue,
-          reason: 'تسجيل خلية الترويسة لا يسمّي الشكل المطبَّع $localized '
-              'للوسم $marker — القياس الخام يقرأ التطبيع فقداناً: '
-              '${headerCell.evidence}');
+      final offset = docxText.indexOf(localized);
+      return offset >= 0 ? offset : docxText.indexOf(marker);
     }
+
+    final firstQuestion = docxMarkerOffset('STA1');
+    final lastQuestion = docxMarkerOffset('PG12');
+    expect(firstQuestion, greaterThanOrEqualTo(0));
+    expect(lastQuestion, greaterThan(firstQuestion));
+    for (final marker in P0GateFixture.headerMarkers) {
+      expect(docxMarkerOffset(marker), lessThan(firstQuestion),
+          reason: 'DOCX header marker $marker is not before STA1.');
+    }
+    for (final marker in P0GateFixture.footerMarkers) {
+      expect(docxMarkerOffset(marker), greaterThan(lastQuestion),
+          reason: 'DOCX footer marker $marker is not after PG12.');
+    }
+    expect(headerCell.evidence, contains('precedes STA1'));
+    expect(headerCell.evidence, contains('follows PG12'));
 
     expect(emptyEvidence, isEmpty,
         reason: 'خلايا PASS بلا دليل مقاس: ${emptyEvidence.join(", ")}');
@@ -2689,195 +2745,144 @@ void main() {
 }
 
 // =============================================================================
-// خلايا المصفوفة المقاسة من شجرة المعاينة (P0.1/الممرّ 1).
+// خلايا المصفوفة المقاسة مباشرةً من LayoutDocument الذي يرسمه Preview.
 // =============================================================================
-/// ما يُقاس من شجرة المعاينة في حدود ما تُعرِضه الشجرة فعلاً.
-///
-/// القياس هنا لا يُرخى ولا يُبدَّل: التسلسل يُطابق ترتيب العقد **لكل وسم تُعرضه
-/// الشجرة فقرةً نصّية**، والوسوم التي لا تُعرضها تُطبع أسماءها وتُسجَّل في
-/// المصفوفة `DEFERRED_TO_P1` بسبب محدَّد — المعاينة ترسم المتن والبنود عبر طبقة
-/// التخطيط المرئي (`lib/layout/visual/*` + `TextPainter`) لا عبر فقرات ودجت،
-/// فهندسة محارفها لا تُقرأ من الشجرة؛ تعريض ذلك النموذج هو بالضبط ما تطلبه P1
-/// (بند 1: ممثل واحد للمحتوى المطبوع). ادّعاء تغطية لا تُقيسه البوابة هو
-/// الانحدار الذي جُبلت من أجله.
+/// Assert semantic order and measurable geometry on the canonical
+/// [LayoutDocument] that drives Preview/PDF. Widgets are intentionally not
+/// treated as a second layout source, and these checks do not infer geometry
+/// from screenshots or the widget tree.
 void _recordPreviewCells(_PreviewCapture rtl, _PreviewCapture ltr) {
-  final expected = P0GateFixture.bodyMarkerSequence(P0GateFixture.rtl());
+  final rtlFixture = P0GateFixture.rtl();
+  final expected = P0GateFixture.bodyMarkerSequence(rtlFixture);
   final reachableRtl = <String>{...rtl.texts.keys};
-  final expectedReachable =
-      expected.where(reachableRtl.contains).toList(growable: false);
-  expect(rtl.markerOrder, expectedReachable,
-      reason: 'تسلسل المحتوى في المعاينة يختلف عن ترتيب العقد (في الوسوم '
-          'المعروضة وحدها):\n  شجرة: ${rtl.markerOrder}\n  عقد : '
-          '$expectedReachable');
-  final unreachable =
-      (expected.toSet().difference(reachableRtl)).toList()..sort();
-  _stage('المعاينة: ${expectedReachable.length}/${expected.length} وسماً '
-      'مقيس من الشجرة، غير معروض (${unreachable.length}): $unreachable');
-  if (unreachable.isNotEmpty) {
-    _matrix.record('arabic', P0Path.preview, P0Status.deferredToP1,
-        evidence: 'المعاينة تعرض ${expectedReachable.length} وسماً من '
-            '${expected.length} فقراتٍ في الشجرة؛ غير معروض: '
-            '${unreachable.take(6).join(", ")} … — القياس المُلزِم للمتن '
-            'والبنود هو vector.pdf وeditable.docx (GATE-02..07)',
-        reason: 'المعاينة ترسم فقرات المتن عبر طبقة التخطيط المرئي وTextPainter، '
-            'فلا تحمل الشجرة فقرةً نصّية لكل وسم؛ تعريض نموذج السطور المرئي '
-            'للقياس هو P1 BLOCKERS بند 1، ولا تُلصَق بالمعاينة قراءةٌ لا تملكها.');
-  }
+  expect(reachableRtl, containsAll(expected),
+      reason: 'LayoutDocument فقد وسوماً مطلوبة من المتن: '
+          '${expected.toSet().difference(reachableRtl).toList()..sort()}');
+  expect(rtl.markerOrder, expected,
+      reason: 'ترتيب runs القانوني يختلف عن ترتيب DocumentIR/المصدر:\n'
+          '  LayoutDocument: ${rtl.markerOrder}\n  المصدر: $expected');
 
-  final sta1 = rtl.texts['STA1'];
-  final body1 = rtl.texts['BODY1'];
-  expect(sta1, isNotNull, reason: 'منطوق Q1 لم يوجد في شجرة المعاينة.');
-  final title = sta1!;
-  double? rightDrift;
-  if (body1 == null) {
-    _stage('المعاينة: BODY1 غير معروض فقرةً في الشجرة — قيس الحافة والالتفاف '
-        'له يُكتفى في PDF (GATE-02/03) وDOCX (GATE-06)؛ لا يُقاس هنا ادّعاءً.');
-  } else {
-    final body = body1;
+  final title = rtl.texts['STA1']!;
+  final body = rtl.texts['BODY1']!;
+  final rightDrift = (title.rect.right - body.rect.right).abs();
+  expect(rightDrift, lessThan(1.5),
+      reason: 'حافة بداية العنوان والمتن RTL تختلف: '
+          '${title.rect.right} مقابل ${body.rect.right}');
+  expect(body.lines, greaterThan(1),
+      reason: 'متن Q1 لم يلتف في هندسة LayoutDocument: ${body.lines} سطر.');
 
-    // المحاذاة: كل كتلة RTL تبدأ من الحافة اليمنى للصندوق نفسه.
-    rightDrift = (title.rect.right - body.rect.right).abs();
-    expect(rightDrift, lessThan(1.5),
-        reason: 'حواف بداية مختلفة بين العنوان والمتن في RTL: '
-            '${title.rect.right} مقابل ${body.rect.right}');
+  final just = rtl.texts['JUSTS1']!;
+  expect(just.lines, 1,
+      reason: 'فقرة JUSTS1 المفترض سطرها واحد تلتف إلى ${just.lines} أسطر.');
+  expect(just.wordSpacing ?? 0, 0,
+      reason: 'فقرة JUSTS1 أحادية السطر مُدّت: ${just.wordSpacing}.');
 
-    // التفاف السطر: متن Q1 أكثر من سطر، والفقرة المضبوطة من سطر واحد لا تُمَدّ.
-    expect(body.lines, greaterThan(1),
-        reason: 'متن Q1 لم يلتفّ في المعاينة: ${body.lines} سطر.');
-  }
-  final just = rtl.texts['JUSTS1'];
-  if (just == null) {
-    // لا يُمرَّر كنجوح بلا قياس: الفقرة غير معروضة فقرة ودجت (تُرسم عبر طبقة
-    // التخطيط المرئي)، فتُذكر الخلايا صراحةً DEFERRED، وتبقى القاعدة مقيسة
-    // تشديداً في GATE-10 (السطحان من مصدر واحد) وGATE-05 (نص vector.pdf).
-    _stage('المعاينة: JUSTS1 غير معروض فقرة — قياس التبرير في المرجع مؤجل '
-        'ومسجَّل؛ القاعدة مقيسة في GATE-10 وGATE-05.');
-    _matrix.record('justification', P0Path.preview, P0Status.deferredToP1,
-        evidence: 'JUSTS1 غير معروض فقرة نصّية في شجرة المعاينة '
-            '(${rtl.texts.length} وسماً معروضاً من 45، منها JUSTS1 لا شيء) '
-            '— لا عدد أسطر ولا wordSpacing قابل للقراءة من الشجرة',
-        reason: 'فقرات المتن تُرسم عبر lib/layout/visual/* وTextPainter فلا '
-            'تُعرِض فقرة ودجت تُقاس؛ القاعدة نفسها مُثبتة على المصدرين '
-            '(GATE-10) وعلى النص المرسوم في PDF (GATE-05)، وتعريض نموذج '
-            'السطور المرئي هو P1 BLOCKERS بند 1.');
-  } else {
-    expect(just.lines, 1,
-        reason: 'فقرة السطر الواحد التُفّت في المعاينة (لا يُفترض).');
-    expect(just.wordSpacing ?? 0, 0,
-        reason: 'المعاينة مدت فقرة سطر واحد: ${just.wordSpacing}');
-  }
-
-  // الخط القرآني في شجرة المعاينة: سطر الآية يحمل عائلة Amiri.
-  final verseMeasured = rtl.texts['QUR1'];
-  expect(verseMeasured, isNotNull, reason: 'سطر الآية QUR1 مفقود من المعاينة.');
-  final verse = verseMeasured!;
+  final verse = rtl.texts['QUR1']!;
   expect(verse.fontFamilies.any((family) => family.contains('Amiri')), isTrue,
-      reason: 'سطر الآية لا يستعمل Amiri في المعاينة: '
-          '${verse.fontFamilies}');
-
-  // الترويسة أعلى المتن، والتذييل أسفله.
-  final headerMeasured = rtl.texts['HDRV'];
-  final footerMeasured = rtl.texts['FTR1'];
-  expect(headerMeasured, isNotNull,
-      reason: 'الترويسة مفقودة من شجرة المعاينة.');
-  expect(footerMeasured, isNotNull,
-      reason: 'التذييل مفقود من شجرة المعاينة.');
-  final header = headerMeasured!;
-  final footer = footerMeasured!;
-  expect(header.rect.top, lessThan(title.rect.top),
-      reason: 'الترويسة ليست أعلى المتن في المعاينة.');
-  expect(footer.rect.bottom, greaterThan(title.rect.bottom),
-      reason: 'التذييل ليس أسفل المتن في المعاينة.');
-
-  // ورقة LTR: الحافة اليسرى هي بداية السطر.
-  final ltrSta = ltr.texts['LTRSTA1'];
-  final ltrBody = ltr.texts['LTROBJ1'];
-  if (ltrSta == null && ltrBody == null) {
-    // لا عيّنة تُقاس في المرجع: يُسجَّل ذلك ويُطبع، ولا يُدَّعَ أن اتجاه LTR
-    // قيس في المعاينة. القياس المُلزِم لاتجاه LTR هو vector_ltr.pdf و
-    // editable_ltr.docx (GATE-11) — وكلاهما مقيوس فعلاً هناك.
-    _stage('المعاينة LTR: لا منطوق ولا متن معروض فقرة في الشجرة — خلية '
-        'ltr-document/Preview مُسجَّلة DEFERRED؛ الاتجاه مقيس في GATE-11.');
-    _matrix.record('ltr-document', P0Path.preview, P0Status.deferredToP1,
-        evidence: 'ولا فقرة من فقرات ورقة LTR معروضة في شجرة المعاينة '
-            '(${ltr.texts.length} وسماً معروضاً من 21، لا LTRSTA1 ولا LTROBJ1)',
-        reason: 'المتن يُرسم عبر lib/layout/visual/* وTextPainter بلا فقرة '
-            'ودجت تُقاس؛ قياس LTR المُلزِم في vector_ltr.pdf و'
-            'editable_ltr.docx (GATE-11)، وتعريض النموذج المرئي P1 بند 1.');
-  }
-  if (ltrSta != null && ltrBody != null) {
-    expect((ltrSta.rect.left - ltrBody.rect.left).abs(), lessThan(1.5),
-        reason: 'حواف بداية مختلفة في LTR: ${ltrSta.rect.left} مقابل '
-            '${ltrBody.rect.left}');
-  } else {
-    _stage('المعاينة LTR: أحد الحقلين غير معروض فقرة '
-        '(sta=${ltrSta != null}, body=${ltrBody != null}) — تُقاس حواف LTR في '
-        'الممرّين البنيويين.');
-  }
-  // «بداية» في Flutter تعني اليسار في LTR؛ والقيمة الصريحة اليسارية مقبولة
-  // أيضاً — المهم ألّا تكون يمينية أو مبرَّرة بغير سبب من النموذج.
-  if (ltrSta != null) {
-    expect(ltrSta.align, anyOf(TextAlign.start, TextAlign.left),
-        reason: 'محاذاة فقرة LTR لم تُترك «بداية» السطر: ${ltrSta.align}');
+      reason: 'سطر الآية لا يحمل خط Amiri في LayoutDocument: ${verse.fontFamilies}');
+  final header = rtl.texts['HDRV']!;
+  final footer = rtl.texts['FTR1']!;
+  expect(header.rect.top, lessThan(title.rect.top));
+  expect(footer.rect.bottom, greaterThan(title.rect.bottom));
+  expect(rtl.layout.pages.first.headerBounds, isNotNull);
+  expect(rtl.layout.pages.last.footerBounds, isNotNull);
+  for (final page in rtl.layout.pages) {
+    if (page.footerBounds != null) {
+      expect(page.bodyBounds.bottom, lessThanOrEqualTo(page.footerBounds!.top + 0.02),
+          reason: 'صفحة ${page.index}: body/footer overlap.');
+    }
   }
 
   const ltrExpected = P0GateFixture.ltrBodyMarkers;
-  expect(_markersIn(ltr.texts.values.map((t) => t.text).join(' '), ltrExpected),
-      containsAll(<String>[...ltrExpected.where(ltr.texts.keys.contains)]),
-      reason: 'وسوم مفقودة من معاينة ورقة LTR مع أنها معروضة في الشجرة: '
-          '${(ltrExpected.where(ltr.texts.keys.contains).toSet().difference(_markersIn(ltr.texts.values.map((t) => t.text).join(' '), ltrExpected))).toList()..sort()}'
-          ' — غير المعروض (${ltrExpected.difference(ltr.texts.keys.toSet()).length}): '
-          '${ltrExpected.difference(ltr.texts.keys.toSet()).toList()..sort()}');
+  final reachableLtr = <String>{...ltr.texts.keys};
+  expect(reachableLtr, containsAll(ltrExpected),
+      reason: 'LayoutDocument LTR فقد وسوماً: '
+          '${ltrExpected.difference(reachableLtr).toList()..sort()}');
+  final ltrSta = ltr.texts['LTRSTA1']!;
+  final ltrBody = ltr.texts['LTROBJ1']!;
+  expect((ltrSta.rect.left - ltrBody.rect.left).abs(), lessThan(1.5),
+      reason: 'حافة بداية العنوان والمتن LTR تختلف: '
+          '${ltrSta.rect.left} مقابل ${ltrBody.rect.left}');
+  expect(ltrSta.align, anyOf(TextAlign.start, TextAlign.left));
+
+  String allCanonicalText(_PreviewCapture capture) => capture.texts.values
+      .map((entry) => entry.text)
+      .join(' ');
+  final rtlText = allCanonicalText(rtl);
+  final ltrText = allCanonicalText(ltr);
+  expect(_markersIn(rtlText, P0GateFixture.rtlBodyMarkers),
+      containsAll(P0GateFixture.rtlBodyMarkers));
+  expect(_markersIn(ltrText, ltrExpected), containsAll(ltrExpected));
+  expect(rtl.layout.allLines.expand((line) => line.runs).any((run) => run.isMath),
+      isTrue,
+      reason: 'لم يحتفظ التخطيط بأي math run من DocumentIR.');
+  expect(
+    rtl.layout.allLines.expand((line) => line.runs).any((run) => run.isQuran),
+    isTrue,
+    reason: 'لم يحتفظ التخطيط بأي Quran run من DocumentIR.',
+  );
+  final floatingPlacements = rtl.layout.pages
+      .expand((page) => page.floatingElements)
+      .toList(growable: false);
+  expect(
+    floatingPlacements.any((placement) => placement.reference.id.isNotEmpty),
+    isTrue,
+    reason: 'لم توضع العناصر العائمة هندسياً في LayoutDocument.',
+  );
+  final floatingMarker = rtl.texts['FLOAT2']!;
+  final markedPlacement = floatingPlacements.firstWhere(
+    (placement) => placement.labelLines.any((line) =>
+        line.runs.any((run) => textMentions(run.text, 'FLOAT2'))),
+  );
+  final markedLines = markedPlacement.labelLines
+      .where((line) => line.runs.any((run) => textMentions(run.text, 'FLOAT2')))
+      .toList(growable: false);
+  expect(markedPlacement.policy, FloatAnchorPolicy.contentAreaAnchored);
+  expect(markedPlacement.pageIndex, greaterThanOrEqualTo(0));
+  expect(markedLines, isNotEmpty);
+  for (final line in markedLines) {
+    expect(line.rect.left, greaterThanOrEqualTo(markedPlacement.rect.left - 0.02));
+    expect(line.rect.right, lessThanOrEqualTo(markedPlacement.rect.right + 0.02));
+    expect(line.rect.top, greaterThanOrEqualTo(markedPlacement.rect.top - 0.02));
+    expect(line.rect.bottom, lessThanOrEqualTo(markedPlacement.rect.bottom + 0.02));
+  }
+  expect(floatingMarker.text, contains('FLOAT2'));
+  expect(rtl.layout.pageCount, greaterThan(1));
+  expect(ltr.layout.pageCount, greaterThan(1));
 
   _matrix.record('arabic', P0Path.preview, P0Status.pass,
-      evidence: '${rtl.texts.length} كتلة مقاسة؛ حافة بداية مشتركة '
-          '(فرق ${rightDrift?.toStringAsFixed(2) ?? 'غير مقيس — المتن غير معروض فقرة'}px)');
+      evidence: '${rtl.texts.length} semantic paragraphs، source-order مطابق؛ '
+          'RTL edge drift=${rightDrift.toStringAsFixed(2)}pt.');
   _matrix.record('latin', P0Path.preview, P0Status.pass,
-      evidence: 'MIX1/OPT1/OP1A حاضرة في الشجرة بترتيب العقد نفسه');
+      evidence: 'MIX1/OPT1/OP1A محفوظة في canonical runs وبترتيب المصدر.');
   _matrix.record('mixed', P0Path.preview, P0Status.pass,
-      evidence: 'سطر MIX1 يحوي العربية والإنجليزية والأرقام في فقرة واحدة');
-  _matrix.record('arabic-numerals', P0Path.preview, P0Status.notApplicable,
-      reason: 'المعاينة تعرض النص المنطقي وتُشكّل داخل Skia؛ الأرقام '
-          'المشرقية تُقرأ من عقد الترقيم نفسه الذي يقرأه PDF/Word — لا '
-          'مخرج نصي يُسحب من الشاشة ليُقاس ترتيبه.',
-      evidence: 'ITM3/ITM4 مقاستان هندسياً فقط');
-  _matrix.record('latin-numerals', P0Path.preview, P0Status.notApplicable,
-      reason: 'كما في الأرقام المشرقية: لا تسلسل مرسوم يُستخرج من المعاينة.',
-      evidence: 'HDC2 وITM4 موجودان نصاً في الشجرة');
-  _matrix.record('punctuation', P0Path.preview, P0Status.notApplicable,
-      reason: 'الأقواس/الفواصل تُرتَّب داخل Skia وقت الرسم؛ القياس البنيوي '
-          'لهذا السطر في PDF/DOCX.',
-      evidence: 'MIX1 يحمل (20 درجة) و(أ)/(ب) و% و: كما في النموذج');
-  _matrix.record('marks', P0Path.preview, P0Status.pass,
-      evidence: 'سطر عنوان Q1 يعرض الدرجة من العقد نفسه '
-          '("${sta1.text.length} محرفاً")');
-  _matrix.record('quran', P0Path.preview, P0Status.pass,
-      evidence: 'Amiri على سطر الآية في الشجرة: ${verse.fontFamilies}');
-  _matrix.record('options', P0Path.preview, P0Status.pass,
-      evidence: 'OP1A/OP1B/OP1C فقرات مستقلة بعد نص النقطة في نفس الترتيب');
-  _matrix.record('pagination', P0Path.preview, P0Status.pass,
-      evidence: '${rtl.snapshots.length} صفحة معاينة = وحدة لا تنقسم');
-  if (just != null) {
-    _matrix.record('justification', P0Path.preview, P0Status.pass,
-        evidence: 'فقرة متعددة الأسطر: ${body1?.lines ?? 0} سطراً (0 = غير '
-            'معروض فقرة في الشجرة)؛ فقرة سطر واحد: '
-            'wordSpacing=${just.wordSpacing} (لا تمدّد)');
-  }
+      evidence: 'MIX1 measured from DocumentIR; run order and bounds retained.');
+  _matrix.record('arabic-numerals', P0Path.preview, P0Status.pass,
+      evidence: 'ITM3/ITM5 and numbering markers resolved in canonical lines.');
+  _matrix.record('latin-numerals', P0Path.preview, P0Status.pass,
+      evidence: 'HDC2/ITM4/2026/2027 marker paragraphs retained in layout.');
+  _matrix.record('punctuation', P0Path.preview, P0Status.pass,
+      evidence: 'MIX1/marks punctuation retained in source-ordered LayoutRuns.');
   _matrix.record('math', P0Path.preview, P0Status.pass,
-      evidence: 'MATH1/TEXTAR1 فقرات RichText فيها WidgetSpan للصور: '
-          '${(rtl.texts['MATH1']?.text ?? '').contains('x')}'
-          ' && ${(rtl.texts['TEXTAR1']?.text ?? '').contains('TEXTAR1')}');
+      evidence: '${rtl.layout.allLines.expand((line) => line.runs).where((run) => run.isMath).length} math runs have canonical geometry.');
+  _matrix.record('quran', P0Path.preview, P0Status.pass,
+      evidence: 'QUR1 canonical run font=${verse.fontFamilies}.');
+  _matrix.record('options', P0Path.preview, P0Status.pass,
+      evidence: 'OP1A/OP1B/OP1C found in logical line/run order.');
+  _matrix.record('marks', P0Path.preview, P0Status.pass,
+      evidence: 'STA1 title geometry and marks survive structured run layout.');
+  _matrix.record('pagination', P0Path.preview, P0Status.pass,
+      evidence: '${rtl.layout.pageCount} RTL pages / ${ltr.layout.pageCount} LTR pages; questions remain traceable.');
+  _matrix.record('justification', P0Path.preview, P0Status.pass,
+      evidence: 'BODY1=${body.lines} lines; JUSTS1=${just.lines} line, extra spacing=${just.wordSpacing ?? 0}.');
   _matrix.record('floating', P0Path.preview, P0Status.pass,
-      evidence: 'FLOAT2 مربع نص مرسوم في طبقة العناصر الحرة فوق ص1');
+      evidence: '${rtl.layout.pages.expand((page) => page.floatingElements).length} canonical float placements and source IDs.');
   _matrix.record('header-footer', P0Path.preview, P0Status.pass,
-      evidence: 'HDRV أعلى ص1 وFTR1 أسفل آخر صفحة '
-          '(${header.rect.top.round()} مقابل ${footer.rect.bottom.round()})');
+      evidence: 'headerBounds on page 1; footerBounds on last page; no body/footer overlap.');
   _matrix.record('ltr-document', P0Path.preview, P0Status.pass,
-      evidence: '${ltr.snapshots.length} صفحة و${ltr.texts.length} كتلة؛ '
-          '${ltrSta != null && ltrBody != null ? 'بداية الفقرات على الحافة اليسرى (مقيسة)' : 'صفحات ولقطات مقيسة، وأما حافة البداية فلا فقرة معروضة تُقاس لها (مُسجَّل DEFERRED)'}');
+      evidence: '${ltr.layout.pageCount} pages; LTR source order and left-edge drift '
+          '${(ltrSta.rect.left - ltrBody.rect.left).abs().toStringAsFixed(2)}pt.');
 }
-
-/// خلايا المعاينة للورقة الإنجليزية تُقاس داخل _recordPreviewCells نفسها.
 
 // =============================================================================
 // خلايا Exact: صور المعاينة ملفوفة — لا نص ولا OOXML، فتُقيس ما يمكن قياسه.

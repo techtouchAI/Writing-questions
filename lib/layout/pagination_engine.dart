@@ -53,6 +53,48 @@ class PaginationResult {
   int? pageIndexOf(String blockId) => _pageOfBlock[blockId];
 }
 
+/// Immutable input to the legacy [PaginationEngine]. Keeping the measured
+/// blocks and page policy together lets exporters re-run the exact same
+/// paginator instead of trusting a caller's page-ID list as proof.
+class PaginationInput {
+  PaginationInput({
+    required Iterable<PageBlock> blocks,
+    required this.pageHeight,
+    this.firstPageHeight,
+    this.spacing = 0,
+    this.lastPageReserve = 0,
+    this.footerMeasured = false,
+  }) : blocks = List<PageBlock>.unmodifiable(blocks);
+
+  final List<PageBlock> blocks;
+  final double pageHeight;
+  final double? firstPageHeight;
+  final double spacing;
+  final double lastPageReserve;
+
+  /// Whether the footer height/reserve was measured (or authoritatively
+  /// resolved as empty). Zero alone cannot distinguish an empty footer from an
+  /// unmeasured footer.
+  final bool footerMeasured;
+
+  PaginationResult paginate() => PaginationEngine.paginate(
+        blocks: blocks,
+        pageHeight: pageHeight,
+        firstPageHeight: firstPageHeight,
+        spacing: spacing,
+        lastPageReserve: lastPageReserve,
+      );
+
+  PaginationInput retainBlockIds(Set<String> ids) => PaginationInput(
+        blocks: blocks.where((block) => ids.contains(block.id)),
+        pageHeight: pageHeight,
+        firstPageHeight: firstPageHeight,
+        spacing: spacing,
+        lastPageReserve: lastPageReserve,
+        footerMeasured: footerMeasured,
+      );
+}
+
 /// محرك التقسيم الورقي (Pagination) — منطق خالص بلا أي اعتماد على Flutter
 /// أو pdf، يُستخدم **بنفس القواعد** للشاشة وللطباعة.
 ///

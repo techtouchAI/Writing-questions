@@ -352,13 +352,12 @@ jobs:
           retention-days: 14
 
   # --------------------------------------------------------------------------
-  # التحقق البصري الخارجي: يُصيّر ملفَّي النمط الدقيق (Exact) بمحرّكات مستقلة
-  # ويقارن كل صفحة بلقطة المعاينة المقابلة بمقياس RMSE (انظر
-  # tool/verify_visual_parity.sh). مهمة منفصلة حتى لا تُثقل مسار البناء، لكن
-  # فشلها يُظهر التشغيل فاشلاً — فالطابقة البصرية شرط قبول لا إضافة تجميلية.
+  # التحقق البصري الخارجي: يُصيّر Vector PDF وEditable DOCX وExact المستقل
+  # بمحرّكات أخرى ويقارن كل صفحة بالمعاينة عبر RMSE فعلي (انظر
+  # tool/verify_visual_parity.sh). فشل أي مسار هو فشل CI.
   # --------------------------------------------------------------------------
   visual-parity:
-    name: Visual regression (Exact PDF/DOCX vs preview)
+    name: Visual regression (Vector/Editable/Exact vs preview)
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -385,9 +384,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             poppler-utils imagemagick libreoffice-writer
 
-      # ناتج الركيزة يُحفظ ويُنشر عند الفشل: مرفقات CI أنفع عند قراءتها،
-      # وفشل الاختبار يجب أن يظهر سببه لا رقم خروجه فقط.
-      - name: Produce comparison artifacts (preview snapshots + Exact files)
+      # تنتج الركيزة اللقطات المرجعية وVector PDF وEditable/Exact DOCX/PDF؛
+      # وفشلها يجب أن يظهر سببه لا رقم خروجه فقط.
+      - name: Produce preview and export comparison artifacts
         shell: bash
         run: |
           mkdir -p build/visual_parity
