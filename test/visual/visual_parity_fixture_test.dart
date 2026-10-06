@@ -237,13 +237,19 @@ ExamDocument _fixtureDocument() {
 
 /// وسم مراحل الركيزة في مخرجات CI: بيان آخر ما وصلت إليه الركيزة عند الفشل
 /// (لا يُترك التشخيص لتخمين رقم الخروج).
-void _stage(String message) => debugPrint('[fixture] $message');
+final _fixtureWallClock = Stopwatch();
+
+void _stage(String message) =>
+    debugPrint('[fixture] +${_fixtureWallClock.elapsedMilliseconds}ms $message');
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('تركيبة الانحدار البصري: لقطات المعاينة + ملفات Exact',
       (tester) async {
+    _fixtureWallClock
+      ..reset()
+      ..start();
     await _loadAppFonts();
     _stage('الخطوط حُمّلت');
 

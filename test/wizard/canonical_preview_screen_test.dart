@@ -241,6 +241,10 @@ void main() {
       expect(field.style?.color, Colors.transparent,
           reason: 'The IME field must not paint duplicate text over canonical glyphs.');
       expect(tester.takeException(), isNull);
+      // Round-3 orphan-hygiene experiment: detach test 1's tree so no
+      // in-flight screen work (timers, post-frames, IME, image streams)
+      // can wedge the binding for the tests that follow in this isolate.
+      await tester.pumpWidget(const SizedBox.shrink());
       debugPrint('[diag] canonical-01: done');
     },
   );
@@ -475,8 +479,11 @@ void main() {
 
     final gesture = await tester.startGesture(Offset(start.x, start.y));
     await gesture.moveTo(Offset(destination.x, destination.y));
+    debugPrint('[diag] canonical-03: moved');
     await tester.pump(const Duration(milliseconds: 20));
+    debugPrint('[diag] canonical-03: pumped');
     await gesture.up();
+    debugPrint('[diag] canonical-03: up');
     // The drop updates the model synchronously; wait for the model's own
     // condition, not global quiescence.
     await _pumpUntil(
@@ -664,7 +671,11 @@ void main() {
     (tester) async {
       final document = _document();
       final controller = ExamWizardController(document: document);
-      addTearDown(controller.dispose);
+      addTearDown(() {
+        debugPrint('[diag] canonical-07: disposing');
+        controller.dispose();
+        debugPrint('[diag] canonical-07: disposed');
+      });
 
       await tester.pumpWidget(_screen(controller));
       debugPrint('[diag] canonical-07: pumped widget');
