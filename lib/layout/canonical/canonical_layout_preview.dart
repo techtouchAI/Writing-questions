@@ -29,18 +29,36 @@ final class CanonicalLayoutPreviewAssets {
   final Map<String, ui.Image> mathImages;
   bool _disposed = false;
 
+  /// Round-4 evidence switch: when true, [load] prints per-phase wall-clock
+  /// timings (`[diag] r4-load ...`). Default off: zero behavior change.
+  /// Enabled only by the visual fixture in its own isolate.
+  static bool debugPhaseTiming = false;
+
   static Future<CanonicalLayoutPreviewAssets> load({
     required LayoutDocument layout,
     required ExamDocument document,
   }) async {
+    // R4-DIAG: wall-clock phase timing (prints only when debugPhaseTiming;
+    // no awaits added, no order changed, no behavior change).
+    final sw = Stopwatch()..start();
+    void r4(String message) {
+      if (debugPhaseTiming) {
+        debugPrint('[diag] r4-load +${sw.elapsedMilliseconds}ms $message');
+      }
+    }
+
     final floating = <String, ui.Image>{};
     final math = <String, ui.Image>{};
     ui.Image? frame;
     try {
       final framePath = layout.pageFrameImagePath;
+      r4('start framePath=${framePath ?? '<none>'} '
+          'pages=${layout.pages.length}');
       if (framePath != null) {
         final bytes = await File(framePath).readAsBytes();
+        r4('frame read bytes=${bytes.length}');
         frame = await _decode(bytes);
+        r4('frame decoded');
       }
     } catch (_) {
       frame = null;
@@ -57,11 +75,14 @@ final class CanonicalLayoutPreviewAssets {
       if (element?.type != FloatingElementType.image || bytes == null) continue;
       try {
         floating[element!.id] = await _decode(bytes);
+        r4('float decoded id=${element!.id} bytes=${bytes.length}');
       } catch (_) {
         // A bad source image is omitted, just as the PDF painter omits it.
       }
     }
+    r4('floats done count=${floating.length}');
 
+    r4('math available=${MathSnapshotRenderer.isAvailable}');
     if (MathSnapshotRenderer.isAvailable) {
       final mathRuns = <String, LayoutRun>{};
       for (final line in layout.allLines) {
@@ -71,16 +92,21 @@ final class CanonicalLayoutPreviewAssets {
           }
         }
       }
+      r4('math collected runs=${mathRuns.length}');
       for (final run in mathRuns.values) {
         try {
+          r4('run ${run.id} render start');
           final snapshot = await MathSnapshotRenderer.render(
             run.text,
             fontSizePt: run.style.fontSizePt,
           );
+          r4('run ${run.id} render done null=${snapshot == null}');
           if (snapshot == null) continue;
           try {
             final raster = await snapshot.toPngRaster();
+            r4('run ${run.id} raster done');
             math[run.id] = await _decode(raster.pngBytes);
+            r4('run ${run.id} decode done');
           } finally {
             snapshot.dispose();
           }
@@ -89,6 +115,7 @@ final class CanonicalLayoutPreviewAssets {
         }
       }
     }
+    r4('load done floats=${floating.length} math=${math.length}');
     return CanonicalLayoutPreviewAssets(
       pageFrame: frame,
       floatingImages: floating,
