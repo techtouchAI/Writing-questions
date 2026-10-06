@@ -99,7 +99,9 @@ void main() {
     final controller = ExamWizardController(document: document);
     addTearDown(controller.dispose);
     debugPrint('[diag] repro-tap: resolving');
-    final layout = await tester
+    // The harness types the awaited chain nullable; `resolve` itself is
+    // non-null, so `!` fails loudly on a harness artifact, never silently.
+    final layout = (await tester
         .runAsync(
           () => CanonicalLayoutService.resolve(
             document: document,
@@ -111,7 +113,7 @@ void main() {
           onTimeout: () => throw StateError(
             'HANG: CanonicalLayoutService.resolve did not complete in 60s',
           ),
-        );
+        ))!;
     debugPrint('[diag] repro-tap: resolved pages=${layout.pageCount}');
     expect(layout.pageCount, greaterThan(2));
     final page = layout.pages[1];
@@ -167,7 +169,9 @@ void main() {
     final pendingLayout = Completer<LayoutDocument>();
     final resolutionStarted = Completer<void>();
     debugPrint('[diag] repro-dispose: resolving');
-    final layout = await tester
+    // The harness types the awaited chain nullable; `resolve` itself is
+    // non-null, so `!` fails loudly on a harness artifact, never silently.
+    final layout = (await tester
         .runAsync(
           () => CanonicalLayoutService.resolve(
             document: document,
@@ -179,7 +183,7 @@ void main() {
           onTimeout: () => throw StateError(
             'HANG: CanonicalLayoutService.resolve did not complete in 60s',
           ),
-        );
+        ))!;
     debugPrint('[diag] repro-dispose: resolved pages=${layout.pageCount}');
 
     debugPrint('[diag] repro-dispose: pumping screen');

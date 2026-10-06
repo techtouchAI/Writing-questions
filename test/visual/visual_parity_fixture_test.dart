@@ -440,7 +440,7 @@ void main() {
             document: controller.document,
             layoutDocument: canonicalLayout,
           );
-          _stage('Vector PDF generated: ${exportVector.length} bytes');
+          _stage('Vector PDF generated: ${exportVector!.length} bytes');
 
           // Editable DOCX مستقل: DocumentIR → LegacyDocxAdapter → PaginationEngine.
           // لا نمرر إليه تعيين صفحات PDF canonical؛ Exact يبقى مساراً آخر أدناه.
@@ -490,7 +490,7 @@ void main() {
             legacyPaginationInput: editablePaginationInput,
             onProgress: (stage) => _stage('Editable DOCX: $stage'),
           );
-          _stage('Editable DOCX generated: ${exportEditable.length} bytes');
+          _stage('Editable DOCX generated: ${exportEditable!.length} bytes');
 
           // Exact: صفحات الصور الملتقطة أعلاه فقط — مستقل عن vector/editable.
           exportExactPdf =
