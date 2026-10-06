@@ -17,6 +17,10 @@ import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 
 const String _hitMarker = 'CANONICALMARKER';
 
+/// سقف زمني لاختبارات التفاعل: كل خطوة فيها عدّ إطارات محدود، فعلوقٌ يتجاوز
+/// هذا السقف عطلٌ يجب أن يظهر برسالة سريعة لا أن يستهلك المهمّة كلها.
+const Timeout _interactionBudget = Timeout(Duration(seconds: 150));
+
 ExamDocument _document({
   String subject = 'English',
   String statement = 'Tap the $_hitMarker in this question.',
@@ -454,7 +458,7 @@ void main() {
   });
 
   testWidgets('canonical preparation failure shows a retry that can succeed',
-      (tester) async {
+      timeout: _interactionBudget, (tester) async {
     final controller = ExamWizardController(document: _document());
     addTearDown(controller.dispose);
     var assetAttempts = 0;
@@ -497,7 +501,7 @@ void main() {
   });
 
   testWidgets('stale layout completion cannot replace the newer document page',
-      (tester) async {
+      timeout: _interactionBudget, (tester) async {
     final initial = _document(statement: 'Old $_hitMarker source');
     final controller = ExamWizardController(document: initial);
     addTearDown(controller.dispose);
@@ -560,7 +564,7 @@ void main() {
   });
 
   testWidgets('disposing while canonical layout is pending discards late result',
-      (tester) async {
+      timeout: _interactionBudget, (tester) async {
     final document = _document();
     final controller = ExamWizardController(document: document);
     addTearDown(controller.dispose);

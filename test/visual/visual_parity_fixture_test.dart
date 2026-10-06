@@ -235,15 +235,44 @@ ExamDocument _fixtureDocument() {
   );
 }
 
+/// ساعة الركيزة: كل وسم يحمل زمنه النسبي، فيُقرأ من الفارق وحده أي خطوة
+/// استهلكت الزمن — ورسائل الاختبار تُخزَّن في مخزن مؤقّت في مجرى الإخراج،
+/// فرتّيب الطوابع الزمنية وحده لا يكفي للتشخيص.
+final Stopwatch _fixtureClock = Stopwatch()..start();
+
+/// ملف المراحل: يُقرأ من CI حتى لو أُجهض الاختبار، فلا يضيع آخر ما وصلت
+/// إليه الركيزة خلف مخزن الإخراج المؤقّت.
+File get _timelineFile => File('$_artifactDir/stage_timeline.log');
+
 /// وسم مراحل الركيزة في مخرجات CI: بيان آخر ما وصلت إليه الركيزة عند الفشل
 /// (لا يُترك التشخيص لتخمين رقم الخروج).
-void _stage(String message) => debugPrint('[fixture] $message');
+void _stage(String message) {
+  final line = '[fixture +${_fixtureClock.elapsedMilliseconds}ms] $message';
+  debugPrint(line);
+  try {
+    final directory = _timelineFile.parent;
+    if (!directory.existsSync()) {
+      directory.createSync(recursive: true);
+    }
+    _timelineFile.writeAsStringSync(
+      '$line\n',
+      mode: FileMode.append,
+      flush: true,
+    );
+  } catch (_) {
+    // الفشل في كتابة سطر تشخيصي لا يُفشل الركيزة نفسها.
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('تركيبة الانحدار البصري: لقطات المعاينة + ملفات Exact',
       (tester) async {
+    // خط زمني نظيف لهذه الجولة: يُقرأ وحده ولا يختلط ببقايا جولة سابقة.
+    if (_timelineFile.existsSync()) {
+      _timelineFile.deleteSync();
+    }
     await _loadAppFonts();
     _stage('الخطوط حُمّلت');
 

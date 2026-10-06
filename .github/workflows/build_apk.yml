@@ -72,6 +72,24 @@ jobs:
           set -o pipefail
           flutter test 2>&1 | tee "$RUNNER_TEMP/flutter-test.log"
 
+      # خلاصة الفشل: سطر لكل اختبار فاشل مع سبب مختصر، تُطبع على stdout
+      # (فتُقرأ من الـAPI كما من صفحة التشغيل)، ولا تُترك القراءة لتخمين
+      # مقطع من سجل ضخم مبعثر. الترتيب: اسم الملف ← اسم الاختبار ← السبب.
+      - name: Publish test failure digest
+        if: failure() && steps.test.outcome == 'failure'
+        shell: bash
+        run: |
+          file="$RUNNER_TEMP/flutter-test.log"
+          [ -f "$file" ] || exit 0
+          echo "### FAILURE DIGEST BEGIN ###"
+          awk '
+            /❌ .*\(failed\)/ { print "----"; print; left = 6; next }
+            /❌ loading / { print "----"; print; left = 6; next }
+            left > 0 && /(The following |Expected:|Actual:|Bad state|TimeoutException|StateError|Exception|Error:|error:)/ { print; left-- }
+          ' "$file" | head -n 900
+          echo "### FAILURE DIGEST END ###"
+          grep -E "tests? passed|tests? failed|Some tests failed|All tests passed" "$file" | tail -n 3 || true
+
       # عينات التصدير التي تكتبها الاختبارات إلى build/math_samples — docx من
       # مُصدِّر Word وpdf من مُصدِّر PDF — تُرفع مرفقاً عندما يحمل آخر رسائل
       # الالتزام وسم [math-samples] فقط: يفتحها إنسان في Word/Acrobat ليراجع
@@ -393,6 +411,18 @@ jobs:
           set -o pipefail
           flutter test test/visual/visual_parity_fixture_test.dart 2>&1 \
             | tee build/visual_parity/fixture_test.log
+
+      # خط زمني لمراحل الركيزة: يُنشر دائماً، فيُقرأ منه موضع التعطّل
+      # وزمنه لا مجرّد آخر سطر وصل إلى السجل.
+      - name: Publish fixture stage timeline
+        if: always()
+        shell: bash
+        run: |
+          file=build/visual_parity/stage_timeline.log
+          [ -f "$file" ] || exit 0
+          echo "### FIXTURE TIMELINE BEGIN ###"
+          cat "$file"
+          echo "### FIXTURE TIMELINE END ###"
 
       - name: Compare rendered files against the preview (RMSE)
         run: bash tool/verify_visual_parity.sh build/visual_parity
