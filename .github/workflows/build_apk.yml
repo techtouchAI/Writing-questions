@@ -19,6 +19,11 @@ on:
         required: false
         default: ''
         type: string
+      test_name:
+        description: 'Optional: with test_path, run only tests matching this name (--plain-name)'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -83,6 +88,9 @@ jobs:
           args=(--reporter json --timeout 120s)
           if [ -n "${{ inputs.test_path }}" ]; then
             args+=("${{ inputs.test_path }}")
+          fi
+          if [ -n "${{ inputs.test_name }}" ]; then
+            args+=(--plain-name "${{ inputs.test_name }}")
           fi
           flutter test "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/flutter-test.log"
 
@@ -188,7 +196,11 @@ jobs:
             evidence="${evidence//$'\r'/%0D}"; evidence="${evidence//$'\n'/%0A}"
             echo "::notice title=P0 gate — summary::$evidence"
           fi
-      - name: Publish analyzer and test diagnostics
+      # GitHub caps error annotations at ~10 per step: one publisher step per
+      # category so a long failure list can never starve the excerpts (or the
+      # reverse). The tiny publish helpers repeat per step on purpose — no
+      # cross-step coupling.
+      - name: Publish analyzer findings
         if: failure() && (steps.analyze.outcome == 'failure' || steps.test.outcome == 'failure')
         shell: bash
         run: |
@@ -229,6 +241,16 @@ jobs:
             tally="${tally//%/%25}"
             echo "::notice title=Analyzer findings tally (total=$total)::$tally"
           }
+          publish_analyzer_findings "$RUNNER_TEMP/flutter-analyze.log" 'error' 'Analyzer errors' 80
+          publish_analyzer_findings "$RUNNER_TEMP/flutter-analyze.log" 'warning' 'Analyzer warnings' 60
+          publish_analyzer_findings "$RUNNER_TEMP/flutter-analyze.log" 'info' 'Analyzer infos' 60
+          publish_analyzer_tally "$RUNNER_TEMP/flutter-analyze.log"
+          publish_tail "$RUNNER_TEMP/flutter-analyze.log" 'Flutter analyzer log excerpt'
+
+      - name: Publish failing test names
+        if: failure() && steps.test.outcome == 'failure'
+        shell: bash
+        run: |
           # تعليق واحد بمحتوى مُهيَّأ سلفاً (الملخِّص يقطع المقاطع عند ~3KB؛
           # GitHub يبتر الرسائل عند 4KB).
           publish_one() {
@@ -259,10 +281,6 @@ jobs:
             fi
             return 0
           }
-          publish_analyzer_findings "$RUNNER_TEMP/flutter-analyze.log" 'error' 'Analyzer errors' 80
-          publish_analyzer_findings "$RUNNER_TEMP/flutter-analyze.log" 'warning' 'Analyzer warnings' 60
-          publish_analyzer_findings "$RUNNER_TEMP/flutter-analyze.log" 'info' 'Analyzer infos' 60
-          publish_analyzer_tally "$RUNNER_TEMP/flutter-analyze.log"
           DIGEST="$RUNNER_TEMP/test-digest"
           if [ -f "$DIGEST/counts.txt" ]; then
             if [ -f "$DIGEST/summary.md" ]; then
@@ -277,39 +295,89 @@ jobs:
               total="$(wc -l < "$DIGEST/failing.txt" | tr -d ' ')"
               publish_chunked "$DIGEST/failing.txt" "Failing tests ($total)"
             fi
-            # سبب مستقل لكل اختبار بوابة فاشل (المعرّفات ثابتة فالعدد محدود).
-            for f in "$DIGEST"/p0_*.txt; do
-              [ -f "$f" ] || break
-              id="${f##*/p0_}"; id="${id%.txt}"
-              publish_one "$(cat "$f")" "P0-GATE-$id reason"
-            done
-            # مقاطع الأخطاء الأولى، بسقف 10 تعليقات (الأسماء أعلاه تغطي الكل).
-            total="$(ls "$DIGEST"/excerpt_*.txt 2>/dev/null | wc -l | tr -d ' ' || true)"
-            i=0
-            for f in "$DIGEST"/excerpt_*.txt; do
-              [ -f "$f" ] || break
-              i=$((i + 1))
-              if [ "$i" -gt 10 ]; then break; fi
-              name="$(sed -n '2p' "$f" | sed 's/^TEST: //')"
-              publish_one "$(cat "$f")" "Test failure ($i/$total): ${name:0:120}"
-            done
-            # تقدّم البوابة: آخر 24 مرحلة (أسطر نظيفة بلا تغليف JSON).
-            if [ -s "$DIGEST/p0gate_timeline.txt" ]; then
-              stages="$(tail -n 24 "$DIGEST/p0gate_timeline.txt")"
-              count="$(printf '%s\n' "$stages" | wc -l | tr -d ' ')"
-              publish_one "$stages" "P0 gate stages (last $count)"
-            fi
-            # قناة printf-debugging: كامل مخرجات [diag] مجزأة.
-            publish_chunked "$DIGEST/diag.txt" 'Test diagnostics ([diag])'
-            # الركيزة تعمل داخل هذه الحزمة أيضاً؛ ذيلها يوجّه تنقيح التعلّق.
-            if [ -s "$DIGEST/fixture_timeline.txt" ]; then
-              publish_one "$(tail -n 15 "$DIGEST/fixture_timeline.txt")" 'Fixture progress (build job)'
-            fi
           else
             publish_one 'test digest unavailable (log had no JSON events)' 'Test digest missing'
-            publish_tail "$RUNNER_TEMP/flutter-test.log" 'Flutter test log excerpt'
           fi
-          publish_tail "$RUNNER_TEMP/flutter-analyze.log" 'Flutter analyzer log excerpt'
+
+      - name: Publish test failure excerpts
+        if: failure() && steps.test.outcome == 'failure'
+        shell: bash
+        run: |
+          publish_one() {
+            local text="$1"
+            [ -n "$text" ] || return 0
+            text="${text//%/%25}"
+            text="${text//$'\r'/%0D}"
+            text="${text//$'\n'/%0A}"
+            echo "::error title=$2::$text"
+          }
+          DIGEST="$RUNNER_TEMP/test-digest"
+          [ -f "$DIGEST/counts.txt" ] || exit 0
+          # مقاطع الأخطاء الأولى، بسقف 10 تعليقات (الأسماء تغطي الكل).
+          total="$(ls "$DIGEST"/excerpt_*.txt 2>/dev/null | wc -l | tr -d ' ' || true)"
+          i=0
+          for f in "$DIGEST"/excerpt_*.txt; do
+            [ -f "$f" ] || break
+            i=$((i + 1))
+            if [ "$i" -gt 10 ]; then break; fi
+            name="$(sed -n '2p' "$f" | sed 's/^TEST: //')"
+            publish_one "$(cat "$f")" "Test failure ($i/$total): ${name:0:120}"
+          done
+
+      - name: Publish P0 gate and debug timelines
+        if: failure() && steps.test.outcome == 'failure'
+        shell: bash
+        run: |
+          publish_one() {
+            local text="$1"
+            [ -n "$text" ] || return 0
+            text="${text//%/%25}"
+            text="${text//$'\r'/%0D}"
+            text="${text//$'\n'/%0A}"
+            echo "::error title=$2::$text"
+          }
+          publish_chunked() {
+            local file="$1" title="$2" chunk='' size=0 part=1 lbs line
+            [ -f "$file" ] && [ -s "$file" ] || return 0
+            while IFS= read -r line || [ -n "$line" ]; do
+              lbs="$(printf '%s\n' "$line" | wc -c | tr -d ' ')"
+              if [ $((size + lbs)) -gt 3000 ] && [ -n "$chunk" ]; then
+                publish_one "$chunk" "$title (part $part)"
+                part=$((part + 1)); chunk=''; size=0
+              fi
+              chunk+="$line"$'\n'; size=$((size + lbs))
+            done < "$file"
+            if [ "$part" -gt 1 ]; then
+              publish_one "$chunk" "$title (part $part)"
+            else
+              publish_one "$chunk" "$title"
+            fi
+            return 0
+          }
+          DIGEST="$RUNNER_TEMP/test-digest"
+          [ -f "$DIGEST/counts.txt" ] || exit 0
+          # سبب مستقل لكل اختبار بوابة فاشل (المعرّفات ثابتة فالعدد محدود).
+          for f in "$DIGEST"/p0_*.txt; do
+            [ -f "$f" ] || break
+            id="${f##*/p0_}"; id="${id%.txt}"
+            publish_one "$(cat "$f")" "P0-GATE-$id reason"
+          done
+          # تقدّم البوابة: آخر 24 مرحلة (أسطر نظيفة بلا تغليف JSON).
+          if [ -s "$DIGEST/p0gate_timeline.txt" ]; then
+            stages="$(tail -n 24 "$DIGEST/p0gate_timeline.txt")"
+            count="$(printf '%s\n' "$stages" | wc -l | tr -d ' ')"
+            publish_one "$stages" "P0 gate stages (last $count)"
+          fi
+          # قناة printf-debugging: مخرجات [diag] مجزأة ومحدودة كي لا تُجوّع
+          # أسباب البوابة أعلاه.
+          if [ -s "$DIGEST/diag.txt" ]; then
+            head -c 9000 "$DIGEST/diag.txt" > "$RUNNER_TEMP/diag_head.txt"
+            publish_chunked "$RUNNER_TEMP/diag_head.txt" 'Test diagnostics ([diag])'
+          fi
+          # الركيزة تعمل داخل هذه الحزمة أيضاً؛ ذيلها يوجّه تنقيح التعلّق.
+          if [ -s "$DIGEST/fixture_timeline.txt" ]; then
+            publish_one "$(tail -n 15 "$DIGEST/fixture_timeline.txt")" 'Fixture progress (build job)'
+          fi
 
       - name: Upload validation diagnostics on failure
         if: failure()

@@ -33,6 +33,8 @@ import sys
 MAX_EXCERPT_BYTES = 3000
 MAX_STACK_LINES = 8
 MAX_ERRORS_PER_TEST = 3
+MAX_PRINT_LINES_PER_TEST = 200
+MAX_PRINT_BYTES_IN_EXCERPT = 1200
 P0_PATTERN = re.compile(r"P0-GATE-([0-9A-Z]+)")
 
 
@@ -56,6 +58,10 @@ class Digest:
         self.tests = {}  # test id -> {"name":..., "suite":..., "skipped":..., "file":...}
         self.results = {}  # test id -> result string
         self.errors = {}  # test id -> list of (error, stackTrace)
+        self.prints = {}  # test id -> console lines (flutter dumps failures here)
+        self.prints_dropped = {}  # test id -> lines dropped past the cap
+        self.start_times = {}  # test id -> testStart time (ms)
+        self.durations = {}  # test id -> seconds between start and done
         self.lines_total = 0
         self.lines_json = 0
         self.done_success = None
@@ -80,29 +86,50 @@ class Digest:
             test = event.get("test") or {}
             metadata = test.get("metadata") or {}
             suite_id = test.get("suiteID")
+            suite_path = self.suites.get(suite_id, "")
             url = test.get("url") or ""
             file_by_url = re.sub(r"^file://", "", url)
             file_by_url = re.sub(r"^.*/(test|integration_test|tool)/", r"\1/", file_by_url)
+            # The suite path is authoritative: flutter_test reports test urls
+            # such as package:flutter_test/src/widget_tester.dart for widget
+            # tests, which would misattribute every failure.
             self.tests[test.get("id")] = {
                 "name": test.get("name") or "",
-                "suite": self.suites.get(suite_id, ""),
-                "file": file_by_url or self.suites.get(suite_id, ""),
+                "suite": suite_path,
+                "file": suite_path or file_by_url or "",
                 "skipped": bool(metadata.get("skip")),
             }
+            if test.get("id") is not None and isinstance(event.get("time"), (int, float)):
+                self.start_times[test.get("id")] = event.get("time")
         elif kind == "testDone":
             test_id = event.get("testID")
             if test_id is not None and test_id not in self.results:
                 self.results[test_id] = event.get("result") or "unknown"
+                start = self.start_times.get(test_id)
+                end = event.get("time")
+                if (isinstance(start, (int, float)) and
+                        isinstance(end, (int, float)) and end >= start):
+                    self.durations[test_id] = (end - start) / 1000.0
         elif kind == "error":
             test_id = event.get("testID")
-            bucket = self.errors.setdefault(test_id, [])
-            if len(bucket) < MAX_ERRORS_PER_TEST:
-                bucket.append((
-                    str(event.get("error") or ""),
-                    str(event.get("stackTrace") or ""),
-                ))
+            # Uncapped: excerpts show the first few and note the rest. The
+            # first event is often the generic "See exception logs above"
+            # while the actionable message arrives in a later event.
+            self.errors.setdefault(test_id, []).append((
+                str(event.get("error") or ""),
+                str(event.get("stackTrace") or ""),
+            ))
         elif kind == "print":
             message = str(event.get("message") or "")
+            test_id = event.get("testID")
+            if test_id is not None:
+                bucket = self.prints.setdefault(test_id, [])
+                for line in message.splitlines() or [""]:
+                    if len(bucket) < MAX_PRINT_LINES_PER_TEST:
+                        bucket.append(line)
+                    else:
+                        self.prints_dropped[test_id] = \
+                            self.prints_dropped.get(test_id, 0) + 1
             for line in message.splitlines() or [""]:
                 for key in self.timelines:
                     if "[%s]" % key in line:
@@ -120,6 +147,14 @@ class Digest:
                 out.append((test_id, name.startswith("loading ")))
         out.sort(key=lambda item: (self.suite_file(item[0]), self.test_name(item[0])))
         return out
+
+    def failure_line(self, test_id, is_load):
+        line = "%s :: %s" % (self.suite_file(test_id), self.test_name(test_id))
+        if test_id in self.durations:
+            line += " [%.1fs]" % self.durations[test_id]
+        if is_load:
+            line += " (LOAD FAILURE)"
+        return line
 
     def counts(self):
         passed = failed = skipped = 0
@@ -160,17 +195,38 @@ def excerpt_text(digest, test_id):
     errors = digest.errors.get(test_id) or []
     if not errors:
         lines.append("ERROR: (no error event captured)")
-        return "\n".join(lines) + "\n"
-    first_error, first_stack = errors[0]
-    lines.append("ERROR:")
-    lines.append(first_error.strip() or "(empty)")
-    stack_lines = [ln for ln in first_stack.splitlines() if ln.strip()]
-    if stack_lines:
-        lines.append("STACK:")
-        lines.extend(stack_lines[:MAX_STACK_LINES])
-    if len(errors) > 1:
-        lines.append("(+%d more error events)" % (len(errors) - 1))
-    return _truncate_bytes("\n".join(lines) + "\n", MAX_EXCERPT_BYTES)
+    numbered = len(errors) > 1
+    for number, (error, stack) in enumerate(errors[:MAX_ERRORS_PER_TEST], start=1):
+        lines.append("ERROR %d:" % number if numbered else "ERROR:")
+        lines.append((error or "").strip() or "(empty)")
+        if number == 1:
+            stack_lines = [ln for ln in (stack or "").splitlines() if ln.strip()]
+            if stack_lines:
+                lines.append("STACK:")
+                lines.extend(stack_lines[:MAX_STACK_LINES])
+    if len(errors) > MAX_ERRORS_PER_TEST:
+        lines.append("(+%d more error events)" % (len(errors) - MAX_ERRORS_PER_TEST))
+    text = "\n".join(lines) + "\n"
+    # flutter_test prints the actionable failure ("EXCEPTION CAUGHT BY ...")
+    # to the console and reports only "See exception logs above", so the
+    # test's own console tail carries the diagnosis.
+    prints = digest.prints.get(test_id) or []
+    if prints:
+        tail = []
+        tail_bytes = 0
+        for line in reversed(prints):
+            line_bytes = len(line.encode("utf-8")) + 1
+            if tail_bytes + line_bytes > MAX_PRINT_BYTES_IN_EXCERPT:
+                break
+            tail.append(line)
+            tail_bytes += line_bytes
+        tail.reverse()
+        omitted = len(prints) - len(tail) + digest.prints_dropped.get(test_id, 0)
+        text += "PRINTS (last %d%s):\n" % (
+            len(tail), ", +%d earlier" % omitted if omitted else "")
+        if tail:
+            text += "\n".join(tail) + "\n"
+    return _truncate_bytes(text, MAX_EXCERPT_BYTES)
 
 
 def write_digest(digest, out_dir):
@@ -191,8 +247,7 @@ def write_digest(digest, out_dir):
 
     failures = digest.failures()
     write("failing.txt", "".join(
-        "%s :: %s\n" % (digest.suite_file(tid), digest.test_name(tid))
-        for tid, _ in failures))
+        digest.failure_line(tid, load) + "\n" for tid, load in failures))
 
     for index, (test_id, _) in enumerate(failures, start=1):
         write("excerpt_%03d.txt" % index, excerpt_text(digest, test_id))
@@ -232,9 +287,7 @@ def write_digest(digest, out_dir):
     if failures:
         summary += ["## Failing tests (%d)" % len(failures), ""]
         for test_id, load in failures:
-            summary.append("- `%s` :: %s%s" % (
-                digest.suite_file(test_id), digest.test_name(test_id),
-                " (LOAD FAILURE)" if load else ""))
+            summary.append("- `%s`" % digest.failure_line(test_id, load))
         summary.append("")
         summary += ["## First errors (up to 8)", ""]
         for test_id, _ in failures[:8]:
@@ -263,9 +316,11 @@ SAMPLE_LOG = """\
 {"type":"testStart","time":5,"test":{"id":3,"name":"ok adds numbers","suiteID":0,"groupIDs":[2],"metadata":{"skip":false},"line":7,"column":3,"url":"file:///home/runner/work/x/test/ok_test.dart"}}
 {"type":"testDone","time":9,"testID":3,"result":"success","hidden":false}
 {"type":"group","time":10,"group":{"id":4,"suiteID":1,"name":"رسم المعادلات","metadata":{},"testCount":2}}
-{"type":"testStart","time":11,"test":{"id":5,"name":"رسم المعادلات Math واحد لكل مقطع","suiteID":1,"groupIDs":[4],"metadata":{"skip":false},"line":100,"column":5,"url":"file:///home/runner/work/x/test/widget/canvas_test.dart"}}
+{"type":"testStart","time":11,"test":{"id":5,"name":"رسم المعادلات Math واحد لكل مقطع","suiteID":1,"groupIDs":[4],"metadata":{"skip":false},"line":100,"column":5,"url":"package:flutter_test/src/widget_tester.dart"}}
 {"type":"print","time":12,"testID":5,"messageType":"print","message":"[diag] math widgets: 0"}
+{"type":"print","time":12,"testID":5,"messageType":"print","message":"EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK"}
 {"type":"error","time":13,"testID":5,"error":"Expected: exactly 7 matching candidates\\n  Actual: Found 0 widgets","stackTrace":"#4 main.<anonymous closure> (file:///home/runner/work/x/test/widget/canvas_test.dart:114:7)\\n#5 testWidgets.<anonymous closure>","isFailure":true}
+{"type":"error","time":13,"testID":5,"error":"Test failed. See exception logs above.","stackTrace":"","isFailure":true}
 {"type":"testDone","time":14,"testID":5,"result":"failure","hidden":false}
 {"type":"testStart","time":15,"test":{"id":6,"name":"loading test/widget/broken_test.dart","suiteID":1,"groupIDs":[4],"metadata":{"skip":false},"line":0,"column":0,"url":"file:///home/runner/work/x/test/widget/broken_test.dart"}}
 {"type":"error","time":16,"testID":6,"error":"Failed to load test/widget/broken_test.dart: lib/x.dart:10:3: Error: Undefined name 'foo'.","stackTrace":"","isFailure":false}
@@ -288,7 +343,7 @@ def self_test():
             failures.append(label)
 
     digest = parse_stream(SAMPLE_LOG.splitlines())
-    check("parses mixed json/plain lines", digest.lines_json == 17 and digest.lines_total == 18)
+    check("parses mixed json/plain lines", digest.lines_json == 19 and digest.lines_total == 20)
     passed, failed, skipped = digest.counts()
     check("counts passed/failed", (passed, failed, skipped) == (1, 2, 0))
     check("done success=false", digest.done_success is False)
@@ -319,6 +374,14 @@ def self_test():
                   "Math واحد لكل مقطع",
                   "Expected: exactly 7",
                   "canvas_test.dart:114")))
+        check("file prefers suite path over package: url",
+              "FILE: test/widget/canvas_test.dart" in excerpt)
+        check("excerpt includes later error events",
+              "ERROR 2:" in excerpt and "See exception logs above" in excerpt)
+        check("excerpt includes the test console tail",
+              "EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK" in excerpt)
+        failing_text = open(os.path.join(tmp, "failing.txt"), encoding="utf-8").read()
+        check("failing lines carry durations", "[0.0s]" in failing_text)
         check("excerpt within annotation budget",
               len(excerpt.encode("utf-8")) <= MAX_EXCERPT_BYTES)
         compile_errors = open(os.path.join(tmp, "compile_errors.txt"), encoding="utf-8").read()
