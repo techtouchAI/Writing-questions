@@ -327,14 +327,18 @@ typedef CanonicalPreviewAssetLoader =
   required ExamDocument document,
 });
 
-/// الخطوة 3: معاينة A4 تفاعلية ترسم هندسة [LayoutDocument] مباشرةً.
+/// الخطوة 3: معاينة A4 تفاعلية بسطحين — يُختار أحدهما بحقن الوصلات.
 ///
-/// - **مصدر الهندسة**: [CanonicalLayoutService] يحسم الأسطر والمواضع والصفحات؛
-///   يرسم [CanonicalLayoutPreviewPage] هذه الهندسة بلا إعادة التفاف أو تقسيم.
-/// - **التحرير المباشر**: نقرات canonical تتحول إلى source offset، ويُستخدم
-///   حقل IME مخفي للإدخال من دون طبقة نص ثانية.
-/// - **المسار القديم**: تبقى أدوات القياس/الترقيم الخاصة بالمحرر متاحة للتوافق،
-///   لكنها لا تقرر هندسة المعاينة الحية أو تصدير Word القابل للتحرير.
+/// - **سطح الورقة التفاعلي (الافتراضي)**: بلا وصلات محقونة تُبنى الورقة
+///   كودجات قابلة للتحرير ([_buildPage]) فوق ترقيم المتحكم المقاس
+///   ([ExamWizardController.pagination])؛ المعادلات تُرسم في مكانها، والنقر
+///   يفتح محرر المحتوى المختلط. هذا سطح الإنتاج.
+/// - **سطح canonical (محقون)**: مع [canonicalLayoutResolver] و
+///   [canonicalPreviewAssetLoader] تُرسم هندسة [LayoutDocument] مباشرةً
+///   ([CanonicalLayoutPreviewPage]) بلا إعادة التفاف أو تقسيم، والنقرات
+///   تتحول إلى source offset عبر حقل IME مخفي. للاختبارات والمراجعة.
+/// - **التصدير**: PDF المتجهي وWord القابل للتحرير يحسمان هندستهما عند
+///   الطلب، فيعملان على السطحين دون اعتماد على حالة المعاينة الحية.
 /// - **التحديد والتنسيق**: تحديد سؤال/فرع/ترويسة/مربع نص (منفرد أو متعدد)
 ///   ثم تنسيقه من شريط المعاينة (خط/حجم/عريض/محاذاة/إطار).
 /// - **إعادة الترتيب**: سحب سؤال كامل أو فرع داخل سؤاله؛ الإفلات على فرع
@@ -596,10 +600,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
   }
 
+  /// Canonical surface iff both seams are injected; otherwise the interactive
+  /// paper surface (the seam-free production default).
+  bool get _useCanonicalSurface =>
+      widget.canonicalLayoutResolver != null &&
+      widget.canonicalPreviewAssetLoader != null;
+
   /// Makes the visible preview converge on the current document without ever
   /// showing geometry/assets resolved for an older document. Build calls this
   /// as a fallback, while model notifications call it after field sync.
   void _ensureCanonicalPreview([ExamWizardController? owner]) {
+    if (!_useCanonicalSurface) return;
     final controller = owner ?? _controller;
     if (controller == null || _exactCaptureInProgress) return;
     final sourceDocument = controller.document;
@@ -3391,6 +3402,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   Widget build(BuildContext context) {
     final controller = context.watch<ExamWizardController>();
     final document = controller.document;
+    final layout = controller.layout;
+    final pagination = controller.pagination;
+    if (!_useCanonicalSurface) {
+      _trimPageKeysByIndices(pagination.pages.map((page) => page.index));
+    }
     if (!_exactCaptureInProgress) _ensureCanonicalPreview(controller);
     final canonicalCapture = _exactCaptureInProgress ? _canonicalCaptureLayout : null;
     final canonicalPreview = canonicalCapture ??
@@ -3577,10 +3593,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                           width: contentWidth,
                           child: Column(
                             children: <Widget>[
-                              if (canonicalPreview != null &&
+                              if (!_useCanonicalSurface)
+                                for (final page in pagination.pages)
+                                  _buildPaperZoomedPage(
+                                    controller,
+                                    layout,
+                                    page,
+                                    pagination.pageCount,
+                                  )
+                              else if (canonicalPreview != null &&
                                   canonicalAssets != null)
                                 for (final page in canonicalPreview.pages)
-                                  _buildZoomedPage(
+                                  _buildCanonicalZoomedPage(
                                     controller,
                                     canonicalPreview,
                                     page,
@@ -4457,7 +4481,42 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  Widget _buildZoomedPage(
+  // سطح الورقة التفاعلي (الافتراضي): FittedBox بنفس نسبة الأبعاد = تكبير
+  // تخطيطي صحيح (القياس الداخلي يبقى بالمقاس الحقيقي، والتفاعل مع الحقول
+  // يعمل تحت كل تكبير).
+  Widget _buildPaperZoomedPage(
+    ExamWizardController controller,
+    SubjectLayoutTemplate layout,
+    PaginatedPage page,
+    int pageCount,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: SizedBox(
+        width: ExamCanvasGeometry.width * _zoom,
+        height: ExamCanvasGeometry.height * _zoom,
+        child: FittedBox(
+          fit: BoxFit.fill,
+          child: SizedBox(
+            width: ExamCanvasGeometry.width,
+            height: ExamCanvasGeometry.height,
+            child: _buildPage(
+              controller,
+              layout,
+              page,
+              pageCount,
+              snapshotKeys: _pageSnapshotKeys,
+              canvasKeys: _pageCanvasKeys,
+              interactive: !_exactCaptureInProgress,
+              showPreviewChrome: !_exactCaptureInProgress,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCanonicalZoomedPage(
     ExamWizardController controller,
     LayoutDocument layout,
     LayoutPage page,
@@ -4497,9 +4556,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  // مرحّل قديم غير مستخدم: المعاينة النشطة ترسم LayoutDocument مباشرة؛
-  // يُحتفظ به مؤقتاً لتسهيل إزالة المكونات التفاعلية القديمة تدريجياً.
-  // ignore: unused_element
+  // سطح الورقة التفاعلي: تُبنى الصفحة كودجات قابلة للتحرير فوق ترقيم
+  // المتحكم المقاس (انظر [_buildPaperZoomedPage]).
   Widget _buildPage(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
