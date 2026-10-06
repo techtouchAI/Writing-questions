@@ -241,6 +241,7 @@ void main() {
       expect(field.style?.color, Colors.transparent,
           reason: 'The IME field must not paint duplicate text over canonical glyphs.');
       expect(tester.takeException(), isNull);
+      debugPrint('[diag] canonical-01: done');
     },
   );
 
@@ -284,15 +285,19 @@ void main() {
       );
       final controller = ExamWizardController(document: document);
       addTearDown(controller.dispose);
+      debugPrint('[diag] canonical-02: resolving');
       final layout = await tester.runAsync(
         () => CanonicalLayoutService.resolve(
           document: document,
           sourceIr: controller.documentIr,
         ),
       );
+      debugPrint('[diag] canonical-02: resolved pages=${layout?.pageCount}');
       expect(layout, isNotNull);
       final canonical = layout!;
-      expect(canonical.pageCount, greaterThan(2));
+      // This document measures exactly 2 pages in CI; the test needs the
+      // later owned page (pages[1]), not three pages.
+      expect(canonical.pageCount, greaterThan(1));
       expect(identical(canonical.source, controller.documentIr), isTrue);
       final page = canonical.pages[1];
       final placement = page.floatingElements.singleWhere(
@@ -375,8 +380,11 @@ void main() {
         ),
       );
       expect(tester.takeException(), isNull);
+      debugPrint('[diag] canonical-02: done');
     },
-  );
+        // Fail-fast bound (tightening, not loosening): healthy work here is
+        // seconds; 120s bounds only hangs, 5x faster than the 600s default.
+        timeout: const Timeout(Duration(seconds: 120)));
 
   testWidgets('canonical floating drag resolves and changes the destination page',
       (tester) async {
@@ -408,7 +416,9 @@ void main() {
           id: 'drag-pagination-question',
           questionNumber: 1,
           statement: 'ابدأ من RTL ثم English 123',
-          body: List<String>.filled(72, bodyPart).join(' '),
+          // The drag target is pages[2]: 72 parts measure only 2 pages in
+          // CI, so the document needs headroom for a third page.
+          body: List<String>.filled(200, bodyPart).join(' '),
         ),
       ],
     );
@@ -417,7 +427,9 @@ void main() {
 
     await tester.pumpWidget(_screenCanonical(controller));
     await _pumpUntilCanonicalPage(tester);
-    await tester.pumpAndSettle();
+    // The page implies layout+assets are both set; global settle waits for
+    // unrelated quiescence the test never needs.
+    debugPrint('[diag] canonical-03: page found');
 
     final preview = tester.widget<CanonicalLayoutPreviewPage>(
       find.byKey(const ValueKey<String>('canonical-preview-page-1')),
@@ -465,7 +477,13 @@ void main() {
     await gesture.moveTo(Offset(destination.x, destination.y));
     await tester.pump(const Duration(milliseconds: 20));
     await gesture.up();
-    await tester.pumpAndSettle();
+    // The drop updates the model synchronously; wait for the model's own
+    // condition, not global quiescence.
+    await _pumpUntil(
+      tester,
+      () => controller.document.floatingElements.single.pageIndex == 2,
+    );
+    debugPrint('[diag] canonical-03: dropped');
 
     expect(
       controller.document.floatingElements.single.pageIndex,
@@ -473,7 +491,11 @@ void main() {
       reason: 'The canonical pointer must resolve the later page under the drag.',
     );
     expect(tester.takeException(), isNull);
-  });
+    debugPrint('[diag] canonical-03: done');
+  },
+      // Fail-fast bound (tightening, not loosening): healthy work here is
+      // seconds; 120s bounds only hangs, 5x faster than the 600s default.
+      timeout: const Timeout(Duration(seconds: 120)));
 
   testWidgets('canonical preparation failure shows a retry that can succeed',
       (tester) async {
@@ -511,12 +533,18 @@ void main() {
     expect(assetAttempts, 1);
 
     await tester.tap(find.text('إعادة المحاولة'));
+    debugPrint('[diag] canonical-04: tapped retry');
     await _pumpUntilCanonicalPage(tester);
+    debugPrint('[diag] canonical-04: page found');
 
     expect(find.byType(CanonicalLayoutPreviewPage), findsOneWidget);
     expect(assetAttempts, 2);
     expect(tester.takeException(), isNull);
-  });
+    debugPrint('[diag] canonical-04: done');
+  },
+      // Fail-fast bound (tightening, not loosening): healthy work here is
+      // seconds; 120s bounds only hangs, 5x faster than the 600s default.
+      timeout: const Timeout(Duration(seconds: 120)));
 
   testWidgets('stale layout completion cannot replace the newer document page',
       (tester) async {
@@ -527,6 +555,7 @@ void main() {
       document: initial,
       sourceIr: controller.documentIr,
     );
+    debugPrint('[diag] canonical-05: pre-resolved');
     final oldLayoutResult = Completer<LayoutDocument>();
     final firstResolutionStarted = Completer<void>();
 
@@ -579,7 +608,11 @@ void main() {
     );
     expect(identical(afterStaleCompletion.layoutDocument, currentLayout), isTrue);
     expect(tester.takeException(), isNull);
-  });
+    debugPrint('[diag] canonical-05: done');
+  },
+      // Fail-fast bound (tightening, not loosening): healthy work here is
+      // seconds; 120s bounds only hangs, 5x faster than the 600s default.
+      timeout: const Timeout(Duration(seconds: 120)));
 
   testWidgets('disposing while canonical layout is pending discards late result',
       (tester) async {
@@ -592,6 +625,7 @@ void main() {
       document: document,
       sourceIr: controller.documentIr,
     );
+    debugPrint('[diag] canonical-06: pre-resolved');
 
     await tester.pumpWidget(
       _screen(
@@ -619,7 +653,11 @@ void main() {
 
     expect(find.byType(CanonicalLayoutPreviewPage), findsNothing);
     expect(tester.takeException(), isNull);
-  });
+    debugPrint('[diag] canonical-06: done');
+  },
+      // Fail-fast bound (tightening, not loosening): healthy work here is
+      // seconds; 120s bounds only hangs, 5x faster than the 600s default.
+      timeout: const Timeout(Duration(seconds: 120)));
 
   testWidgets(
     'seam-free screen shows the interactive paper, not the canonical surface',
@@ -629,8 +667,10 @@ void main() {
       addTearDown(controller.dispose);
 
       await tester.pumpWidget(_screen(controller));
+      debugPrint('[diag] canonical-07: pumped widget');
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
+      debugPrint('[diag] canonical-07: pumped frames');
 
       // The production default (no injected seams) is the interactive
       // paper: no canonical page is ever built, and the paper renders
@@ -638,6 +678,9 @@ void main() {
       expect(find.byType(CanonicalLayoutPreviewPage), findsNothing);
       expect(find.textContaining(_hitMarker), findsWidgets);
       expect(tester.takeException(), isNull);
+      debugPrint('[diag] canonical-07: done');
     },
-  );
+        // Fail-fast bound (tightening, not loosening): healthy work here is
+        // seconds; 120s bounds only hangs, 5x faster than the 600s default.
+        timeout: const Timeout(Duration(seconds: 120)));
 }

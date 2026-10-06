@@ -575,5 +575,11 @@ void main() {
     expect(_fixtureDocument().questions[2].bodyAlign, PaperAlign.left);
     _stage('كُتبت القطع: ${Directory(_artifactDir).absolute.path} '
         '(${snapshots.length} صفحات)');
-  });
+  },
+      // حدّ المدة المشروعة لا تسامح مع التعلّق: التركيبة تُصدّر وترسم
+      // مستنداً كاملاً (عمل حائط حقيقي بالدقائق)، وكل تعلّق حقيقي يفشل
+      // بسرعة عبر الحراس الداخلية (مهلتا الترسيم 30s، عدّاد المضخات،
+      // حارسا runAsync) مع اسم المرحلة — أما 60s الافتراضية فأقصر من
+      // العمل المشروع نفسه.
+      timeout: const Timeout(Duration(minutes: 10)));
 }

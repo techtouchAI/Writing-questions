@@ -362,9 +362,10 @@ jobs:
             id="${f##*/p0_}"; id="${id%.txt}"
             publish_one "$(cat "$f")" "P0-GATE-$id reason"
           done
-          # تقدّم البوابة: آخر 24 مرحلة (أسطر نظيفة بلا تغليف JSON).
+          # تقدّم البوابة: آخر 24 مرحلة (أسطر نظيفة بلا تغليف JSON) بعد
+          # إسقاط ثرثرة التشكيل المتكررة التي كانت تطغى على النافذة كلها.
           if [ -s "$DIGEST/p0gate_timeline.txt" ]; then
-            stages="$(tail -n 24 "$DIGEST/p0gate_timeline.txt")"
+            stages="$(grep -v 'bidi shaped input' "$DIGEST/p0gate_timeline.txt" | tail -n 24)"
             count="$(printf '%s\n' "$stages" | wc -l | tr -d ' ')"
             publish_one "$stages" "P0 gate stages (last $count)"
           fi

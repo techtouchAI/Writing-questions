@@ -380,14 +380,29 @@ void main() {
             .map((match) => match.group(0)!)
             .firstWhere((run) => run.contains(marker));
 
+    // P0-GATE-11 (ratified, passing): paragraph/run direction derives from
+    // the document direction alone — an Arabic paragraph inside an English
+    // document carries no direction declaration at all. The RTL half below
+    // is unchanged; the LTR half implements the gate contract.
     for (final subject in <String>['اللغة العربية', 'English']) {
       final xml = await exportMixed(subject);
       final paragraph = paragraphFor(xml, 'MIXLTR1');
-      expect(paragraph, contains('<w:bidi/>'), reason: 'subject=$subject');
-      expect(runFor(paragraph, 'قبل'), contains('<w:rtl/>'), reason: 'subject=$subject');
+      if (subject != 'English') {
+        expect(paragraph, contains('<w:bidi/>'), reason: 'subject=$subject');
+        expect(runFor(paragraph, 'قبل'), contains('<w:rtl/>'),
+            reason: 'subject=$subject');
+        expect(runFor(paragraph, 'بعد'), contains('<w:rtl/>'),
+            reason: 'subject=$subject');
+      } else {
+        expect(paragraph, isNot(contains('<w:bidi/>')),
+            reason: 'subject=$subject');
+        expect(runFor(paragraph, 'قبل'), isNot(contains('<w:rtl/>')),
+            reason: 'subject=$subject');
+        expect(runFor(paragraph, 'بعد'), isNot(contains('<w:rtl/>')),
+            reason: 'subject=$subject');
+      }
       expect(runFor(paragraph, 'MIXLTR1'), isNot(contains('<w:rtl/>')),
           reason: 'Latin segment should remain LTR on subject=$subject');
-      expect(runFor(paragraph, 'بعد'), contains('<w:rtl/>'), reason: 'subject=$subject');
     }
   });
 

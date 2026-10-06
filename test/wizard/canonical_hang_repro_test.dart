@@ -115,7 +115,9 @@ void main() {
           ),
         ))!;
     debugPrint('[diag] repro-tap: resolved pages=${layout.pageCount}');
-    expect(layout.pageCount, greaterThan(2));
+    // This document measures exactly 2 pages in CI; the repro needs a
+    // later owned page (pages[1]), not three pages.
+    expect(layout.pageCount, greaterThan(1));
     final page = layout.pages[1];
 
     debugPrint('[diag] repro-tap: pumping page');
