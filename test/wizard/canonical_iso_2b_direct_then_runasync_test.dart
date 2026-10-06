@@ -69,9 +69,10 @@ void main() {
       document: controller.document,
       sourceIr: controller.documentIr,
     );
-    debugPrint('[diag] iso-2b-a: resolved pages=${layout?.pageCount}');
-    expect(layout, isNotNull);
-    expect(layout!.pageCount, greaterThan(0));
+    // Direct resolve returns a non-nullable LayoutDocument (only runAsync's
+    // own Future<T?> wrapper is nullable), so no null checks here.
+    debugPrint('[diag] iso-2b-a: resolved pages=${layout.pageCount}');
+    expect(layout.pageCount, greaterThan(0));
     expect(identical(layout.source, controller.documentIr), isTrue);
     expect(tester.takeException(), isNull);
     debugPrint('[diag] iso-2b-a: done');

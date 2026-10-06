@@ -30,7 +30,7 @@ final class CanonicalLayoutPreviewAssets {
   bool _disposed = false;
 
   /// Round-4 evidence switch: when true, [load] prints per-phase wall-clock
-  /// timings (`[diag] r4-load ...`). Default off: zero behavior change.
+  /// timings (`[fixture] r4-load ...`). Default off: zero behavior change.
   /// Enabled only by the visual fixture in its own isolate.
   static bool debugPhaseTiming = false;
 
@@ -43,7 +43,9 @@ final class CanonicalLayoutPreviewAssets {
     final sw = Stopwatch()..start();
     void r4(String message) {
       if (debugPhaseTiming) {
-        debugPrint('[diag] r4-load +${sw.elapsedMilliseconds}ms $message');
+        // [fixture] tag (not [diag]): the visual job's path annotation only
+        // publishes [fixture] lines; still flag-gated and temporary.
+        debugPrint('[fixture] r4-load +${sw.elapsedMilliseconds}ms $message');
       }
     }
 
@@ -75,7 +77,7 @@ final class CanonicalLayoutPreviewAssets {
       if (element?.type != FloatingElementType.image || bytes == null) continue;
       try {
         floating[element!.id] = await _decode(bytes);
-        r4('float decoded id=${element!.id} bytes=${bytes.length}');
+        r4('float decoded id=${element.id} bytes=${bytes.length}');
       } catch (_) {
         // A bad source image is omitted, just as the PDF painter omits it.
       }
