@@ -420,64 +420,115 @@ void main() {
         reason: 'لقطة لكل صفحة معاينة (${snapshotList.length}/$pageCount).');
     snapshots.addAll(snapshotList);
 
-    // التحويلات غير المتزامنة تعمل خارج fake-async الخاص بـtestWidgets:
-    // تشترك مسارات التصدير في مصادرها الحقيقية، لكن لا تُعلَّق عمليات الضغط/الخطوط.
-    final exportArtifacts = await tester.runAsync(() async {
-      // Vector PDF يستهلك كائن LayoutDocument الحي نفسه — لا يحسب تدفقاً ثانياً.
-      final vectorPdfBytes = await PdfExportService.buildDocumentPdfBytes(
-        document: controller.document,
-        layoutDocument: canonicalLayout,
-      );
-      _stage('Vector PDF generated: ${vectorPdfBytes.length} bytes');
-
-      // Editable DOCX مستقل: DocumentIR → LegacyDocxAdapter → PaginationEngine.
-      // لا نمرر إليه تعيين صفحات PDF canonical؛ Exact يبقى مساراً آخر أدناه.
-      _stage('Editable DOCX build started');
-      final editableDocxBytes =
-          await DocxDocumentExportService.buildDocumentDocxBytes(
-        document: controller.document,
-        shapeRasterizer: (element, widthPx, heightPx) async {
-          _stage('Editable DOCX shape rasterization started: ${element.id}');
-          final raster = await ShapeImageRenderer.rasterize(
-            element,
-            widthPx,
-            heightPx,
-          ).timeout(const Duration(seconds: 30));
-          _stage(
-            'Editable DOCX shape rasterization completed: ${element.id} '
-            '(${raster?.length ?? 0} bytes)',
+    // التصدير يُدار بالمضخات لا بـ`runAsync`: ترسيم المحرك (الأشكال عبر
+    // `toImage`، والمعادلات عبر مضيف اللقطات) يكتمل عبر الأُطر كما في
+    // الإنتاج — داخل `runAsync` يبقى معلَّقاً (shape-1 لا يكتمل أبداً) وتبتلع
+    // المنطقة مهلات `.timeout` الداخلية. المنطق نفسه حرفياً؛ المتغير فقط
+    // سائق الانتظار (مضخات محدودة بدل انتظار حقيقي).
+    Uint8List? exportVector;
+    Uint8List? exportEditable;
+    Uint8List? exportExactPdf;
+    Uint8List? exportExactDocx;
+    var exportsDone = false;
+    Object? exportError;
+    StackTrace? exportStack;
+    unawaited(
+      Future(() async {
+        try {
+          // Vector PDF يستهلك كائن LayoutDocument الحي نفسه — لا يحسب تدفقاً ثانياً.
+          exportVector = await PdfExportService.buildDocumentPdfBytes(
+            document: controller.document,
+            layoutDocument: canonicalLayout,
           );
-          return raster;
-        },
-        mathRasterizer: (latex, fontSizePt) async {
-          _stage('Editable DOCX math rasterization started: $latex');
-          final raster = await MathImageRenderer.rasterize(
-            latex,
-            fontSizePt,
-          ).timeout(const Duration(seconds: 30));
-          _stage(
-            'Editable DOCX math rasterization completed: $latex '
-            '(${raster?.pngBytes.length ?? 0} bytes)',
-          );
-          return raster;
-        },
-        legacyPaginationInput: editablePaginationInput,
-        onProgress: (stage) => _stage('Editable DOCX: $stage'),
-      ).timeout(const Duration(minutes: 2));
-      _stage('Editable DOCX generated: ${editableDocxBytes.length} bytes');
+          _stage('Vector PDF generated: ${exportVector.length} bytes');
 
-      // Exact: صفحات الصور الملتقطة أعلاه فقط — مستقل عن vector/editable.
-      final exactPdfBytes =
-          await ExactExportService.buildPdfFromSnapshots(snapshots);
-      final exactDocxBytes = ExactExportService.buildDocxFromSnapshots(snapshots);
-      _stage('Exact PDF/DOCX generated');
-      return (
-        vectorPdfBytes: vectorPdfBytes,
-        editableDocxBytes: editableDocxBytes,
-        exactPdfBytes: exactPdfBytes,
-        exactDocxBytes: exactDocxBytes,
+          // Editable DOCX مستقل: DocumentIR → LegacyDocxAdapter → PaginationEngine.
+          // لا نمرر إليه تعيين صفحات PDF canonical؛ Exact يبقى مساراً آخر أدناه.
+          _stage('Editable DOCX build started');
+          exportEditable =
+              await DocxDocumentExportService.buildDocumentDocxBytes(
+            document: controller.document,
+            shapeRasterizer: (element, widthPx, heightPx) async {
+              _stage('Editable DOCX shape rasterization started: ${element.id}');
+              // في أرض المضخات تعمل مهلة `.timeout` فعلياً (مؤقتات المنطقة
+              // الوهمية تُطلق مع المضخات) — خلاف `runAsync` حيث كانت ميتة.
+              final raster = await ShapeImageRenderer.rasterize(
+                element,
+                widthPx,
+                heightPx,
+              ).timeout(
+                const Duration(seconds: 30),
+                onTimeout: () => throw StateError(
+                  'HANG: ShapeImageRenderer.rasterize(${element.id}) did not '
+                  'complete within 30s of pumped time',
+                ),
+              );
+              _stage(
+                'Editable DOCX shape rasterization completed: ${element.id} '
+                '(${raster?.length ?? 0} bytes)',
+              );
+              return raster;
+            },
+            mathRasterizer: (latex, fontSizePt) async {
+              _stage('Editable DOCX math rasterization started: $latex');
+              final raster = await MathImageRenderer.rasterize(
+                latex,
+                fontSizePt,
+              ).timeout(
+                const Duration(seconds: 30),
+                onTimeout: () => throw StateError(
+                  'HANG: MathImageRenderer.rasterize($latex) did not '
+                  'complete within 30s of pumped time',
+                ),
+              );
+              _stage(
+                'Editable DOCX math rasterization completed: $latex '
+                '(${raster?.pngBytes.length ?? 0} bytes)',
+              );
+              return raster;
+            },
+            legacyPaginationInput: editablePaginationInput,
+            onProgress: (stage) => _stage('Editable DOCX: $stage'),
+          );
+          _stage('Editable DOCX generated: ${exportEditable.length} bytes');
+
+          // Exact: صفحات الصور الملتقطة أعلاه فقط — مستقل عن vector/editable.
+          exportExactPdf =
+              await ExactExportService.buildPdfFromSnapshots(snapshots);
+          exportExactDocx = ExactExportService.buildDocxFromSnapshots(snapshots);
+          _stage('Exact PDF/DOCX generated');
+          exportsDone = true;
+        } catch (error, stack) {
+          exportError = error;
+          exportStack = stack;
+        }
+      }),
+    );
+    var pumpCount = 0;
+    for (;
+        pumpCount < 1200 && !exportsDone && exportError == null;
+        pumpCount++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    if (exportError != null) {
+      Error.throwWithStackTrace(exportError!, exportStack!);
+    }
+    final exportArtifacts = exportsDone
+        ? (
+            vectorPdfBytes: exportVector!,
+            editableDocxBytes: exportEditable!,
+            exactPdfBytes: exportExactPdf!,
+            exactDocxBytes: exportExactDocx!,
+          )
+        : null;
+    _stage('exports finished after pumps: done=$exportsDone');
+    if (!exportsDone && exportError == null) {
+      fail(
+        'HANG: exports did not complete after $pumpCount pumps: '
+        'vector=${exportVector != null}, editable=${exportEditable != null}, '
+        'exactPdf=${exportExactPdf != null}, exactDocx=${exportExactDocx != null}',
       );
-    });
+    }
     expect(exportArtifacts, isNotNull);
     final vectorPdfBytes = exportArtifacts!.vectorPdfBytes;
     final editableDocxBytes = exportArtifacts.editableDocxBytes;

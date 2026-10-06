@@ -620,4 +620,24 @@ void main() {
     expect(find.byType(CanonicalLayoutPreviewPage), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'seam-free screen shows the interactive paper, not the canonical surface',
+    (tester) async {
+      final document = _document();
+      final controller = ExamWizardController(document: document);
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(_screen(controller));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // The production default (no injected seams) is the interactive
+      // paper: no canonical page is ever built, and the paper renders
+      // the question content.
+      expect(find.byType(CanonicalLayoutPreviewPage), findsNothing);
+      expect(find.textContaining(_hitMarker), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

@@ -95,6 +95,22 @@ abstract final class ExamTypography {
     }
   }
 
+  /// أدوار أثاث الصفحة (الترويسة والتذييل): أحجامها المرجعية ثابتة لا
+  /// تمسّها معاملا الورقة العامّان، لأنهما مشتقان من إعدادَي المتن
+  /// (`baseFontSize` موثّق كحجم خط المتن) — وقياس الأثاث مع المتن يكسر
+  /// عقد هندسة الصفحة: محجوز تذييل مقاس قد يتجاوز ارتفاع المحتوى كله،
+  /// فيستحيل شرط «لا تداخل» حسابياً. أدوار المحتوى تظل تُقاس، والتنسيق
+  /// المخصص لعنصر يتقدم دائماً في كل الأدوار.
+  static const Set<VisualRole> pageChromeRoles = <VisualRole>{
+    VisualRole.headerTitle,
+    VisualRole.headerBody,
+    VisualRole.footer,
+    VisualRole.bismillah,
+  };
+
+  /// هل [role] من أثاث الصفحة (ترويسة/تذييل) المعفي من القياس العام؟
+  static bool isPageChrome(VisualRole role) => pageChromeRoles.contains(role);
+
   /// يحلّ نمط [role] نهائياً لورقة [settings] وقالب [layout].
   ///
   /// [override] تنسيق العنصر من النموذج، والبقية استبدالات موضعية تستعملها
@@ -112,17 +128,20 @@ abstract final class ExamTypography {
     PaperAlign? align,
   }) {
     final spec = reference[role]!;
+    // أثاث الصفحة معفي من القياس العام (انظر [isPageChrome])؛ ما عداه
+    // يُضرب بمعامل الورقة مرة واحدة كما كان.
+    final fontScale = isPageChrome(role) ? 1.0 : settings.fontScale;
+    final heightScale = isPageChrome(role) ? 1.0 : settings.heightScale;
     // الترتيب: تنسيق العنصر ([override]) يتقدم دائماً، ثم الاستبدال الموضعي
     // الذي يمرّره الراسم (كالبسملة أو عمود الترويسة الغامق)، ثم القيمة
     // المرجعية للدور مضروبة بمعامل الورقة مرة واحدة.
     return VisualTextStyle(
       role: role,
       font: override?.font ?? font ?? spec.font ?? settings.defaultFont,
-      fontSizePt:
-          override?.fontSize ?? sizePt ?? spec.sizePt * settings.fontScale,
+      fontSizePt: override?.fontSize ?? sizePt ?? spec.sizePt * fontScale,
       lineHeight: override?.lineHeight ??
           lineHeight ??
-          referenceLineHeight(role, layout) * settings.heightScale,
+          referenceLineHeight(role, layout) * heightScale,
       bold: override?.bold ?? bold ?? spec.bold,
       italic: override?.italic ?? false,
       underline: override?.underline ?? false,

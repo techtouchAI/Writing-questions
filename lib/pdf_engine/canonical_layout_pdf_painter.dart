@@ -9,14 +9,13 @@ import '../layout/document_direction.dart';
 import '../models/equation_model.dart';
 import '../models/exam_document.dart';
 import '../models/floating_element.dart';
-import '../models/paper_text_style.dart';
 import 'exam_fonts.dart';
 import 'floating_elements_pdf.dart';
 import 'pdf_math_rasters.dart';
 
-/// PDF-side painter for a completed LayoutDocument. Canonical run gaps and
-/// line anchors remain authoritative; PDF font advances only map those gaps
-/// onto the PDF canvas. There is no Row, Wrap, line-break, justification, or
+/// PDF-side painter for a completed LayoutDocument. Canonical run origins
+/// are authoritative for text operators; PDF font advances are never used
+/// to displace them. There is no Row, Wrap, line-break, justification, or
 /// page-flow pass in this class.
 class CanonicalLayoutPdfPainter {
   const CanonicalLayoutPdfPainter();
@@ -52,7 +51,6 @@ class CanonicalLayoutPdfPainter {
         for (final decoration in block.decorations) _paintDecoration(decoration),
       pw.Positioned.fill(
         child: _paintCanonicalLines(
-          context,
           <LayoutLine>[
             for (final block in page.blocks) ...block.allLines,
           ],
@@ -80,13 +78,13 @@ class CanonicalLayoutPdfPainter {
     );
   }
 
-  /// Measures each already-resolved text run with the PDF font, then maps its
-  /// origin so the gaps between canonical run boxes remain unchanged. Plain
-  /// U+0020 and fixed-advance runs are geometry, not PDF text widgets: retain
-  /// their canonical advance directly. No line-breaking, bidi reordering, or
-  /// justification is performed here.
+  /// Paints each already-resolved text run at its canonical origin. Plain
+  /// U+0020 and fixed-advance runs are geometry, not PDF text widgets, and
+  /// math runs keep their canonical box for the raster image. Origins are
+  /// never remapped by PDF advances: that would re-justify the line inside
+  /// the renderer. No line-breaking, bidi reordering, or justification is
+  /// performed here.
   pw.Widget _paintCanonicalLines(
-    pw.Context context,
     Iterable<LayoutLine> lines, {
     required ExamFonts fonts,
     required PdfMathRasters mathRasters,
@@ -98,11 +96,9 @@ class CanonicalLayoutPdfPainter {
           .toList(growable: false);
       if (runs.isEmpty) continue;
 
-      final advances = <double>[];
       final contents = <pw.Widget?>[];
       for (final run in runs) {
         if (_isCanonicalSpacer(run)) {
-          advances.add(run.width);
           contents.add(null);
           continue;
         }
@@ -111,7 +107,6 @@ class CanonicalLayoutPdfPainter {
             ? mathRasters.lookup(run.text, run.style.fontSizePt)
             : null;
         if (raster != null) {
-          advances.add(run.width);
           contents.add(
             pw.Image(
               pw.MemoryImage(raster.pngBytes),
@@ -123,18 +118,6 @@ class CanonicalLayoutPdfPainter {
           continue;
         }
 
-        final measuredText = _textRunWidget(
-          run,
-          fonts,
-          textAlign: pw.TextAlign.left,
-        );
-        final measuredAdvance = pw.Widget.measure(
-          measuredText,
-          context: context,
-        ).x;
-        advances.add(measuredAdvance.isFinite && measuredAdvance >= 0
-            ? measuredAdvance
-            : run.width);
         contents.add(
           _textRunWidget(
             run,
@@ -144,23 +127,23 @@ class CanonicalLayoutPdfPainter {
         );
       }
 
-      final origins = _mappedRunOrigins(line, runs, advances);
-      final originById = <String, double>{
-        for (var index = 0; index < runs.length; index++)
-          runs[index].id: origins[index],
-      };
+      // Canonical run origins are authoritative for PDF text operators: the
+      // parity contract requires the actual operator to use the canonical
+      // run x within tolerance, and remapping origins by PDF advances
+      // re-justifies the line inside the renderer — displacing starts
+      // beyond tolerance whenever the shapers diverge (notably Arabic).
       final contentById = <String, pw.Widget?>{
         for (var index = 0; index < runs.length; index++)
           runs[index].id: contents[index],
       };
-      // Keep the canonical logical emission order; positions come from the
-      // canonical gaps/anchor mapped through the measured PDF advances.
+      // Keep the canonical logical emission order; positions are the
+      // canonical run origins, painted as-is.
       for (final run in _logicalRuns(line)) {
         final content = contentById[run.id];
         if (content == null) continue;
         children.add(
           pw.Positioned(
-            left: originById[run.id],
+            left: run.x,
             top: line.baseline - run.baselineOffset,
             child: content,
           ),
@@ -196,67 +179,6 @@ class CanonicalLayoutPdfPainter {
       tightBounds: false,
       overflow: pw.TextOverflow.clip,
     );
-  }
-
-  List<double> _mappedRunOrigins(
-    LayoutLine line,
-    List<LayoutRun> runs,
-    List<double> advances,
-  ) {
-    assert(runs.length == advances.length);
-    if (runs.isEmpty) return <double>[];
-    // LayoutDocument already distributed justification and fixed both line
-    // anchors. Paint those resolved origins as-is: remapping a justified line
-    // by PDF advances would perform a second, renderer-specific justification.
-    if (line.isJustified) {
-      return <double>[for (final run in runs) run.x];
-    }
-
-    final origins = List<double>.filled(runs.length, 0);
-    final gaps = <double>[
-      for (var index = 0; index + 1 < runs.length; index++)
-        runs[index + 1].x - (runs[index].x + runs[index].width),
-    ];
-    final rightAligned = _rightAnchorsLine(line);
-    if (rightAligned == true) {
-      final last = runs.length - 1;
-      origins[last] = runs[last].x + runs[last].width - advances[last];
-      for (var index = last - 1; index >= 0; index--) {
-        origins[index] =
-            origins[index + 1] - gaps[index] - advances[index];
-      }
-      return origins;
-    }
-
-    var extent = advances.first;
-    for (var index = 0; index < gaps.length; index++) {
-      extent += gaps[index] + advances[index + 1];
-    }
-    final start = rightAligned == null
-        ? (runs.first.x + runs.last.x + runs.last.width - extent) / 2
-        : runs.first.x;
-    origins[0] = start;
-    for (var index = 0; index < gaps.length; index++) {
-      origins[index + 1] = origins[index] + advances[index] + gaps[index];
-    }
-    return origins;
-  }
-
-  bool? _rightAnchorsLine(LayoutLine line) {
-    switch (line.alignment) {
-      case PaperAlign.left:
-        return false;
-      case PaperAlign.right:
-        return true;
-      case PaperAlign.center:
-        return null;
-      case PaperAlign.end:
-        return line.direction != DocumentDirection.rtl;
-      case PaperAlign.start:
-      case PaperAlign.justify:
-      case null:
-        return line.direction == DocumentDirection.rtl;
-    }
   }
 
   Iterable<LayoutRun> _logicalRuns(LayoutLine line) sync* {
@@ -332,8 +254,8 @@ class CanonicalLayoutPdfPainter {
         ? mathRasters.lookup(run.text, run.style.fontSizePt)
         : null;
     // Floating labels retain their existing fixed-run placement; ordinary page
-    // lines use _paintCanonicalLines above to map PDF advances onto canonical
-    // gaps. Height remains intrinsic for text to avoid clipping font-specific
+    // lines use _paintCanonicalLines above to paint canonical origins as-is.
+    // Height remains intrinsic for text to avoid clipping font-specific
     // ascent/descent; raster math already has canonical dimensions.
     final pw.Widget content;
     if (raster != null) {

@@ -1172,6 +1172,9 @@ class _DocxBuilder {
     final effectiveAlign = !applyHeaderLayout || style?.align == null
         ? alignment
         : _wordAlign(style!.align);
+    // اتجاه سطر الترويسة من اتجاه الورقة وحده (P0-GATE-11): ترويسة ورقة
+    // LTR بلا `w:bidi` ولا `w:rtl`، كما في فقرات المتن.
+    final headerRtl = !document.layout.isLtr;
     final runProperties = _RunProperties(
       bold: effectiveBold,
       italic: resolved.italic,
@@ -1179,9 +1182,9 @@ class _DocxBuilder {
       color: color,
       size: effectiveSize,
       font: fontName,
-      rtl: true,
+      rtl: headerRtl,
     );
-    return '<w:p><w:pPr><w:bidi/><w:jc w:val="$effectiveAlign"/>'
+    return '<w:p><w:pPr>${headerRtl ? '<w:bidi/>' : ''}<w:jc w:val="$effectiveAlign"/>'
         '<w:spacing${spacingAfter == null ? '' : ' w:before="0" w:after="$spacingAfter"'} w:line="$line" w:lineRule="auto"/></w:pPr>'
         '${_runsXml(text, runProperties, effectiveSize / 2)}'
         '</w:p>';
@@ -1879,11 +1882,10 @@ class _DocxBuilder {
     List<DocxRunSpec>? runs,
   }) {
     final resolved = _roleStyle(role, override: style);
-    final paragraphRtl = _paragraphDirection(
-      text,
-      runs,
-      fallbackRtl: !document.layout.isLtr,
-    );
+    // اتجاه الفقرة من اتجاه الورقة وحده (P0-GATE-07/11): `w:bidi` و`w:ind`
+    // يُشتقان من `document.layout.isLtr` لا من نص الفقرة — فلا تُزاح فقرة
+    // عربية تبدأ بلاتينية إلى اليسار، ولا تُعلَّم فقرة إنجليزية تحوي عربية.
+    final paragraphRtl = _documentRtl;
     _writeParagraph(
       body,
       text,
@@ -1939,6 +1941,10 @@ class _DocxBuilder {
     }
   }
 
+  /// مرجع اتجاه المستند الوحيد لمولّد Word — سمّته البوابة حرفياً
+  /// (P0-GATE-11: «اتجاه الفقرة يُشتق من `document.layout.isLtr` وحده»).
+  bool get _documentRtl => !document.layout.isLtr;
+
   void _writeParagraph(
     StringBuffer body,
     String text, {
@@ -1959,14 +1965,10 @@ class _DocxBuilder {
     bool? directionRtl,
     List<DocxRunSpec>? runs,
   }) {
-    // The paragraph takes the direction of its first strong character, falling
-    // back to the document direction only when the text has no strong script.
-    final paragraphRtl = directionRtl ??
-        _paragraphDirection(
-          text,
-          runs,
-          fallbackRtl: !document.layout.isLtr,
-        );
+    // The paragraph takes the document direction (P0-GATE-07/11: `w:bidi`
+    // and `w:ind` derive from `document.layout.isLtr` alone, never from the
+    // paragraph text) unless an explicit element direction was supplied.
+    final paragraphRtl = directionRtl ?? _documentRtl;
     final effectiveAlignment = alignment ??
         _wordAlign(
           null,
@@ -2040,7 +2042,10 @@ class _DocxBuilder {
               rtl: run.rtl ?? paragraphRtl,
             ),
             runSize / 2,
-            forceRtl: run.rtl,
+            // الاتجاه الصريح للعقدة مقيَّد بالفقرة: لا `w:rtl` داخل فقرة LTR
+            // (P0-GATE-11: «بلا `w:bidi`/`w:rtl`» في ورقة LTR كلها — حتى
+            // الوحدة المعلَنة RTL كـ«marks» والفقرات العربية المؤجلة).
+            forceRtl: run.rtl == null ? null : run.rtl! && paragraphRtl,
             visualRun: run.visualRun,
           ),
         );
@@ -2253,20 +2258,6 @@ class _DocxBuilder {
         DocumentDirection.auto || DocumentDirection.inherit => null,
       };
 
-  bool _paragraphDirection(
-    String text,
-    List<DocxRunSpec>? runs, {
-    required bool fallbackRtl,
-  }) {
-    final paragraphText = runs == null
-        ? text
-        : runs
-            .where((run) => !(run.visualRun?.isMath ?? false))
-            .map((run) => run.visualRun?.text ?? run.text)
-            .join();
-    return _directionalChunks(paragraphText, fallbackRtl).first.rtl;
-  }
-
   List<DocxRunSpec> _semanticRuns(InlineContent content) => <DocxRunSpec>[
         for (final node in content.nodes) ..._semanticNodeRuns(node),
       ];
@@ -2307,27 +2298,81 @@ class _DocxBuilder {
     }
   }
 
+  /// اتجاه الجريان من **المحرف القوي** (P0-GATE-06: «Direction is per
+  /// strong-script run»): يُشق النص عند كل انتقال بين الأصناف الثلاثة
+  /// (عربي قوي/لاتيني قوي/ضعيف: مسافات/ترقيم/رموز)، ثم تُدمج المقاطع
+  /// المتجاورة المتفقة الاتجاه — فتعود الضعيفة إلى جيرانها كما يدمجها
+  /// المحرك، ويبقى كل جريان مكتوب نقي الاتجاه.
+  ///
+  /// لا يُستعمل محرك التشكيل هنا عن قصد: `TextBox.direction` يصف الاتجاه
+  /// **البصري** — فيُبلغ عن الأرقام المشرقية (U+0660–U+0669، صنف AN) أنها
+  /// LTR حتى داخل فقرة RTL (مُثبت بفحص `docx_run_direction_test`: المحرك
+  /// يشق «س١» إلى `[rtl] س | [ltr] ١` ويُبلغ «٢٠» كاملةً `[ltr]`) — بينما
+  /// عقد Word يطلب `w:rtl` لكل جريان يحوي عربية (`[\u0600-\u06FF]`).
+  /// التصنيف أدناه يطابق مصنّف المحرك نفسه (`_containsArabic` /
+  /// `_containsStrongLtr`) فيطابق تقسيمه حيث يصح، ويصححه حيث يخطئ.
   List<({String text, bool rtl})> _directionalChunks(
     String text,
     bool fallbackRtl,
   ) {
-    final resolved = FlutterTextMetrics.resolveDirectionalRuns(
-      text,
-      fallbackDirection: fallbackRtl
-          ? DocumentDirection.rtl
-          : DocumentDirection.ltr,
-    );
-    if (resolved.isEmpty) {
-      return <({String text, bool rtl})>[(text: text, rtl: fallbackRtl)];
+    if (text.isEmpty) {
+      return const <({String text, bool rtl})>[];
     }
-    return resolved
-        .map(
-          (run) => (
-            text: run.text,
-            rtl: run.direction == DocumentDirection.rtl,
-          ),
-        )
-        .toList(growable: false);
+    final chunks = <({String text, bool rtl})>[];
+    final current = StringBuffer();
+    // صنف المقطع الجاري: 0 = ضعيف فقط، 1 = عربي قوي، 2 = لاتيني قوي.
+    var currentKind = 0;
+    void flush() {
+      if (current.isEmpty) return;
+      final chunkRtl = currentKind == 2 ? false : fallbackRtl;
+      if (chunks.isNotEmpty && chunks.last.rtl == chunkRtl) {
+        final previous = chunks.removeLast();
+        chunks.add((
+          text: '${previous.text}${current.toString()}',
+          rtl: chunkRtl,
+        ));
+      } else {
+        chunks.add((text: current.toString(), rtl: chunkRtl));
+      }
+      current.clear();
+      currentKind = 0;
+    }
+
+    for (final rune in text.runes) {
+      final kind = _scriptKind(rune);
+      if (current.isNotEmpty && kind != currentKind) {
+        flush();
+      }
+      currentKind = kind;
+      current.writeCharCode(rune);
+    }
+    flush();
+    return chunks;
+  }
+
+  /// صنف المحرف الاتجاهي: 1 للعربي القوي (حروف الكتلتين العبرية/العربية
+  /// وملحقاتها وعروضها — ومعها الأرقام المشرقية والتشكيل بحكم النطاق،
+  /// فيُوجب `w:rtl` في فقرة RTL)، 2 للاتيني القوي (ومعه الأرقام اللاتينية
+  /// كما في مصنّف المحرك)، 0 لما عداهما (مسافات وترقيم ورموز تلتصق
+  /// بجيرانها أو تتبع الفقرة).
+  ///
+  /// كل `[\u0600-\u06FF]` عربي قوي هنا — فيستحيل أن يخرج جريان يحوي
+  /// عربية بلا `w:rtl` داخل فقرة RTL (وهو نص عقد P0-GATE-06 حرفياً).
+  static int _scriptKind(int rune) {
+    if ((rune >= 0x0590 && rune <= 0x08FF) ||
+        (rune >= 0xFB1D && rune <= 0xFEFE) ||
+        (rune >= 0x10E60 && rune <= 0x10E7F) ||
+        (rune >= 0x1EC70 && rune <= 0x1EEFF)) {
+      return 1;
+    }
+    if ((rune >= 0x0030 && rune <= 0x0039) ||
+        (rune >= 0x0041 && rune <= 0x005A) ||
+        (rune >= 0x0061 && rune <= 0x007A) ||
+        (rune >= 0x00C0 && rune <= 0x02FF) ||
+        (rune >= 0x0370 && rune <= 0x058F)) {
+      return 2;
+    }
+    return 0;
   }
 
   String _directionalTextXml(

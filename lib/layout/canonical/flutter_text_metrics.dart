@@ -536,8 +536,11 @@ class FlutterTextMetrics implements FontMetricsProvider {
       ranges.add((start: rangeStart, end: rangeEnd));
       cursor = rangeEnd;
     }
-    return _coalesceNonbreakingSpaceRanges(
-      _coalescePeriodRanges(ranges, plainText),
+    return _coalesceCurrencyRanges(
+      _coalesceNonbreakingSpaceRanges(
+        _coalescePeriodRanges(ranges, plainText),
+        plainText,
+      ),
       plainText,
     );
   }
@@ -564,6 +567,50 @@ class FlutterTextMetrics implements FontMetricsProvider {
       if (previous.end == range.start &&
           isPeriodRun(previous) &&
           isPeriodRun(range)) {
+        merged[merged.length - 1] = (start: previous.start, end: range.end);
+      } else {
+        merged.add(range);
+      }
+    }
+    return merged;
+  }
+
+  /// Keep a literal `$` glued to a following amount or identifier. ICU word
+  /// segmentation isolates `$` (currency symbols join no word class per
+  /// UAX #29), which would split an escaped dollar `$5` into `$` | `5`
+  /// runs and break the source-offset map across the removed slash.
+  /// [_wordRanges] only processes non-math spans (math and fixed-advance
+  /// spans bypass it), so every `$` here is a literal dollar, and
+  /// prefix-currency cohesion mirrors UAX #14 (no break between a currency
+  /// prefix and its number). Strict adjacency only: `$ 5` stays split.
+  List<({int start, int end})> _coalesceCurrencyRanges(
+    List<({int start, int end})> ranges,
+    String text,
+  ) {
+    if (ranges.length < 2) return ranges;
+    bool startsAmount(({int start, int end}) range) {
+      if (range.start >= range.end || range.start >= text.length) {
+        return false;
+      }
+      final rune = text.codeUnitAt(range.start);
+      return (rune >= 0x30 && rune <= 0x39) ||
+          (rune >= 0x41 && rune <= 0x5A) ||
+          (rune >= 0x61 && rune <= 0x7A) ||
+          (rune >= 0x0660 && rune <= 0x0669) ||
+          (rune >= 0x06F0 && rune <= 0x06F9);
+    }
+
+    final merged = <({int start, int end})>[];
+    for (final range in ranges) {
+      if (merged.isEmpty) {
+        merged.add(range);
+        continue;
+      }
+      final previous = merged.last;
+      if (previous.end == range.start &&
+          previous.end > previous.start &&
+          text.codeUnitAt(previous.end - 1) == 0x24 &&
+          startsAmount(range)) {
         merged[merged.length - 1] = (start: previous.start, end: range.end);
       } else {
         merged.add(range);

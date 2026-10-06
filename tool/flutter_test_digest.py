@@ -35,6 +35,7 @@ MAX_STACK_LINES = 8
 MAX_ERRORS_PER_TEST = 3
 MAX_PRINT_LINES_PER_TEST = 200
 MAX_PRINT_BYTES_IN_EXCERPT = 1200
+MAX_PRINT_HEAD_LINES = 8
 P0_PATTERN = re.compile(r"P0-GATE-([0-9A-Z]+)")
 
 
@@ -209,23 +210,38 @@ def excerpt_text(digest, test_id):
     text = "\n".join(lines) + "\n"
     # flutter_test prints the actionable failure ("EXCEPTION CAUGHT BY ...")
     # to the console and reports only "See exception logs above", so the
-    # test's own console tail carries the diagnosis.
+    # test's own console carries the diagnosis — the head (banner, message,
+    # first frames) as much as the tail (test description): show both ends.
     prints = digest.prints.get(test_id) or []
     if prints:
+        head = []
+        head_bytes = 0
+        for line in prints:
+            if len(head) >= MAX_PRINT_HEAD_LINES:
+                break
+            line_bytes = len(line.encode("utf-8")) + 1
+            if head_bytes + line_bytes > MAX_PRINT_BYTES_IN_EXCERPT // 2:
+                break
+            head.append(line)
+            head_bytes += line_bytes
         tail = []
         tail_bytes = 0
-        for line in reversed(prints):
+        for line in reversed(prints[len(head):]):
             line_bytes = len(line.encode("utf-8")) + 1
-            if tail_bytes + line_bytes > MAX_PRINT_BYTES_IN_EXCERPT:
+            if head_bytes + tail_bytes + line_bytes > MAX_PRINT_BYTES_IN_EXCERPT:
                 break
             tail.append(line)
             tail_bytes += line_bytes
         tail.reverse()
-        omitted = len(prints) - len(tail) + digest.prints_dropped.get(test_id, 0)
-        text += "PRINTS (last %d%s):\n" % (
-            len(tail), ", +%d earlier" % omitted if omitted else "")
-        if tail:
-            text += "\n".join(tail) + "\n"
+        omitted = len(prints) - len(head) - len(tail) + \
+            digest.prints_dropped.get(test_id, 0)
+        shown = head + (["(...)"] if omitted > 0 else []) + tail
+        if omitted > 0:
+            text += "PRINTS (first %d + last %d, +%d omitted):\n" % (
+                len(head), len(tail), omitted)
+        else:
+            text += "PRINTS (all %d):\n" % len(shown)
+        text += "\n".join(shown) + "\n"
     return _truncate_bytes(text, MAX_EXCERPT_BYTES)
 
 

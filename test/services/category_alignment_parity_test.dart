@@ -20,6 +20,7 @@ import 'package:writing_questions_app/models/paper_settings.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/layout/canonical/canonical_layout_preview.dart';
+import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/pdf_engine/paginated_pdf_exam_engine.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
@@ -144,11 +145,32 @@ void main() {
         document: _document(align: align, subject: subject),
       );
       addTearDown(controller.dispose);
+      // The interactive paper is the screen default; the canonical surface
+      // under test is requested explicitly with the production resolvers
+      // (the same defaults the single-surface screen used to apply).
       await tester.pumpWidget(
         MaterialApp(
           home: ChangeNotifierProvider<ExamWizardController>.value(
             value: controller,
-            child: ExamPreviewScreen(onBackToQuestions: () {}),
+            child: ExamPreviewScreen(
+              onBackToQuestions: () {},
+              canonicalLayoutResolver: ({
+                required document,
+                required sourceIr,
+              }) =>
+                  CanonicalLayoutService.resolve(
+                document: document,
+                sourceIr: sourceIr,
+              ),
+              canonicalPreviewAssetLoader: ({
+                required layout,
+                required document,
+              }) =>
+                  CanonicalLayoutPreviewAssets.load(
+                layout: layout,
+                document: document,
+              ),
+            ),
           ),
         ),
       );
