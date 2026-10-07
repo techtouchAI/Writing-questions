@@ -428,9 +428,36 @@ void main() {
     );
     final controller = ExamWizardController(document: document);
     addTearDown(controller.dispose);
+    // TEMP-DIAG-03a (remove after diagnosis): resolve+load this exact
+    // document directly, so the failure prints separate engine behavior
+    // ("direct pages=N") from screen-path behavior. Prints only.
+    try {
+      final probeLayout = await CanonicalLayoutService.resolve(
+        document: controller.document,
+        sourceIr: controller.documentIr,
+      );
+      debugPrint('[diag] canonical-03: probe direct pages='
+          '${probeLayout.pageCount} '
+          'irQuestions=${probeLayout.source.questions.length}');
+      final probeAssets = await CanonicalLayoutPreviewAssets.load(
+        layout: probeLayout,
+        document: controller.document,
+      );
+      probeAssets.dispose();
+      debugPrint('[diag] canonical-03: probe direct load ok');
+    } catch (e) {
+      debugPrint('[diag] canonical-03: probe direct FAILED $e');
+    }
 
     await tester.pumpWidget(_screenCanonical(controller));
     await _pumpUntilCanonicalPage(tester);
+    // TEMP-DIAG-03b (remove after diagnosis): _pumpUntil is silent on
+    // exhaustion, so record the actual surface state (page widgets? retry
+    // UI = failed resolve/load? spinner = still pending?). Prints only.
+    debugPrint('[diag] canonical-03: probe surface pages='
+        '${find.byType(CanonicalLayoutPreviewPage).evaluate().length} '
+        'retry=${find.text('إعادة المحاولة').evaluate().isNotEmpty} '
+        'pending=${find.byType(CircularProgressIndicator).evaluate().isNotEmpty}');
     // The page implies layout+assets are both set; global settle waits for
     // unrelated quiescence the test never needs.
     debugPrint('[diag] canonical-03: page found');
