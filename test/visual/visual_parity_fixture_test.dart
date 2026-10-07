@@ -326,6 +326,10 @@ void main() {
     var settlePumps = 0;
     while (settlePumps < 500 && !previewWorkFinished.isCompleted) {
       await tester.pump(const Duration(milliseconds: 100));
+      // The asset chain spans both clocks: pumps deliver fake-zone
+      // timers/microtasks, while engine futures (image codec) land only
+      // with the real zone active — hop there with zero delay.
+      await tester.runAsync(() => Future<void>.value());
       settlePumps++;
     }
     _stage('Preview settled after $settlePumps pumps');
