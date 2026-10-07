@@ -317,9 +317,25 @@ void main() {
       ),
     );
     await tester.pump(const Duration(milliseconds: 100));
-    await tester.runAsync(
-      () => previewWorkFinished.future.timeout(const Duration(seconds: 60)),
-    );
+    // The preview settles through the fake clock (debounce timer, resolver,
+    // loader microtasks): waiting for its signal must PUMP, or the signal
+    // parks behind an undelivered microtask and any wall-clock timeout fires
+    // while the work is one pump from done (measured: load()=28ms, then 60s
+    // of nothing). Bounded frame loop on the model's own condition — the
+    // standard flutter_test idiom, no sleeps, no wall timeouts.
+    var settlePumps = 0;
+    while (settlePumps < 500 && !previewWorkFinished.isCompleted) {
+      await tester.pump(const Duration(milliseconds: 100));
+      settlePumps++;
+    }
+    _stage('Preview settled after $settlePumps pumps');
+    if (!previewWorkFinished.isCompleted) {
+      fail(
+        'Canonical preview preparation never settled after $settlePumps pumps: '
+        'previewFailure=$previewFailure. The resolver/loader chain did not '
+        'complete; see [fixture] stages above for the last completed phase.',
+      );
+    }
     await tester.pump();
     if (previewFailure != null) {
       fail('Canonical preview preparation failed: $previewFailure');
