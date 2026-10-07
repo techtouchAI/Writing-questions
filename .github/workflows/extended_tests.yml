@@ -63,14 +63,11 @@ jobs:
             test/wizard/exam_builder_comprehensive_scenario_test.dart \
             2>&1 | tee "$RUNNER_TEMP/extended-test.log" || ext_status=$?
           # Canonical extended subset: tests 2-6 only (test-1 + E7 gate
-          # the PR in the main workflow). Union of --plain-name substrings.
+          # the PR in the main workflow). Single --name regex: repeated
+          # --plain-name flags intersect (match nothing), --name alternates.
           flutter test --reporter json --timeout 120s \
             test/wizard/canonical_preview_screen_test.dart \
-            --plain-name 'maps RTL mixed floating text' \
-            --plain-name 'floating drag' \
-            --plain-name 'preparation failure' \
-            --plain-name 'stale layout' \
-            --plain-name 'disposing while canonical' \
+            --name 'maps RTL mixed floating text|floating drag|preparation failure|stale layout|disposing while canonical' \
             2>&1 | tee "$RUNNER_TEMP/extended-canonical.log" || ext_status=$?
           exit $ext_status
 
@@ -89,8 +86,9 @@ jobs:
             cat "$RUNNER_TEMP/extended-canonical-digest/counts.txt" || true
           fi
 
-      # Same vacuous-run rule as the gate: 12 extended-file tests (2+2+2+
-      # 1+1+2+1+1) and exactly the 5 canonical hang tests.
+      # Same vacuous-run rule as the gate: the 12 extended-file tests
+      # (plus their suite loads) and exactly the 5 canonical hang tests
+      # (plus their suite load).
       - name: Guard against vacuous extended runs
         shell: bash
         run: |
@@ -104,8 +102,8 @@ jobs:
           fi
           if [ -f "$RUNNER_TEMP/extended-canonical-digest/counts.txt" ]; then
             canon_total=$(total_of "$RUNNER_TEMP/extended-canonical-digest/counts.txt")
-            if [ "$canon_total" -ne 5 ]; then
-              echo "extended canonical ran $canon_total tests (!= 5); failing loudly" >&2
+            if [ "$canon_total" -ne 6 ]; then
+              echo "extended canonical ran $canon_total tests (!= 6); failing loudly" >&2
               exit 1
             fi
           fi
