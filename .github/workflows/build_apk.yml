@@ -76,7 +76,7 @@ jobs:
           set -o pipefail
           flutter analyze --fatal-infos 2>&1 | tee "$RUNNER_TEMP/flutter-analyze.log"
 
-      - name: Run tests
+      - name: Run required tests
         id: test
         shell: bash
         run: |
@@ -85,14 +85,43 @@ jobs:
           # with format drift, and emoji markers silently miss failures).
           # --timeout 120s: the framework default is 10 min per widget test,
           # so one hang costs a full CI cycle; nothing green needs even 60 s.
+          #
+          # REQUIRED GATE (ci_gate_review): every suite except the extended
+          # set — iso_*/hang_repro/run_direction probe/comprehensive scenario
+          # (extended workflow), the canonical hang subset below, and the
+          # visual fixture (the visual-parity job runs it once; see W2).
+          mapfile -t gate_files < <(find test -name '*_test.dart' \
+            ! -path 'test/visual/*' \
+            ! -name 'canonical_iso_*' \
+            ! -name 'canonical_hang_repro_test.dart' \
+            ! -name 'docx_run_direction_test.dart' \
+            ! -name 'exam_builder_comprehensive_scenario_test.dart' \
+            ! -name 'canonical_preview_screen_test.dart' | sort)
+          if [ "${#gate_files[@]}" -eq 0 ]; then
+            echo 'gate file list is empty; refusing to run the full suite' >&2
+            exit 1
+          fi
           args=(--reporter json --timeout 120s)
           if [ -n "${{ inputs.test_path }}" ]; then
             args+=("${{ inputs.test_path }}")
+          else
+            args+=("${gate_files[@]}")
           fi
           if [ -n "${{ inputs.test_name }}" ]; then
             args+=(--plain-name "${{ inputs.test_name }}")
           fi
           flutter test "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/flutter-test.log"
+          # Canonical gate subset (W3): test-1 (tap to source offsets) and
+          # E7 (paper default) stay Required; tests 2-6 run in Extended
+          # until proven hang-free, fast, and stable across runs
+          # (re-promotion rule). Repeated --plain-name flags match by union.
+          if [ -z "${{ inputs.test_path }}" ]; then
+            flutter test --reporter json --timeout 120s \
+              test/wizard/canonical_preview_screen_test.dart \
+              --plain-name 'screen tap follows RTL mixed-script geometry' \
+              --plain-name 'seam-free screen shows the interactive paper' \
+              2>&1 | tee "$RUNNER_TEMP/flutter-test-canonical-gate.log"
+          fi
 
       # Structured diagnostics from the JSON reporter (see the digest step):
       # GitHub truncates every annotation at 4 KiB, so the digest pre-chunks
@@ -106,6 +135,36 @@ jobs:
             --log "$RUNNER_TEMP/flutter-test.log" \
             --out "$RUNNER_TEMP/test-digest"
           cat "$RUNNER_TEMP/test-digest/counts.txt" || true
+          if [ -f "$RUNNER_TEMP/flutter-test-canonical-gate.log" ]; then
+            python3 tool/flutter_test_digest.py \
+              --log "$RUNNER_TEMP/flutter-test-canonical-gate.log" \
+              --out "$RUNNER_TEMP/test-digest-gate"
+            cat "$RUNNER_TEMP/test-digest-gate/counts.txt" || true
+          fi
+
+      # Vacuous-run guards: a drifted --plain-name (or an emptied file list)
+      # must fail loudly, never pass silent. Main suite: 618 gate tests
+      # expected (638 total minus 7 canonical-file, 12 extended-file, and
+      # 1 fixture); canonical subset: exactly test-1 + E7.
+      - name: Guard against vacuous gate runs
+        if: ${{ inputs.test_path == '' }}
+        shell: bash
+        run: |
+          total_of() {
+            awk -F'[= ]' '{s=0; for (i=1; i<=NF; i++) { if ($i=="passed" || $i=="failed" || $i=="skipped") s+=$(i+1) }; print s+0}' "$1"
+          }
+          main_total=$(total_of "$RUNNER_TEMP/test-digest/counts.txt")
+          if [ "$main_total" -lt 600 ]; then
+            echo "main gate ran $main_total tests (< 600); failing loudly" >&2
+            exit 1
+          fi
+          if [ -f "$RUNNER_TEMP/test-digest-gate/counts.txt" ]; then
+            gate_total=$(total_of "$RUNNER_TEMP/test-digest-gate/counts.txt")
+            if [ "$gate_total" -ne 2 ]; then
+              echo "canonical gate ran $gate_total tests (!= 2); failing loudly" >&2
+              exit 1
+            fi
+          fi
 
       # عينات التصدير التي تكتبها الاختبارات إلى build/math_samples — docx من
       # مُصدِّر Word وpdf من مُصدِّر PDF — تُرفع مرفقاً عندما يحمل آخر رسائل
@@ -170,6 +229,12 @@ jobs:
             counts="${counts//%/%25}"; counts="${counts//:/%3A}"
             counts="${counts//$'\r'/%0D}"; counts="${counts//$'\n'/%0A}"
             echo "::notice title=P0 gate — flutter test::$counts"
+          fi
+          if [ -f "$RUNNER_TEMP/test-digest-gate/counts.txt" ]; then
+            gate_counts="$(cat "$RUNNER_TEMP/test-digest-gate/counts.txt")"
+            gate_counts="${gate_counts//%/%25}"; gate_counts="${gate_counts//:/%3A}"
+            gate_counts="${gate_counts//$'\r'/%0D}"; gate_counts="${gate_counts//$'\n'/%0A}"
+            echo "::notice title=Canonical gate — flutter test::$gate_counts"
           fi
           if [ -f build/export_gate/matrix.txt ]; then
             tally=""
@@ -298,6 +363,15 @@ jobs:
           else
             publish_one 'test digest unavailable (log had no JSON events)' 'Test digest missing'
           fi
+          # Canonical-gate digest (second flutter run in the gate step).
+          GATEDIGEST="$RUNNER_TEMP/test-digest-gate"
+          if [ -s "$GATEDIGEST/compile_errors.txt" ]; then
+            publish_one "$(cat "$GATEDIGEST/compile_errors.txt")" 'Dart compiler errors (canonical gate)'
+          fi
+          if [ -s "$GATEDIGEST/failing.txt" ]; then
+            gate_total="$(wc -l < "$GATEDIGEST/failing.txt" | tr -d ' ')"
+            publish_chunked "$GATEDIGEST/failing.txt" "Failing canonical-gate tests ($gate_total)"
+          fi
 
       - name: Publish test failure excerpts
         if: failure() && steps.test.outcome == 'failure'
@@ -322,6 +396,16 @@ jobs:
             if [ "$i" -gt 10 ]; then break; fi
             name="$(sed -n '2p' "$f" | sed 's/^TEST: //')"
             publish_one "$(cat "$f")" "Test failure ($i/$total): ${name:0:120}"
+          done
+          GATEDIGEST="$RUNNER_TEMP/test-digest-gate"
+          gate_total="$(ls "$GATEDIGEST"/excerpt_*.txt 2>/dev/null | wc -l | tr -d ' ' || true)"
+          j=0
+          for f in "$GATEDIGEST"/excerpt_*.txt; do
+            [ -f "$f" ] || break
+            j=$((j + 1))
+            if [ "$j" -gt 10 ]; then break; fi
+            name="$(sed -n '2p' "$f" | sed 's/^TEST: //')"
+            publish_one "$(cat "$f")" "Gate failure ($j/$gate_total): ${name:0:120}"
           done
 
       - name: Publish P0 gate and debug timelines
@@ -375,9 +459,34 @@ jobs:
             head -c 9000 "$DIGEST/diag.txt" > "$RUNNER_TEMP/diag_head.txt"
             publish_chunked "$RUNNER_TEMP/diag_head.txt" 'Test diagnostics ([diag])'
           fi
+          if [ -s "$RUNNER_TEMP/test-digest-gate/diag.txt" ]; then
+            head -c 9000 "$RUNNER_TEMP/test-digest-gate/diag.txt" > "$RUNNER_TEMP/diag_gate_head.txt"
+            publish_chunked "$RUNNER_TEMP/diag_gate_head.txt" 'Gate diagnostics ([diag])'
+          fi
           # الركيزة تعمل داخل هذه الحزمة أيضاً؛ ذيلها يوجّه تنقيح التعلّق.
           if [ -s "$DIGEST/fixture_timeline.txt" ]; then
             publish_one "$(tail -n 15 "$DIGEST/fixture_timeline.txt")" 'Fixture progress (build job)'
+          fi
+
+      # Slowest-tests timing (T1): informational on green AND red — gate
+      # performance is evidence, not just failure forensics.
+      - name: Publish slowest tests
+        if: always()
+        shell: bash
+        run: |
+          publish_one() {
+            local text="$1"
+            [ -n "$text" ] || return 0
+            text="${text//%/%25}"
+            text="${text//$'\r'/%0D}"
+            text="${text//$'\n'/%0A}"
+            echo "::notice title=$2::$text"
+          }
+          if [ -s "$RUNNER_TEMP/test-digest/slowest.txt" ]; then
+            publish_one "$(cat "$RUNNER_TEMP/test-digest/slowest.txt")" 'Slowest tests (top 15)'
+          fi
+          if [ -s "$RUNNER_TEMP/test-digest-gate/slowest.txt" ]; then
+            publish_one "$(cat "$RUNNER_TEMP/test-digest-gate/slowest.txt")" 'Slowest canonical-gate tests'
           fi
 
       - name: Upload validation diagnostics on failure
@@ -388,8 +497,10 @@ jobs:
           path: |
             ${{ runner.temp }}/flutter-analyze.log
             ${{ runner.temp }}/flutter-test.log
+            ${{ runner.temp }}/flutter-test-canonical-gate.log
             ${{ runner.temp }}/flutter-build.log
             ${{ runner.temp }}/test-digest/*
+            ${{ runner.temp }}/test-digest-gate/*
           if-no-files-found: ignore
           retention-days: 7
 

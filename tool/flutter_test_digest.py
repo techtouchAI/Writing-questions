@@ -9,6 +9,7 @@ it and emits:
 
   counts.txt           machine-readable totals (one line)
   failing.txt          every failing test as "<file> :: <name>" (sorted)
+  slowest.txt          slowest tests overall as "<file> :: <name> [secs]" (top 15)
   excerpt_<i>.txt      per-failure error text (each <= ~3 KiB, annotation-safe)
   p0_<id>.txt          failing P0-GATE-<id> tests (same excerpt format)
   compile_errors.txt   suite load failures (compiler errors), if any
@@ -169,6 +170,14 @@ class Digest:
                 failed += 1
         return passed, failed, skipped
 
+    def slowest(self, limit=15):
+        """(test_id, seconds) for the slowest tests overall, slowest first."""
+        ranked = [(test_id, seconds)
+                  for test_id, seconds in self.durations.items()]
+        ranked.sort(key=lambda item: (-item[1], self.suite_file(item[0]),
+                                      self.test_name(item[0])))
+        return ranked[:limit]
+
 
 def parse_stream(lines):
     digest = Digest()
@@ -264,6 +273,10 @@ def write_digest(digest, out_dir):
     failures = digest.failures()
     write("failing.txt", "".join(
         digest.failure_line(tid, load) + "\n" for tid, load in failures))
+
+    write("slowest.txt", "".join(
+        digest.failure_line(tid, False) + "\n"
+        for tid, _ in digest.slowest()))
 
     for index, (test_id, _) in enumerate(failures, start=1):
         write("excerpt_%03d.txt" % index, excerpt_text(digest, test_id))
@@ -379,7 +392,7 @@ def self_test():
         for expected in ("counts.txt", "failing.txt", "excerpt_001.txt",
                          "excerpt_002.txt", "compile_errors.txt",
                          "fixture_timeline.txt", "p0gate_timeline.txt",
-                         "diag.txt", "summary.md"):
+                         "diag.txt", "summary.md", "slowest.txt"):
             check("writes " + expected, expected in names)
         counts = open(os.path.join(tmp, "counts.txt"), encoding="utf-8").read().strip()
         check("counts line", counts.startswith("passed=1 failed=2 skipped=0"))
@@ -398,6 +411,12 @@ def self_test():
               "EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK" in excerpt)
         failing_text = open(os.path.join(tmp, "failing.txt"), encoding="utf-8").read()
         check("failing lines carry durations", "[0.0s]" in failing_text)
+        slowest = open(os.path.join(tmp, "slowest.txt"), encoding="utf-8").read()
+        slowest_secs = [float(m.group(1)) for m in
+                        re.finditer(r"\[(\d+\.\d+)s\]", slowest)]
+        check("slowest lists durations desc",
+              len(slowest_secs) > 0 and
+              slowest_secs == sorted(slowest_secs, reverse=True))
         check("excerpt within annotation budget",
               len(excerpt.encode("utf-8")) <= MAX_EXCERPT_BYTES)
         compile_errors = open(os.path.join(tmp, "compile_errors.txt"), encoding="utf-8").read()
