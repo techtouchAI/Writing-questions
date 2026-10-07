@@ -250,9 +250,6 @@ void main() {
     _fixtureWallClock
       ..reset()
       ..start();
-    // R4-DIAG: fixture-only phase timing inside CanonicalLayoutPreviewAssets
-    // (default off everywhere else; timing prints, no behavior change).
-    CanonicalLayoutPreviewAssets.debugPhaseTiming = true;
     await _loadAppFonts();
     _stage('الخطوط حُمّلت');
 

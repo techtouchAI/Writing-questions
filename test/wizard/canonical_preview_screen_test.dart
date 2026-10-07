@@ -13,8 +13,6 @@ import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
-// TEMP-DIAG-03c import (remove with the probe).
-import 'package:writing_questions_app/services/math_snapshot_renderer.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 
 const String _hitMarker = 'CANONICALMARKER';
@@ -430,54 +428,9 @@ void main() {
     );
     final controller = ExamWizardController(document: document);
     addTearDown(controller.dispose);
-    // TEMP-DIAG-03a (remove after diagnosis): resolve+load this exact
-    // document directly, so the failure prints separate engine behavior
-    // ("direct pages=N") from screen-path behavior. Prints only.
-    CanonicalLayoutPreviewAssets.debugPhaseTiming = false;
-    try {
-      final probeLayout = await CanonicalLayoutService.resolve(
-        document: controller.document,
-        sourceIr: controller.documentIr,
-      );
-      debugPrint('[diag] canonical-03: probe direct pages='
-          '${probeLayout.pageCount} '
-          'irQuestions=${probeLayout.source.questions.length}');
-      // TEMP-DIAG-03c (remove after diagnosis): round-1 hung inside the
-      // direct load below with zero further prints. Record the exact load
-      // inputs (frame? float placements? math runs? provider?) and enable
-      // R4 phase timing so the r4 lines show precisely which await pends.
-      final mathRunIds = <String>[
-        for (final line in probeLayout.allLines)
-          for (final run in line.runs)
-            if (run.isMath && run.text.trim().isNotEmpty) run.id,
-      ];
-      debugPrint('[diag] canonical-03: probe input frame='
-          '${probeLayout.pageFrameImagePath} '
-          'floatPlacements=${<int>[
-        for (final page in probeLayout.pages) page.floatingElements.length,
-      ]} '
-          'mathRuns=${mathRunIds.length} '
-          'mathAvailable=${MathSnapshotRenderer.isAvailable}');
-      CanonicalLayoutPreviewAssets.debugPhaseTiming = true;
-      final probeAssets = await CanonicalLayoutPreviewAssets.load(
-        layout: probeLayout,
-        document: controller.document,
-      );
-      probeAssets.dispose();
-      debugPrint('[diag] canonical-03: probe direct load ok');
-    } catch (e) {
-      debugPrint('[diag] canonical-03: probe direct FAILED $e');
-    }
 
     await tester.pumpWidget(_screenCanonical(controller));
     await _pumpUntilCanonicalPage(tester);
-    // TEMP-DIAG-03b (remove after diagnosis): _pumpUntil is silent on
-    // exhaustion, so record the actual surface state (page widgets? retry
-    // UI = failed resolve/load? spinner = still pending?). Prints only.
-    debugPrint('[diag] canonical-03: probe surface pages='
-        '${find.byType(CanonicalLayoutPreviewPage).evaluate().length} '
-        'retry=${find.text('إعادة المحاولة').evaluate().isNotEmpty} '
-        'pending=${find.byType(CircularProgressIndicator).evaluate().isNotEmpty}');
     // The page implies layout+assets are both set; global settle waits for
     // unrelated quiescence the test never needs.
     debugPrint('[diag] canonical-03: page found');

@@ -22,12 +22,20 @@ class FlutterTextMetrics implements FontMetricsProvider {
   const FlutterTextMetrics();
 
   static Future<void>? _fontRegistration;
+  static bool _fontsReady = false;
 
   /// Register the same application font files used by PDF before TextPainter
   /// measures canonical runs. This is normally satisfied by the preview's
   /// first paint, but exports and headless tests may resolve layout directly.
-  static Future<void> ensureFontsLoaded() =>
-      _fontRegistration ??= _registerFonts();
+  ///
+  /// Once registration has actually completed, late callers receive a fresh
+  /// already-completed future instead of re-awaiting the memoized one: a
+  /// continuation on the memoized future is scheduled in whatever zone
+  /// completed it, which strands callers awaiting from another zone. The
+  /// fresh future preserves the await boundary with identical ordering.
+  static Future<void> ensureFontsLoaded() => _fontsReady
+      ? Future<void>.value()
+      : (_fontRegistration ??= _registerFonts());
 
   /// Resolve source-ordered directional runs with Flutter's Unicode bidi
   /// shaping, keeping every source code unit (including neutral punctuation,
@@ -125,6 +133,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
         // is unavailable; the required regular family must be measurable.
       }
     }
+    _fontsReady = true;
   }
 
   @override
