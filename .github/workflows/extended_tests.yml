@@ -90,6 +90,7 @@ jobs:
       # (plus their suite loads) and exactly the 5 canonical hang tests
       # (plus their suite load).
       - name: Guard against vacuous extended runs
+        if: always()
         shell: bash
         run: |
           total_of() {

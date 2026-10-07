@@ -151,7 +151,7 @@ jobs:
       # (75 files incl. suite-load pseudo-tests); canonical subset: exactly
       # test-1 + E7 + its load pseudo-test.
       - name: Guard against vacuous gate runs
-        if: ${{ inputs.test_path == '' }}
+        if: ${{ always() && inputs.test_path == '' }}
         shell: bash
         run: |
           total_of() {
