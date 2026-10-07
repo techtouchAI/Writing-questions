@@ -110,7 +110,10 @@ jobs:
           if [ -n "${{ inputs.test_name }}" ]; then
             args+=(--plain-name "${{ inputs.test_name }}")
           fi
-          flutter test "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/flutter-test.log"
+          # Both invocations always run: a red suite must not starve the
+          # gate subset (pipefail alone would abort the step early).
+          gate_status=0
+          flutter test "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/flutter-test.log" || gate_status=$?
           # Canonical gate subset (W3): test-1 (tap to source offsets) and
           # E7 (paper default) stay Required; tests 2-6 run in Extended
           # until proven hang-free, fast, and stable across runs
@@ -120,8 +123,9 @@ jobs:
               test/wizard/canonical_preview_screen_test.dart \
               --plain-name 'screen tap follows RTL mixed-script geometry' \
               --plain-name 'seam-free screen shows the interactive paper' \
-              2>&1 | tee "$RUNNER_TEMP/flutter-test-canonical-gate.log"
+              2>&1 | tee "$RUNNER_TEMP/flutter-test-canonical-gate.log" || gate_status=$?
           fi
+          exit $gate_status
 
       # Structured diagnostics from the JSON reporter (see the digest step):
       # GitHub truncates every annotation at 4 KiB, so the digest pre-chunks

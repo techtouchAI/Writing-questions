@@ -49,6 +49,9 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
+          # Both invocations always run: a red iso/repro must not starve the
+          # canonical subset (pipefail alone would abort the step early).
+          ext_status=0
           flutter test --reporter json --timeout 120s \
             test/wizard/canonical_iso_2a_screen_then_runasync_test.dart \
             test/wizard/canonical_iso_2b_direct_then_runasync_test.dart \
@@ -58,7 +61,7 @@ jobs:
             test/wizard/canonical_hang_repro_test.dart \
             test/export_gate/docx_run_direction_test.dart \
             test/wizard/exam_builder_comprehensive_scenario_test.dart \
-            2>&1 | tee "$RUNNER_TEMP/extended-test.log"
+            2>&1 | tee "$RUNNER_TEMP/extended-test.log" || ext_status=$?
           # Canonical extended subset: tests 2-6 only (test-1 + E7 gate
           # the PR in the main workflow). Union of --plain-name substrings.
           flutter test --reporter json --timeout 120s \
@@ -68,7 +71,8 @@ jobs:
             --plain-name 'preparation failure' \
             --plain-name 'stale layout' \
             --plain-name 'disposing while canonical' \
-            2>&1 | tee "$RUNNER_TEMP/extended-canonical.log"
+            2>&1 | tee "$RUNNER_TEMP/extended-canonical.log" || ext_status=$?
+          exit $ext_status
 
       - name: Build extended digests
         if: always()
