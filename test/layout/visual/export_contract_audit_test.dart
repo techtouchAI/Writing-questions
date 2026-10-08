@@ -12,7 +12,7 @@ void main() {
     expect(
       ExportContractAudit.previewOnly,
       isEmpty,
-      reason: 'كل إعداد في النموذج يجب أن يصل إلى PDF وWord أيضاً '
+      reason: 'كل إعداد في النموذج يجب أن يصل إلى PDF أيضاً '
           '(أو يُعلَن قيده صراحةً بدل ادّعاء التغطية).',
     );
   });
@@ -35,20 +35,19 @@ void main() {
   });
 
   test('البنود الجزئية معلنة صراحةً ولا تتنكّر كتغطية كاملة', () {
-    // القيد الوحيد المعروف والمقصود: محاذاة خيار داخل صف الخيارات في Word
-    // القابل للتحرير (الصف فقرة واحدة). لا يُدَّعى أنه يصل إلى Word.
+    // لا قيود جزئية معروفة بعد إزالة Word القابل للتحرير في C5؛ يبقى هذا
+    // الاختبار حارساً: أي بند جزئي مستقبلاً يُعلَن صراحةً ولا يُخفى.
     for (final entry in ExportContractAudit.partial) {
       expect(
-        entry.surfaces.contains(ExportSurface.docxEditable),
-        isFalse,
-        reason: 'البند «${entry.property}» جزئي فيجب ألا يدّعي تغطية Word.',
+        entry.surfaces.length < ExportSurface.values.length,
+        isTrue,
+        reason: 'البند «${entry.property}» جزئي فيجب ألا يدّعي كل الأسطح.',
       );
       expect(entry.reachesPreview, isTrue,
           reason: 'البند الجزئي يجب أن يبقى ظاهراً في المعاينة كمرجع.');
     }
     for (final entry in ExportContractAudit.entries) {
-      if (entry.surfaces.contains(ExportSurface.docxEditable) &&
-          entry.surfaces.length == ExportSurface.values.length) {
+      if (entry.surfaces.length == ExportSurface.values.length) {
         expect(entry.isPartial, isFalse);
       }
     }

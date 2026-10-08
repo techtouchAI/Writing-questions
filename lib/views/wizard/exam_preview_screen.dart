@@ -34,14 +34,11 @@ import '../../models/subject_layout.dart';
 import '../../models/tex_content.dart';
 import '../../providers/exam_document_provider.dart';
 import '../../providers/exam_wizard_controller.dart';
-import '../../services/docx_document_export_service.dart';
 import '../../services/export_file_service.dart';
-import '../../services/math_image_renderer.dart';
 import '../../services/page_frame_store.dart';
 import '../../services/exact_export_service.dart';
 import '../../services/page_snapshot_service.dart';
 import '../../services/pdf_export_service.dart';
-import '../../services/shape_image_renderer.dart';
 import '../widgets/floating_element_view.dart';
 import '../widgets/formula_inserter.dart';
 import '../widgets/ltr_numeric_field.dart';
@@ -337,8 +334,8 @@ typedef CanonicalPreviewAssetLoader =
 ///   [canonicalPreviewAssetLoader] تُرسم هندسة [LayoutDocument] مباشرةً
 ///   ([CanonicalLayoutPreviewPage]) بلا إعادة التفاف أو تقسيم، والنقرات
 ///   تتحول إلى source offset عبر حقل IME مخفي. للاختبارات والمراجعة.
-/// - **التصدير**: PDF المتجهي وWord القابل للتحرير يحسمان هندستهما عند
-///   الطلب، فيعملان على السطحين دون اعتماد على حالة المعاينة الحية.
+/// - **التصدير**: PDF المتجهي يحسم هندسته عند الطلب دون اعتماد على
+///   حالة المعاينة الحية؛ Word مطابق للمعاينة (صور صفحاتها) دائماً.
 /// - **التحديد والتنسيق**: تحديد سؤال/فرع/ترويسة/مربع نص (منفرد أو متعدد)
 ///   ثم تنسيقه من شريط المعاينة (خط/حجم/عريض/محاذاة/إطار).
 /// - **إعادة الترتيب**: سحب سؤال كامل أو فرع داخل سؤاله؛ الإفلات على فرع
@@ -393,8 +390,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// يكبح زخارف التحديد من صورة Exact (إطارات التحديد ومقابض العناصر).
   bool _suppressSelectionChrome = false;
 
-  /// النمط الافتراضي يحافظ على PDF المتجهي وWord القابل للتحرير؛ يُفعّل Exact
-  /// صراحةً فقط عند أولوية التطابق البصري التام على البحث والتحرير النصي.
+  /// النمط الافتراضي يحافظ على PDF المتجهي (Word صور دائماً)؛ يُفعّل
+  /// Exact صراحةً فقط عند أولوية التطابق البصري التام على البحث النصي.
   bool _exactExport = false;
   ExamWizardController? _controller;
   _AttachmentRef? _selectedAttachment;
@@ -2474,61 +2471,20 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
   }
 
-  /// تصدير Word:
-  /// - **Editable** (افتراضي): مسار Word الأصلي (نص + OMML + جداول) قابل للتحرير.
-  /// - **Exact** (اختياري): كل صفحة صورة صفحتها النهائية — مطابق للمعاينة
-  ///   بالبناء، وغير قابل للتحرير (يُعلَن ذلك في الواجهة).
-  Future<void> _exportWord({
-    bool? exact,
-  }) async {
+  /// تصدير Word (مطابق للمعاينة دائماً): كل صفحة صورة صفحتها النهائية —
+  /// مطابق للمعاينة بالبناء، وغير قابل للتحرير (يُعلَن ذلك في الواجهة).
+  /// مسار Word القابل للتحرير أُزيل مع مرحلة PDF-first (C5).
+  Future<void> _exportWord() async {
     if (_isBusy) {
       return;
     }
     final controller = _controller!;
     final document = controller.document;
-    final useExact = exact ?? _exactExport;
     setState(() => _isBusy = true);
     try {
-      if (useExact) {
-        final file = await ExactExportService.exportDocxFile(
-          snapshots: await _capturePreviewPages(),
-          baseName: '${document.name}_ورقة_الامتحان',
-        );
-        if (!mounted) {
-          return;
-        }
-        await _saveToLibrary();
-        if (!mounted) {
-          return;
-        }
-        _showMessage('تم إنشاء ملف Word مطابق للمعاينة (الصفحات صور).');
-        await DocxDocumentExportService.shareDocxFile(file);
-        return;
-      }
-      final sourceIr = controller.documentIr;
-      final measurementLayout =
-          identical(_canonicalPreviewSourceDocument, document)
-              ? _canonicalPreviewLayout
-              : null;
-      final editablePaginationInput =
-          await DocxDocumentExportService.resolveEditablePaginationInput(
-        document: document,
-        sourceIr: sourceIr,
-        measurementLayout: measurementLayout,
-      );
-      if (!mounted ||
-          !identical(_controller, controller) ||
-          !identical(controller.document, document)) {
-        throw const ExportException(
-          'تغيّر المستند أثناء إعداد مسار Word القابل للتحرير. أعد المحاولة.',
-        );
-      }
-      final file = await DocxDocumentExportService.exportDocumentToDocx(
-        document: document,
-        shapeRasterizer: ShapeImageRenderer.asRasterizer,
-        legacyPaginationInput: editablePaginationInput,
-        // تُصدر المعادلات القابلة للتمثيل كـ OMML قابل للتحرير؛ المرسم احتياط.
-        mathRasterizer: MathImageRenderer.asRasterizer,
+      final file = await ExactExportService.exportDocxFile(
+        snapshots: await _capturePreviewPages(),
+        baseName: '${document.name}_ورقة_الامتحان',
       );
       if (!mounted) {
         return;
@@ -2537,8 +2493,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       if (!mounted) {
         return;
       }
-      _showMessage('تم إنشاء ملف Word.');
-      await DocxDocumentExportService.shareDocxFile(file);
+      _showMessage('تم إنشاء ملف Word مطابق للمعاينة (الصفحات صور).');
+      await ExactExportService.shareDocxFile(file);
     } catch (error, stackTrace) {
       ExportFileService.logError('Wizard Word export failed', error, stackTrace);
       if (mounted) {
@@ -2982,8 +2938,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 document.formatNumber(canonicalReviewLayout?.pageCount ?? 0),
               ),
               const Divider(height: 20),
-              // Exact اختياري ومطفأ افتراضياً: يصدّر صفحات المعاينة صوراً؛
-              // المسار الافتراضي يحافظ على النص المتجه وWord القابل للتحرير.
+              // Exact اختياري ومطفأ افتراضياً: يصدّر PDF صفحاتِ المعاينة
+              // صوراً؛ Word مطابق للمعاينة (صور) دائماً. المسار الافتراضي
+              // يحافظ على النص المتجه في PDF.
               SwitchListTile(
                 key: const ValueKey<String>('export-exact-mode'),
                 contentPadding: EdgeInsets.zero,
@@ -2996,11 +2953,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 title: const Text('مطابق للمعاينة (Exact)'),
                 subtitle: Text(
                   _exactExport
-                      ? 'عند تفعيله: PDF وWord = صور صفحات المعاينة نفسها دون '
-                          'أدوات التحرير؛ PDF بلا بحث/تحديد نصي وWord غير قابل للتحرير.'
-                      : 'الافتراضي: PDF نصي قابل للبحث وWord قابل للتحرير '
-                          '(نص ومعادلات OMML). فعّل Exact عندما تكون أولوية '
-                          'التطابق البصري التام.',
+                      ? 'عند تفعيله: PDF = صور صفحات المعاينة نفسها دون '
+                          'أدوات التحرير (بلا بحث/تحديد نصي)؛ Word صور دائماً.'
+                      : 'الافتراضي: PDF نصي قابل للبحث؛ Word = صور صفحات '
+                          'المعاينة (مطابق للمعاينة، غير قابل للتحرير). فعّل '
+                          'Exact عندما تكون أولوية التطابق البصري التام في PDF.',
                 ),
               ),
             ],
@@ -3026,7 +2983,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           FilledButton.tonalIcon(
             onPressed: () {
               Navigator.of(dialogContext).pop();
-              _exportWord(exact: _exactExport);
+              _exportWord();
             },
             icon: const Icon(Icons.description_outlined, size: 18),
             label: const Text('تصدير Word'),

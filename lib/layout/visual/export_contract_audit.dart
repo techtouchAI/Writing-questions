@@ -6,9 +6,6 @@ enum ExportSurface {
   /// ملف PDF المتجه (`PaginatedPdfExamEngine` + `PdfPaperBuilder`).
   pdfVector,
 
-  /// ملف Word القابل للتحرير (نص + OMML + جداول).
-  docxEditable,
-
   /// التصدير الدقيق (Exact): صور صفحات المعاينة نفسها في PDF وWord.
   exact,
 }
@@ -38,10 +35,9 @@ class ExportContractEntry {
 
   bool get reachesPdf => surfaces.contains(ExportSurface.pdfVector);
 
-  bool get reachesWord => surfaces.contains(ExportSurface.docxEditable);
-
-  bool get isPreviewOnly =>
-      reachesPreview && !reachesPdf && !reachesWord && !surfaces.contains(ExportSurface.exact);
+  bool get isPreviewOnly => reachesPreview &&
+      !reachesPdf &&
+      !surfaces.contains(ExportSurface.exact);
 
   bool get isPartial =>
       !isPreviewOnly && surfaces.length < ExportSurface.values.length;
@@ -53,8 +49,8 @@ class ExportContractEntry {
 /// بدليل يُراجع عند تغيير المعمارية.
 ///
 /// التصدير الدقيق ([ExportSurface.exact]) لا يُعادة فيه حساب أي شيء: هو
-/// صورة الصفحة النهائية، فيرث كل بند بالبناء — ولذلك يُذكر له حدّ صريح في
-/// البنود التي لا يستطيع Word القابل للتحرير تمثيلها (فلا تُدَّعى تغطية كاذبة).
+/// صورة الصفحة النهائية، فيرث كل بند بالبناء. (أُزيل Word القابل للتحرير
+/// في C5؛ فلا تُدَّعى له تغطية.)
 abstract final class ExportContractAudit {
   static const List<ExportContractEntry> entries = <ExportContractEntry>[
     // ------------------------------ إعدادات الورقة ------------------------------
@@ -66,21 +62,21 @@ abstract final class ExportContractAudit {
     ),
     ExportContractEntry(
       property: 'PaperSettings.lineSpacing (heightScale)',
-      effect: 'قياس كل ارتفاعات الأسطر ومضاعفات w:line',
+      effect: 'قياس كل ارتفاعات الأسطر',
       surfaces: ExportSurface.values,
-      evidence: 'ExamTypography.resolve + VisualTextStyle.lineTwips',
+      evidence: 'ExamTypography.resolve',
     ),
     ExportContractEntry(
       property: 'PaperSettings.defaultFont',
       effect: 'الخط الافتراضي لكل الأدوار',
       surfaces: ExportSurface.values,
-      evidence: 'ExamTypography.resolve(font:) + DocxDocumentExportService._fontName',
+      evidence: 'ExamTypography.resolve(font:)',
     ),
     ExportContractEntry(
       property: 'PaperSettings.marginMm',
       effect: 'صندوق المحتوى والهوامش والإطار',
       surfaces: ExportSurface.values,
-      evidence: 'PaperMetrics.contentWidthFor/pageContentHeightFor + w:pgMar',
+      evidence: 'PaperMetrics.contentWidthFor/pageContentHeightFor',
     ),
     ExportContractEntry(
       property: 'PaperSettings.numerals',
@@ -92,7 +88,7 @@ abstract final class ExportContractAudit {
       property: 'PaperSettings.questionLabelStyle',
       effect: 'نمط تسمية السؤال (رسمي/مختصر)',
       surfaces: ExportSurface.values,
-      evidence: 'ExamDocument.autoQuestionLabel في البناء الثلاثي',
+      evidence: 'ExamDocument.autoQuestionLabel في المعاينة وPDF',
     ),
     ExportContractEntry(
       property: 'PaperSettings.autoNumberQuestions/autoLetterBranches',
@@ -110,13 +106,13 @@ abstract final class ExportContractAudit {
       property: 'PaperSettings.headerBorder',
       effect: 'إطار جدول الترويسة',
       surfaces: ExportSurface.values,
-      evidence: 'HeaderBlueprint.framed → PaperHeaderView/w:tblBorders/_buildHeader',
+      evidence: 'HeaderBlueprint.framed → PaperHeaderView/_buildHeader',
     ),
     ExportContractEntry(
       property: 'PaperSettings.pageBorder + frameImagePath',
       effect: 'إطار الصفحة (صورة أو متجه) باتباع الهامش',
       surfaces: ExportSurface.values,
-      evidence: 'PDF frame() / DOCX _buildFrameHeader+pgBorders / _buildPageFrame',
+      evidence: 'PDF frame() / _buildPageFrame',
     ),
 
     // ------------------------------ الترويسة والتذييل ------------------------------
@@ -158,7 +154,7 @@ abstract final class ExportContractAudit {
       property: 'QuestionModel.categoryAlign',
       effect: 'محاذاة سطر القسم (left/center/right) مستقلةً عن السؤال',
       surfaces: ExportSurface.values,
-      evidence: 'VisualRole.category + toPdfAlign(categoryAlign) + _wordAlign(categoryAlign)',
+      evidence: 'VisualRole.category + toPdfAlign(categoryAlign)',
     ),
     ExportContractEntry(
       property: 'QuestionModel.{statement,marks,numberOverride}',
@@ -170,7 +166,7 @@ abstract final class ExportContractAudit {
       property: 'QuestionModel.{titleAlign,bodyAlign,style.align}',
       effect: 'محاذاة الكتابة داخل السؤال',
       surfaces: ExportSurface.values,
-      evidence: 'VisualElement.align → toPdfAlign/_wordAlign/_textAlignFor',
+      evidence: 'VisualElement.align → toPdfAlign/_textAlignFor',
     ),
     ExportContractEntry(
       property: 'QuestionModel.body',
@@ -232,14 +228,10 @@ abstract final class ExportContractAudit {
     ExportContractEntry(
       property: 'QuestionOption.align',
       effect: 'محاذاة خيار بعينه',
-      // Word القابل للتحرير يكتب صف الخيارات فقرةً واحدة (نص متصل) كما كان،
-      // فلا يميّز محاذاة خيار داخل الصف؛ أما Exact فيرث المحاذاة بالصورة.
-      surfaces: <ExportSurface>[
-        ExportSurface.preview,
-        ExportSurface.pdfVector,
-        ExportSurface.exact,
-      ],
-      evidence: 'option.option.align في المعاينة وPDF (قيد معلن في Word)',
+      // كان في Word القابل للتحرير قيدٌ معلن (صف الخيارات فقرة واحدة)؛
+      // أُزيل ذلك السطح في C5 فأصبحت المحاذاة تصل إلى كل الأسطح.
+      surfaces: ExportSurface.values,
+      evidence: 'option.option.align في المعاينة وPDF وExact',
     ),
 
     // ------------------------------ العناصر الحرة والمعادلات ------------------------------
@@ -247,7 +239,7 @@ abstract final class ExportContractAudit {
       property: 'FloatingElement.{dx,dy,width,height,rotationDegrees}',
       effect: 'موضع العنصر وحجمه ودورانه بإحداثيات اللوحة',
       surfaces: ExportSurface.values,
-      evidence: 'ExamCanvasGeometry 1:1 + pw.Positioned + w:drawing (wp:anchor)',
+      evidence: 'ExamCanvasGeometry 1:1 + pw.Positioned',
     ),
     ExportContractEntry(
       property: 'FloatingElement.pageIndex',
@@ -259,17 +251,16 @@ abstract final class ExportContractAudit {
       property: 'FloatingElement.textStyle / shape / formula',
       effect: 'تنسيق مربع النص ورسم الشكل والمعادلة',
       surfaces: ExportSurface.values,
-      evidence: 'FloatingElementsPdf.build + _buildTextBox + MathRasters/OMML',
+      evidence: 'FloatingElementsPdf.build + _buildTextBox + MathRasters',
     ),
     ExportContractEntry(
       property: r'النص الغني ($...$ و﴿...﴾)',
       effect: 'مقاطع نص/رياضيات/قرآن داخل السطر، والآية بخطها القرآني',
       surfaces: ExportSurface.values,
-      // قطع واحد يقرؤه الثلاثة: `RichContent.parse` تُستدعى في المعاينة
-      // (TexText) وفي Word (_runsXml)، والصيغة تُبنى OMML، والآية تُكتب
-      // بخطها المعلن في المقطع (VisualRunStyle.font) فيصل الخط إلى Word.
-      evidence: 'RichContent.parse في TexText و_runsXml + VisualRunStyle.font '
-          '→ w:rFonts (خط الآية) + m:oMath للصيغ',
+      // `RichContent.parse` تُستدعى في المعاينة (TexText) وفي PDF، والآية
+      // تُكتب بخطها المعلن في المقطع (VisualRunStyle.font).
+      evidence:
+          'RichContent.parse في TexText وPDF + VisualRunStyle.font (خط الآية)',
     ),
   ];
 
