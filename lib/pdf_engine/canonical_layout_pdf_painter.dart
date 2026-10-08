@@ -149,6 +149,7 @@ class CanonicalLayoutPdfPainter {
           fontSizePt: run.style.fontSizePt,
           wordText: text,
           canonicalAdvancePt: canonicalAdvancePt,
+          rtl: run.direction == DocumentDirection.rtl,
         ),
       ),
       textDirection: _pdfDirection(run.direction),

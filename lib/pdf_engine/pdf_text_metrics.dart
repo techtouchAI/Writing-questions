@@ -1,4 +1,5 @@
 import 'package:pdf/pdf.dart';
+import 'package:pdf/src/pdf/font/bidi_utils.dart' as bidi;
 
 import '../layout/canonical/layout_document.dart';
 
@@ -61,26 +62,30 @@ abstract final class PdfTextMetrics {
   /// Per-glyph Tc tracking in points that closes [wordText] to exactly
   /// [canonicalAdvancePt] when rendered by [font] at [fontSizePt]: the
   /// package:pdf advance is measured from the embedded font itself and the
-  /// residual is distributed uniformly over the word's runes. Tc applies to
-  /// every shown glyph, so dividing by the rune count is exact whenever the
-  /// shaper emits one glyph per rune; ligature words (lam-alef class) keep a
-  /// bounded residual of roughly one glyph share, far inside the natural-gap
-  /// range the parity gate asserts.
+  /// residual is distributed uniformly over the word's shown glyphs. The
+  /// word is shaped exactly as the emitter shapes it (logical-to-visual for
+  /// RTL, raw otherwise, matching package:pdf's default dispatch), so both
+  /// the measured advance (presentation-form advances, as in /W) and the
+  /// glyph share count (ligatures included) describe the emitted text
+  /// rather than the logical runes — measuring logical runes instead
+  /// over-corrects by the contextual-form difference.
   static double wordTrackingPt({
     required PdfFont font,
     required double fontSizePt,
     required String wordText,
     required double canonicalAdvancePt,
+    required bool rtl,
   }) {
     if (wordText.isEmpty || fontSizePt <= 0) {
       return 0;
     }
-    final glyphShares = wordText.runes.length;
+    final shaped = rtl ? bidi.logicalToVisual(wordText) : wordText;
+    final glyphShares = shaped.runes.length;
     if (glyphShares == 0) {
       return 0;
     }
     final pdfAdvancePt =
-        font.stringMetrics(wordText).advanceWidth * fontSizePt;
+        font.stringMetrics(shaped).advanceWidth * fontSizePt;
     return (canonicalAdvancePt - pdfAdvancePt) / glyphShares;
   }
 }
