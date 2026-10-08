@@ -3,12 +3,11 @@
 // `selectedQuestions`/`selectedBranches`/`multiSelect` تعيش في الشاشة، ويجب
 // ألا تترك أثراً في النموذج ولا في أي ملف مُصدَّر. الاختبار يفعله كما يفعله
 // المستخدم (نقرة على «تحديد الكل» في المعاينة) ثم يقارن **بصمة التصدير**
-// قبل التحديد وبعده: النص ومواضعه وحجمه في PDF، ونص مستند Word كاملاً.
+// قبل التحديد وبعده: النص ومواضعه وحجمه في PDF.
 // (البايتات الخام لا تصلح للمقارنة: كل توليد يكتب طابع زمن في الملف.)
-import 'dart:convert';
-import 'dart:typed_data';
-
-import 'package:archive/archive.dart';
+//
+// (حُذفت بصمة Word في C5 مع القابل للتحرير: Word اليوم صور صفحات المعاينة،
+// والتحديد لا يصل إلى الصورة أصلاً.)
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -22,7 +21,6 @@ import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/pdf_engine/paginated_pdf_exam_engine.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
-import 'package:writing_questions_app/services/docx_document_export_service.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 import 'package:writing_questions_app/views/wizard/preview_toolbar.dart';
 
@@ -64,24 +62,8 @@ Future<List<String>> _pdfFingerprint(ExamDocument document) async {
   ];
 }
 
-/// بصمة Word: مستند XML نفسه (محتواه وتنسيقه) بلا بيانات حزمة متغيّرة.
-Future<String> _wordFingerprint(ExamDocument document) async {
-  final Uint8List bytes =
-      await DocxDocumentExportService.buildDocumentDocxBytes(document: document);
-  final archive = ZipDecoder().decodeBytes(bytes);
-  final xml = utf8.decode(
-    archive.findFile('word/document.xml')!.content as List<int>,
-  );
-  final media = archive.files
-      .map((file) => file.name)
-      .where((name) => name.startsWith('word/media/'))
-      .toList()
-    ..sort();
-  return '$xml\n[media: ${media.join(',')}]';
-}
-
 void main() {
-  testWidgets('تحديد الكل لا يغيّر مخرجات PDF ولا Word', (tester) async {
+  testWidgets('تحديد الكل لا يغيّر مخرجات PDF', (tester) async {
     tester.view.physicalSize = const Size(1500, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -100,7 +82,6 @@ void main() {
 
     final beforeModel = controller.document.toMap();
     final beforePdf = await _pdfFingerprint(controller.document);
-    final beforeWord = await _wordFingerprint(controller.document);
 
     // المستخدم يضغط «تحديد الكل» (الحالة تدخل وضع التحديد المتعدد فعلاً).
     final selectAll = find
@@ -119,16 +100,14 @@ void main() {
 
     // النموذج لم يتغيّر…
     expect(controller.document.toMap(), beforeModel);
-    // …ولا صفحة PDF (النص والمواضع والأحجام)، ولا مستند Word.
+    // …ولا صفحة PDF (النص والمواضع والأحجام).
+    // (حُذفت بصمة Word في C5 مع القابل للتحرير.)
     expect(await _pdfFingerprint(controller.document), beforePdf,
         reason: 'التحديد UI state: لا يصل إلى PDF.');
-    expect(await _wordFingerprint(controller.document), beforeWord,
-        reason: 'التحديد UI state: لا يصل إلى Word.');
 
     // وإلغاء التحديد كذلك.
     await tester.tap(selectAll);
     await tester.pumpAndSettle();
     expect(await _pdfFingerprint(controller.document), beforePdf);
-    expect(await _wordFingerprint(controller.document), beforeWord);
   });
 }

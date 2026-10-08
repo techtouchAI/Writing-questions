@@ -1,28 +1,29 @@
 // =============================================================================
-// بوابة P0 — ممرّات التصدير الأربعة تُقاس ببنيتها، لا بصورة واحدة.
+// بوابة P0 — ممرّات التصدير الثلاثة تُقاس ببنيتها، لا بصورة واحدة.
 //
 // لماذا وُجدت هذه البوابة؟
 //   بوابة التحقق البصري القائمة (test/visual/visual_parity_fixture_test.dart
 //   + tool/verify_visual_parity.sh) تنتج **Exact** فقط: صورة المعاينة ملفوفة
 //   في PDF/DOCX، وتُقارَن بجذر RMSE. ذلك يقيس دقة لقطة المعاينة، ولا يقيس
-//   إطلاقاً محرك PDF المتجه ولا مولّد OOXML — وهما الممرّان اللذان فيهما
-//   الانحرافات. هذه البوابة تفصل المسارات: `vector.pdf` من
-//   `PaginatedPdfExamEngine`، و`editable.docx` من `DocxDocumentExportService`،
-//   و`exact.*` من `ExactExportService` — ويبقى Exact مساراً مستقلاً لا يُستعمل
-//   بديلاً عن أيٍّ منهما (تُثبت البوابة أنه صورٌ بلا نص، فيثبت الفصل).
+//   إطلاقاً محرك PDF المتجه — وهو الممرّ الذي فيه الانحرافات. هذه البوابة
+//   تفصل المسارات: `vector.pdf` من `PaginatedPdfExamEngine`، و`exact.*` من
+//   `ExactExportService` — ويبقى Exact مساراً مستقلاً لا يُستعمل بديلاً عنه
+//   (تُثبت البوابة أنه صورٌ بلا نص، فيثبت الفصل).
+//   (أُزيل ممرّ Word القابل للتحرير `editable.docx` في C5 مع مولّده، فسقطت
+//   معه فحوص P0.4 وبندا `w:ind`/محاذاة الافتراضي من P0.5 واختبارات
+//   GATE-06/07 والشق الـ Word من GATE-08/11/99.)
 //
 // ماذا تُثبت؟
 //   P0.2  القطع تُنتَج فعلاً (ملفات حقيقية في build/export_gate تُرفع من CI).
 //   P0.3  بنية PDF: الصفحات، MediaBox، عدد الأسطر ومواضعها وصناديقها، تسلسل
 //         المحتوى، ترتيب الكلمات هندسياً، الصور التقديمية العربية، الأرقام
 //         ومواضع الفواصل والأقواس، الخطوط والأحجام، صور المعادلات وترتيبها.
-//   P0.4  بنية DOCX: الأجزاء والعلاقات و[Content_Types]، ترتيب `w:t` والجريان
-//         داخل الفقرة، `w:bidi`/`w:rtl`/`w:jc`/`w:ind`/`w:spacing`/`w:line`،
-//         فواصل الصفحات، OMML، الصور وعلاقاتها، `w:sectPr`، ومنع أي تغيير غير
-//         مقصود في تسلسل المحتوى.
-//   P0.5  الإصلاحات المحددة مقيَّدة: اتجاهية `w:ind`، محاذاة الافتراضي،
-//        شمول الفحص `needsQuranicFont`، قاعدة «سطر واحد» في الضبط.
-//   P0.7  مصفوفة 15 ميزة × 4 ممرّات بحالات PASS/FAIL/NOT_APPLICABLE/
+//   P0.4  (محذوف في C5: كان بنية DOCX القابل للتحرير — الأجزاء والعلاقات
+//         و`w:bidi`/`w:rtl`/`w:jc`/`w:ind`/فواصل الصفحات وOMML.)
+//   P0.5  الإصلاحات المحددة مقيَّدة: شمول الفحص `needsQuranicFont`، قاعدة
+//         «سطر واحد» في الضبط (وحُذف في C5: اتجاهية `w:ind` ومحاذاة
+//         الافتراضي — كانا خاصّين بمولّد Word المحذوف).
+//   P0.7  مصفوفة 15 ميزة × 3 ممرّات بحالات PASS/FAIL/NOT_APPLICABLE/
 //         DEFERRED_TO_P1 — والخلية غير المقاسة تُفشِل البوابة.
 //
 // لا «تقريباً صحيح» ولا RMSE: كل خلاصة مبنية على بايتات الملف نفسه.
@@ -43,8 +44,6 @@ import 'package:writing_questions_app/layout/canonical/canonical_layout_service.
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/layout/document_direction.dart';
-import 'package:writing_questions_app/layout/pagination_engine.dart';
-import 'package:writing_questions_app/layout/paper_metrics.dart';
 import 'package:writing_questions_app/layout/visual/visual_content.dart';
 import 'package:writing_questions_app/layout/visual/visual_flutter_style.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
@@ -63,7 +62,6 @@ import 'package:writing_questions_app/pdf_engine/exam_fonts.dart';
 import 'package:writing_questions_app/pdf_engine/exam_strategy.dart';
 import 'package:writing_questions_app/pdf_engine/paginated_pdf_exam_engine.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
-import 'package:writing_questions_app/services/docx_document_export_service.dart';
 import 'package:writing_questions_app/services/exact_export_service.dart';
 import 'package:writing_questions_app/services/page_snapshot_service.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
@@ -199,11 +197,9 @@ class _Gate {
   List<String> previewLtrMarkerOrder = <String>[];
 
   Uint8List? rtlVectorPdf;
-  Uint8List? rtlEditableDocx;
   Uint8List? rtlExactPdf;
   Uint8List? rtlExactDocx;
   Uint8List? ltrVectorPdf;
-  Uint8List? ltrEditableDocx;
   Uint8List? ltrExactPdf;
   Uint8List? ltrExactDocx;
   List<Uint8List> rtlPreviewPages = <Uint8List>[];
@@ -223,16 +219,16 @@ class _Gate {
 
   bool get artifactsReady =>
       rtlVectorPdf != null &&
-      rtlEditableDocx != null &&
       ltrVectorPdf != null &&
-      ltrEditableDocx != null;
+      rtlExactPdf != null &&
+      rtlExactDocx != null &&
+      ltrExactPdf != null &&
+      ltrExactDocx != null;
 
   late final PdfStructureReport rtlPdfReport =
       PdfStructureReport.fromBytes(rtlVectorPdf!);
   late final PdfStructureReport ltrPdfReport =
       PdfStructureReport.fromBytes(ltrVectorPdf!);
-  late final OoxmlProbe rtlDocx = OoxmlProbe.decode(rtlEditableDocx!);
-  late final OoxmlProbe ltrDocx = OoxmlProbe.decode(ltrEditableDocx!);
 
   void requireArtifacts() {
     if (!artifactsReady) {
@@ -242,11 +238,6 @@ class _Gate {
   }
 
   bool get previewReady => rtlCapture != null && ltrCapture != null;
-
-  /// أجزاء الترويسة في editable.docx القابل للتحرير (لا شيء عند غياب الإطار).
-  List<String> headerPartNames() => rtlDocx.xmlPartNames
-      .where((name) => name.startsWith('word/header'))
-      .toList(growable: false);
 
   void requirePreview() {
     if (!previewReady) {
@@ -504,9 +495,6 @@ class _PreviewCapture {
     required this.texts,
     required this.markerOrder,
     required this.layout,
-    required this.legacyPaginationInput,
-    required this.legacyPageAssignments,
-    required this.legacyPageCount,
   });
 
   final List<PageSnapshot> snapshots;
@@ -514,9 +502,6 @@ class _PreviewCapture {
   final Map<String, _PreviewText> texts;
   final List<String> markerOrder;
   final LayoutDocument layout;
-  final PaginationInput legacyPaginationInput;
-  final List<List<String>> legacyPageAssignments;
-  final int legacyPageCount;
 }
 
 /// قياسات markers تُستخرج مباشرة من runs/lines في LayoutDocument؛ لا تُستنتج
@@ -709,16 +694,9 @@ Future<_PreviewCapture> _capturePreviewOf(
       layout: layout,
       document: document,
     );
-    final paginationInput =
-        await DocxDocumentExportService.resolveEditablePaginationInput(
-      document: document,
-      sourceIr: sourceIr,
-      measurementLayout: layout,
-    );
     return (
       layout: layout,
       assets: assets,
-      paginationInput: paginationInput,
     );
   });
   expect(preparation, isNotNull);
@@ -784,17 +762,7 @@ Future<_PreviewCapture> _capturePreviewOf(
       expect(footer.bottom, lessThanOrEqualTo(page.pageSize.height));
     }
   }
-  final legacyPaginationInput = prepared.paginationInput;
-  final legacyPages = legacyPaginationInput.paginate().pages
-      .map((page) => page.blockIds
-          .where((id) => id != PaperMetrics.headerBlockId)
-          .toList(growable: false))
-      .where((page) => page.isNotEmpty)
-      .toList(growable: false);
-  final legacyPageCount = legacyPages.length;
-  _stage('تقسيم ${document.name}: canonical=$pageCount صفحة؛ '
-      'editable PaginationEngine=$legacyPageCount صفحة؛ '
-      'مساحة المحتوى=${PaperMetrics.pageContentHeightFor(document.settings.marginMm)}px.');
+  _stage('تقسيم ${document.name}: canonical=$pageCount صفحة.');
 
   // نافذة تكفي لرسم كل الصفحات (ما خرج من نافذة التمرير لا يُرسم ولا يُلقط).
   var viewHeight = (ExamCanvasGeometry.height + 16) * pageCount + 400;
@@ -895,9 +863,6 @@ Future<_PreviewCapture> _capturePreviewOf(
     texts: texts,
     markerOrder: markerOrder,
     layout: layout,
-    legacyPaginationInput: legacyPaginationInput,
-    legacyPageAssignments: legacyPages,
-    legacyPageCount: legacyPageCount,
   );
 }
 
@@ -1022,7 +987,7 @@ void main() {
   });
 
   testWidgets(
-      'P0-GATE-01: قطع الورقة العربية — preview + vector.pdf + editable.docx + exact.*',
+      'P0-GATE-01: قطع الورقة العربية — preview + vector.pdf + exact.*',
       (tester) async {
     await _loadAppFonts();
     final mathHost = FakeMathHost()..attach();
@@ -1143,17 +1108,6 @@ void main() {
       watch
         ..reset()
         ..start();
-      _gate.rtlEditableDocx =
-          await DocxDocumentExportService.buildDocumentDocxBytes(
-        document: rtlDocument,
-        pageAssignments: rtl.legacyPageAssignments,
-        legacyPaginationInput: rtl.legacyPaginationInput,
-      );
-      _stage('توليد editable.docx عربي: ${watch.elapsedMilliseconds}ms، '
-          '${_gate.rtlEditableDocx!.length} بايت');
-      watch
-        ..reset()
-        ..start();
       // Exact: لقطات المعاينة نفسها، في مسار منفصل عن الفحوص البنيوية.
       _gate.rtlExactPdf =
           await ExactExportService.buildPdfFromSnapshots(rtl.snapshots);
@@ -1169,7 +1123,6 @@ void main() {
           'preview_rtl_page_${index + 1}.png', _gate.rtlPreviewPages[index]);
     }
     await _writeArtifact('vector.pdf', _gate.rtlVectorPdf!);
-    await _writeArtifact('editable.docx', _gate.rtlEditableDocx!);
     await _writeArtifact('exact.pdf', _gate.rtlExactPdf!);
     await _writeArtifact('exact.docx', _gate.rtlExactDocx!);
     _writeText(
@@ -1190,7 +1143,6 @@ void main() {
     // كل قطعة موجودة وغير فارغة.
     for (final name in <String>[
       'vector.pdf',
-      'editable.docx',
       'exact.pdf',
       'exact.docx',
       for (var index = 0; index < _gate.rtlPreviewPages.length; index++)
@@ -1227,8 +1179,7 @@ void main() {
       _matrix.record('pagination', P0Path.vectorPdf, P0Status.deferredToP1,
           evidence: 'عربي: معاينة=$previewPages صفحة مقابل PDF=$pdfPages '
               'صفحة (ارتفاعات مقيسة: مجموع 3791.6px على صفحة 1009.61px، '
-              'ترويسة 140.4px، كتل تدفّق 325px)؛ فواصل الصفحات في '
-              'editable.docx تُقاس مقابل PDF في GATE-06',
+              'ترويسة 140.4px، كتل تدفّق 325px)',
           reason: 'مصدرٌ مختلف لارتفاع السطر والهامش بين `PaginationEngine` '
               'و`PdfPaperBuilder`؛ توحيدُهما طبقة Canonical LayoutEngine في P1 '
               '(§P1 BLOCKERS بند 2)، وتوحيد الأرقام الآن يعني إعادة كتابة أحد '
@@ -1236,10 +1187,10 @@ void main() {
     }
   });
 
-  // الورقة الإنجليزية في اختبار مستقل: توليد القطع الأربعة لورقتين في اختبار
+  // الورقة الإنجليزية في اختبار مستقل: توليد القطع الثلاثة لورقتين في اختبار
   // واحد كان يتجاوز سقف CI (عشر دقائق) فيُجهض البوابة كلها بلا قياس واحد.
   testWidgets(
-      'P0-GATE-01B: قطع الورقة الإنجليزية — vector_ltr + editable_ltr + exact_ltr',
+      'P0-GATE-01B: قطع الورقة الإنجليزية — vector_ltr + exact_ltr',
       (tester) async {
     await _loadAppFonts();
     final mathHost = FakeMathHost()..attach();
@@ -1259,16 +1210,6 @@ void main() {
       watch
         ..reset()
         ..start();
-      _gate.ltrEditableDocx =
-          await DocxDocumentExportService.buildDocumentDocxBytes(
-        document: ltrDocument,
-        pageAssignments: ltr.legacyPageAssignments,
-        legacyPaginationInput: ltr.legacyPaginationInput,
-      );
-      _stage('توليد editable_ltr.docx: ${watch.elapsedMilliseconds}ms');
-      watch
-        ..reset()
-        ..start();
       _gate.ltrExactPdf =
           await ExactExportService.buildPdfFromSnapshots(ltr.snapshots);
       _gate.ltrExactDocx =
@@ -1282,7 +1223,6 @@ void main() {
           'preview_ltr_page_${index + 1}.png', _gate.ltrPreviewPages[index]);
     }
     await _writeArtifact('vector_ltr.pdf', _gate.ltrVectorPdf!);
-    await _writeArtifact('editable_ltr.docx', _gate.ltrEditableDocx!);
     await _writeArtifact('exact_ltr.pdf', _gate.ltrExactPdf!);
     await _writeArtifact('exact_ltr.docx', _gate.ltrExactDocx!);
     _writeText(
@@ -1296,7 +1236,6 @@ void main() {
 
     for (final name in <String>[
       'vector_ltr.pdf',
-      'editable_ltr.docx',
       'exact_ltr.pdf',
       'exact_ltr.docx',
       for (var index = 0; index < _gate.ltrPreviewPages.length; index++)
@@ -1441,7 +1380,7 @@ void main() {
     final bodyLines = lastPage.linesWithMarker('PG12');
     final footerLines = lastPage.linesWithMarker('FTR1');
     expect(bodyLines, isNotEmpty,
-        reason: 'آخر وسم متن PG12 غائب من صفحة DOCX/PDF الأخيرة.');
+        reason: 'آخر وسم متن PG12 غائب من صفحة PDF الأخيرة.');
     expect(footerLines, isNotEmpty);
     double lineBottom(ProbedLine line) => line.words
         .map((word) => word.y - word.fontSize * 0.25)
@@ -1929,333 +1868,11 @@ void main() {
   });
 
   // ===========================================================================
-  // P0.4 — بنية DOCX القابل للتحرير.
+  // P0.5-E/D — حقول معطّلة موثّقة: لا منتِج يكتبها سراً.
+  // (سقط في C5 فحص `w:position` في مولّد Word مع مولّده.)
   // ===========================================================================
-  test('P0-GATE-06: بنية editable.docx — أجزاء، علاقات، تسلسل، جريان', () {
-    _gate.requireArtifacts();
-    final probe = _gate.rtlDocx;
-    final document = P0GateFixture.rtl();
-    const known = P0GateFixture.rtlBodyMarkers;
-
-    for (final part in <String>[
-      '[Content_Types].xml',
-      '_rels/.rels',
-      'word/document.xml',
-      'word/_rels/document.xml.rels',
-      'word/styles.xml',
-    ]) {
-      expect(probe.hasPart(part), isTrue,
-          reason: 'جزء OOXML مفقود: $part — Word لن يفتح ملفاً ناقصاً.');
-    }
-    expect(probe.missingContentTypes(), isEmpty,
-        reason: 'أجزاء بلا إعلان في [Content_Types].xml: '
-            '${probe.missingContentTypes()}');
-    expect(probe.undefinedRelations('word/document.xml'), isEmpty,
-        reason: 'معرّف علاقة مستعمل بلا تعريف: '
-            '${probe.undefinedRelations("word/document.xml")}');
-    expect(probe.missingRelationTargets('word/document.xml'), isEmpty,
-        reason: 'علاقة تشير إلى ملف غير موجود في الحزمة: '
-            '${probe.missingRelationTargets("word/document.xml")}');
-
-    // In the editable format this unframed header is represented in the
-    // document flow, followed by the footer after the final body marker.
-    // Verify its measured ordering directly; optional page-frame header parts
-    // are not the source of the fixture's header content.
-    final headerParts = probe.xmlPartNames
-        .where((name) => name.startsWith('word/header'))
-        .toList();
-    final rtlDocument = document;
-    String localizedMarker(String marker) => rtlDocument.localizeDigits(marker);
-    bool headerFieldIn(String haystack, String marker) =>
-        haystack.contains(marker) || haystack.contains(localizedMarker(marker));
-    final missingInBody = P0GateFixture.headerMarkers
-        .where((marker) => !headerFieldIn(probe.flatText, marker))
-        .toList();
-    expect(missingInBody, isEmpty,
-        reason: 'DOCX body-flow header fields are missing: $missingInBody');
-    final flatText = probe.flatText;
-    int markerOffset(String marker) {
-      final localized = localizedMarker(marker);
-      final offset = flatText.indexOf(localized);
-      return offset >= 0 ? offset : flatText.indexOf(marker);
-    }
-
-    final firstQuestionOffset = markerOffset('STA1');
-    expect(firstQuestionOffset, greaterThanOrEqualTo(0));
-    for (final marker in P0GateFixture.headerMarkers) {
-      final offset = markerOffset(marker);
-      expect(offset, greaterThanOrEqualTo(0), reason: '$marker missing in DOCX.');
-      expect(offset, lessThan(firstQuestionOffset),
-          reason: 'Header marker $marker must precede the first question.');
-    }
-    final lastQuestionOffset = markerOffset('PG12');
-    expect(lastQuestionOffset, greaterThanOrEqualTo(0));
-    for (final marker in P0GateFixture.footerMarkers) {
-      final offset = markerOffset(marker);
-      expect(offset, greaterThan(lastQuestionOffset),
-          reason: 'Footer marker $marker must follow the final body marker.');
-    }
-    _matrix.record('header-footer', P0Path.editableDocx, P0Status.pass,
-        evidence: 'Header ${P0GateFixture.headerMarkers.map(localizedMarker).join('/')} '
-            'precedes STA1; footer '
-            '${P0GateFixture.footerMarkers.map(localizedMarker).join('/')} '
-            'follows PG12 in document.xml.');
-    _stage('DOCX header/footer: ${headerParts.isEmpty ? 'body-flow header' : headerParts.join(',')} '
-        'with all fields in order; footer after the final body question.');
-    // تسلسل `w:t` المنطقي == ترتيب العقد (منع تغيير تسلسل المحتوى).
-    final expectedOrder = P0GateFixture.bodyMarkerSequence(document);
-    final docxOrder = _markerOrder(probe.flatText, known);
-    expect(_markersIn(probe.flatText, known), containsAll(<String>[...known]),
-        reason: 'وسوم مفقودة من editable.docx: '
-            '${known.difference(_markersIn(probe.flatText, known)).toList()..sort()}');
-    expect(docxOrder, expectedOrder,
-        reason: 'تسلسل المحتوى في editable.docx يختلف عن ترتيب العقد:\n'
-            '  DOCX: $docxOrder\n  عقد: $expectedOrder');
-
-    // ترتيب الجريان داخل فقرة العنوان: رقم ← منطوق ← درجة، وكله جريان منفصل.
-    final title =
-        probe.paragraphs.firstWhere((paragraph) => paragraph.text.contains('STA1'));
-    expect(title.runs.length, greaterThan(1),
-        reason: 'سطر العنوان جريان واحد مدموج (${title.runs.length}) — لا '
-            'يعرف Word أجزاءه.');
-    expect(title.props.hasBidi, isTrue,
-        reason: 'فقرة عربية بلا `w:bidi`: سيوجَّه السطر توجيهًا لاتينيًا.');
-    expect(title.text, contains('(٢٠ درجة)'),
-        reason: 'الدرجة ليست في النص المنطقي لفقرة العنوان: "${title.text}"');
-    final runTexts = title.runs.map((run) => run.text).join(' ');
-    expect(runTexts.indexOf('س١') < runTexts.indexOf('STA1'), isTrue,
-        reason: 'جريان الرقم ليس قبل المنطوق: "$runTexts"');
-    expect(runTexts.indexOf('STA1') < runTexts.indexOf('٢٠'), isTrue,
-        reason: 'جريان المنطوق ليس قبل الدرجة: "$runTexts"');
-    // Direction is per strong-script run: Arabic remains RTL while the
-    // embedded English marker remains LTR inside this RTL paragraph.
-    final arabicRuns = title.runs
-        .where((run) => RegExp('[\\u0600-\\u06FF]').hasMatch(run.text))
-        .toList();
-    final englishRuns = title.runs
-        .where((run) => run.text.contains('STA1'))
-        .toList();
-    expect(arabicRuns, isNotEmpty);
-    expect(arabicRuns.every((run) => run.rtl), isTrue,
-        reason: 'Arabic run in RTL paragraph lacks `w:rtl`: '
-            '${arabicRuns.map((run) => run.text).toList()}');
-    expect(englishRuns, isNotEmpty);
-    expect(englishRuns.every((run) => !run.rtl), isTrue,
-        reason: 'Embedded English run in RTL paragraph incorrectly carries '
-            '`w:rtl`: ${englishRuns.map((run) => run.text).toList()}');
-
-    // خصائص الفقرة العددية.
-    expect(title.props.lineTwips, isNotNull,
-        reason: 'فقرة بلا `w:spacing/@w:line` فيرث Word «مفرد» وتختلف '
-            'الصفحة عن المعاينة.');
-    expect(title.props.lineRule, 'auto',
-        reason: 'w:lineRule يجب أن يكون auto (نسبة إلى سطر Word).');
-    // سطر الفقرة مُصرَّح به (ليس إرث «مفرد»): قيمته تُسجَّل دليلاً لا رقمًا
-    // مثبَّتًا، لأن دور العنوان يمرّ بمعامل الورقة.
-    expect(title.props.lineTwips! > 240, isTrue,
-        reason: 'خطوة سطر العنوان في Word عند «مفرد» (${title.props.lineTwips}'
-            '.twips): عقد الطباعة لا يصل إلى الملف.');
-
-    final section = probe.sectionProperties;
-    expect(section['w:pgSz'], isNotNull,
-        reason: 'بلا `w:pgSz` في sectPr: حجم الصفحة Letter افتراضياً لا A4.');
-    expect(section['w:pgSz']!['w:w'], '11906',
-        reason: 'عرض A4 بالـ twips يجب أن يكون 11906 لا '
-            '"${section['w:pgSz']?['w:w']}".');
-    expect(section['w:pgMar'], isNotNull,
-        reason: 'بلا `w:pgMar`: هوامش 15mm من إعداد الورقة لم تصل إلى Word.');
-    expect(int.parse(section['w:pgMar']!['w:right'] ?? '0'),
-        (15 / 25.4 * 1440).round(),
-        reason: 'هامش Word لا يطابق 15mm من إعداد الورقة.');
-
-    // DOCX follows the legacy PaginationEngine plan (measured by the
-    // interactive surface), not the canonical PDF page assignments.
-    final legacyPageCount = _gate.rtlCapture!.legacyPageCount;
-    expect(probe.pageBreakCount + 1, legacyPageCount,
-        reason: 'Word يكسر في ${probe.pageBreakCount + 1} صفحة وخطة '
-            'PaginationEngine في $legacyPageCount: التوزيع لم يصل إلى الملف.');
-
-    // OMML: معادلة Word أصلية بدل صورة، وعدد مناطق المعادلة = عدد الصيغ.
-    final mathTotal = probe.inlineMathCount + probe.mathParagraphCount;
-    expect(mathTotal, greaterThan(0),
-        reason: 'لا `m:oMath` في editable.docx: المعادلات صُوّر أو فُقِد.');
-    final mathText = probe.mathTexts.join(' ');
-    expect(mathText, contains('x'),
-        reason: 'رموز الصيغة لم تصل إلى OMML: "${probe.mathTexts}"');
-
-    // اتجاه الصفحة معلن في sectPr (`w:bidi`) — وورقة LTR لا تحملـه.
-    expect(section.containsKey('w:bidi'), isTrue,
-        reason: 'لا `w:bidi` في `w:sectPr`: اتجاه الصفحة غير معلن في Word.');
-    expect(_gate.ltrDocx.sectionProperties.containsKey('w:bidi'), isFalse,
-        reason: 'ورقة LTR تعلن `w:bidi` في sectPr: تسرّب RTL إلى ملف '
-            'إنجليزي.');
-
-    // الخط القرآني يصل إلى الجريان نفسه كما في المعاينة وPDF.
-    final verseParagraph = probe.paragraphs
-        .firstWhere((paragraph) => paragraph.text.contains('QUR1'));
-    expect(
-      verseParagraph.runs.any((run) => (run.font ?? '').contains('Amiri')),
-      isTrue,
-      reason: 'جريان الآية في Word بلا Amiri: '
-          '${verseParagraph.runs.map((run) => run.font).toList()}',
-    );
-
-    // التسميات والأرقام تصل **منطقية** كما كتبها المدرس (Word يعكس العرض
-    // بوسوم الفقرة، لا بإعادة ترتيب النص): لو أعاد المولّد ترتيب المحارف
-    // لفشل هذا السطر لا سطر «ترتيب الكلمات» في PDF.
-    expect(probe.flatText, contains('(١)'),
-        reason: 'تسمية النقطة «(١)» لم تصل حرفية إلى `w:t`.');
-    expect(probe.flatText, contains('1-'),
-        reason: 'التسمية اللاتينية «1-» لم تصل حرفية إلى `w:t`.');
-    expect(probe.flatText, contains('٢٠'),
-        reason: 'الأرقام المشرقية للدرجة لم تصل إلى `w:t`.');
-    expect(probe.flatText, contains('2026/2027'),
-        reason: 'الأرقام اللاتينية في المتن لم تصل إلى `w:t`.');
-    expect(
-      probe.paragraphs.any((paragraph) => paragraph.props.alignment == 'both'),
-      isTrue,
-      reason: 'لا فقرة `w:jc="both"` مع أن النموذج يطلب justify: الضبط لم '
-          'يُترجم إلىدلالته في الملف.',
-    );
-
-    // الصور وعلاقاتها.
-    expect(probe.embeddedRelationIds, isNotEmpty,
-        reason: 'بلا r:embed في المستند: صورة العنصر الحر لم تُكتب.');
-    for (final media in probe.mediaNames) {
-      expect(probe.mediaSizes[media]!, greaterThan(0),
-          reason: 'ملف وسائط فارغ في الحزمة: $media');
-    }
-
-    _matrix.record('arabic', P0Path.editableDocx, P0Status.pass,
-        evidence: 'ترتيب العقد محفوظ في ${docxOrder.length} وسمًا، '
-            'وفقرات bidi=${probe.paragraphs.where((p) => p.props.hasBidi).length}');
-    _matrix.record('punctuation', P0Path.editableDocx, P0Status.pass,
-        evidence: 'الأقواس/الفواصل/Arabic-Indic في `w:t` منطقيًا كما كُتبت '
-            '(`(٢٠ درجة)`، `(١)`، `(ب)`)');
-    _matrix.record('math', P0Path.editableDocx, P0Status.pass,
-        evidence: 'مناطق OMML=$mathTotal، نصوص m:t تبدأ بـ '
-            '"${probe.mathTexts.isEmpty ? '' : probe.mathTexts.first}"');
-    _matrix.record('marks', P0Path.editableDocx, P0Status.pass,
-        evidence: '«(٢٠ درجة)» في جريان فقرة العنوان');
-    _matrix.record('options', P0Path.editableDocx, P0Status.pass,
-        evidence: 'OP1A..OP1C في فقرات الخيارات بعد نص النقطة بنفس الترتيب');
-    final floatingAnchorCount =
-        RegExp(r'<wp:anchor\b').allMatches(probe.documentXml).length;
-    expect(floatingAnchorCount, greaterThan(0),
-        reason: 'Editable DOCX must preserve floating drawing anchors.');
-    _matrix.record('floating', P0Path.editableDocx, P0Status.pass,
-        evidence: 'wp:anchor=$floatingAnchorCount, '
-            'r:embed=${probe.embeddedRelationIds.length}, '
-            'media=${probe.mediaNames.length}; decoded OOXML positions are '
-            'checked by the editable floating-element regression.');
-    _matrix.record('header-footer', P0Path.editableDocx, P0Status.pass,
-        evidence: 'Header ${P0GateFixture.headerMarkers.map(localizedMarker).join('/')} '
-            'precedes STA1; footer '
-            '${P0GateFixture.footerMarkers.map(localizedMarker).join('/')} '
-            'follows PG12; breaks=${probe.pageBreakCount + 1}, '
-            'measured Legacy PaginationEngine pages=$legacyPageCount; '
-            'optional page-frame parts=${headerParts.join(',')}.');
-    _matrix.record('latin', P0Path.editableDocx, P0Status.pass,
-        evidence: 'الوسوم اللاتينية (MIX1/OPT1/OP1A..) داخل `w:t` بنفس '
-            'ترتيب العقد، مع العربية في الفقرة نفسها');
-    _matrix.record('mixed', P0Path.editableDocx, P0Status.pass,
-        evidence: 'فقرة MIX1 جريان مستقل للعربية وللأرقام في الفقرة نفسها '
-            'تحت `w:bidi`');
-    _matrix.record('arabic-numerals', P0Path.editableDocx, P0Status.pass,
-        evidence: '«(١)» و«(٢٠ درجة)» و«١-» منطقيات في `w:t`؛ Word يعكس '
-            'العرض بالاتجاه لا بإعادة ترتيب النص');
-    _matrix.record('latin-numerals', P0Path.editableDocx, P0Status.pass,
-        evidence: '«1-» اليدوية و1990 و45.5% حرفياً في `w:t`');
-    _matrix.record('quran', P0Path.editableDocx, P0Status.pass,
-        evidence: 'جريان الآية بـ`w:rFonts` Amiri من عقد RichContent نفسه');
-    _matrix.record('pagination', P0Path.editableDocx, P0Status.pass,
-        evidence: '${probe.pageBreakCount} فاصل صفحة = '
-            '${legacyPageCount - 1} انتقالات PaginationEngine؛ '
-            'PDF=${_gate.rtlPdfReport.pageCount} صفحة (مسار مستقل)');
-    _matrix.record('justification', P0Path.editableDocx, P0Status.pass,
-        evidence: 'الفقرة المضبوطة تُعلن `w:jc="both"` وحدها — ولا تُحاكى '
-            'بتباعد مصطنع: `w:spacing/@w:after` و`w:ind` مستقلان عن الضبط');
-    _matrix.record('math', P0Path.editableDocx, P0Status.deferredToP1,
-        reason: 'OMML يُبنى بلا إعلان اتجاه: لا `w:rtl` ولا `w:bidi` داخل '
-            '`m:r`، فـ`\text{}` العربي داخل الصيغة يُترك لاتجاه المعادلة '
-            'الافتراضي (LTR). الإصلاح قرار في مُولّد OMML (P1) لا يمسّ '
-            'تحليلاً نصياً في Rاسم Word.',
-        evidence: 'مناطق OMML=$mathTotal، وm:t الذي يحوي عربية: '
-            '${probe.mathTexts.where((t) => RegExp(r"[\u0600-\u06FF]").hasMatch(t)).length}');
-  });
-
-  test('P0-GATE-07: editable.docx — اتجاهية `w:ind` ومحاذاة الافتراضي (P0.5-A/B)',
+  test('P0-GATE-08: لا معنى لإزاحة خط الأساس (E) ولا لمنطق ExamTextStyles (D)',
       () {
-    _gate.requireArtifacts();
-    final rtl = _gate.rtlDocx;
-    final ltr = _gate.ltrDocx;
-
-    // (A) العربية: `w:start` الاتجاهي حاضراً ومعهُ الفيزيائي لجهة البداية.
-    final rtlIndents = rtl.indentDirectives;
-    expect(rtlIndents, isNotEmpty,
-        reason: 'لا `w:ind` في الملف: لم تُختبر الإزاحة أصلاً.');
-    for (final indent in rtlIndents) {
-      expect(indent.containsKey('w:start'), isTrue,
-          reason: 'إزاحة بلا `w:start`: الاتجاه غير معلن في OOXML: $indent');
-      expect(indent['w:left'], isNull,
-          reason: 'إزاحة عربية استعملت `w:left`: تنقلب في RTL: $indent');
-      expect(indent['w:right'], indent['w:start'],
-          reason: 'الفيزيائي لا يوازي الاتجاهي في RTL: $indent');
-    }
-
-    // (A) الإنجليزية: جهة البداية يساراً — لم يبقَ `w:right` حلاً عالمياً.
-    final ltrIndents = ltr.indentDirectives;
-    expect(ltrIndents, isNotEmpty,
-        reason: 'لا `w:ind` في ورقة LTR: نقاط/فروع بلا إزاحة.');
-    for (final indent in ltrIndents) {
-      expect(indent['w:right'], isNull,
-          reason: 'ورقة LTR تُزاح بـ `w:right` (انحدار P0.5-A): $indent');
-      expect(indent['w:left'], indent['w:start'],
-          reason: 'الإزاحة اللاتينية غير متسقة: $indent');
-    }
-
-    // (B) «بلا محاذاة» = بداية السطر باتجاه الورقة.
-    final rtlTitle =
-        rtl.paragraphs.firstWhere((paragraph) => paragraph.text.contains('STA1'));
-    final ltrTitle = ltr.paragraphs
-        .firstWhere((paragraph) => paragraph.text.contains('LTRSTA1'));
-    expect(rtlTitle.props.alignment, 'right',
-        reason: 'محاذاة الافتراضي في RTL يجب ألا تتغير: '
-            '${rtlTitle.props.alignment}');
-    expect(ltrTitle.props.alignment, 'left',
-        reason: '`_wordAlign(null)` ما زال يُرجع right لورقة LTR: '
-            '${ltrTitle.props.alignment}');
-
-    // ولا فقرة محتوى في LTR تُحاكى يميناً بغير سبب من النموذج.
-    const ltrKnown = P0GateFixture.ltrBodyMarkers;
-    final rightAlignedLtr = <String>[
-      for (final paragraph in ltr.paragraphs)
-        if (paragraph.props.alignment == 'right' &&
-            _markersIn(paragraph.text, ltrKnown).isNotEmpty)
-          '#${paragraph.index} ${paragraph.text}',
-    ];
-    expect(rightAlignedLtr, isEmpty,
-        reason: 'فقرات LTR محاذَاة يميناً: ${rightAlignedLtr.take(3).toList()}');
-
-    // RTL لم يَنكسر: كل فقرة محتوى عربية تحمل `w:bidi`.
-    final missingBidi = <int>[
-      for (final paragraph in rtl.paragraphs)
-        if (_markersIn(paragraph.text, P0GateFixture.rtlBodyMarkers).isNotEmpty &&
-            !paragraph.props.hasBidi)
-          paragraph.index,
-    ];
-    expect(missingBidi, isEmpty,
-        reason: 'فقرات عربية بلا `w:bidi` بعد تغيير الفقرة الافتراضية: '
-            '$missingBidi');
-
-    _matrix.record('punctuation', P0Path.editableDocx, P0Status.pass,
-        evidence: 'اتجاهية الإزاحة: w:start+${rtlIndents.length} فقرات عربية '
-            'و${ltrIndents.length} لاتينية');
-  });
-
-  test('P0-GATE-08: editable.docx — لا معنى لإزاحة خط الأساس ولا لمنطق '
-      'ExamTextStyles', () {
-    _gate.requireArtifacts();
     // (E) `baselineShiftPt`: لا منتِج يكتبها ولا راسم يقرأها.
     final content = RichContent.parse(
       r'نص $x^2$ وآية ﴿مُحَمَّدٌ﴾',
@@ -2266,9 +1883,6 @@ void main() {
           reason: 'منتِج محتوى يكتب إزاحة خط أساس بينما لا راسم يقرأها: '
               '"${run.text}"');
     }
-    expect(_gate.rtlDocx.documentXml.contains('<w:position'), isFalse,
-        reason: 'مولّد Word كتب `w:position` الآن: الحقل لم يعد معطَّلاً، '
-            'فليُحدَّث تقرير P0 ولتُوصل الإزاحة بالراسمين.');
 
     // (D) `PdfPaperBuilder.styles` حقلٌ يُمرَّر ولا يُستهلَك: لا مستهلِك له في
     // المصدر، فالحذف ممكن فنياً لكنه يغيّر توقيعاً عاماً → يُسجَّل لـ P1.
@@ -2421,11 +2035,10 @@ void main() {
   // ===========================================================================
   // ميزة 15: ورقة LTR لا تنكسر بإصلاحات RTL.
   // ===========================================================================
-  test('P0-GATE-11: الورقة الإنجليزية (LTR) — لا انحدار في PDF ولا في Word',
-      () {
+  // (سقط في C5 الشق الـ Word من هذا الاختبار مع مولّده.)
+  test('P0-GATE-11: الورقة الإنجليزية (LTR) — لا انحدار في PDF', () {
     _gate.requireArtifacts();
     final report = _gate.ltrPdfReport;
-    final probe = _gate.ltrDocx;
     const known = P0GateFixture.ltrBodyMarkers;
     const excluded = <String>{
       'LTRV',
@@ -2605,59 +2218,9 @@ void main() {
               'PDF؛ تصحيحه طبقة اتجاه واحدة (P1 BLOCKERS بند 4) لا رقعة هنا.');
     }
 
-    final bodyParagraphs = probe.paragraphs
-        .where((paragraph) => _markersIn(paragraph.text, known).isNotEmpty)
-        .toList();
-    expect(bodyParagraphs, isNotEmpty,
-        reason: 'لا فقرات محتوى في editable_ltr.docx.');
-    final bidiLeak = <int>[
-      for (final paragraph in bodyParagraphs)
-        if (paragraph.props.hasBidi) paragraph.index,
-    ];
-    expect(bidiLeak, isEmpty,
-        reason: 'فقرات LTR تحمل `w:bidi` (تسرّب RTL): $bidiLeak');
-    final rtlRunLeak = <int>[
-      for (final paragraph in bodyParagraphs)
-        if (paragraph.runs.any((run) => run.rtl)) paragraph.index,
-    ];
-    expect(rtlRunLeak, isEmpty,
-        reason: 'جريان في ورقة LTR يحمل `w:rtl`: $rtlRunLeak');
-    // الوجه الآخر للقياس نفسه: `w:bidi` يُشتق من اتجاه المستند لا من نص
-    // الفقرة، فالفقرة العربية داخل الورقة الإنجليزية تُترك بلا أي إعلان
-    // اتجاه (تقرأها Word الاتّجاه العام). مقيس ومُسجَّل؛ تصحيحه طبقة اتجاه
-    // واحدة (P1 BLOCKERS بند 4)، وحذف العربية من الركيزة يُخفي العطب لا أكثر.
-    final arabicParagraphs = <int>[
-      for (final paragraph in bodyParagraphs)
-        if (RegExp('[\u0600-\u06FF]').hasMatch(paragraph.allText) &&
-            !paragraph.props.hasBidi)
-          paragraph.index,
-    ];
-    _stage('editable_ltr.docx: $arabicParagraphs فقرة عربية بلا `w:bidi` '
-        '(الاتجاه من المستند لا من النص) من ${bodyParagraphs.length} فقرة متن');
-    if (arabicParagraphs.isNotEmpty) {
-      _matrix.record('ltr-document', P0Path.editableDocx,
-          P0Status.deferredToP1,
-          evidence: '${arabicParagraphs.length} فقرة عربية في ورقة LTR بلا '
-              '`w:bidi`/`w:rtl` (فهارس: ${arabicParagraphs.take(3).toList()})',
-          reason: 'اتجاه الفقرة يُشتق من `document.layout.isLtr` وحده، فلا '
-              'تُعلَّم الفقرات العربية داخل مستند إنجليزي. القرار يعود إلى '
-              'طبقة التخطيط الموحدة ولا يُلَمَّع في P0.');
-    }
-    for (final paragraph in bodyParagraphs) {
-      expect(paragraph.props.alignment, anyOf('left', 'both', 'center'),
-          reason: 'محاذاة فقرة LTR غير يسارية: ${paragraph.props}');
-    }
-    final legacyPageCount = _gate.ltrCapture!.legacyPageCount;
-    expect(probe.pageBreakCount + 1, legacyPageCount,
-        reason: 'Word يكسر في ${probe.pageBreakCount + 1} صفحة وخطة '
-            'PaginationEngine في $legacyPageCount: خطة LTR لم تصل إلى الملف.');
-
     _matrix.record('ltr-document', P0Path.vectorPdf, P0Status.pass,
         evidence: '${report.pageCount} صفحة، ${ltrOrder.length} وسمًا '
             'بترتيب العقد، ترتيب الكلمات ltr، لا تشكيل/أرقام مشرقية');
-    _matrix.record('ltr-document', P0Path.editableDocx, P0Status.pass,
-        evidence: '${bodyParagraphs.length} فقرة محتوى، بلا w:bidi ولا w:rtl، '
-            'و`w:ind` يسارياً، وفاصل صفحة لكل انتقال');
     _matrix.record('ltr-document', P0Path.preview, P0Status.pass,
         evidence: 'المعاينة الإنجليزية: ${_gate.ltrPreviewPageCount} صفحة، '
             'و${_gate.previewLtr.length} كتلة مقاسة');
@@ -2689,37 +2252,6 @@ void main() {
         }
       }
     }
-    // The gate is behavioural: the fixture's header markers must precede the
-    // first body question and footer markers must follow the final body marker.
-    final headerCell = _matrix.cell('header-footer', P0Path.editableDocx);
-    expect(headerCell, isNotNull,
-        reason: 'header-footer/editable.docx was not measured in GATE-06.');
-    expect(headerCell!.status, P0Status.pass,
-        reason: 'Editable DOCX header/footer still has an obsolete deferred '
-            'status: ${headerCell.status} (${headerCell.reason}).');
-    final docxText = _gate.rtlDocx.flatText;
-    final rtlDocument = P0GateFixture.rtl();
-    int docxMarkerOffset(String marker) {
-      final localized = rtlDocument.localizeDigits(marker);
-      final offset = docxText.indexOf(localized);
-      return offset >= 0 ? offset : docxText.indexOf(marker);
-    }
-
-    final firstQuestion = docxMarkerOffset('STA1');
-    final lastQuestion = docxMarkerOffset('PG12');
-    expect(firstQuestion, greaterThanOrEqualTo(0));
-    expect(lastQuestion, greaterThan(firstQuestion));
-    for (final marker in P0GateFixture.headerMarkers) {
-      expect(docxMarkerOffset(marker), lessThan(firstQuestion),
-          reason: 'DOCX header marker $marker is not before STA1.');
-    }
-    for (final marker in P0GateFixture.footerMarkers) {
-      expect(docxMarkerOffset(marker), greaterThan(lastQuestion),
-          reason: 'DOCX footer marker $marker is not after PG12.');
-    }
-    expect(headerCell.evidence, contains('precedes STA1'));
-    expect(headerCell.evidence, contains('follows PG12'));
-
     expect(emptyEvidence, isEmpty,
         reason: 'خلايا PASS بلا دليل مقاس: ${emptyEvidence.join(", ")}');
     expect(reasonless, isEmpty,
@@ -2732,10 +2264,6 @@ void main() {
           'صور=${_gate.rtlPdfReport.imageObjects}، '
           'خطوط=${_gate.rtlPdfReport.pages.expand((p) => p.baseFonts).toSet()}',
       'vector.pdf إنجليزي: ${_gate.ltrPdfReport.pageCount} صفحة',
-      'editable.docx: ${_gate.rtlDocx.paragraphs.length} فقرة، '
-          '${_gate.rtlDocx.pageBreakCount} فاصل صفحة، '
-          '${_gate.rtlDocx.embeddedRelationIds.length} رسمية، '
-          'OMML=${_gate.rtlDocx.inlineMathCount + _gate.rtlDocx.mathParagraphCount}',
       'المعاينة: ${_gate.rtlPreviewPageCount} صفحة عربية / '
           '${_gate.ltrPreviewPageCount} صفحة إنجليزية',
       'خلاصة PDF: ${_gate.rtlPdfReport.describe()}',

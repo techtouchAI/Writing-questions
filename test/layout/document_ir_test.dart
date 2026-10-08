@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:writing_questions_app/layout/adapters/legacy_docx_adapter.dart';
 import 'package:writing_questions_app/layout/adapters/legacy_pdf_adapter.dart';
 import 'package:writing_questions_app/layout/blueprint/exam_blueprint.dart';
 import 'package:writing_questions_app/layout/document_direction.dart';
@@ -456,13 +455,8 @@ void main() {
         ),
       );
       expect(projectedFormula.label, r'\frac{س}{٢}');
-      final projectedTextBox = LegacyDocxAdapter.adaptFloatingElement(
-        documentIr: ir,
-        sourceElement: document.floatingElements.singleWhere(
-          (element) => element.id == 'global-text-box',
-        ),
-      );
-      expect(projectedTextBox.label, globals.last.label!.legacyText);
+      // (حُذف في C5 إسقاط LegacyDocxAdapter لمربع النص مع المحوّل؛ يبقى
+      // إسقاط PDF أعلاه شاهداً على أن المراجع الدلالية تُسقط هندسةً حرة.)
       expect(question.attachments!.elements.single.id, 'question-image');
       expect(question.attachments!.elements.single.kind, FloatingReferenceKind.image);
       expect(question.attachments!.elements.single.ownerQuestionId, 'q-rtl');
@@ -561,7 +555,7 @@ void main() {
       expect(first.blocks, hasLength(86)); // header + 84 questions + footer
     });
 
-    test('Preview, PDF adapter, and DOCX adapter expose equivalent printable semantics', () {
+    test('Preview and PDF adapter expose equivalent printable semantics', () {
       final document = _richDocument();
       final controller = ExamWizardController(document: document);
       final previewIr = controller.documentIr;
@@ -570,19 +564,12 @@ void main() {
         documentIr: previewIr,
         sourceDocument: document,
       );
-      final docxBlueprint = LegacyDocxAdapter.adapt(
-        documentIr: previewIr,
-        sourceDocument: document,
-      );
+      // (حُذف في C5 محوّل DOCX مع مساره؛ تكافؤ PDF مع IR أدناه يكفي.)
 
       expect(previewIr.questions.single.id, 'q-rtl');
-      expect(
-        _blueprintSignature(pdfBlueprint),
-        _blueprintSignature(docxBlueprint),
-      );
       expect(_blueprintSignature(pdfBlueprint), _irPrintableSignature(previewIr));
       expect(_blueprintSignature(sourceBlueprint), _irPrintableSignature(previewIr));
-      final projectedTitle = docxBlueprint.questions.single.title;
+      final projectedTitle = pdfBlueprint.questions.single.title;
       expect(projectedTitle.numberNode?.direction, DocumentDirection.rtl);
       expect(projectedTitle.separatorNode?.direction, DocumentDirection.rtl);
       expect(
@@ -590,7 +577,7 @@ void main() {
         DocumentDirection.auto,
       );
       expect(
-        docxBlueprint.questions.single.bodyContent!.nodes.first.direction,
+        pdfBlueprint.questions.single.bodyContent!.nodes.first.direction,
         DocumentDirection.auto,
       );
       controller.dispose();

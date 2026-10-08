@@ -2,10 +2,10 @@
 //
 // الخاصية تمرّ من الإعداد إلى العقد الدلالي مرة واحدة
 // ([HeaderBlueprint.framed]) ثم يقرؤها كل راسم — فإطفاؤها يطفيها في
-// المعاينة وPDF وWord معاً، وتشغيلها يشغّلها في الثلاثة.
-import 'dart:convert';
-
-import 'package:archive/archive.dart';
+// المعاينة وPDF معاً، وتشغيلها يشغّلها فيهما.
+//
+// (حُذف في C5 مع Word القابل للتحرير: اختبار `<w:tblBorders>` — Word اليوم
+// صور صفحات المعاينة، والإطار جزء من الصورة.)
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -17,7 +17,6 @@ import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/pdf_engine/paginated_pdf_exam_engine.dart';
-import 'package:writing_questions_app/services/docx_document_export_service.dart';
 import 'package:writing_questions_app/views/wizard/paper_header_footer_view.dart';
 
 ExamDocument _document({required bool framed}) => ExamDocument(
@@ -29,36 +28,12 @@ ExamDocument _document({required bool framed}) => ExamDocument(
       ],
     );
 
-Future<String> _headerTableXml(ExamDocument document) async {
-  final bytes = await DocxDocumentExportService.buildDocumentDocxBytes(
-    document: document,
-  );
-  final xml = utf8.decode(
-    ZipDecoder().decodeBytes(bytes).findFile('word/document.xml')!.content
-        as List<int>,
-  );
-  final start = xml.indexOf('<w:tbl>');
-  expect(start, greaterThan(-1), reason: 'جدول الترويسة موجود دائماً.');
-  return xml.substring(start, xml.indexOf('</w:tbl>', start));
-}
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('العقد الدلالي يحمل الإعداد كما هو (مصدر واحد)', () {
     expect(ExamBlueprint.from(_document(framed: true)).header.framed, isTrue);
     expect(ExamBlueprint.from(_document(framed: false)).header.framed, isFalse);
-  });
-
-  test('Word: الحدود تُكتب مع الإطار وتغيب بدونه', () async {
-    final on = await _headerTableXml(_document(framed: true));
-    final off = await _headerTableXml(_document(framed: false));
-    expect(on.contains('<w:tblBorders>'), isTrue);
-    expect(off.contains('<w:tblBorders>'), isFalse,
-        reason: 'headerBorder=false يُطفئ الإطار في Word أيضاً.');
-    // النصوص نفسها في الحالتين: الإطار عرضٌ لا محتوى.
-    expect(on.contains('اللغة العربية'), isTrue);
-    expect(off.contains('اللغة العربية'), isTrue);
   });
 
   test('PDF: الإعداد لا يغيّر النص المرسوم (الإطار عرضٌ لا محتوى)', () async {

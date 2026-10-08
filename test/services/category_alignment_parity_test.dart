@@ -1,14 +1,12 @@
-// محاذاة سطر القسم (`QuestionModel.categoryAlign`) في الثلاثة.
+// محاذاة سطر القسم (`QuestionModel.categoryAlign`) في المعاينة وPDF.
 //
-// الميزة تمرّ: Model ← Controller ← المعاينة/PDF/Word. والاختبار يقيس الأثر
+// الميزة تمرّ: Model ← Controller ← المعاينة/PDF. والاختبار يقيس الأثر
 // الفعلي لا وجود الشيفرة:
 //   * المعاينة: موضع run القسم ومحاذاة السطر في `LayoutDocument` الذي ترسمه الشاشة.
 //   * PDF: موضع كلمة القسم المرسومة بالنسبة لحدود صندوق المحتوى.
-//   * Word: قيمة `w:jc` في فقرة القسم وحدها.
 // ويُعاد للعربية (RTL) والإنجليزية (LTR) لأن `start/end` يتبعان الاتجاه.
-import 'dart:convert';
-
-import 'package:archive/archive.dart';
+//
+// (حُذفت في C5 مع Word القابل للتحرير: قيمة `w:jc` في فقرة القسم.)
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -24,7 +22,6 @@ import 'package:writing_questions_app/layout/canonical/canonical_layout_service.
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/pdf_engine/paginated_pdf_exam_engine.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
-import 'package:writing_questions_app/services/docx_document_export_service.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 
 import '../pdf_engine/pdf_content_probe.dart';
@@ -54,23 +51,6 @@ ExamDocument _document({
         ),
       ],
     );
-
-/// فقرة Word التي تحوي «Cat» (سطر القسم).
-Future<String> _wordCategoryParagraph(ExamDocument document) async {
-  final bytes = await DocxDocumentExportService.buildDocumentDocxBytes(
-    document: document,
-  );
-  final xml = utf8.decode(
-    ZipDecoder().decodeBytes(bytes).findFile('word/document.xml')!.content
-        as List<int>,
-  );
-  for (final match in RegExp('<w:p>.*?</w:p>', dotAll: true).allMatches(xml)) {
-    if (match.group(0)!.contains('Cat')) {
-      return match.group(0)!;
-    }
-  }
-  fail('لم أجد فقرة القسم في Word.');
-}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -102,32 +82,6 @@ void main() {
       expect(word.x + word.advanceWidth / 2,
           closeTo((_leftEdge + _rightEdge) / 2, 4),
           reason: 'المحاذاة «وسط» توسّط سطر القسم في صندوق المحتوى: $word');
-    });
-  });
-
-  group('Word: w:jc في فقرة القسم وحدها', () {
-    Future<String> categoryJc(PaperAlign align,
-        {String subject = 'Arabic'}) async {
-      final paragraph = await _wordCategoryParagraph(
-        _document(align: align, subject: subject),
-      );
-      return RegExp(r'w:jc w:val="([a-z]+)"').firstMatch(paragraph)!.group(1)!;
-    }
-
-    test('left/center/right تُكتب حرفياً في الفقرة', () async {
-      expect(await categoryJc(PaperAlign.left), 'left');
-      expect(await categoryJc(PaperAlign.center), 'center');
-      expect(await categoryJc(PaperAlign.right), 'right');
-    });
-
-    test('start/end يتبعان اتجاه الورقة (RTL مقابل LTR)', () async {
-      expect(await categoryJc(PaperAlign.start), 'right');
-      expect(await categoryJc(PaperAlign.end), 'left');
-      // القالب الإنجليزي هو مسار LTR الفعلي في التطبيق.
-      expect(await categoryJc(PaperAlign.start, subject: 'English'),
-          'left',
-          reason: 'في ورقة LTR يبدأ السطر من اليسار.');
-      expect(await categoryJc(PaperAlign.end, subject: 'English'), 'right');
     });
   });
 

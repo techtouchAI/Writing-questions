@@ -123,6 +123,40 @@ void expectNoRawLatex(PdfContentProbe probe, {required String surface}) {
   }
 }
 
+/// ست صيغ تُرسَم صوراً في الـ PDF — اثنتان لكل سؤال من الستة بالتناوب.
+///
+/// (نُقلت مع اختبار ٦×٣ من مسار Word المحذوف في C5؛ الاختبار نفسه لم
+/// يمسّ Word قط — يقرأ ملف PDF الناتج فقط.)
+const List<String> _pool = <String>[
+  r'5^{2} + 9',
+  r'\sqrt{66}',
+  r'\frac{5}{8}',
+  r'x_{1} - x_{2}',
+  r'\frac{\frac{1}{2}}{3}',
+  r'\vec{F}',
+];
+
+/// ورقة ٦ أسئلة × ٣ معادلات في النقاط (١٨ موضعاً من ٦ صيغ فريدة).
+ExamDocument _sixByThree() => ExamDocument(
+      name: '٦×٣',
+      header: ExamHeaderModel.initial(subject: 'الرياضيات'),
+      questions: <QuestionModel>[
+        for (var q = 0; q < 6; q++)
+          QuestionModel(
+            id: 'q${q + 1}',
+            questionNumber: q + 1,
+            statement: 'س${q + 1}/ احسب مما يأتي ثم علل',
+            items: <BranchItem>[
+              for (var i = 0; i < 3; i++)
+                BranchItem(
+                  id: 'q${q + 1}i$i',
+                  text: 'نق${q + 1}$i: أوجد قيمة \$${_pool[(q * 3 + i) % _pool.length]}\$',
+                ),
+            ],
+          ),
+      ],
+    );
+
 /// سطر مِرساتَي نص السؤال؛ يعيد المسافة الأفقية المطلقة بينهما بالنقاط.
 ///
 /// مرن عمداً: يبحث عن سطر واحد يحمل بالضبط مِرساة F5A واحدة وF5B واحدة
@@ -276,6 +310,39 @@ void main() {
       for (final label in <String>['(', ')', 'M7']) {
         expect(words.where((word) => word == label), isEmpty);
       }
+    });
+
+    // (نُقل من مسار Word المحذوف في C5؛ كان يقرأ PDF فقط.)
+    test('PDF الموازي: الورقة نفسها ٦×٣ تُرسم من محرك المعاينة بلا نص خام',
+        () async {
+      // نفس المحرك الذي يعرض المعاينة (flutter_math_fork عبر مضيف اللقطات):
+      // كل الصيغ الست الفريدة تُطلب له وتُنزل صوراً — المكتبة تعيد استعمال
+      // صورة الصيغة المتطابقة، فالعدد ≥ ٦ صور لـ١٨ موضعاً.
+      final bytes =
+          await PaginatedPdfExamEngine().generate(document: _sixByThree());
+
+      expect(host.requestedLatex, containsAll(_pool));
+      expect(imagesInPdf(bytes), greaterThanOrEqualTo(_pool.length));
+
+      // لا رمز LaTeX خاماً في طبقة النص المرسومة (كل صيغة صورة).
+      final words = <String>[
+        for (final line in PdfContentProbe.fromBytes(bytes).lines)
+          ...line.words.map((word) => word.text),
+      ];
+      expect(words, isNotEmpty);
+      for (final token in <String>[
+        'frac', 'sqrt', '{', '}', '\\\\', r'$', '^', '_',
+      ]) {
+        expect(
+          words.where((word) => word.contains(token)).toList(),
+          isEmpty,
+          reason: 'رمز خام «$token» ظهر نصاً مرسوماً في PDF الورقة ٦×٣.',
+        );
+      }
+
+      final sample = File('build/math_samples/real-pdf-6x3-math.pdf');
+      await sample.parent.create(recursive: true);
+      await sample.writeAsBytes(bytes);
     });
   });
 }

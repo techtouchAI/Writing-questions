@@ -5,8 +5,8 @@ import '../../models/floating_element.dart';
 /// راسم الأشكال (مثلث/دائرة/مربع/مستطيل/خط/سهم/فاصل) بخطوط سوداء
 /// وتعبئة بيضاء — مطابق لبنود SVG في محرك الـ PDF.
 ///
-/// يُستخدم في لوحة المعاينة ([FloatingElementView]) وفي ترسيم الأشكال
-/// صوراً عند تصدير Word ([ShapeImageRenderer]).
+/// يُستخدم في لوحة المعاينة ([FloatingElementView])؛ Word اليوم صور
+/// صفحات المعاينة نفسها (حُذف ترسيم التصدير في C5).
 class PaperShapePainter extends CustomPainter {
   const PaperShapePainter(this.shape, {this.strokeWidth = 2.0});
 

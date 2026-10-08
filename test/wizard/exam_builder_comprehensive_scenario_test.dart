@@ -11,7 +11,6 @@ import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/point_kind.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
-import 'package:writing_questions_app/services/docx_document_export_service.dart';
 import 'package:writing_questions_app/services/pdf_export_service.dart';
 import 'package:writing_questions_app/services/storage_service.dart';
 
@@ -236,12 +235,8 @@ void main() {
       expect(pdfBytes.length, greaterThan(1000));
       expect(String.fromCharCodes(pdfBytes.take(4)), '%PDF');
 
-      // ─── 16) توليد Word صالح ───
-      final docxBytes =
-          await DocxDocumentExportService.buildDocumentDocxBytes(document: document);
-      expect(docxBytes.length, greaterThan(1000));
-      expect(docxBytes[0], 0x50); // 'P'
-      expect(docxBytes[1], 0x4B); // 'K'
+      // (حُذفت في C5 خطوة 16 — توليد Word القابل للتحرير — مع مولّدها؛
+      // Word اليوم صور صفحات المعاينة، فيغطيها Exact.)
     });
   });
 }

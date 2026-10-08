@@ -186,10 +186,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # بوابة P0 (test/export_gate) تكتب القطع الأربعة + المصفوفة إلى
+      # بوابة P0 (test/export_gate) تكتب القطع الثلاثة + المصفوفة إلى
       # build/export_gate؛ تُرفع دائماً لأن الدليل هو غرض البوابة لا رقم
-      # الخروج: من راجع الانحدار يريد vector.pdf وeditable.docx وخريطة
-      # 15×4، لا رسالة «1 test failed».
+      # الخروج: من راجع الانحدار يريد vector.pdf وexact وخريطة
+      # 15×3، لا رسالة «1 test failed». (حُذف editable.docx في C5.)
       - name: Upload P0 export-gate artifacts
         if: always()
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -547,12 +547,12 @@ jobs:
           retention-days: 14
 
   # --------------------------------------------------------------------------
-  # التحقق البصري الخارجي: يُصيّر Vector PDF وEditable DOCX وExact المستقل
+  # التحقق البصري الخارجي: يُصيّر Vector PDF وExact المستقل
   # بمحرّكات أخرى ويقارن كل صفحة بالمعاينة عبر RMSE فعلي (انظر
   # tool/verify_visual_parity.sh). فشل أي مسار هو فشل CI.
   # --------------------------------------------------------------------------
   visual-parity:
-    name: Visual regression (Vector/Editable/Exact vs preview)
+    name: Visual regression (Vector/Exact vs preview)
     # Targeted runs skip the visual job unless the target is the fixture.
     if: ${{ inputs.test_path == '' || startsWith(inputs.test_path, 'test/visual') }}
     runs-on: ubuntu-24.04

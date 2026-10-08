@@ -1,15 +1,15 @@
 // =============================================================================
-// تدقيق التصدير (PDF + DOCX) — مرافقة لـ test/wizard/preview_buttons_functional_audit_test.dart
+// تدقيق التصدير (PDF) — مرافقة لـ test/wizard/preview_buttons_functional_audit_test.dart
 //
-// كل اختبار يقيس الناتج الفعلي (محتوى PDF عبر PdfContentProbe، وXML حقيقي من
-// ملف DOCX مفكوك) ويكافئه بسلوك Microsoft Word/المعاينة. نتائج PASS/FAIL في
-// سجلات CI هي الأدلة (gh run view <id> --log-failed).
+// كل اختبار يقيس الناتج الفعلي (محتوى PDF عبر PdfContentProbe) ويكافئه
+// بسلوك المعاينة. نتائج PASS/FAIL في سجلات CI هي الأدلة
+// (gh run view <id> --log-failed).
 //
 // الدليل ليس: وجود الشيفرة، نظافة المحلل، أو أن "الناتج وُجد".
+//
+// (حُذفت في C5 مع Word القابل للتحرير: اختبارات AUD-DOCX-01..07 — وسوم
+// OOXML والترويسة/التذييل الجدولية والفاصل — Word اليوم صور لا بنية.)
 // =============================================================================
-import 'dart:convert';
-
-import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,7 +21,6 @@ import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_font.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/floating_element.dart';
-import 'package:writing_questions_app/models/paper_divider.dart';
 import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/point_kind.dart';
@@ -30,7 +29,6 @@ import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/subject_layout.dart';
 import 'package:writing_questions_app/pdf_engine/exam_fonts.dart';
 import 'package:writing_questions_app/pdf_engine/paginated_pdf_exam_engine.dart';
-import 'package:writing_questions_app/services/docx_document_export_service.dart';
 import 'package:writing_questions_app/views/wizard/paper_styles.dart';
 
 import '../pdf_engine/pdf_content_probe.dart';
@@ -81,15 +79,6 @@ List<ProbedLine> _bodyLines(PdfContentProbe probe) => probe.lines
     .where((line) =>
         line.fontSize == 10.5 && line.words.any((word) => word.text.length > 3))
     .toList();
-
-Future<String> _docxXml(ExamDocument document) async {
-  final bytes = await DocxDocumentExportService.buildDocumentDocxBytes(
-    document: document,
-  );
-  final archive = ZipDecoder().decodeBytes(bytes);
-  final xml = archive.findFile('word/document.xml');
-  return utf8.decode(xml!.content as List<int>);
-}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -512,347 +501,6 @@ void main() {
       },
       reason: 'AUD-PDF-06: ورق الأسئلة يجب أن يخلو من أي عنصر إجابة — '
           'المخالف: $rendered.',
-    );
-  });
-
-  // ===========================================================================
-  // DOCX: تنسيقات الفقرات (تشابه مع MSO عبر وسم OOXML)
-  // ===========================================================================
-  test('AUD-DOCX-01: تنسيقات الموديل تصل كوسوم OOXML صحيحة (b/u/color/size/font/jc/line/after)',
-      () async {
-    const style = PaperTextStyle(
-      bold: true,
-      underline: true,
-      color: 0xFFDC2600,
-      fontSize: 13,
-      align: PaperAlign.justify,
-      lineHeight: 2.0,
-      paragraphSpacing: 12,
-      font: PaperFont.tajawal,
-    );
-    final xml = await _docxXml(
-      _doc(questions: <QuestionModel>[
-        QuestionModel(
-          id: 'q1',
-          questionNumber: 1,
-          statement: 'متن السؤال المنسق',
-          style: style,
-          branches: <BranchModel>[
-            BranchModel(
-              id: 'b1',
-              style: style,
-              content: BranchContent(statement: 'نص الفرع'),
-            ),
-          ],
-        ),
-      ]),
-    );
-
-    expect(
-      <String, bool>{
-        'bold <w:b/>': xml.contains('<w:b/>'),
-        'underline <w:u w:val="single"/>':
-            xml.contains('<w:u w:val="single"/>'),
-        'color DC2600': xml.contains('<w:color w:val="DC2600"/>'),
-        'size 13pt→<w:sz w:val="26"/>': xml.contains('<w:sz w:val="26"/>'),
-        // الخط يصل للخط اللاتيني (ascii/hAnsi) ولنص المجموعة العربية (cs)
-        // معاً: Word يستعمل cs للعربية وascii للأرقام/اللاتينية.
-        'font Tajawal (ascii)': xml.contains('w:ascii="Tajawal"'),
-        'font Tajawal (cs)': xml.contains('w:cs="Tajawal"'),
-        'justify→jc both': xml.contains('w:jc w:val="both"'),
-        'lineHeight 2.0→w:line=480': xml.contains('w:line="480"'),
-        'paragraphSpacing 12→w:after=180':
-            xml.contains('w:after="180"'),
-      },
-      <String, bool>{
-        'bold <w:b/>': true,
-        'underline <w:u w:val="single"/>': true,
-        'color DC2600': true,
-        'size 13pt→<w:sz w:val="26"/>': true,
-        'font Tajawal (ascii)': true,
-        'font Tajawal (cs)': true,
-        'justify→jc both': true,
-        'lineHeight 2.0→w:line=480': true,
-        'paragraphSpacing 12→w:after=180': true,
-      },
-      reason: 'AUD-DOCX-01: تنسيق من الموديل لم يصل إلى XML الواصل لـ Word '
-          '(المطلوب في Word: نفس الوسوم — b/u/color/sz/rFonts/jc/line/after).',
-    );
-  });
-
-  // ===========================================================================
-  // DOCX: اتجاه المستند (RTL/LTR)
-  // ===========================================================================
-  test('AUD-DOCX-02: منطقة أسئلة LTR بلا وسوم RTL (الترويسة والتذييل جدولان عربيان)',
-      () async {
-    final xml = await _docxXml(
-      _doc(
-        subject: 'English',
-        questions: <QuestionModel>[
-          _essay('q1', text: 'An English paragraph for direction testing.'),
-        ],
-      ),
-    );
-    // الترويسة والتذييل عربيان دائماً (RTL) بحسب المواصفة: يُستثنى جدولاهما.
-    final questionArea = xml.replaceAll(RegExp(r'<w:tbl>.*?</w:tbl>', dotAll: true), '');
-
-    expect(
-      <String, bool>{
-        '<w:bidi/>': questionArea.contains('<w:bidi/>'),
-        '<w:rtl/>': questionArea.contains('<w:rtl/>'),
-      },
-      <String, bool>{
-        '<w:bidi/>': false,
-        '<w:rtl/>': false,
-      },
-      reason: 'AUD-DOCX-02: منطقة الأسئلة الإنجليزية (LTR) كُتبت بوسوم اتجاه '
-          'RTL. Word يكتب فقرات LTR بلا <w:bidi/>؛ وإلا قرأ المحتوى RTL.',
-    );
-    // الترويسة نفسها تبقى عربية RTL.
-    expect(xml.contains('<w:bidiVisual/>'), isTrue);
-    expect(xml.contains('ادارة'), isTrue);
-  });
-
-  // ===========================================================================
-  // DOCX: نموذج المعلم/الطالب
-  // ===========================================================================
-  test('AUD-DOCX-03: لا يُكتب أي عنصر إجابة في Word (نموذجية أو صح/خطأ أو خيار)',
-      () async {
-    ExamDocument examDoc() => _doc(questions: <QuestionModel>[
-          _essay('q1', text: 'مقالي'),
-          QuestionModel(
-            id: 'q2',
-            questionNumber: 1,
-            branches: <BranchModel>[
-              BranchModel(
-                id: 'q2b',
-                content: BranchContent(statement: 'عبارة صح/خطأ بلا نقاط'),
-              ),
-            ],
-          ),
-          QuestionModel(
-            id: 'q3',
-            questionNumber: 1,
-            branches: <BranchModel>[
-              BranchModel(
-                id: 'q3b',
-                content: BranchContent(
-                  statement: 'عبارة صح/خطأ بنقاط',
-                  items: <BranchItem>[
-                    BranchItem(id: 'i1', kind: PointKind.trueFalse, text: 'عبارة أولى'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          QuestionModel(
-            id: 'q4',
-            questionNumber: 1,
-            branches: <BranchModel>[
-              BranchModel(
-                id: 'q4b',
-                content: BranchContent(
-                  statement: 'اختر',
-                  items: <BranchItem>[
-                    BranchItem(
-                      kind: PointKind.multipleChoice,
-                      text: 'سؤال',
-                      options: <QuestionOption>[
-                        QuestionOption(text: 'الخيار الأول'),
-                        QuestionOption(text: 'الخيار الثاني'),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ]);
-
-    Future<Map<String, bool>> flags() async {
-      final xml = await _docxXml(examDoc());
-      return <String, bool>{
-        'الإجابة النموذجية': xml.contains('الإجابة النموذجية'),
-        'الإجابة الصحيحة': xml.contains('الإجابة الصحيحة'),
-        '✔': xml.contains('✔'),
-        '(صح)': xml.contains('(صح)'),
-        '(خطأ)': xml.contains('(خطأ)'),
-        '(✓)': xml.contains('(✓)'),
-        'العبارات مطبوعة': xml.contains('عبارة صح/خطأ بنقاط') &&
-            xml.contains('عبارة أولى'),
-      };
-    }
-
-    final rendered = await flags();
-    expect(
-      rendered,
-      <String, bool>{
-        // النص المكتوب فقط يُطبع؛ ولا كلمة ولا علامة ولا سطر إجابة.
-        'الإجابة النموذجية': false,
-        'الإجابة الصحيحة': false,
-        '✔': false,
-        '(صح)': false,
-        '(خطأ)': false,
-        '(✓)': false,
-        'العبارات مطبوعة': true,
-      },
-      reason: 'AUD-DOCX-03: ملف Word يجب أن يخلو من أي عنصر إجابة — '
-          'المخالف: $rendered.',
-    );
-  });
-
-  test('AUD-DOCX-04: لا علامة «خيار صحيح» في Word (لا • ولا ✔ ولا سطر إجابة)',
-      () async {
-    final xml = await _docxXml(
-      _doc(questions: <QuestionModel>[
-        QuestionModel(
-          id: 'q1',
-          questionNumber: 1,
-          branches: <BranchModel>[
-            BranchModel(
-              id: 'b1',
-              content: BranchContent(
-                statement: 'اختر',
-                items: <BranchItem>[
-                  BranchItem(
-                    kind: PointKind.multipleChoice,
-                    text: 'سؤال',
-                    options: <QuestionOption>[
-                      QuestionOption(text: 'الخيار الصحيح'),
-                      QuestionOption(text: 'بديل'),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ]),
-      );
-
-    for (final marker in <String>['•', '✔', 'الإجابة الصحيحة', '✓']) {
-      expect(
-        xml.contains(marker),
-        isFalse,
-        reason: 'AUD-DOCX-04: لا يوجد خيار صحيح ولا أي علامة إجابة في الملف — '
-            'الخيارات نصّية فقط (المخالف: «$marker»).',
-      );
-    }
-    expect(xml.contains('الخيار الصحيح'), isTrue,
-        reason: 'AUD-DOCX-04: نصوص الخيارات المكتوبة هي وحدها ما يُصدَّر.');
-  });
-
-  test('AUD-DOCX-05: نصوص الترويسة في Word بلا مائل افتراضياً (كالمعاينة وMSO)',
-      () async {
-    final document = _doc(
-      questions: <QuestionModel>[_essay('q1', text: 'متن')],
-      header: ExamHeaderModel.initial(subject: 'اللغة العربية')
-          .copyWith(schoolName: 'متوسطة الأمل'),
-    );
-    final xml = await _docxXml(document);
-
-    final index = xml.indexOf('متوسطة الأمل');
-    expect(index, greaterThan(0), reason: 'اسم المدرسة مفقود من DOCX.');
-    final run = xml.substring(index < 600 ? 0 : index - 600, index);
-    expect(
-      run.contains('<w:i/>'),
-      isFalse,
-      reason: 'AUD-DOCX-05: نص الترويسة مكتوب مائلاً بلا طلب من المدرس — '
-          'تطابق MSO يتطلب عدم فرض المائل.',
-    );
-  });
-
-  // ===========================================================================
-  // DOCX: العناصر العائمة (موضع/تدوير/وسائط)
-  // ===========================================================================
-  test('AUD-DOCX-06: صورة عائمة — موضع LTR/RTL فيزيائي، تدوير، ووسادة media',
-      () async {
-    final png = base64Decode(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-    );
-    ExamDocument imageDoc(String subject) => _doc(
-          subject: subject,
-          questions: <QuestionModel>[_essay('q1', text: 'نص')],
-          header: ExamHeaderModel.initial(subject: subject),
-          floatingElements: <FloatingElement>[
-            FloatingElement(
-              id: 'img',
-              type: FloatingElementType.image,
-              bytes: Uint8List.fromList(png),
-              dx: 100,
-              dy: 200,
-              width: 120,
-              height: 60,
-              rotationDegrees: 90,
-            ),
-          ],
-        );
-
-    Future<({String xml, Archive archive, String offsetX})> build(
-        String subject) async {
-      final document = imageDoc(subject);
-      final bytes = await DocxDocumentExportService.buildDocumentDocxBytes(
-        document: document,
-      );
-      final archive = ZipDecoder().decodeBytes(bytes);
-      final file = archive.findFile('word/document.xml');
-      final xml = utf8.decode(file!.content as List<int>);
-      final match =
-          RegExp(r'positionH relativeFrom="page"><wp:posOffset>(-?\d+)')
-              .firstMatch(xml);
-      expect(match, isNotNull, reason: 'لا يوجد موضع أفقي للصورة في XML.');
-      return (xml: xml, archive: archive, offsetX: match!.group(1)!);
-    }
-
-    final rtl = await build('اللغة العربية');
-    final ltr = await build('English');
-
-    expect(
-      rtl.offsetX,
-      isNot(ltr.offsetX),
-      reason: 'AUD-DOCX-06: نفس العنصر (dx=100) يجب أن ينعكس فيزيائياً بين '
-          'RTL وLTR في Word (الحافة اليمنى مقابل اليسرى) — القيمتان متطابقتان '
-          '(${rtl.offsetX}) أي أن الاتجاه متجاهل في التحويل.',
-    );
-    expect(rtl.xml.contains('rot="5400000"'), isTrue,
-        reason: 'AUD-DOCX-06: تدوير 90° لم يُكتب في XML (rot=90×60000=5400000) '
-            '— Word سيعرض الصورة بلا دوران.');
-    expect(rtl.archive.findFile('word/media/image1.png'), isNotNull,
-        reason: 'AUD-DOCX-06: ملف الصورة media/image1.png غير مضمّن في الأرشيف.');
-  });
-
-  // ===========================================================================
-  // DOCX: فاصل بين الأسئلة + محتوى الترويسة
-  // ===========================================================================
-  test('AUD-DOCX-07: الفاصل والترويسة يصلان إلى Word (pBdr بالسماكة + اسم المدرسة)',
-      () async {
-    final document = _doc(
-      questions: <QuestionModel>[
-        QuestionModel(
-          id: 'q1',
-          questionNumber: 1,
-          statement: 'سؤال قبل الفاصل',
-          dividerAfter: const PaperDivider(thickness: 2),
-          branches: <BranchModel>[
-            BranchModel(
-              id: 'b1',
-              content: BranchContent(statement: 'متن'),
-            ),
-          ],
-        ),
-      ],
-      header: ExamHeaderModel.initial(subject: 'اللغة العربية')
-          .copyWith(schoolName: 'مدرسة التميز'),
-    );
-    final xml = await _docxXml(document);
-
-    expect(xml.contains('مدرسة التميز'), isTrue,
-        reason: 'AUD-DOCX-07: اسم المدرسة في الترويسة مفقود من DOCX.');
-    expect(
-      xml.contains('w:sz="16"'),
-      isTrue,
-      reason: 'AUD-DOCX-07: الفاصل (thickness=2 → w:sz=16) غير مرسوم في Word — '
-          'الفاصل بين الأسئلة سيضيع عند الطباعة.',
     );
   });
 }
