@@ -12,6 +12,7 @@ import '../models/floating_element.dart';
 import 'exam_fonts.dart';
 import 'floating_elements_pdf.dart';
 import 'pdf_math_rasters.dart';
+import 'pdf_text_metrics.dart';
 
 /// PDF-side painter for a completed LayoutDocument. Canonical run origins
 /// are authoritative for text operators; PDF font advances are never used
@@ -56,6 +57,7 @@ class CanonicalLayoutPdfPainter {
           ],
           fonts: fonts,
           mathRasters: mathRasters,
+          context: context,
         ),
       ),
       for (final placement in page.floatingElements)
@@ -65,6 +67,7 @@ class CanonicalLayoutPdfPainter {
             sourceDocument: sourceDocument,
             fonts: fonts,
             mathRasters: mathRasters,
+            context: context,
           ),
     ];
     return pw.SizedBox(
@@ -83,11 +86,14 @@ class CanonicalLayoutPdfPainter {
   /// math runs keep their canonical box for the raster image. Origins are
   /// never remapped by PDF advances: that would re-justify the line inside
   /// the renderer. No line-breaking, bidi reordering, or justification is
-  /// performed here.
+  /// performed here. Text widgets are shifted by the PDF-side baseline
+  /// mapping ([PdfTextMetrics]) so the emitted operator lands on the
+  /// canonical baseline.
   pw.Widget _paintCanonicalLines(
     Iterable<LayoutLine> lines, {
     required ExamFonts fonts,
     required PdfMathRasters mathRasters,
+    required pw.Context context,
   }) {
     final children = <pw.Widget>[];
     for (final line in lines) {
@@ -97,6 +103,7 @@ class CanonicalLayoutPdfPainter {
       if (runs.isEmpty) continue;
 
       final contents = <pw.Widget?>[];
+      final rasterById = <String, bool>{};
       for (final run in runs) {
         if (_isCanonicalSpacer(run)) {
           contents.add(null);
@@ -107,6 +114,7 @@ class CanonicalLayoutPdfPainter {
             ? mathRasters.lookup(run.text, run.style.fontSizePt)
             : null;
         if (raster != null) {
+          rasterById[run.id] = true;
           contents.add(
             pw.Image(
               pw.MemoryImage(raster.pngBytes),
@@ -141,10 +149,13 @@ class CanonicalLayoutPdfPainter {
       for (final run in _logicalRuns(line)) {
         final content = contentById[run.id];
         if (content == null) continue;
+        final top = rasterById[run.id] == true
+            ? line.baseline - run.baselineOffset
+            : line.baseline - _pdfTextTopOffset(run, fonts, context);
         children.add(
           pw.Positioned(
             left: run.x,
-            top: line.baseline - run.baselineOffset,
+            top: top,
             child: content,
           ),
         );
@@ -234,21 +245,12 @@ class CanonicalLayoutPdfPainter {
     LayoutRun run, {
     required ExamFonts fonts,
     required PdfMathRasters mathRasters,
+    required pw.Context context,
     double originX = 0,
     double originY = 0,
   }) {
-    if (line.id.contains('header') &&
-        (run.text.contains('المتوسط') ||
-            run.text.contains('السنة') ||
-            run.text.contains('النهوض') ||
-            run.text == 'س')) {
-      // ignore: avoid_print
-      print('[p0-gate] canonical header direction=${run.direction} '
-          'run=${run.text} id=${run.semanticNodeId}');
-    }
     if (run.advance <= 0 || (run.text.isEmpty && !run.isMath)) return null;
     final left = run.x - originX;
-    final top = line.baseline - run.baselineOffset - originY;
     final textStyle = _pdfTextStyle(run, fonts);
     final raster = run.isMath
         ? mathRasters.lookup(run.text, run.style.fontSizePt)
@@ -257,6 +259,9 @@ class CanonicalLayoutPdfPainter {
     // lines use _paintCanonicalLines above to paint canonical origins as-is.
     // Height remains intrinsic for text to avoid clipping font-specific
     // ascent/descent; raster math already has canonical dimensions.
+    final top = raster != null
+        ? line.baseline - run.baselineOffset - originY
+        : line.baseline - _pdfTextTopOffset(run, fonts, context) - originY;
     final pw.Widget content;
     if (raster != null) {
       content = pw.Image(
@@ -299,6 +304,23 @@ class CanonicalLayoutPdfPainter {
     );
   }
 
+  /// PDF-side distance from a single-line text widget top to its emitted
+  /// baseline, resolved from the embedded font itself (see [PdfTextMetrics]).
+  double _pdfTextTopOffset(
+    LayoutRun run,
+    ExamFonts fonts,
+    pw.Context context,
+  ) {
+    final font =
+        fonts.fontFor(run.style.font, bold: run.style.bold).getFont(context);
+    return PdfTextMetrics.baselineOffsetFromTop(
+      font: font,
+      fontSizePt: run.style.fontSizePt,
+      text: run.text,
+      letterSpacingPt: run.style.letterSpacingPt ?? 0,
+    );
+  }
+
   pw.TextStyle _pdfTextStyle(LayoutRun run, ExamFonts fonts) => pw.TextStyle(
         font: fonts.fontFor(run.style.font, bold: run.style.bold),
         fontSize: run.style.fontSizePt,
@@ -332,6 +354,7 @@ class CanonicalLayoutPdfPainter {
     required ExamDocument sourceDocument,
     required ExamFonts fonts,
     required PdfMathRasters mathRasters,
+    required pw.Context context,
   }) {
     final element = sourceDocument.floatingElementById(placement.reference.id);
     if (element == null) return pw.SizedBox.shrink();
@@ -379,6 +402,7 @@ class CanonicalLayoutPdfPainter {
                 run,
                 fonts: fonts,
                 mathRasters: mathRasters,
+                context: context,
                 originX: rect.left,
                 originY: rect.top,
               );
@@ -422,6 +446,7 @@ class CanonicalLayoutPdfPainter {
               run,
               fonts: fonts,
               mathRasters: mathRasters,
+              context: context,
               originX: rect.left,
               originY: rect.top,
             );
