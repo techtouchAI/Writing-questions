@@ -127,10 +127,30 @@ class CanonicalLayoutPdfPainter {
   /// One spaceless text emission: a canonical word, a math fallback, or a
   /// wordless run's whole text. Autosized and single-line, so alignment is
   /// a no-op; the caller's [pw.Positioned] carries the canonical origin.
-  pw.Text _wordTextWidget(LayoutRun run, String text, ExamFonts fonts) {
+  /// [canonicalAdvancePt] is the word's (or run's) canonical advance; the
+  /// emitted Tc tracking closes the package:pdf advance onto it so rendered
+  /// word ends — and therefore inter-word gaps — match canonical geometry.
+  pw.Text _wordTextWidget(
+    LayoutRun run,
+    String text,
+    ExamFonts fonts, {
+    required pw.Context context,
+    required double canonicalAdvancePt,
+  }) {
+    final font =
+        fonts.fontFor(run.style.font, bold: run.style.bold).getFont(context);
     return pw.Text(
       text,
-      style: _pdfTextStyle(run, fonts),
+      style: _pdfTextStyle(
+        run,
+        fonts,
+        trackingPt: PdfTextMetrics.wordTrackingPt(
+          font: font,
+          fontSizePt: run.style.fontSizePt,
+          wordText: text,
+          canonicalAdvancePt: canonicalAdvancePt,
+        ),
+      ),
       textDirection: _pdfDirection(run.direction),
       textAlign: pw.TextAlign.left,
       softWrap: false,
@@ -227,21 +247,30 @@ class CanonicalLayoutPdfPainter {
     // ascent/descent.
     final top =
         line.baseline - _pdfTextTopOffset(run, fonts, context) - originY;
-    pw.Widget wordWidget(String text, double left) => pw.Positioned(
+    pw.Widget wordWidget(String text, double left, double canonicalAdvance) =>
+        pw.Positioned(
           left: left,
           top: top,
-          child: _wordTextWidget(run, text, fonts),
+          child: _wordTextWidget(
+            run,
+            text,
+            fonts,
+            context: context,
+            canonicalAdvancePt: canonicalAdvance,
+          ),
         );
     if (run.isMath) {
       return <pw.Widget>[
-        wordWidget(EquationModel.readableText(run.text), run.x - originX),
+        wordWidget(
+            EquationModel.readableText(run.text), run.x - originX, run.advance),
       ];
     }
     if (run.words.isEmpty) {
-      return <pw.Widget>[wordWidget(run.text, run.x - originX)];
+      return <pw.Widget>[wordWidget(run.text, run.x - originX, run.advance)];
     }
     return <pw.Widget>[
-      for (final word in run.words) wordWidget(word.text, word.x - originX),
+      for (final word in run.words)
+        wordWidget(word.text, word.x - originX, word.advance),
     ];
   }
 
@@ -258,11 +287,18 @@ class CanonicalLayoutPdfPainter {
       font: font,
       fontSizePt: run.style.fontSizePt,
       text: run.text,
+      // Word Tc tracking is excluded by design: it shifts the pen, not the
+      // glyph extents the maximum-ascent mapping reads.
       letterSpacingPt: run.style.letterSpacingPt ?? 0,
     );
   }
 
-  pw.TextStyle _pdfTextStyle(LayoutRun run, ExamFonts fonts) => pw.TextStyle(
+  pw.TextStyle _pdfTextStyle(
+    LayoutRun run,
+    ExamFonts fonts, {
+    double trackingPt = 0,
+  }) =>
+      pw.TextStyle(
         font: fonts.fontFor(run.style.font, bold: run.style.bold),
         fontSize: run.style.fontSizePt,
         fontWeight: run.style.bold ? pw.FontWeight.bold : pw.FontWeight.normal,
@@ -270,7 +306,7 @@ class CanonicalLayoutPdfPainter {
         color: run.style.colorArgb == null
             ? PdfColors.black
             : PdfColor.fromInt(run.style.colorArgb!),
-        letterSpacing: run.style.letterSpacingPt ?? 0,
+        letterSpacing: (run.style.letterSpacingPt ?? 0) + trackingPt,
         // Words never contain U+0020, so Tw word spacing would be dead: NBSP
         // rides inside words and package:pdf shapes it with the U+0020
         // advance, exactly as Flutter does.

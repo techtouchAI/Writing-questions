@@ -466,7 +466,9 @@ class PdfGraphics {
     PdfNum(size).output(_page, _buf);
     _buf.putString(' Tf ');
     if (charSpace != null) {
-      PdfNum(charSpace).output(_page, _buf);
+      // pdf-tc-units-patch: charSpace arrives in points (as the layout side
+      // assumes), but Tc wants thousandths of an em; convert explicitly.
+      PdfNum(size > 0 ? charSpace * 1000 / size : 0).output(_page, _buf);
       _buf.putString(' Tc ');
     }
     if (wordSpace != null) {

@@ -1,5 +1,7 @@
 import 'package:pdf/pdf.dart';
 
+import '../layout/canonical/layout_document.dart';
+
 /// PDF-side vertical text geometry for single-line canonical runs.
 ///
 /// The canonical [LayoutDocument] records each line's absolute baseline. The
@@ -29,8 +31,6 @@ import 'package:pdf/pdf.dart';
 /// nominal codepoints in the embedded fonts, so measuring the raw run words
 /// yields the same maximum ascent.
 abstract final class PdfTextMetrics {
-  static final RegExp _whitespace = RegExp(r'\s');
-
   /// Vertical distance in points from the top edge of the single-line text
   /// widget to the emitted text baseline, for [text] set in [font] at
   /// [fontSizePt] with [letterSpacingPt].
@@ -45,12 +45,10 @@ abstract final class PdfTextMetrics {
     }
     var bottom = 0.0;
     final scaledSpacing = letterSpacingPt / fontSizePt;
-    for (final word in text.split(_whitespace)) {
-      if (word.isEmpty) {
-        continue;
-      }
+    for (final match in canonicalWordPattern.allMatches(text)) {
       final metrics =
-          font.stringMetrics(word, letterSpacing: scaledSpacing) * fontSizePt;
+          font.stringMetrics(match.group(0)!, letterSpacing: scaledSpacing) *
+              fontSizePt;
       if (metrics.ascent > bottom) {
         bottom = metrics.ascent;
       }
@@ -58,5 +56,31 @@ abstract final class PdfTextMetrics {
     // The emitted baseline sits one maximum word ascent below the widget
     // top (span pre-offset 0, realign shift -bottom, paint at box.top).
     return bottom;
+  }
+
+  /// Per-glyph Tc tracking in points that closes [wordText] to exactly
+  /// [canonicalAdvancePt] when rendered by [font] at [fontSizePt]: the
+  /// package:pdf advance is measured from the embedded font itself and the
+  /// residual is distributed uniformly over the word's runes. Tc applies to
+  /// every shown glyph, so dividing by the rune count is exact whenever the
+  /// shaper emits one glyph per rune; ligature words (lam-alef class) keep a
+  /// bounded residual of roughly one glyph share, far inside the natural-gap
+  /// range the parity gate asserts.
+  static double wordTrackingPt({
+    required PdfFont font,
+    required double fontSizePt,
+    required String wordText,
+    required double canonicalAdvancePt,
+  }) {
+    if (wordText.isEmpty || fontSizePt <= 0) {
+      return 0;
+    }
+    final glyphShares = wordText.runes.length;
+    if (glyphShares == 0) {
+      return 0;
+    }
+    final pdfAdvancePt =
+        font.stringMetrics(wordText).advanceWidth * fontSizePt;
+    return (canonicalAdvancePt - pdfAdvancePt) / glyphShares;
   }
 }
