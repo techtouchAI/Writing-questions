@@ -67,19 +67,16 @@ void main() {
       }
       canonicalTitle = buffer.toString();
     });
-    // ignore: avoid_print
-    print('[diag] canonical title runs: $canonicalTitle');
+    final evidence = StringBuffer('[diag] canonical: $canonicalTitle\n');
 
     final bytes = Uint8List.fromList(vectorPdf);
     final report = PdfStructureReport.fromBytes(bytes);
     final page = report.pages.first;
     final titleLines = page.linesWithMarker('STA1');
     for (final line in titleLines) {
-      // ignore: avoid_print
-      print('[diag] probed title line: ${line.describe()}');
+      evidence.writeln('[diag] probed line: ${line.describe()}');
       for (final word in line.words) {
-        // ignore: avoid_print
-        print('[diag] probed word "${word.text}"(${_cps(word.text)}) '
+        evidence.writeln('[diag] probed "${word.text}"(${_cps(word.text)}) '
             '@${word.x.toStringAsFixed(2)}+'
             '${word.advanceWidth.toStringAsFixed(2)} fs=${word.fontSize} '
             '${word.fontName} ${word.baseFont}');
@@ -92,8 +89,7 @@ void main() {
         match.group(1)!,
     }.toList()
       ..sort();
-    // ignore: avoid_print
-    print('[diag] distinct Tc values (${tcValues.length}): '
+    evidence.writeln('[diag] distinct Tc (${tcValues.length}): '
         '${tcValues.take(24).join(',')}');
 
     final wArrays = <String>[];
@@ -116,10 +112,12 @@ void main() {
           '${numbers.take(48).join(',')}${base == null ? '' : ' base=${base.group(1)}'}');
     }
     for (final entry in wArrays) {
-      // ignore: avoid_print
-      print('[diag] /W $entry');
+      evidence.writeln('[diag] /W $entry');
     }
 
-    expect(true, isTrue);
+    // Deliberate failure: surfacing evidence through the failure
+    // annotation because passing-test PRINTS are unreadable (log
+    // downloads EOF). Remove this file after consuming the evidence.
+    expect(evidence.isEmpty, isTrue, reason: evidence.toString());
   });
 }
