@@ -420,10 +420,11 @@ void main() {
             reason: 'fill $label');
         expect(canonicalOps.strokeColor, legacyOps.strokeColor,
             reason: 'stroke $label');
+        // The replaced path sets the stroke width even without a line.
+        expect(canonicalOps.lineWidth,
+            closeTo(legacyOps.lineWidth!, _floatQuantum),
+            reason: 'width $label');
         if (underline) {
-          expect(canonicalOps.lineWidth,
-              closeTo(legacyOps.lineWidth!, _floatQuantum),
-              reason: 'width $label');
           for (var i = 0; i < 4; i++) {
             expect(canonicalOps.underline![i],
                 closeTo(legacyOps.underline![i], _floatQuantum),

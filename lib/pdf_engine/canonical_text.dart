@@ -150,10 +150,13 @@ class CanonicalText extends pw.Widget {
         charSpace: 0,
         trailingTj: correction,
       );
+    // The replaced foreground decoration always sets the stroke color and
+    // width, then draws (and strokes) the line only for underlined text.
+    canvas
+      ..setStrokeColor(color)
+      ..setLineWidth(fontSizePt * 0.05);
     if (underline) {
       canvas
-        ..setStrokeColor(color)
-        ..setLineWidth(fontSizePt * 0.05)
         ..drawLine(
           metrics.left,
           underlineY,
