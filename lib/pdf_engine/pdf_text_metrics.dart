@@ -1,5 +1,4 @@
 import 'package:pdf/pdf.dart';
-import 'package:pdf/src/pdf/font/bidi_utils.dart' as bidi;
 
 import '../layout/canonical/layout_document.dart';
 
@@ -79,7 +78,7 @@ abstract final class PdfTextMetrics {
     if (wordText.isEmpty || fontSizePt <= 0) {
       return 0;
     }
-    final shaped = rtl ? bidi.logicalToVisual(wordText) : wordText;
+    final shaped = rtl ? logicalToVisual(wordText) : wordText;
     final glyphShares = shaped.runes.length;
     if (glyphShares == 0) {
       return 0;
