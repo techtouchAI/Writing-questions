@@ -59,7 +59,6 @@ jobs:
             test/wizard/canonical_iso_3_gesture_alone_test.dart \
             test/wizard/canonical_iso_7_paper_alone_test.dart \
             test/wizard/canonical_hang_repro_test.dart \
-            test/export_gate/docx_run_direction_test.dart \
             test/wizard/exam_builder_comprehensive_scenario_test.dart \
             2>&1 | tee "$RUNNER_TEMP/extended-test.log" || ext_status=$?
           # Canonical extended subset: tests 2-6 only (test-1 + E7 gate

@@ -87,14 +87,13 @@ jobs:
           # so one hang costs a full CI cycle; nothing green needs even 60 s.
           #
           # REQUIRED GATE (ci_gate_review): every suite except the extended
-          # set — iso_*/hang_repro/run_direction probe/comprehensive scenario
-          # (extended workflow), the canonical hang subset below, and the
-          # visual fixture (the visual-parity job runs it once; see W2).
+          # set — iso_*/hang_repro/comprehensive scenario (extended
+          # workflow), the canonical hang subset below, and the visual
+          # fixture (the visual-parity job runs it once; see W2).
           mapfile -t gate_files < <(find test -name '*_test.dart' \
             ! -path 'test/visual/*' \
             ! -name 'canonical_iso_*' \
             ! -name 'canonical_hang_repro_test.dart' \
-            ! -name 'docx_run_direction_test.dart' \
             ! -name 'exam_builder_comprehensive_scenario_test.dart' \
             ! -name 'canonical_preview_screen_test.dart' | sort)
           if [ "${#gate_files[@]}" -eq 0 ]; then
@@ -147,8 +146,10 @@ jobs:
           fi
 
       # Vacuous-run guards: a drifted --name (or an emptied file list)
-      # must fail loudly, never pass silent. Main suite: 725 tests measured
-      # (75 files incl. suite-load pseudo-tests); canonical subset: exactly
+      # must fail loudly, never pass silent. Main suite: ~634 tests (72
+      # files incl. suite-load pseudo-tests; static 547 + 15 loop-generated
+      # + 72 pseudo — recalibrated in C5b after the editable-DOCX suite
+      # deletion; floor 600 keeps a 30+ margin); canonical subset: exactly
       # test-1 + E7 + its load pseudo-test.
       - name: Guard against vacuous gate runs
         if: ${{ always() && inputs.test_path == '' }}
@@ -158,8 +159,8 @@ jobs:
             awk -F'[= ]' '{s=0; for (i=1; i<=NF; i++) { if ($i=="passed" || $i=="failed" || $i=="skipped") s+=$(i+1) }; print s+0}' "$1"
           }
           main_total=$(total_of "$RUNNER_TEMP/test-digest/counts.txt")
-          if [ "$main_total" -lt 700 ]; then
-            echo "main gate ran $main_total tests (< 700); failing loudly" >&2
+          if [ "$main_total" -lt 600 ]; then
+            echo "main gate ran $main_total tests (< 600); failing loudly" >&2
             exit 1
           fi
           if [ -f "$RUNNER_TEMP/test-digest-gate/counts.txt" ]; then
