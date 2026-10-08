@@ -3,30 +3,45 @@
 // correction that closes the viewer-executed advance onto canonical
 // geometry. The caller's pw.Positioned carries the canonical origin (with
 // the C1 baseline mapping in its top, untouched); this widget replicates
-// the replaced path's widget-local ink geometry term-for-term:
+// the replaced path's widget-local ink geometry term-for-term, as a direct
+// pw.Widget so no carrier widget contributes wrapper operators:
 //
-// * widget height = the word's scaled max height, ink baseline = -ascent:
-//   the same single-word line box and realigned span offset pw.Text
-//   computes (zero pre-offset, line baseline = maximum word ascent), so
-//   the box origin, the Td operator, and the ink land on identical bytes;
-// * ink x = 0: the single-word line realigns to the origin in both
+// * layout box = (0, 0, canonicalAdvancePt, word max height): the same
+//   single-word line box pw.Text computes (origin box, height = maximum
+//   ascent minus minimum descent), except the width, which is the
+//   canonical advance by construction instead of the font advance. The
+//   width feeds no placement (the caller's Positioned sets left/top only,
+//   never right/bottom/width) and no probe (words are read from Td/TJ),
+//   so the intended width delta moves no ink;
+// * the box clip pw.Text applies for TextOverflow.clip is replicated with
+//   the replaced path's exact box (font advance by max height), so ink
+//   outside the line box (stacked-mark tips above the top edge) is
+//   treated byte-for-byte as before;
+// * ink Td = (0, boxHeight - ascent): the replaced path paints its span
+//   at (box.left, box.top) plus the realigned span offset (0, -ascent),
+//   i.e. (0, boxHeight - ascent) in Positioned-local space; this widget
+//   emits the same operator in the same space, so the box origin, the Td
+//   bytes, and the viewer-composed ink position are identical. Ink x = 0
+//   because the single-word line realigns to the origin in both
 //   directions (RTL mirrors about its own advance, LTR translates by
 //   zero), matching the replaced path;
 // * shaping mirrors package:pdf's default dispatch (logical-to-visual for
 //   RTL, raw otherwise), reusing the vendored shaper rather than
 //   re-implementing it; the vendored-patch verifier guards the dispatch
 //   snippet this mirrors so upstream drift fails loudly;
+// * fill color, stroke color, and underline replicate the replaced
+//   single-underline decoration from the same scaled word metrics over
+//   the same span offsets: underline y = boxHeight - ascent + descent -
+//   fontDescent * fontSize / 2 with endpoints (left, left + width), line
+//   width 0.05 em, stroked after the TJ exactly as the replaced
+//   foreground decoration;
 // * a trailing TJ number closes the viewer-executed advance onto
 //   [canonicalAdvancePt]: N = (pdfAdvance - canonicalAdvance) * 1000 /
 //   fontSize, derived mathematically from the embedded font's own advance
 //   for the shaped word. Degenerate inputs (empty text, non-positive size
 //   or canonical advance, non-finite or exactly-zero correction) emit the
 //   historical TJ bytes, so words without a correction are byte-identical
-//   to the uncorrected emission;
-// * underline replicates pw.Text's single-underline decoration from the
-//   same scaled word metrics over the same line offsets, anchored to the
-//   box top edge exactly as the replaced path anchors it, with the same
-//   stroke color, width (0.05 em), and font-descent offset.
+//   to the uncorrected emission.
 //
 // Italic is accepted and ignored exactly as today: package:pdf never reads
 // TextStyle.fontStyle during PDF emission. Letter spacing has no producer
@@ -35,7 +50,7 @@
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
-class CanonicalText extends pw.StatelessWidget {
+class CanonicalText extends pw.Widget {
   CanonicalText({
     required this.text,
     required this.font,
@@ -76,49 +91,74 @@ class CanonicalText extends pw.StatelessWidget {
   }
 
   @override
-  pw.Widget build(pw.Context context) {
+  void layout(
+    pw.Context context,
+    pw.BoxConstraints constraints, {
+    bool parentUsesSize = false,
+  }) {
     if (text.isEmpty) {
-      return pw.SizedBox.shrink();
+      box = const PdfRect(0, 0, 0, 0);
+      return;
+    }
+    // Same scaled word metrics pw.Text measures the single word with (zero
+    // letter spacing); the height replicates its line box.
+    final metrics =
+        font.getFont(context).stringMetrics(shapedText()) * fontSizePt;
+    box = PdfRect(
+      0,
+      0,
+      constraints.constrainWidth(canonicalAdvancePt),
+      constraints.constrainHeight(metrics.maxHeight),
+    );
+  }
+
+  @override
+  void paint(pw.Context context) {
+    super.paint(context);
+    if (text.isEmpty) {
+      return;
     }
     final pdfFont = font.getFont(context);
     final shaped = shapedText();
     final correction = trailingTjAdjustment(pdfFont);
     // Same scaled word metrics pw.Text measures the single word with (zero
-    // letter spacing): max height sizes the replicated line box, -ascent is
-    // the replicated realigned span offset, and the underline span box
-    // (-ascent + descent + maxHeight, anchored to the box top edge) plus
-    // the font-descent offset reproduces the replaced decoration.
+    // letter spacing). The clip box is the replaced line box (font advance
+    // by max height); the ink Td and the underline replicate its span point
+    // plus realigned offset term-for-term.
     final metrics = pdfFont.stringMetrics(shaped) * fontSizePt;
     final boxHeight = metrics.maxHeight;
-    final inkBaselineY = -metrics.ascent;
-    final underlineY = boxHeight +
-        (-metrics.ascent + metrics.descent + metrics.maxHeight) -
+    final pdfAdvancePt = metrics.advanceWidth;
+    final inkY = boxHeight - metrics.ascent;
+    final underlineY = boxHeight -
+        metrics.ascent +
+        metrics.descent -
         pdfFont.descent * fontSizePt / 2;
-    return pw.CustomPaint(
-      size: PdfPoint(canonicalAdvancePt, boxHeight),
-      painter: (canvas, _) {
-        canvas.setFillColor(color);
-        canvas.drawString(
-          pdfFont,
-          fontSizePt,
-          shaped,
-          0,
-          inkBaselineY,
-          trailingTj: correction,
-        );
-        if (underline) {
-          canvas
-            ..setStrokeColor(color)
-            ..setLineWidth(fontSizePt * 0.05)
-            ..drawLine(
-              metrics.left,
-              underlineY,
-              metrics.left + metrics.width,
-              underlineY,
-            )
-            ..strokePath();
-        }
-      },
-    );
+    final canvas = context.canvas;
+    canvas
+      ..saveContext()
+      ..drawRect(0, 0, pdfAdvancePt, boxHeight)
+      ..clipPath()
+      ..setFillColor(color)
+      ..drawString(
+        pdfFont,
+        fontSizePt,
+        shaped,
+        0,
+        inkY,
+        trailingTj: correction,
+      );
+    if (underline) {
+      canvas
+        ..setStrokeColor(color)
+        ..setLineWidth(fontSizePt * 0.05)
+        ..drawLine(
+          metrics.left,
+          underlineY,
+          metrics.left + metrics.width,
+          underlineY,
+        )
+        ..strokePath();
+    }
+    canvas.restoreContext();
   }
 }
