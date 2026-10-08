@@ -228,6 +228,14 @@ class LayoutWord {
   final double advance;
 }
 
+/// Canonical word content: runs of non-ASCII-whitespace. This is
+/// deliberately not `\S`: ECMAScript `\s` (which Dart implements) also
+/// matches NBSP, NNBSP, and other Unicode spaces, and splitting on it would
+/// tear apart the NBSP-glued tokens the metrics coalescers keep together.
+/// Every canonical word split/match in the engine, the PDF emitter, and the
+/// parity probe must use this pattern so all three agree on word identity.
+final RegExp canonicalWordPattern = RegExp('[^ \\t\\n\\r\\f\\v]+');
+
 class LayoutRun {
   const LayoutRun({
     required this.id,

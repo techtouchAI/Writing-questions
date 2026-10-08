@@ -52,9 +52,9 @@ LayoutDocument _layout(ExamDocument document, {required double pageHeightPt}) {
   );
 }
 
-List<String> _expectedPieces(String text) => text
-    .split(RegExp(r'\s'))
-    .where((piece) => piece.isNotEmpty)
+List<String> _expectedPieces(String text) => canonicalWordPattern
+    .allMatches(text)
+    .map((match) => match.group(0)!)
     .toList(growable: false);
 
 void _expectWordInvariants(LayoutDocument layout) {
@@ -152,5 +152,21 @@ void main() {
     const body = 'اقرأ النص ثم أجب: ﴿وَقُل رَّبِّ زِدْنِي عِلْمًا﴾ (٢٠ درجة)';
     _expectWordInvariants(_layout(_document(body), pageHeightPt: 1000));
     _expectWordInvariants(_layout(_document(body), pageHeightPt: 120));
+  });
+
+  test('NBSP-glued tokens stay one word (never split like ASCII space)', () {
+    // ECMAScript \s matches NBSP; the canonical word notion must not, or
+    // glued tokens such as NBSP-joined numbers tear apart downstream.
+    const body = 'alpha\u00A0beta gamma';
+    final layout = _layout(_document(body), pageHeightPt: 1000);
+    final runs = layout.allLines
+        .expand((line) => line.runs)
+        .where((run) => run.text.contains('alpha'))
+        .toList(growable: false);
+    expect(runs, hasLength(1));
+    expect(
+      runs.single.words.map((word) => word.text).toList(growable: false),
+      <String>['alpha\u00A0beta'],
+    );
   });
 }

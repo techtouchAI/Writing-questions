@@ -831,8 +831,9 @@ class FlutterTextMetrics implements FontMetricsProvider {
     double fragmentRightPx,
     DocumentDirection direction,
   ) {
-    final matches =
-        RegExp(r'\S+').allMatches(fragmentText).toList(growable: false);
+    final matches = canonicalWordPattern
+        .allMatches(fragmentText)
+        .toList(growable: false);
     if (matches.isEmpty) return const <LayoutWord>[];
     final startsPx = List<double>.filled(matches.length, 0);
     for (var index = 0; index < matches.length; index++) {
