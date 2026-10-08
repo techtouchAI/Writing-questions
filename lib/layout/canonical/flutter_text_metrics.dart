@@ -1080,6 +1080,14 @@ class FlutterTextMetrics implements FontMetricsProvider {
         direction: direction ?? fragment.direction,
         baselineOffset: fragment.baselineOffset,
         height: fragment.height,
+        words: <LayoutWord>[
+          for (final word in fragment.words)
+            LayoutWord(
+              text: word.text,
+              x: word.x + dx,
+              advance: word.advance,
+            ),
+        ],
         mathBox: fragment.mathBox,
         fixedAdvancePt: fragment.fixedAdvancePt,
       );
