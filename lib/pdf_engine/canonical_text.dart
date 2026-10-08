@@ -145,6 +145,9 @@ class CanonicalText extends pw.Widget {
         shaped,
         0,
         inkY,
+        // The replaced path always passes its (zero) letter spacing, so the
+        // same explicit `0 Tc` is emitted.
+        charSpace: 0,
         trailingTj: correction,
       );
     if (underline) {
