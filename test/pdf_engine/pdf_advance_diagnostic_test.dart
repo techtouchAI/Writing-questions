@@ -1,10 +1,12 @@
 // TEMPORARY diagnostic (Batch D1, remove after evidence is consumed):
-// prints shaped-vs-/W-vs-probe advances for the p0q1/title Quran pair so
-// the C2-gap root cause can be read off CI PRINTS. Always passes.
+// compact shaped-vs-/W-vs-probe evidence for the p0q1/title Quran pair.
+// Fails deliberately so the evidence surfaces in the failure annotation
+// (passing-test PRINTS are unreadable: CI log downloads EOF).
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pdf/pdf.dart';
 import 'package:writing_questions_app/models/exam_font.dart';
 import 'package:writing_questions_app/pdf_engine/exam_fonts.dart';
 import 'package:writing_questions_app/pdf_engine/paginated_pdf_exam_engine.dart';
@@ -15,6 +17,11 @@ import 'fake_math_host.dart';
 
 String _cps(String value) =>
     value.runes.map((rune) => rune.toRadixString(16)).join(',');
+
+String _stripMarks(String value) => String.fromCharCodes(
+      value.runes.where((rune) =>
+          !(rune >= 0x064b && rune <= 0x065f) && rune != 0x0670),
+    );
 
 void main() {
   testWidgets('DIAG advance: shaped vs /W vs probe for title pair',
@@ -39,7 +46,12 @@ void main() {
 
     final rtlDocument = P0GateFixture.rtl();
     late List<int> vectorPdf;
-    late String canonicalTitle;
+    late String ilmaRun;
+    late String zadniRun;
+    late String ilmaText;
+    late String zadniText;
+    late double ilmaX;
+    late double zadniX;
     await tester.runAsync(() async {
       final pdfFonts = await ExamFonts.load(
         loadQuranic: PaginatedPdfExamEngine.needsQuranicFont(rtlDocument),
@@ -54,70 +66,88 @@ void main() {
         layoutDocument: canonicalLayout,
         fonts: pdfFonts,
       );
-      final titleLines = canonicalLayout.allLines
-          .where((line) => line.semanticNodeId == 'p0q1/title')
-          .toList(growable: false);
-      final buffer = StringBuffer();
-      for (final run in titleLines.first.runs) {
-        buffer.write(
-            '[${run.text}(${_cps(run.text)})@${run.x.toStringAsFixed(2)}+'
-            '${run.width.toStringAsFixed(2)} fs=${run.style.fontSizePt} '
-            'b=${run.style.bold} f=${run.style.font.name} '
-            'dir=${run.direction.name}] ');
+      String describe(Object? run) {
+        final value = run as dynamic;
+        return '"${value.text}"@${value.x.toStringAsFixed(2)}+'
+            '${value.width.toStringAsFixed(2)} fs=${value.style.fontSizePt} '
+            'b=${value.style.bold} f=${value.style.font.name}';
       }
-      canonicalTitle = buffer.toString();
+
+      final quran = canonicalLayout.allLines
+          .expand((line) => line.runs)
+          .where((run) => run.isQuran)
+          .toList(growable: false);
+      final ilma = quran.firstWhere(
+          (run) => _stripMarks(run.text as String).contains('علما'));
+      final zadni = quran.firstWhere(
+          (run) => _stripMarks(run.text as String).contains('زدني'));
+      ilmaRun = describe(ilma);
+      zadniRun = describe(zadni);
+      ilmaText = ilma.text as String;
+      zadniText = zadni.text as String;
+      ilmaX = (ilma.x as num).toDouble();
+      zadniX = (zadni.x as num).toDouble();
     });
-    final evidence = StringBuffer('[diag] canonical: $canonicalTitle\n');
 
     final bytes = Uint8List.fromList(vectorPdf);
     final report = PdfStructureReport.fromBytes(bytes);
-    final page = report.pages.first;
-    final titleLines = page.linesWithMarker('STA1');
-    for (final line in titleLines) {
-      evidence.writeln('[diag] probed line: ${line.describe()}');
+    final titleWords = <String>[];
+    for (final line in report.pages.first.linesWithMarker('STA1')) {
       for (final word in line.words) {
-        evidence.writeln('[diag] probed "${word.text}"(${_cps(word.text)}) '
-            '@${word.x.toStringAsFixed(2)}+'
-            '${word.advanceWidth.toStringAsFixed(2)} fs=${word.fontSize} '
-            '${word.fontName} ${word.baseFont}');
+        if ((word.x - ilmaX).abs() < 0.5 || (word.x - zadniX).abs() < 0.5) {
+          titleWords.add('"${word.text}"@${word.x.toStringAsFixed(2)}+'
+              '${word.advanceWidth.toStringAsFixed(2)} fs=${word.fontSize} '
+              '${word.fontName} ${word.baseFont}');
+        }
       }
     }
 
     final raw = latin1.decode(bytes, allowInvalid: true);
-    final tcValues = <String>{
-      for (final match in RegExp(r'(-?[\d.]+)\s+Tc').allMatches(raw))
-        match.group(1)!,
-    }.toList()
-      ..sort();
-    evidence.writeln('[diag] distinct Tc (${tcValues.length}): '
-        '${tcValues.take(24).join(',')}');
-
-    final wArrays = <String>[];
+    final unicodeToCid = <int, int>{};
+    for (final match in RegExp(r'<([0-9A-Fa-f]{4})>\s*<([0-9A-Fa-f]{4})>')
+        .allMatches(raw)) {
+      unicodeToCid[int.parse(match.group(2)!, radix: 16)] =
+          int.parse(match.group(1)!, radix: 16);
+    }
+    final widthsBySerial = <int, List<int>>{};
     for (final match
         in RegExp(r'/W\s*\[\s*\d+\s+(\d+)\s+0\s+R').allMatches(raw)) {
       final serial = int.parse(match.group(1)!);
       final obj = RegExp('$serial\\s+0\\s+obj\\b([\\s\\S]*?)endobj')
           .firstMatch(raw)
           ?.group(1);
-      if (obj == null) {
-        continue;
+      if (obj != null) {
+        widthsBySerial[serial] = RegExp(r'-?\d+')
+            .allMatches(obj)
+            .map((number) => int.parse(number.group(0)!))
+            .toList(growable: false);
       }
-      final numbers = RegExp(r'-?\d+')
-          .allMatches(obj)
-          .map((number) => number.group(0)!)
-          .toList(growable: false);
-      final base = RegExp(r'/BaseFont\s*/([^\s/>]+)')
-          .firstMatch(raw.substring(0, match.start).split('endobj').last);
-      wArrays.add('obj$serial[${numbers.length}]:'
-          '${numbers.take(48).join(',')}${base == null ? '' : ' base=${base.group(1)}'}');
     }
-    for (final entry in wArrays) {
-      evidence.writeln('[diag] /W $entry');
+    String wordWidths(String label, String logical) {
+      final shaped = logicalToVisual(logical);
+      final entries = <String>[];
+      for (final rune in shaped.runes) {
+        final cid = unicodeToCid[rune];
+        var found = '';
+        for (final serial in widthsBySerial.keys) {
+          final widths = widthsBySerial[serial]!;
+          if (cid != null && cid < widths.length) {
+            found = '$found$serial:${widths[cid]} ';
+          }
+        }
+        entries.add('${rune.toRadixString(16)}=cid$cid[$found]');
+      }
+      return '$label shaped=${_cps(shaped)} ${entries.join(' ')}';
     }
 
-    // Deliberate failure: surfacing evidence through the failure
-    // annotation because passing-test PRINTS are unreadable (log
-    // downloads EOF). Remove this file after consuming the evidence.
-    expect(evidence.isEmpty, isTrue, reason: evidence.toString());
+    final evidence = <String>[
+      'canon ilma $ilmaRun',
+      'canon zadni $zadniRun',
+      'probe ${titleWords.join(' | ')}',
+      wordWidths('ilma', ilmaText),
+      wordWidths('zadni', zadniText),
+      'widthTables ${widthsBySerial.keys.join(',')}',
+    ].join('\n');
+    expect(evidence.isEmpty, isTrue, reason: evidence);
   });
 }
