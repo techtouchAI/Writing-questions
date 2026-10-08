@@ -9,7 +9,6 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:writing_questions_app/pdf_engine/exam_fonts.dart';
 
 Future<String> _emit(pw.Widget child) async {
-  final font = pw.Font.ttf(await rootBundle.load(ExamFonts.regularAsset));
   final document = pw.Document();
   document.addPage(pw.Page(build: (context) => child));
   return latin1.decode(await document.save(), allowInvalid: true);
