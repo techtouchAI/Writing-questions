@@ -78,6 +78,15 @@ void _expectWordInvariants(LayoutDocument layout) {
         pieces,
         reason: 'Run ${run.id} words must be its whitespace split in order.',
       );
+      // Structural: fragments are ICU words (never two ASCII-separated
+      // words), so a text run carries at most one word. The PDF emitter
+      // underlines per emitted word; if this ever fails, per-word emission
+      // needs run-continuous underline rules before landing.
+      expect(
+        run.words.length,
+        lessThanOrEqualTo(1),
+        reason: 'Run ${run.id} carries more than one word.',
+      );
       for (final word in run.words) {
         expect(word.x.isFinite, isTrue, reason: 'Run ${run.id} word x finite.');
         expect(word.advance, greaterThanOrEqualTo(0),
