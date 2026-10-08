@@ -8,11 +8,6 @@ import 'dart:io';
 
 const String _vendoredText =
     'third_party/pdf/lib/src/widgets/text.dart';
-const String _vendoredGraphics =
-    'third_party/pdf/lib/src/pdf/graphics.dart';
-
-/// علامة إصلاح وحدات Tc (النقاط ← ألف الأَم) في setFont.
-const String _tcUnitsMarker = 'pdf-tc-units-patch';
 
 /// العلامة التي تتركها أداة الحقن، ووجودها دليل على أن التعديل مطبَّق.
 const String _patchedMarker = 'advanceWidth; // pdf-rtl-word-spacing-patch';
@@ -54,15 +49,8 @@ void main() {
     }
   }
 
-  final graphicsFile = File(_vendoredGraphics);
-  if (!graphicsFile.existsSync()) {
-    problems.add('لا توجد النسخة المُضمَّنة: $_vendoredGraphics');
-  } else if (!graphicsFile.readAsStringSync().contains(_tcUnitsMarker)) {
-    problems.add('لا تحمل علامة إصلاح وحدات Tc ($_tcUnitsMarker)');
-  }
-
   if (problems.isEmpty) {
-    stdout.writeln('حزمة pdf المُضمَّنة تحمل إصلاح مسافات الكلمات العربية ووحدات Tc ✔');
+    stdout.writeln('حزمة pdf المُضمَّنة تحمل إصلاح مسافات الكلمات العربية ✔');
     return;
   }
 

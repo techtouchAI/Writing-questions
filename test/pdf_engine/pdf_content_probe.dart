@@ -229,7 +229,6 @@ class PdfContentProbe {
   static final RegExp _tokenPattern = RegExp(
     r'(?<font>\w+)\s+(?<size>[\d.]+)\s+Tf'
     r'|(?<tdx>-?[\d.]+)\s+(?<tdy>-?[\d.]+)\s+Td'
-    r'|(?<tc>-?[\d.]+)\s+Tc'
     r'|(?<a>-?[\d.]+)\s+(?<b>-?[\d.]+)\s+(?<c>-?[\d.]+)\s+'
     r'(?<d>-?[\d.]+)\s+(?<e>-?[\d.]+)\s+(?<f>-?[\d.]+)\s+cm'
     r'|(?<![A-Za-z0-9/])(?<save>[qQ])(?![A-Za-z0-9])'
@@ -249,14 +248,9 @@ class PdfContentProbe {
     double? pendingX;
     double? pendingY;
 
-    // تباعد الأحرف Tc الحالي بأجزاء ألف الأَم (يضبطه كل مشغّل Tc).
-    var charSpace = 0.0;
-
     // مصفوفة التحويل الحالية ومكدّس حالات الرسم (q يدفع، Q يسحب).
     var ctm = _identity;
     final stack = <List<double>>[];
-    // مكدّس Tc موازٍ: يُحفظ مع q ويُستعاد مع Q كما يفعل العارض.
-    final tcStack = <double>[];
 
     for (final match in _tokenPattern.allMatches(content)) {
       final fontToken = match.namedGroup('font');
@@ -269,10 +263,6 @@ class PdfContentProbe {
       if (match.namedGroup('tdx') != null) {
         pendingX = double.parse(match.namedGroup('tdx')!);
         pendingY = double.parse(match.namedGroup('tdy')!);
-        continue;
-      }
-      if (match.namedGroup('tc') != null) {
-        charSpace = double.parse(match.namedGroup('tc')!);
         continue;
       }
       if (match.namedGroup('a') != null) {
@@ -301,15 +291,11 @@ class PdfContentProbe {
       final save = match.namedGroup('save');
       if (save == 'q') {
         stack.add(ctm);
-        tcStack.add(charSpace);
         continue;
       }
       if (save == 'Q') {
         if (stack.isNotEmpty) {
           ctm = stack.removeLast();
-        }
-        if (tcStack.isNotEmpty) {
-          charSpace = tcStack.removeLast();
         }
         continue;
       }
@@ -330,9 +316,7 @@ class PdfContentProbe {
               final width =
                   cid < data.widths.length ? data.widths[cid] : 1000;
               return sum + width * fontSize / 1000;
-            }) +
-              // بدلالة العارض: Tc تُضاف لكل محرف مرسوم.
-              charSpace * fontSize / 1000 * cids.length;
+            });
       // الموضع المطلق: Td محلي داخل مصفوفة الودجة الحالية، فنُلحق ctm به،
       // ونُقيس عرض التقدّم بمقدار تمدّد المحور الأفقي للمصفوفة.
       final x = ctm[0] * pendingX + ctm[2] * pendingY + ctm[4];

@@ -21,9 +21,6 @@ export 'src/pdf/document_parser.dart';
 export 'src/pdf/exif.dart';
 export 'src/pdf/font/font_metrics.dart';
 export 'src/pdf/font/ttf_parser.dart';
-// pdf-bidi-export: the canonical PDF painter shapes words exactly as the
-// emitter does; show-listed so no other bidi internal leaks out.
-export 'src/pdf/font/bidi_utils.dart' show logicalToVisual;
 export 'src/pdf/format/name.dart';
 export 'src/pdf/format/object_base.dart' show DeflateCallback, PdfVersion;
 export 'src/pdf/graphic_state.dart';
