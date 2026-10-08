@@ -353,6 +353,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
                 fallbackLeft: box.left,
                 fallbackRight: box.right,
               );
+              final runDirection = _documentDirection(box.direction);
               fragmentsByLine[lineIndex].add(
                 MeasuredRunFragment(
                   spanIndex: range.spanIndex,
@@ -361,12 +362,20 @@ class FlutterTextMetrics implements FontMetricsProvider {
                   endOffset: textRange.end - range.start,
                   x: LayoutUnits.pxToPt(runBounds.left),
                   width: LayoutUnits.pxToPt(runBounds.right - runBounds.left),
-                  direction: _documentDirection(box.direction),
+                  direction: runDirection,
                   baselineOffset: runBaselineOffset(
                     range.spanIndex,
-                    _documentDirection(box.direction),
+                    runDirection,
                   ),
                   height: LayoutUnits.pxToPt(box.bottom - box.top),
+                  words: _measureWords(
+                    painter,
+                    plainText.substring(textRange.start, textRange.end),
+                    textRange.start,
+                    runBounds.left,
+                    runBounds.right,
+                    runDirection,
+                  ),
                   mathBox: span.mathBox,
                 ),
               );
@@ -410,6 +419,17 @@ class FlutterTextMetrics implements FontMetricsProvider {
                     fragment.direction,
                   ),
                   height: LayoutUnits.pxToPt(fragment.bottom - fragment.top),
+                  words: _measureWords(
+                    painter,
+                    plainText.substring(
+                      fragment.startOffset,
+                      fragment.endOffset,
+                    ),
+                    fragment.startOffset,
+                    runBounds.left,
+                    runBounds.right,
+                    fragment.direction,
+                  ),
                   mathBox: span.mathBox,
                 ),
               );
@@ -438,6 +458,8 @@ class FlutterTextMetrics implements FontMetricsProvider {
                   metric.baseline - box.top,
                 ),
                 height: LayoutUnits.pxToPt(box.bottom - box.top),
+                // Placeholders are boxes, not shaped text: no measurable words.
+                words: const <LayoutWord>[],
                 mathBox: span.mathBox,
                 fixedAdvancePt: span.fixedAdvancePt,
               ),
@@ -788,6 +810,54 @@ class FlutterTextMetrics implements FontMetricsProvider {
       }
     }
     return nearest;
+  }
+
+  /// Word geometry inside one measured fragment, resolved with the same
+  /// [_caretBounds] machinery as the fragment box so words and their run can
+  /// never disagree on positions. [fragmentText] is the fragment's exact
+  /// laid-out paragraph slice and [baseOffset] its paragraph-absolute UTF-16
+  /// start, so word boundaries index the string the painter shaped. Words
+  /// split on ASCII whitespace — the same word notion the PDF emitter uses —
+  /// and pitches close exactly: every non-last word advances to the next
+  /// word's [x], and the last word ends at the fragment's trailing edge
+  /// ([fragmentLeftPx]/[fragmentRightPx] selected by [direction]). Within a
+  /// single-direction fragment, word edges are monotonic along the visual
+  /// axis, so the absolute pitch never masks disorder.
+  List<LayoutWord> _measureWords(
+    TextPainter painter,
+    String fragmentText,
+    int baseOffset,
+    double fragmentLeftPx,
+    double fragmentRightPx,
+    DocumentDirection direction,
+  ) {
+    final matches =
+        RegExp(r'\S+').allMatches(fragmentText).toList(growable: false);
+    if (matches.isEmpty) return const <LayoutWord>[];
+    final startsPx = List<double>.filled(matches.length, 0);
+    for (var index = 0; index < matches.length; index++) {
+      final match = matches[index];
+      startsPx[index] = _caretBounds(
+        painter,
+        baseOffset + match.start,
+        baseOffset + match.end,
+        fallbackLeft: fragmentLeftPx,
+        fallbackRight: fragmentRightPx,
+      ).left;
+    }
+    final trailingPx =
+        direction == DocumentDirection.ltr ? fragmentRightPx : fragmentLeftPx;
+    final words = <LayoutWord>[];
+    for (var index = 0; index < matches.length; index++) {
+      final nextPx =
+          index + 1 < matches.length ? startsPx[index + 1] : trailingPx;
+      words.add(LayoutWord(
+        text: matches[index].group(0)!,
+        x: LayoutUnits.pxToPt(startsPx[index]),
+        advance: LayoutUnits.pxToPt((nextPx - startsPx[index]).abs()),
+      ));
+    }
+    return words;
   }
 
   /// Selection boxes with `BoxWidthStyle.tight` describe glyph ink and can

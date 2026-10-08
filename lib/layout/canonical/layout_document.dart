@@ -208,6 +208,26 @@ class LayoutLine {
 /// A visual fragment of a semantic inline node. `semanticNode` retains the
 /// actual DocumentIR object reference; IDs are deterministic tree paths and
 /// never depend on matching text after layout.
+/// One measurable word inside a [LayoutRun]: the emission unit for
+/// canonical-positioned text. [x] is the word's visual left edge in points
+/// (same frame as the run's [LayoutRun.x]); [advance] is the visual pitch to
+/// the next word's [x], or to the run's trailing edge (right in LTR, left in
+/// RTL) for the last word, so pitches telescope exactly onto the run box.
+/// Words never contain whitespace: inter-word gaps are positions, not glyphs.
+/// Math runs carry no words (their box is measured externally, not shaped
+/// text); pure-whitespace runs carry none either.
+class LayoutWord {
+  const LayoutWord({
+    required this.text,
+    required this.x,
+    required this.advance,
+  });
+
+  final String text;
+  final double x;
+  final double advance;
+}
+
 class LayoutRun {
   const LayoutRun({
     required this.id,
@@ -225,6 +245,7 @@ class LayoutRun {
     required this.style,
     required this.logicalIndex,
     required this.visualIndex,
+    required this.words,
     this.sourceStartOffset = 0,
     this.sourceEndOffset = 0,
     this.sourceOffsetMap,
@@ -247,6 +268,7 @@ class LayoutRun {
   final LayoutTextStyle style;
   final int logicalIndex;
   final int visualIndex;
+  final List<LayoutWord> words;
 
   /// UTF-16 source interval for this measured fragment, relative to the
   /// semantic inline span's source text; the end offset is exclusive. Unlike
