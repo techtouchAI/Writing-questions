@@ -102,12 +102,6 @@ String logicalToVisual(String input) {
             (rune) => basicToIsolatedMappings[rune] ?? rune,
           ),
     );
-    if (input.contains('السنة') || input.contains('النهوض') ||
-        input.contains('المتوسط') || input == 'س') {
-      // ignore: avoid_print
-      print('[p0-gate] bidi fallback input=${input.runes.map((r) => r.toRadixString(16)).join(",")} '
-          'output=${shaped.runes.map((r) => r.toRadixString(16)).join(",")} error=$error');
-    }
     return shaped;
   }
   final buffer = StringBuffer();
@@ -122,11 +116,5 @@ String logicalToVisual(String input) {
     }
   }
   final visualText = buffer.toString();
-  if (input.contains('السنة') || input.contains('النهوض') ||
-      input.contains('المتوسط') || input == 'س') {
-    // ignore: avoid_print
-    print('[p0-gate] bidi shaped input=${input.runes.map((r) => r.toRadixString(16)).join(",")} '
-        'output=${visualText.runes.map((r) => r.toRadixString(16)).join(",")}');
-  }
   return visualText;
 }
