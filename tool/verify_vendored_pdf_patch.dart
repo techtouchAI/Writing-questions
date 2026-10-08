@@ -17,6 +17,11 @@ const String _patchedMarker = 'advanceWidth; // pdf-rtl-word-spacing-patch';
 /// علامة دعم رقم TJ اللاحق في drawString (التقارب على الهندسة الكنسية).
 const String _trailingTjMarker = 'pdf-trailing-tj-patch';
 
+/// مقطع توزيع التشكيل الذي تعكسه [CanonicalText] حرفياً (RTL عبر
+/// logicalToVisual، وغيره خام)؛ أي انحراف في المصدر المورّد يعني أن المرآة
+/// كذبت فيجب أن يفشل الفحص.
+const String _shapingDispatch = 'bidi.logicalToVisual(span.text!)';
+
 /// المواضع التي يجب أن تكون قد تغيّرت عن الأصل (تحقق ثانٍ مستقل عن العلامة).
 const List<String> _expectedPatched = <String>[
   'span.offset.x + span.advanceWidth',
@@ -52,6 +57,10 @@ void main() {
     if (source.contains(leftover)) {
       problems.add('ما زالت تحوي انعكاس RTL بعرض الحبر: $leftover');
     }
+  }
+  if (!source.contains(_shapingDispatch)) {
+    problems.add('تغيّر مقطع توزيع التشكيل في pw.Text '
+        '($_shapingDispatch) الذي تعكسه CanonicalText');
   }
 
   final graphicsFile = File(_vendoredGraphics);

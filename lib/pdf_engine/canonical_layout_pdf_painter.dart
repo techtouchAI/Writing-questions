@@ -9,6 +9,7 @@ import '../layout/document_direction.dart';
 import '../models/equation_model.dart';
 import '../models/exam_document.dart';
 import '../models/floating_element.dart';
+import 'canonical_text.dart';
 import 'exam_fonts.dart';
 import 'floating_elements_pdf.dart';
 import 'pdf_math_rasters.dart';
@@ -125,18 +126,34 @@ class CanonicalLayoutPdfPainter {
   }
 
   /// One spaceless text emission: a canonical word, a math fallback, or a
-  /// wordless run's whole text. Autosized and single-line, so alignment is
-  /// a no-op; the caller's [pw.Positioned] carries the canonical origin.
-  pw.Text _wordTextWidget(LayoutRun run, String text, ExamFonts fonts) {
-    return pw.Text(
-      text,
-      style: _pdfTextStyle(run, fonts),
-      textDirection: _pdfDirection(run.direction),
-      textAlign: pw.TextAlign.left,
-      softWrap: false,
-      maxLines: 1,
-      tightBounds: false, // Retain font ascent/descent for stable baselines.
-      overflow: pw.TextOverflow.clip,
+  /// wordless run's whole text. [CanonicalText] replicates the replaced
+  /// pw.Text ink geometry and closes the executed advance onto
+  /// [canonicalAdvancePt]; the caller's [pw.Positioned] carries the
+  /// canonical origin with the C1 baseline mapping in its top, exactly as
+  /// before. Letter spacing has no producer anywhere (no data key, no code
+  /// setter) and must stay unset: [CanonicalText] emits none, matching the
+  /// always-zero spacing used before.
+  pw.Widget _wordTextWidget(
+    LayoutRun run,
+    String text,
+    ExamFonts fonts, {
+    required double canonicalAdvancePt,
+  }) {
+    assert(
+      run.style.letterSpacingPt == null || run.style.letterSpacingPt == 0,
+      'CanonicalText emits no letter spacing; letterSpacingPt must stay '
+      'unset (it has no producer).',
+    );
+    return CanonicalText(
+      text: text,
+      font: fonts.fontFor(run.style.font, bold: run.style.bold),
+      fontSizePt: run.style.fontSizePt,
+      color: run.style.colorArgb == null
+          ? PdfColors.black
+          : PdfColor.fromInt(run.style.colorArgb!),
+      canonicalAdvancePt: canonicalAdvancePt,
+      rtl: run.direction == DocumentDirection.rtl,
+      underline: run.style.underline,
     );
   }
 
@@ -224,24 +241,37 @@ class CanonicalLayoutPdfPainter {
       ];
     }
     // Height remains intrinsic for text to avoid clipping font-specific
-    // ascent/descent.
+    // ascent/descent. The C1 baseline mapping sets the widget origin,
+    // exactly as before; CanonicalText replicates the replaced ink offsets
+    // inside it.
     final top =
         line.baseline - _pdfTextTopOffset(run, fonts, context) - originY;
-    pw.Widget wordWidget(String text, double left) => pw.Positioned(
+    pw.Widget wordWidget(String text, double left, double advance) =>
+        pw.Positioned(
           left: left,
           top: top,
-          child: _wordTextWidget(run, text, fonts),
+          child: _wordTextWidget(
+            run,
+            text,
+            fonts,
+            canonicalAdvancePt: advance,
+          ),
         );
     if (run.isMath) {
       return <pw.Widget>[
-        wordWidget(EquationModel.readableText(run.text), run.x - originX),
+        wordWidget(
+          EquationModel.readableText(run.text),
+          run.x - originX,
+          run.advance,
+        ),
       ];
     }
     if (run.words.isEmpty) {
-      return <pw.Widget>[wordWidget(run.text, run.x - originX)];
+      return <pw.Widget>[wordWidget(run.text, run.x - originX, run.advance)];
     }
     return <pw.Widget>[
-      for (final word in run.words) wordWidget(word.text, word.x - originX),
+      for (final word in run.words)
+        wordWidget(word.text, word.x - originX, word.advance),
     ];
   }
 
@@ -261,29 +291,6 @@ class CanonicalLayoutPdfPainter {
       letterSpacingPt: run.style.letterSpacingPt ?? 0,
     );
   }
-
-  pw.TextStyle _pdfTextStyle(LayoutRun run, ExamFonts fonts) => pw.TextStyle(
-        font: fonts.fontFor(run.style.font, bold: run.style.bold),
-        fontSize: run.style.fontSizePt,
-        fontWeight: run.style.bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-        fontStyle: run.style.italic ? pw.FontStyle.italic : pw.FontStyle.normal,
-        color: run.style.colorArgb == null
-            ? PdfColors.black
-            : PdfColor.fromInt(run.style.colorArgb!),
-        letterSpacing: run.style.letterSpacingPt ?? 0,
-        // Words never contain U+0020, so Tw word spacing would be dead: NBSP
-        // rides inside words and package:pdf shapes it with the U+0020
-        // advance, exactly as Flutter does.
-        wordSpacing: 0,
-        lineSpacing: 0,
-        height: 1,
-        decoration: run.style.underline
-            ? pw.TextDecoration.underline
-            : pw.TextDecoration.none,
-      );
-
-  pw.TextDirection _pdfDirection(DocumentDirection direction) =>
-      direction == DocumentDirection.ltr ? pw.TextDirection.ltr : pw.TextDirection.rtl;
 
   pw.Widget _paintFloat(
     LayoutFloatPlacement placement, {
