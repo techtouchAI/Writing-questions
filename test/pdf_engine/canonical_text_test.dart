@@ -3,7 +3,6 @@
 // the viewer-executed advance onto canonical geometry with a trailing TJ
 // number derived mathematically from the embedded font's own advance.
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
