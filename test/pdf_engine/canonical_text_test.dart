@@ -3,6 +3,7 @@
 // the viewer-executed advance onto canonical geometry with a trailing TJ
 // number derived mathematically from the embedded font's own advance.
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +11,8 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:writing_questions_app/pdf_engine/canonical_text.dart';
 import 'package:writing_questions_app/pdf_engine/exam_fonts.dart';
+
+import 'pdf_content_probe.dart';
 
 /// Viewer float quantum: emission rounds through 5-decimal PDF numbers.
 const _floatQuantum = 2e-5;
@@ -30,15 +33,19 @@ PdfFont _pdfFontOf(pw.Font font) {
   return font.getFont(context);
 }
 
-/// Plain (uncompressed) content bytes for one word emission, so the test
+/// Plain (uncompressed) file bytes for one word emission, so the test
 /// parses the same operators a viewer executes. Compression is orthogonal:
-/// streams deflate only when smaller, which would hide ASCII operators.
-Future<String> _emit(pw.Widget Function(pw.Font font) build) async {
+/// streams deflate only when smaller, which would hide ASCII operators
+/// (the shared probe inflates; these focused tests read plain bytes).
+Future<Uint8List> _emitBytes(pw.Widget Function(pw.Font font) build) async {
   final font = await _loadRegular();
   final document = pw.Document(compress: false);
   document.addPage(pw.Page(build: (context) => build(font)));
-  return latin1.decode(await document.save(), allowInvalid: true);
+  return document.save();
 }
+
+Future<String> _emit(pw.Widget Function(pw.Font font) build) async =>
+    latin1.decode(await _emitBytes(build), allowInvalid: true);
 
 /// Production placement shape: one word in a Positioned inside a Stack.
 pw.Widget _positioned(pw.Widget child) => pw.Stack(
@@ -457,6 +464,40 @@ void main() {
         );
         expect(normalized, contentStream(legacy), reason: 'byte parity $label');
       }
+    }
+  });
+
+  test('probe-measured advance lands on canonical (Batch 4 end-to-end)',
+      () async {
+    for (final word in <String>['عِلْمًا', 'STA1']) {
+      final rtl = word != 'STA1';
+      final shaped = rtl ? logicalToVisual(word) : word;
+      const canonicalAdvance = 10.0;
+      final bytes = await _emitBytes(
+        (font) => _canonicalWordText(
+          font,
+          word,
+          rtl: rtl,
+          underline: false,
+          canonicalAdvance: canonicalAdvance,
+        ),
+      );
+      final probe = PdfContentProbe.fromBytes(bytes);
+      expect(probe.words, hasLength(1));
+      // The shared probe executes the trailing TJ number exactly as a
+      // viewer does, so the measured advance is the canonical advance.
+      expect(probe.words.single.advanceWidth,
+          closeTo(canonicalAdvance, _floatQuantum));
+      // Control: the same probe reads the uncorrected font advance from
+      // the replaced emission (numberless TJ measures exactly as before).
+      final legacyBytes = await _emitBytes(
+        (font) => _legacyWordText(font, word, rtl: rtl, underline: false),
+      );
+      final pdfAdvance =
+          _pdfFontOf(await _loadRegular()).stringMetrics(shaped).advanceWidth *
+              12;
+      expect(PdfContentProbe.fromBytes(legacyBytes).words.single.advanceWidth,
+          closeTo(pdfAdvance, _floatQuantum));
     }
   });
 }

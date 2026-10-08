@@ -39,7 +39,8 @@ class ProbedWord {
   /// حجم الخط من أمر Tf.
   final double fontSize;
 
-  /// عرض تقدّم الكلمة بنقاط PDF كما تحدده مصفوفة /W في الملف نفسه.
+  /// عرض تقدّم الكلمة بنقاط PDF كما ينفّذه العارض: مصفوفة /W في الملف
+  /// نفسه ناقصاً أرقام الضبط داخل مصفوفة TJ (بأجزاء الألف من الـ em).
   final double advanceWidth;
 
   @override
@@ -207,9 +208,11 @@ class PdfContentProbe {
   }
 
   // ------------------------------------------------------------------
-  // تحليل أوامر الرسم: Tf (الخط والحجم) / Td (موضع كلمة) / <cids> (الكلمة)
-  // مع تتبّع مصفوفة التحويل (q/Q/cm) لتكون المواضع المُبلَّغة **مطلقة على
-  // الصفحة** لا محلية داخل صندوق الودجة الذي رُسمت فيه.
+  // تحليل أوامر الرسم: Tf (الخط والحجم) / Td (موضع كلمة) / مصفوفة TJ
+  // (الكلمة: سلاسل hex زائداً أرقام الضبط التي ينفّذها العارض طرحاً من
+  // التقدّم) أو <cids> مع Tj، مع تتبّع مصفوفة التحويل (q/Q/cm) لتكون
+  // المواضع المُبلَّغة **مطلقة على الصفحة** لا محلية داخل صندوق الودجة
+  // الذي رُسمت فيه.
   // ------------------------------------------------------------------
   static const double _sameLineTolerance = 0.5;
 
@@ -233,8 +236,35 @@ class PdfContentProbe {
     r'(?<d>-?[\d.]+)\s+(?<e>-?[\d.]+)\s+(?<f>-?[\d.]+)\s+cm'
     r'|(?<![A-Za-z0-9/])(?<save>[qQ])(?![A-Za-z0-9])'
     r'|(?<imageResource>/[A-Za-z0-9_.]+)\s+Do'
-    r'|<(?<hex>[0-9A-Fa-f]*)>',
+    // A word is a full TJ array (hex strings plus viewer-executed
+    // adjustment numbers, e.g. the canonical trailing correction) or a
+    // bare hex string shown with Tj (no numbers possible there).
+    r'|\[(?<tjarray>[^\[\]]*?)\]TJ'
+    r'|<(?<tjhex>[0-9A-Fa-f]*)>\s*Tj',
   );
+
+  /// Hex strings inside a TJ array (word bytes, in order).
+  static final RegExp _tjHexPart = RegExp(r'<([0-9A-Fa-f]*)>');
+
+  /// Literal strings inside a TJ array: never numbers; stripped before the
+  /// adjustment numbers are collected so digits in text stay text.
+  static final RegExp _tjLiteralPart = RegExp(r'\((?:\\.|[^\\()])*\)');
+
+  /// TJ adjustment numbers: thousandths of an em, subtracted from the pen
+  /// by the viewer exactly like /W widths are added.
+  static final RegExp _tjNumberPart = RegExp(r'[+-]?[\d.]+');
+
+  /// Viewer-executed adjustment inside [array]: the summed TJ numbers in
+  /// thousandths of an em (strings contribute no numbers).
+  static double _tjAdjustment(String array) {
+    final withoutStrings =
+        array.replaceAll(_tjHexPart, ' ').replaceAll(_tjLiteralPart, ' ');
+    var sum = 0.0;
+    for (final match in _tjNumberPart.allMatches(withoutStrings)) {
+      sum += double.tryParse(match.group(0)!) ?? 0;
+    }
+    return sum;
+  }
 
   static _ParsedPageContent _parseContent(
     String content,
@@ -300,7 +330,13 @@ class PdfContentProbe {
         continue;
       }
 
-      final hex = match.namedGroup('hex') ?? '';
+      final tjArray = match.namedGroup('tjarray');
+      final hex = tjArray == null
+          ? (match.namedGroup('tjhex') ?? '')
+          : _tjHexPart
+              .allMatches(tjArray)
+              .map((part) => part.group(1)!)
+              .join();
       if (hex.length < 4 || pendingX == null || pendingY == null) {
         continue;
       }
@@ -308,15 +344,24 @@ class PdfContentProbe {
         for (var index = 0; index + 4 <= hex.length; index += 4)
           int.parse(hex.substring(index, index + 4), radix: 16),
       ];
+      // The viewer executes every TJ number (each unit shifts the pen by
+      // 1/1000 em against the /W widths), so the measured advance is the
+      // /W sum minus the array's number sum. Numberless arrays measure
+      // exactly as before.
+      final adjustment =
+          tjArray == null ? 0.0 : _tjAdjustment(tjArray);
       final data = font;
       final advance = data == null
           ? 0.0
-          : cids.fold<double>(0, (sum, cid) {
-              // عرض الـ CID من مصفوفة /W، وإن لم تكن موجودة نأخذ /DW = 1000.
-              final width =
-                  cid < data.widths.length ? data.widths[cid] : 1000;
-              return sum + width * fontSize / 1000;
-            });
+          : (cids.fold<double>(0, (sum, cid) {
+                // عرض الـ CID من مصفوفة /W، وإن لم تكن موجودة نأخذ /DW = 1000.
+                final width =
+                    cid < data.widths.length ? data.widths[cid] : 1000;
+                return sum + width;
+              }) -
+              adjustment) *
+              fontSize /
+              1000;
       // الموضع المطلق: Td محلي داخل مصفوفة الودجة الحالية، فنُلحق ctm به،
       // ونُقيس عرض التقدّم بمقدار تمدّد المحور الأفقي للمصفوفة.
       final x = ctm[0] * pendingX + ctm[2] * pendingY + ctm[4];
