@@ -323,8 +323,10 @@ void main() {
       );
       expect(widget.trailingTjAdjustment(pdfFont), isNull);
     }
-    // Empty and whitespace-only text never carries a correction: empty
-    // emits no TJ at all, blank emits the historical numberless TJ.
+    // Empty emits no TJ at all; a blank whose canonical advance equals its
+    // font advance takes the same exactly-zero rule (no correction number).
+    final spaceAdvance =
+        pdfFont.stringMetrics(' ').advanceWidth * 12;
     for (final blank in <String>['', ' ']) {
       final blankRaw = await _emit(
         (font) => _positioned(
@@ -333,7 +335,8 @@ void main() {
             font: font,
             fontSizePt: 12,
             color: PdfColors.black,
-            canonicalAdvancePt: 10,
+            canonicalAdvancePt:
+                blank.isEmpty ? 10 : spaceAdvance,
             rtl: true,
             underline: false,
           ),
@@ -437,12 +440,21 @@ void main() {
           closeTo((pdfAdvance - canonicalAdvance) * 1000 / 12, _floatQuantum),
           reason: 'canonical TJ $label',
         );
-        // Strong form: modulo that number, the emissions are byte-identical.
-        final normalized = canonical.replaceFirst(
+        // Strong form: modulo that number, the content-stream bytes are
+        // identical (same operators, order, and formatting; /Length and
+        // xref offsets legitimately differ by the number's digits, so the
+        // comparison is scoped to the page content stream itself).
+        String contentStream(String file) => RegExp(
+              // Object 4 (the page content) is the first stream in these
+              // single-word files; non-greedy so font streams are excluded.
+              r'>>stream\r?\n(.*?)\r?\nendstream',
+              dotAll: true,
+            ).firstMatch(file)!.group(1)!;
+        final normalized = contentStream(canonical).replaceFirst(
           RegExp(r'\[<[0-9A-Fa-f]+>\s*-?[\d.]+\]TJ'),
           '[<${canonicalOps.hex}>]TJ',
         );
-        expect(normalized, legacy, reason: 'byte parity $label');
+        expect(normalized, contentStream(legacy), reason: 'byte parity $label');
       }
     }
   });
