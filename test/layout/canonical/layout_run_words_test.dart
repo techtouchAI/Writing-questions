@@ -91,6 +91,17 @@ void _expectWordInvariants(LayoutDocument layout) {
         expect(word.x.isFinite, isTrue, reason: 'Run ${run.id} word x finite.');
         expect(word.advance, greaterThanOrEqualTo(0),
             reason: 'Run ${run.id} word advance must never be negative.');
+        // The executed text advance: finite, non-negative, and inside the
+        // run box (it never reaches into the following space).
+        expect(word.textAdvance.isFinite, isTrue,
+            reason: 'Run ${run.id} word textAdvance finite.');
+        expect(word.textAdvance, greaterThanOrEqualTo(0),
+            reason: 'Run ${run.id} word textAdvance must never be negative.');
+        expect(
+          word.x + word.textAdvance,
+          lessThanOrEqualTo(run.x + run.width + _fpEpsilon),
+          reason: 'Run ${run.id} word text must end inside the run box.',
+        );
       }
       if (run.direction == DocumentDirection.ltr) {
         for (var index = 0; index + 1 < run.words.length; index++) {

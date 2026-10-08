@@ -269,9 +269,12 @@ class CanonicalLayoutPdfPainter {
     if (run.words.isEmpty) {
       return <pw.Widget>[wordWidget(run.text, run.x - originX, run.advance)];
     }
+    // The executed word advance is the word's own shaped text advance:
+    // the pitch (word.advance) reaches into the following space, which
+    // belongs to gaps, not to the TJ correction.
     return <pw.Widget>[
       for (final word in run.words)
-        wordWidget(word.text, word.x - originX, word.advance),
+        wordWidget(word.text, word.x - originX, word.textAdvance),
     ];
   }
 

@@ -822,7 +822,10 @@ class FlutterTextMetrics implements FontMetricsProvider {
   /// word's [x], and the last word ends at the fragment's trailing edge
   /// ([fragmentLeftPx]/[fragmentRightPx] selected by [direction]). Within a
   /// single-direction fragment, word edges are monotonic along the visual
-  /// axis, so the absolute pitch never masks disorder.
+  /// axis, so the absolute pitch never masks disorder. Each word also
+  /// carries its own shaped text advance (the caret interval width, never
+  /// reaching into the following space): the width a positioned emitter
+  /// executes, so gaps stay out of advances.
   List<LayoutWord> _measureWords(
     TextPainter painter,
     String fragmentText,
@@ -836,15 +839,18 @@ class FlutterTextMetrics implements FontMetricsProvider {
         .toList(growable: false);
     if (matches.isEmpty) return const <LayoutWord>[];
     final startsPx = List<double>.filled(matches.length, 0);
+    final textPx = List<double>.filled(matches.length, 0);
     for (var index = 0; index < matches.length; index++) {
       final match = matches[index];
-      startsPx[index] = _caretBounds(
+      final bounds = _caretBounds(
         painter,
         baseOffset + match.start,
         baseOffset + match.end,
         fallbackLeft: fragmentLeftPx,
         fallbackRight: fragmentRightPx,
-      ).left;
+      );
+      startsPx[index] = bounds.left;
+      textPx[index] = bounds.right - bounds.left;
     }
     final trailingPx =
         direction == DocumentDirection.ltr ? fragmentRightPx : fragmentLeftPx;
@@ -856,6 +862,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
         text: matches[index].group(0)!,
         x: LayoutUnits.pxToPt(startsPx[index]),
         advance: LayoutUnits.pxToPt((nextPx - startsPx[index]).abs()),
+        textAdvance: LayoutUnits.pxToPt(textPx[index]),
       ));
     }
     return words;
@@ -1087,6 +1094,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
               text: word.text,
               x: word.x + dx,
               advance: word.advance,
+              textAdvance: word.textAdvance,
             ),
         ],
         mathBox: fragment.mathBox,

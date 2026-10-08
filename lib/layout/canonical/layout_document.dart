@@ -213,6 +213,9 @@ class LayoutLine {
 /// (same frame as the run's [LayoutRun.x]); [advance] is the visual pitch to
 /// the next word's [x], or to the run's trailing edge (right in LTR, left in
 /// RTL) for the last word, so pitches telescope exactly onto the run box.
+/// [textAdvance] is the shaped advance of the word's own text alone (same
+/// caret interval as [x], no surrounding spaces): the width a positioned
+/// emitter executes for the word, so inter-word gaps stay positions.
 /// Words never contain whitespace: inter-word gaps are positions, not glyphs.
 /// Math runs carry no words (their box is measured externally, not shaped
 /// text); pure-whitespace runs carry none either.
@@ -221,11 +224,13 @@ class LayoutWord {
     required this.text,
     required this.x,
     required this.advance,
+    required this.textAdvance,
   });
 
   final String text;
   final double x;
   final double advance;
+  final double textAdvance;
 }
 
 /// Canonical word content: runs of non-ASCII-whitespace. This is
