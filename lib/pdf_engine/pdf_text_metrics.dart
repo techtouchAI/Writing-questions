@@ -67,7 +67,9 @@ abstract final class PdfTextMetrics {
   /// the measured advance (presentation-form advances, as in /W) and the
   /// glyph share count (ligatures included) describe the emitted text
   /// rather than the logical runes — measuring logical runes instead
-  /// over-corrects by the contextual-form difference.
+  /// over-corrects by the contextual-form difference. A non-positive
+  /// canonical advance carries no measurement (caret-guard fallback), so
+  /// tracking stays neutral there instead of collapsing the word to zero.
   static double wordTrackingPt({
     required PdfFont font,
     required double fontSizePt,
@@ -75,7 +77,7 @@ abstract final class PdfTextMetrics {
     required double canonicalAdvancePt,
     required bool rtl,
   }) {
-    if (wordText.isEmpty || fontSizePt <= 0) {
+    if (wordText.isEmpty || fontSizePt <= 0 || canonicalAdvancePt <= 0) {
       return 0;
     }
     final shaped = rtl ? logicalToVisual(wordText) : wordText;
