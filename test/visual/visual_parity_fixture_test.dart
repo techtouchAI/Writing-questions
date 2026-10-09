@@ -598,6 +598,7 @@ void _diagWriteGeometry(LayoutDocument layout, ExamDocument document) {
             'italic': run.style.italic,
             'rtl': rtl,
             'font': family,
+            'lh': run.style.lineHeightFactor,
             'run': run.id,
           });
           continue;
@@ -613,6 +614,7 @@ void _diagWriteGeometry(LayoutDocument layout, ExamDocument document) {
             'italic': run.style.italic,
             'rtl': rtl,
             'font': family,
+            'lh': run.style.lineHeightFactor,
             'run': run.id,
             'gl': _diagGlyphLefts(word.text, run),
           });

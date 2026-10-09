@@ -129,7 +129,7 @@ def emit_notices(lines, title):
         chunk, size, part = [], 0, part + 1
     for line in lines:
         cost = len(line.encode('utf-8')) + 1
-        if size + cost > 3000 and chunk:
+        if size + cost > 3800 and chunk:
             flush()
         chunk.append(line)
         size += cost
@@ -193,12 +193,15 @@ def grid_investigation(index, pa, va, words):
                     ibest = (value, dx, dy)
         sub = fit2d(y0, y1, x0, x1, 1.0, 0.0625)
         rows.append({'y_px': key * PT2PX, 'frac': (key * PT2PX) % 1.0,
+                     'lh': group[0].get('lh'), 'font': group[0].get('font'),
+                     'size': size,
                      'int_dy': ibest[2], 'sub_dy': sub[2], 'sub_dx': sub[1],
                      'sub_rmse': sub[0], 'zero_rmse': rmse(ref, gv[y0:y1, x0:x1]),
                      'sample': ' '.join(w['t'] for w in group[:3])[:24]})
     out(f'[grid p{index + 1}] lines={len(rows)} (frac = device-px fraction of canonical baseline)')
     for r in rows:
         out(f'[grid p{index + 1}]   y_px={r["y_px"]:8.2f} frac={r["frac"]:.3f} '
+            f'lh={r["lh"]} font={str(r["font"])[:6]} s={r["size"]:.1f} '
             f'int_dy={r["int_dy"]:+d} sub_dy={r["sub_dy"]:+.3f} sub_dx={r["sub_dx"]:+.3f} '
             f'rmse0={r["zero_rmse"]:.4f} sub={r["sub_rmse"]:.4f} "{r["sample"]}"')
     edges = [i / 10.0 for i in range(11)]
@@ -208,6 +211,13 @@ def grid_investigation(index, pa, va, words):
             out(f'[grid p{index + 1}] frac [{lo:.1f},{hi:.1f}) n={len(bucket)} '
                 f'int_dy={sorted(set(r["int_dy"] for r in bucket))} '
                 f'mean_sub_dy={np.mean([r["sub_dy"] for r in bucket]):+.3f}')
+    for lh_value in sorted(set(r['lh'] for r in rows if r['lh'] is not None)):
+        for lo, hi in zip(edges[:-1], edges[1:]):
+            bucket = [r for r in rows if r['lh'] == lh_value and lo <= r['frac'] < hi]
+            if bucket:
+                out(f'[grid p{index + 1}] lh={lh_value} frac [{lo:.1f},{hi:.1f}) n={len(bucket)} '
+                    f'int_dy={sorted(set(r["int_dy"] for r in bucket))} '
+                    f'mean_sub_dy={np.mean([r["sub_dy"] for r in bucket]):+.3f}')
     if len(rows) >= 3:
         ys = np.array([r['y_px'] for r in rows])
         dys = np.array([r['sub_dy'] for r in rows])
