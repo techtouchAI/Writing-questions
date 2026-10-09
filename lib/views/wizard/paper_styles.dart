@@ -131,11 +131,18 @@ abstract final class PaperStyles {
     // نمط من العقد: تُشتق القيم النهائية من دوره مباشرة.
     if (base is PaperRoleTextStyle) {
       final s = base.reference;
+      // أثاث الصفحة معفي من القياس العام كما في العقد نفسه
+      // ([ExamTypography.isPageChrome])؛ التنسيق المخصص يتقدم دائماً.
+      final effectiveFontScale =
+          ExamTypography.isPageChrome(s.role) ? 1.0 : fontScale;
+      final effectiveHeightScale =
+          ExamTypography.isPageChrome(s.role) ? 1.0 : heightScale;
       return VisualFlutterStyle.from(
         s.copyWith(
           font: override?.font ?? defaultFont,
-          fontSizePt: override?.fontSize ?? s.fontSizePt * fontScale,
-          lineHeight: override?.lineHeight ?? s.lineHeight * heightScale,
+          fontSizePt: override?.fontSize ?? s.fontSizePt * effectiveFontScale,
+          lineHeight:
+              override?.lineHeight ?? s.lineHeight * effectiveHeightScale,
           bold: override?.bold ?? s.bold,
           italic: override?.italic ?? s.italic,
           underline: override?.underline ?? s.underline,
@@ -177,10 +184,14 @@ abstract final class PaperStyles {
     }
     if (base is PaperRoleTextStyle) {
       final s = base.reference;
+      final effectiveFontScale =
+          ExamTypography.isPageChrome(s.role) ? 1.0 : fontScale;
+      final effectiveHeightScale =
+          ExamTypography.isPageChrome(s.role) ? 1.0 : heightScale;
       return VisualFlutterStyle.from(
         s.copyWith(
-          fontSizePt: s.fontSizePt * fontScale,
-          lineHeight: s.lineHeight * heightScale,
+          fontSizePt: s.fontSizePt * effectiveFontScale,
+          lineHeight: s.lineHeight * effectiveHeightScale,
         ),
       );
     }

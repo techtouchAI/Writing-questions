@@ -15,8 +15,8 @@ import 'page_snapshot_service.dart';
 ///
 /// - PDF: كل صفحة صورة A4 كاملة (300dpi افتراضاً) — مطابقة للمعاينة بالبناء.
 /// - Word: كل صفحة صورة بحجم A4 بالضبط داخل مستند بلا هوامش — مطابقة أيضاً،
-///   لكنه **غير قابل للتحرير** (هذا مقصود ومعلن: للمعادلات القابلة للتحرير
-///   يوجد مسار `DOCX Editable` في [DocxDocumentExportService]).
+///   لكنه **غير قابل للتحرير** (مقصود ومعلن؛ أُزيل مسار Word القابل
+///   للتحرير في C5).
 abstract final class ExactExportService {
   /// دقة اللقط الافتراضية للتصدير الدقيق.
   static const double defaultDpi = PageSnapshotService.defaultDpi;
@@ -156,6 +156,17 @@ abstract final class ExactExportService {
       throw StateError('تعذّر ترميز حزمة Word الدقيقة.');
     }
     return Uint8List.fromList(encoded);
+  }
+
+  /// يشارك ملف Word الدقيق عبر وسيط المشاركة (نُقل من خدمة Word القابل
+  /// للتحرير عند إزالتها في C5؛ هذا الملف docx مطابق للمعاينة).
+  static Future<void> shareDocxFile(File file, {String? subject}) {
+    return ExportFileService.shareExportFile(
+      file,
+      mimeType:
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      subject: subject ?? 'تصدير ورقة الأسئلة بصيغة Word',
+    );
   }
 
   /// يكتب ملف Word الدقيق على القرص ويعيد الملف.

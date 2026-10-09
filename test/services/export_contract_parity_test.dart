@@ -1,19 +1,17 @@
-// تطابق العقد: الرقم الواحد يصل إلى المعاينة وPDF وWord.
+// تطابق العقد: الرقم الواحد يصل إلى المعاينة وPDF.
 //
 // هذا الاختبار لا يقارن «شيفرة بشيفرة» بل **قيمة بقيمة**: لكل عنصر
-// (قسم، عنوان سؤال، متن، نقطة، خيار، فرع) يُقاس:
+// (قسم، عنوان سؤال، متن، نقطة) يُقاس:
 //   * المعاينة: نمط Flutter المشتق من العقد (بكسل اللوحة).
 //   * PDF: الحجم الفعلي داخل الملف (عبر PdfContentProbe) — لا وجود الشيفرة.
-//   * Word: قيم `w:sz`/`w:ind`/`w:spacing` داخل الفقرة نفسها في مستند مفكوك.
 // ويُعاد الاختبار نفسه بمعاملَي قياس (fontScale/heightScale ≠ 1) لإثبات أن
-// القياس يُطبَّق مرة واحدة في الثلاثة ولا يُضاعف في أي مسار.
-import 'dart:convert';
-
-import 'package:archive/archive.dart';
+// القياس يُطبَّق مرة واحدة ولا يُضاعف في أي مسار.
+//
+// (حُذفت في C5 مع Word القابل للتحرير: قيم `w:sz`/`w:ind`/`w:spacing` داخل
+// الفقرة واختبارا الفرع والخيار — Word اليوم صور لا بنية.)
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:writing_questions_app/layout/paper_metrics.dart';
-import 'package:writing_questions_app/layout/visual/visual_metrics.dart';
 import 'package:writing_questions_app/layout/visual/visual_style.dart';
 import 'package:writing_questions_app/layout/visual/visual_typography.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
@@ -26,7 +24,6 @@ import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/subject_layout.dart';
 import 'package:writing_questions_app/pdf_engine/paginated_pdf_exam_engine.dart';
-import 'package:writing_questions_app/services/docx_document_export_service.dart';
 import 'package:writing_questions_app/views/wizard/paper_styles.dart';
 
 import '../pdf_engine/pdf_content_probe.dart';
@@ -66,25 +63,6 @@ ExamDocument _document({PaperSettings settings = const PaperSettings()}) =>
       questions: <QuestionModel>[_question()],
     );
 
-/// فقرة Word التي تحوي [needle] كاملةً (من `<w:p>` إلى `</w:p>`).
-String _paragraphWith(String xml, String needle) {
-  final matches = RegExp('<w:p>.*?</w:p>', dotAll: true).allMatches(xml);
-  for (final match in matches) {
-    if (match.group(0)!.contains(needle)) {
-      return match.group(0)!;
-    }
-  }
-  fail('لم أجد فقرة تحوي «$needle» في مستند Word.');
-}
-
-Future<String> _docxXml(ExamDocument document) async {
-  final bytes = await DocxDocumentExportService.buildDocumentDocxBytes(
-    document: document,
-  );
-  final archive = ZipDecoder().decodeBytes(bytes);
-  return utf8.decode(archive.findFile('word/document.xml')!.content as List<int>);
-}
-
 /// حجم الخط الفعلي في PDF لأول سطر يحوي [needle] (نقاط).
 double _pdfFontSizeFor(PdfContentProbe probe, String needle) {
   for (final line in probe.lines) {
@@ -99,10 +77,10 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   // المعاملات الافتراضية (fontScale = heightScale = 1).
-  group('القيم الافتراضية: نفس الرقم في الثلاثة', () {
+  group('القيم الافتراضية: نفس الرقم في العقد والمعاينة وPDF', () {
     const settings = PaperSettings();
 
-    test('القسم: 12.5pt في العقد وPDF، و25 نصف نقطة في Word', () async {
+    test('القسم: 12.5pt في العقد والمعاينة وPDF', () async {
       final document = _document();
       final contract = ExamTypography.resolve(
         VisualRole.category,
@@ -120,109 +98,29 @@ void main() {
       final bytes = await PaginatedPdfExamEngine().generate(document: document);
       final probe = PdfContentProbe.fromBytes(bytes);
       expect(_pdfFontSizeFor(probe, 'Cat'), closeTo(12.5, 0.01));
-
-      // Word: w:sz/w:szCs من نفس القيمة.
-      final xml = await _docxXml(document);
-      final paragraph = _paragraphWith(xml, 'Cat');
-      expect(paragraph.contains('<w:sz w:val="25"/>'), isTrue);
-      expect(paragraph.contains('<w:szCs w:val="25"/>'), isTrue);
     });
 
-    test('عنوان السؤال: 11pt، وارتفاع سطر 1.7 (408 تويب)', () async {
+    test('عنوان السؤال: 11pt مرسوماً في PDF', () async {
       final document = _document();
       final bytes = await PaginatedPdfExamEngine().generate(document: document);
       final probe = PdfContentProbe.fromBytes(bytes);
       expect(_pdfFontSizeFor(probe, 'Stmt'), closeTo(11, 0.01));
-
-      final xml = await _docxXml(document);
-      final paragraph = _paragraphWith(xml, 'Stmt');
-      expect(paragraph.contains('<w:sz w:val="22"/>'), isTrue);
-      expect(paragraph.contains('w:line="408"'), isTrue,
-          reason: '240 × 1.7 = 408 — ارتفاع سطر العنوان من العقد لا من إعداد الورقة.');
-      expect(paragraph.contains('<w:b/>'), isTrue,
-          reason: 'عنوان السؤال غامق في الأدوار الثلاثة (المعاينة/PDF/Word).');
     });
 
-    test('نص السؤال: 11pt وبلا غامق، وفجوته من العقد (30 تويب)', () async {
+    test('نص السؤال: 11pt مرسوماً في PDF', () async {
       final document = _document();
       final bytes = await PaginatedPdfExamEngine().generate(document: document);
       final probe = PdfContentProbe.fromBytes(bytes);
       expect(_pdfFontSizeFor(probe, 'BodyText'), closeTo(11, 0.01));
-
-      final xml = await _docxXml(document);
-      final paragraph = _paragraphWith(xml, 'BodyText');
-      expect(paragraph.contains('<w:sz w:val="22"/>'), isTrue);
-      expect(paragraph.contains('<w:b/>'), isFalse);
-      expect(
-        paragraph.contains('w:before="${PaperMetrics.twips(VisualMetrics.elementGapPx)}"'),
-        isTrue,
-        reason: 'الفجوة قبل النص = VisualMetrics.elementGapPx محوّلة بتويب الأداة.',
-      );
     });
 
-    test('النقطة والخيار: 10.5pt (21 نصف نقطة) وإزاحة 540 تويب', () async {
+    test('النقطة: 10.5pt مرسومة في PDF', () async {
       final document = _document();
       final bytes = await PaginatedPdfExamEngine().generate(document: document);
       final probe = PdfContentProbe.fromBytes(bytes);
       expect(_pdfFontSizeFor(probe, 'PointText'), closeTo(10.5, 0.01));
-
-      final xml = await _docxXml(document);
-      final paragraph = _paragraphWith(xml, 'PointText');
-      expect(paragraph.contains('<w:sz w:val="21"/>'), isTrue);
-      // P0.5-A: `w:ind` يُعلن بالاتجاه أولاً — `w:start` مع الفيزيائي
-      // المقابل لاتجاه الورقة (هنا عربية ⇒ right)، والقيمة من العقد وحدها.
-      expect(
-        paragraph.contains(
-          '<w:ind w:start="${PaperMetrics.twips(VisualMetrics.pointIndentPx)}" '
-          'w:right="${PaperMetrics.twips(VisualMetrics.pointIndentPx)}"/>',
-        ),
-        isTrue,
-        reason: 'إزاحة النقطة 36px في المعاينة = 540 تويب في Word.',
-      );
-      expect(paragraph.contains('w:line="360"'), isTrue,
-          reason: '240 × 1.5 = 360 لارتفاع سطر النقطة من العقد.');
     });
 
-    test('الفرع: الإزاحة وارتفاع السطر من العقد نفسه', () async {
-      final document = _document();
-      final expectedLine = ExamTypography.resolve(
-        VisualRole.branchTitle,
-        settings: document.settings,
-        layout: document.layout,
-      );
-      final xml = await _docxXml(document);
-      final paragraph = _paragraphWith(xml, 'BranchTitle');
-      // P0.5-A: `w:ind` يُعلن بالاتجاه أولاً — `w:start` مع الفيزيائي
-      // المقابل لاتجاه الورقة (هنا عربية ⇒ right)، والقيمة من العقد وحدها.
-      expect(
-        paragraph.contains(
-          '<w:ind w:start="${PaperMetrics.twips(VisualMetrics.branchIndentPx)}" '
-          'w:right="${PaperMetrics.twips(VisualMetrics.branchIndentPx)}"/>',
-        ),
-        isTrue,
-        reason: 'إزاحة الفرع 26px = 390 تويب من VisualMetrics.',
-      );
-      expect(
-        paragraph.contains('w:line="${expectedLine.lineTwips}"'),
-        isTrue,
-        reason: 'ارتفاع سطر الفرع من قالب المادة عبر العقد (${expectedLine.lineTwips}).',
-      );
-    });
-
-    test('الخيار: إزاحة النقطة + 300 تويب', () async {
-      final document = _document();
-      final xml = await _docxXml(document);
-      final paragraph = _paragraphWith(xml, 'OptA');
-      // P0.5-A: `w:ind` يُعلن بالاتجاه أولاً — `w:start` مع الفيزيائي
-      // المقابل لاتجاه الورقة (هنا عربية ⇒ right)، والقيمة من العقد وحدها.
-      expect(
-        paragraph.contains(
-          '<w:ind w:start="${PaperMetrics.twips(VisualMetrics.pointIndentPx) + PaperMetrics.twips(VisualMetrics.optionIndentPx)}" '
-          'w:right="${PaperMetrics.twips(VisualMetrics.pointIndentPx) + PaperMetrics.twips(VisualMetrics.optionIndentPx)}"/>',
-        ),
-        isTrue,
-      );
-    });
   });
 
   // معامل القياس العام: يُطبَّق مرة واحدة في كل المسارات.
@@ -232,7 +130,7 @@ void main() {
       lineSpacing: 1.45 * 1.25,
     );
 
-    test('عنوان السؤال: 13.75pt و510 تويب في الثلاثة', () async {
+    test('عنوان السؤال: 13.75pt و510 تويب في العقد وPDF', () async {
       final document = _document(settings: settings);
       final contract = ExamTypography.resolve(
         VisualRole.questionTitle,
@@ -246,12 +144,6 @@ void main() {
       final probe = PdfContentProbe.fromBytes(bytes);
       expect(_pdfFontSizeFor(probe, 'Stmt'), closeTo(13.75, 0.05),
           reason: 'PDF يجب أن يحمل الحجم المقاس مرة واحدة، لا 17.2pt.');
-
-      final xml = await _docxXml(document);
-      final paragraph = _paragraphWith(xml, 'Stmt');
-      expect(paragraph.contains('<w:sz w:val="28"/>'), isTrue,
-          reason: 'round(13.75 × 2) = 28 — قياس واحد لا مضاعف.');
-      expect(paragraph.contains('w:line="510"'), isTrue);
     });
 
     test('القسم: 15.625pt → 31 نصف نقطة، والمعاينة بنفس البكسل', () {
@@ -275,8 +167,8 @@ void main() {
     });
   });
 
-  // مسح معاملات القياس: الحجم والمسافات يتغيّران في الثلاثة **بنفس الاتجاه
-  // والنسبة** — لا مسار يتجاهل المعامل ولا مسار يضاعفه.
+  // مسح معاملات القياس: الحجم والمسافات يتغيّران في العقد والمعاينة وPDF
+  // **بنفس الاتجاه والنسبة** — لا مسار يتجاهل المعامل ولا مسار يضاعفه.
   group('مسح fontScale × heightScale', () {
     for (final fontScale in const <double>[0.8, 1.0, 1.2]) {
       for (final heightScale in const <double>[0.9, 1.0, 1.1]) {
@@ -299,19 +191,6 @@ void main() {
           expect(
             _pdfFontSizeFor(PdfContentProbe.fromBytes(bytes), 'Stmt'),
             closeTo(contract.fontSizePt, 0.05),
-          );
-
-          // Word: نفس القيمة بأنصاف النقاط وبنفس ارتفاع السطر بالتويب.
-          final paragraph = _paragraphWith(await _docxXml(document), 'Stmt');
-          expect(
-            paragraph.contains('<w:sz w:val="${contract.halfPoints}"/>'),
-            isTrue,
-            reason: 'w:sz من العقد مباشرة عند قياس $fontScale.',
-          );
-          expect(
-            paragraph.contains('w:line="${contract.lineTwips}"'),
-            isTrue,
-            reason: 'w:line من العقد مباشرة عند قياس $heightScale.',
           );
 
           // المعاينة: النمط نفسه محوَّلاً إلى بكسل اللوحة.

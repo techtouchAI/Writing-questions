@@ -9,14 +9,15 @@ import '../layout/document_direction.dart';
 import '../models/equation_model.dart';
 import '../models/exam_document.dart';
 import '../models/floating_element.dart';
-import '../models/paper_text_style.dart';
+import 'canonical_text.dart';
 import 'exam_fonts.dart';
 import 'floating_elements_pdf.dart';
 import 'pdf_math_rasters.dart';
+import 'pdf_text_metrics.dart';
 
-/// PDF-side painter for a completed LayoutDocument. Canonical run gaps and
-/// line anchors remain authoritative; PDF font advances only map those gaps
-/// onto the PDF canvas. There is no Row, Wrap, line-break, justification, or
+/// PDF-side painter for a completed LayoutDocument. Canonical run origins
+/// are authoritative for text operators; PDF font advances are never used
+/// to displace them. There is no Row, Wrap, line-break, justification, or
 /// page-flow pass in this class.
 class CanonicalLayoutPdfPainter {
   const CanonicalLayoutPdfPainter();
@@ -52,12 +53,12 @@ class CanonicalLayoutPdfPainter {
         for (final decoration in block.decorations) _paintDecoration(decoration),
       pw.Positioned.fill(
         child: _paintCanonicalLines(
-          context,
           <LayoutLine>[
             for (final block in page.blocks) ...block.allLines,
           ],
           fonts: fonts,
           mathRasters: mathRasters,
+          context: context,
         ),
       ),
       for (final placement in page.floatingElements)
@@ -67,6 +68,7 @@ class CanonicalLayoutPdfPainter {
             sourceDocument: sourceDocument,
             fonts: fonts,
             mathRasters: mathRasters,
+            context: context,
           ),
     ];
     return pw.SizedBox(
@@ -80,89 +82,32 @@ class CanonicalLayoutPdfPainter {
     );
   }
 
-  /// Measures each already-resolved text run with the PDF font, then maps its
-  /// origin so the gaps between canonical run boxes remain unchanged. Plain
-  /// U+0020 and fixed-advance runs are geometry, not PDF text widgets: retain
-  /// their canonical advance directly. No line-breaking, bidi reordering, or
-  /// justification is performed here.
+  /// Paints each already-resolved text run at its canonical word origins.
+  /// Plain U+0020 and fixed-advance runs are geometry, not PDF text widgets,
+  /// and math runs keep their canonical box for the raster image. Origins
+  /// are never remapped by PDF advances: that would re-justify the line
+  /// inside the renderer. No line-breaking, bidi reordering, or
+  /// justification is performed here. Text widgets are shifted by the
+  /// PDF-side baseline mapping ([PdfTextMetrics]) so the emitted operator
+  /// lands on the canonical baseline.
   pw.Widget _paintCanonicalLines(
-    pw.Context context,
     Iterable<LayoutLine> lines, {
     required ExamFonts fonts,
     required PdfMathRasters mathRasters,
+    required pw.Context context,
   }) {
     final children = <pw.Widget>[];
     for (final line in lines) {
-      final runs = line.runs
-          .where((run) => run.advance > 0)
-          .toList(growable: false);
-      if (runs.isEmpty) continue;
-
-      final advances = <double>[];
-      final contents = <pw.Widget?>[];
-      for (final run in runs) {
-        if (_isCanonicalSpacer(run)) {
-          advances.add(run.width);
-          contents.add(null);
-          continue;
-        }
-
-        final raster = run.isMath
-            ? mathRasters.lookup(run.text, run.style.fontSizePt)
-            : null;
-        if (raster != null) {
-          advances.add(run.width);
-          contents.add(
-            pw.Image(
-              pw.MemoryImage(raster.pngBytes),
-              width: run.width,
-              height: run.height,
-              fit: pw.BoxFit.fill,
-            ),
-          );
-          continue;
-        }
-
-        final measuredText = _textRunWidget(
-          run,
-          fonts,
-          textAlign: pw.TextAlign.left,
-        );
-        final measuredAdvance = pw.Widget.measure(
-          measuredText,
-          context: context,
-        ).x;
-        advances.add(measuredAdvance.isFinite && measuredAdvance >= 0
-            ? measuredAdvance
-            : run.width);
-        contents.add(
-          _textRunWidget(
-            run,
-            fonts,
-            textAlign: pw.TextAlign.left,
-          ),
-        );
-      }
-
-      final origins = _mappedRunOrigins(line, runs, advances);
-      final originById = <String, double>{
-        for (var index = 0; index < runs.length; index++)
-          runs[index].id: origins[index],
-      };
-      final contentById = <String, pw.Widget?>{
-        for (var index = 0; index < runs.length; index++)
-          runs[index].id: contents[index],
-      };
-      // Keep the canonical logical emission order; positions come from the
-      // canonical gaps/anchor mapped through the measured PDF advances.
+      // Keep the canonical logical emission order; positions are the
+      // canonical word origins, painted as-is.
       for (final run in _logicalRuns(line)) {
-        final content = contentById[run.id];
-        if (content == null) continue;
-        children.add(
-          pw.Positioned(
-            left: originById[run.id],
-            top: line.baseline - run.baselineOffset,
-            child: content,
+        children.addAll(
+          _positionedRunWidgets(
+            line,
+            run,
+            fonts: fonts,
+            mathRasters: mathRasters,
+            context: context,
           ),
         );
       }
@@ -174,89 +119,42 @@ class CanonicalLayoutPdfPainter {
     );
   }
 
-  bool _isCanonicalSpacer(LayoutRun run) {
+  bool _isSpacerRun(LayoutRun run) {
     if (run.text.isEmpty) return true;
     if (run.isMath) return false;
     return run.text.runes.every((rune) => rune == 0x20);
   }
 
-  pw.Text _textRunWidget(
+  /// One spaceless text emission: a canonical word, a math fallback, or a
+  /// wordless run's whole text. [CanonicalText] replicates the replaced
+  /// pw.Text ink geometry and closes the executed advance onto
+  /// [canonicalAdvancePt]; the caller's [pw.Positioned] carries the
+  /// canonical origin with the C1 baseline mapping in its top, exactly as
+  /// before. Letter spacing has no producer anywhere (no data key, no code
+  /// setter) and must stay unset: [CanonicalText] emits none, matching the
+  /// always-zero spacing used before.
+  pw.Widget _wordTextWidget(
     LayoutRun run,
+    String text,
     ExamFonts fonts, {
-    required pw.TextAlign textAlign,
+    required double canonicalAdvancePt,
   }) {
-    final text = run.isMath ? EquationModel.readableText(run.text) : run.text;
-    return pw.Text(
-      text,
-      style: _pdfTextStyle(run, fonts),
-      textDirection: _pdfDirection(run.direction),
-      textAlign: textAlign,
-      softWrap: false,
-      maxLines: 1,
-      tightBounds: false,
-      overflow: pw.TextOverflow.clip,
+    assert(
+      run.style.letterSpacingPt == null || run.style.letterSpacingPt == 0,
+      'CanonicalText emits no letter spacing; letterSpacingPt must stay '
+      'unset (it has no producer).',
     );
-  }
-
-  List<double> _mappedRunOrigins(
-    LayoutLine line,
-    List<LayoutRun> runs,
-    List<double> advances,
-  ) {
-    assert(runs.length == advances.length);
-    if (runs.isEmpty) return <double>[];
-    // LayoutDocument already distributed justification and fixed both line
-    // anchors. Paint those resolved origins as-is: remapping a justified line
-    // by PDF advances would perform a second, renderer-specific justification.
-    if (line.isJustified) {
-      return <double>[for (final run in runs) run.x];
-    }
-
-    final origins = List<double>.filled(runs.length, 0);
-    final gaps = <double>[
-      for (var index = 0; index + 1 < runs.length; index++)
-        runs[index + 1].x - (runs[index].x + runs[index].width),
-    ];
-    final rightAligned = _rightAnchorsLine(line);
-    if (rightAligned == true) {
-      final last = runs.length - 1;
-      origins[last] = runs[last].x + runs[last].width - advances[last];
-      for (var index = last - 1; index >= 0; index--) {
-        origins[index] =
-            origins[index + 1] - gaps[index] - advances[index];
-      }
-      return origins;
-    }
-
-    var extent = advances.first;
-    for (var index = 0; index < gaps.length; index++) {
-      extent += gaps[index] + advances[index + 1];
-    }
-    final start = rightAligned == null
-        ? (runs.first.x + runs.last.x + runs.last.width - extent) / 2
-        : runs.first.x;
-    origins[0] = start;
-    for (var index = 0; index < gaps.length; index++) {
-      origins[index + 1] = origins[index] + advances[index] + gaps[index];
-    }
-    return origins;
-  }
-
-  bool? _rightAnchorsLine(LayoutLine line) {
-    switch (line.alignment) {
-      case PaperAlign.left:
-        return false;
-      case PaperAlign.right:
-        return true;
-      case PaperAlign.center:
-        return null;
-      case PaperAlign.end:
-        return line.direction != DocumentDirection.rtl;
-      case PaperAlign.start:
-      case PaperAlign.justify:
-      case null:
-        return line.direction == DocumentDirection.rtl;
-    }
+    return CanonicalText(
+      text: text,
+      font: fonts.fontFor(run.style.font, bold: run.style.bold),
+      fontSizePt: run.style.fontSizePt,
+      color: run.style.colorArgb == null
+          ? PdfColors.black
+          : PdfColor.fromInt(run.style.colorArgb!),
+      canonicalAdvancePt: canonicalAdvancePt,
+      rtl: run.direction == DocumentDirection.rtl,
+      underline: run.style.underline,
+    );
   }
 
   Iterable<LayoutRun> _logicalRuns(LayoutLine line) sync* {
@@ -307,109 +205,102 @@ class CanonicalLayoutPdfPainter {
     );
   }
 
-  pw.Widget? _paintRun(
+  /// Positioned PDF widgets for one canonical run, shared by page lines and
+  /// floating labels (the parents clip, so no per-run box is needed). Text
+  /// is emitted per canonical word at its word origin; every run carries at
+  /// most one word today (fragments are ICU words), so page output matches
+  /// the former whole-run emission while the emitter consumes the canonical
+  /// word contract. Math rasters keep the canonical run box; math without a
+  /// raster falls back to its readable text at the run origin, as before.
+  /// Runs without words and without visible text emit nothing; a text run
+  /// that unexpectedly carries no words still emits whole-run text.
+  List<pw.Widget> _positionedRunWidgets(
     LayoutLine line,
     LayoutRun run, {
     required ExamFonts fonts,
     required PdfMathRasters mathRasters,
+    required pw.Context context,
     double originX = 0,
     double originY = 0,
   }) {
-    if (line.id.contains('header') &&
-        (run.text.contains('المتوسط') ||
-            run.text.contains('السنة') ||
-            run.text.contains('النهوض') ||
-            run.text == 'س')) {
-      // ignore: avoid_print
-      print('[p0-gate] canonical header direction=${run.direction} '
-          'run=${run.text} id=${run.semanticNodeId}');
-    }
-    if (run.advance <= 0 || (run.text.isEmpty && !run.isMath)) return null;
-    final left = run.x - originX;
-    final top = line.baseline - run.baselineOffset - originY;
-    final textStyle = _pdfTextStyle(run, fonts);
-    final raster = run.isMath
-        ? mathRasters.lookup(run.text, run.style.fontSizePt)
-        : null;
-    // Floating labels retain their existing fixed-run placement; ordinary page
-    // lines use _paintCanonicalLines above to map PDF advances onto canonical
-    // gaps. Height remains intrinsic for text to avoid clipping font-specific
-    // ascent/descent; raster math already has canonical dimensions.
-    final pw.Widget content;
+    if (run.advance <= 0 || _isSpacerRun(run)) return const <pw.Widget>[];
+    final raster =
+        run.isMath ? mathRasters.lookup(run.text, run.style.fontSizePt) : null;
     if (raster != null) {
-      content = pw.Image(
-        pw.MemoryImage(raster.pngBytes),
-        width: run.width,
-        height: run.height,
-        fit: pw.BoxFit.fill,
-      );
-    } else if (run.isMath) {
-      content = pw.Text(
-        EquationModel.readableText(run.text),
-        style: textStyle,
-        textDirection: _pdfDirection(run.direction),
-        textAlign: pw.TextAlign.start,
-        softWrap: false,
-        maxLines: 1,
-        tightBounds: false, // Retain font ascent/descent for stable baselines.
-        overflow: pw.TextOverflow.clip,
-      );
-    } else {
-      content = pw.Text(
-        run.text,
-        style: textStyle,
-        textDirection: _pdfDirection(run.direction),
-        textAlign: pw.TextAlign.start,
-        softWrap: false,
-        maxLines: 1,
-        tightBounds: false, // Retain font ascent/descent for stable baselines.
-        overflow: pw.TextOverflow.clip,
-      );
+      return <pw.Widget>[
+        pw.Positioned(
+          left: run.x - originX,
+          top: line.baseline - run.baselineOffset - originY,
+          child: pw.Image(
+            pw.MemoryImage(raster.pngBytes),
+            width: run.width,
+            height: run.height,
+            fit: pw.BoxFit.fill,
+          ),
+        ),
+      ];
     }
-    return pw.Positioned(
-      left: left,
-      top: top,
-      child: pw.SizedBox(
-        width: run.width,
-        height: raster == null ? null : run.height,
-        child: content,
-      ),
-    );
+    // Height remains intrinsic for text to avoid clipping font-specific
+    // ascent/descent. The C1 baseline mapping sets the widget origin,
+    // exactly as before; CanonicalText replicates the replaced ink offsets
+    // inside it.
+    final top =
+        line.baseline - _pdfTextTopOffset(run, fonts, context) - originY;
+    pw.Widget wordWidget(String text, double left, double advance) =>
+        pw.Positioned(
+          left: left,
+          top: top,
+          child: _wordTextWidget(
+            run,
+            text,
+            fonts,
+            canonicalAdvancePt: advance,
+          ),
+        );
+    if (run.isMath) {
+      return <pw.Widget>[
+        wordWidget(
+          EquationModel.readableText(run.text),
+          run.x - originX,
+          run.advance,
+        ),
+      ];
+    }
+    if (run.words.isEmpty) {
+      return <pw.Widget>[wordWidget(run.text, run.x - originX, run.advance)];
+    }
+    // The executed word advance is the word's own shaped text advance:
+    // the pitch (word.advance) reaches into the following space, which
+    // belongs to gaps, not to the TJ correction.
+    return <pw.Widget>[
+      for (final word in run.words)
+        wordWidget(word.text, word.x - originX, word.textAdvance),
+    ];
   }
 
-  pw.TextStyle _pdfTextStyle(LayoutRun run, ExamFonts fonts) => pw.TextStyle(
-        font: fonts.fontFor(run.style.font, bold: run.style.bold),
-        fontSize: run.style.fontSizePt,
-        fontWeight: run.style.bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-        fontStyle: run.style.italic ? pw.FontStyle.italic : pw.FontStyle.normal,
-        color: run.style.colorArgb == null
-            ? PdfColors.black
-            : PdfColor.fromInt(run.style.colorArgb!),
-        letterSpacing: run.style.letterSpacingPt ?? 0,
-        wordSpacing: _usesPdfNbspSpacing(run) ? 1 : 0,
-        lineSpacing: 0,
-        height: 1,
-        decoration: run.style.underline
-            ? pw.TextDecoration.underline
-            : pw.TextDecoration.none,
-      );
-
-  // NBSP/NNBSP ranges remain one canonical run and every PDF run is
-  // softWrap:false. package:pdf substitutes its U+0020 advance while shaping
-  // these nonbreaking characters, so enable exactly that within-run advance;
-  // it does not create a new line-break or justification opportunity.
-  bool _usesPdfNbspSpacing(LayoutRun run) => run.text.runes.any(
-        (rune) => rune == 0x00a0 || rune == 0x202f,
-      );
-
-  pw.TextDirection _pdfDirection(DocumentDirection direction) =>
-      direction == DocumentDirection.ltr ? pw.TextDirection.ltr : pw.TextDirection.rtl;
+  /// PDF-side distance from a single-line text widget top to its emitted
+  /// baseline, resolved from the embedded font itself (see [PdfTextMetrics]).
+  double _pdfTextTopOffset(
+    LayoutRun run,
+    ExamFonts fonts,
+    pw.Context context,
+  ) {
+    final font =
+        fonts.fontFor(run.style.font, bold: run.style.bold).getFont(context);
+    return PdfTextMetrics.baselineOffsetFromTop(
+      font: font,
+      fontSizePt: run.style.fontSizePt,
+      text: run.text,
+      letterSpacingPt: run.style.letterSpacingPt ?? 0,
+    );
+  }
 
   pw.Widget _paintFloat(
     LayoutFloatPlacement placement, {
     required ExamDocument sourceDocument,
     required ExamFonts fonts,
     required PdfMathRasters mathRasters,
+    required pw.Context context,
   }) {
     final element = sourceDocument.floatingElementById(placement.reference.id);
     if (element == null) return pw.SizedBox.shrink();
@@ -452,17 +343,19 @@ class CanonicalLayoutPdfPainter {
           }
         for (final line in placement.labelLines) {
           for (final run in _logicalRuns(line)) {
-              final positioned = _paintRun(
+            localChildren.addAll(
+              _positionedRunWidgets(
                 line,
                 run,
                 fonts: fonts,
                 mathRasters: mathRasters,
+                context: context,
                 originX: rect.left,
                 originY: rect.top,
-              );
-              if (positioned != null) localChildren.add(positioned);
-            }
+              ),
+            );
           }
+        }
         } else {
           final shape = element.shape ?? FloatingShapeType.square;
           final svg = element.svgSource ?? FloatingElementsPdf.shapeToSvg(
@@ -495,15 +388,17 @@ class CanonicalLayoutPdfPainter {
         }
         for (final line in placement.labelLines) {
           for (final run in _logicalRuns(line)) {
-            final positioned = _paintRun(
-              line,
-              run,
-              fonts: fonts,
-              mathRasters: mathRasters,
-              originX: rect.left,
-              originY: rect.top,
+            localChildren.addAll(
+              _positionedRunWidgets(
+                line,
+                run,
+                fonts: fonts,
+                mathRasters: mathRasters,
+                context: context,
+                originX: rect.left,
+                originY: rect.top,
+              ),
             );
-            if (positioned != null) localChildren.add(positioned);
           }
         }
         break;

@@ -1,8 +1,8 @@
 // =============================================================================
-// تركيبة بوابة P0 — تركيبة واحدة حقيقية تمرّ بالممرّات الأربعة كلها:
-//   المعاينة (Preview) · PDF المتجه (PdfEngine) · Word القابل للتحرير (DOCX)
-//   · التصدير الدقيق (Exact) — ومسار Exact يبقى **منفصلاً**: لا يُستعمل بديلاً
-//   عن اختبار PDF المتجه ولا DOCX القابل للتحرير.
+// تركيبة بوابة P0 — تركيبة واحدة حقيقية تمرّ بالممرّات الثلاثة كلها:
+//   المعاينة (Preview) · PDF المتجه (PdfEngine) · التصدير الدقيق (Exact) —
+//   ومسار Exact يبقى **منفصلاً**: لا يُستعمل بديلاً عن اختبار PDF المتجه.
+//   (أُزيل ممرّ Word القابل للتحرير في C5 مع مولّده.)
 //
 // لماذا وسوم ASCII داخل النص العربي؟
 //   النص العربي في مطبوع PDF يُحوَّل إلى صور تقديمية (FE70..FEFF) ويُعاد
@@ -43,9 +43,6 @@ enum P0Path {
   /// PDF المتجه من `PaginatedPdfExamEngine` (نص حقيقي قابل للتحديد).
   vectorPdf,
 
-  /// DOCX القابل للتحرير من `DocxDocumentExportService` (OOXML حقيقي).
-  editableDocx,
-
   /// Exact: صور المعاينة ملفوفة في PDF/DOCX — ممرّ الدقة، لا ممرّ البنية.
   exact,
 }
@@ -84,8 +81,6 @@ String p0PathLabel(P0Path path) {
       return 'Preview';
     case P0Path.vectorPdf:
       return 'VectorPDF';
-    case P0Path.editableDocx:
-      return 'EditableDOCX';
     case P0Path.exact:
       return 'Exact';
   }
@@ -107,7 +102,7 @@ class P0Feature {
 }
 
 /// ميزات مصفوفة P0.7 — أربع عشرة ميزة + [kP0LtrFeature] = خمس عشرة،
-/// تُقطع كل منها على الممرّات الأربعة.
+/// تُقطع كل منها على الممرّات الثلاثة.
 ///
 /// كل ميزة تحمل وسوم التركيبة التي تُقاس بها، فلا خلية في المصفوفة بلا مصدر
 /// قابل للتتبّع في [P0GateFixture.rtl] / [P0GateFixture.ltr].
@@ -738,8 +733,7 @@ abstract final class P0GateFixture {
   /// الوسم داخل نص: حروف لاتينية وأرقام، مسبوقة بحدّ حرفي ومتبوعة بحدّ حرفي.
   static final RegExp _markerPattern = RegExp(r'(?<![A-Za-z0-9])([A-Z][A-Z0-9]{2,})(?![A-Za-z0-9])');
 
-  /// وسوم الترويسة: مرة في الصفحة الأولى من Preview/PDF وفي تدفق متن DOCX.
-  /// جزء `word/header*.xml` الاختياري مخصص لصورة إطار الصفحة لا لمحتوى الحقول.
+  /// وسوم الترويسة: مرة في الصفحة الأولى من Preview/PDF.
   static const List<String> headerMarkers = <String>[
     'HDRV',
     'HDC1',
@@ -748,7 +742,7 @@ abstract final class P0GateFixture {
     'HDT1',
   ];
 
-  /// وسوم التذييل (سطر التذييل في PDF، جدول التذييل في المتن لـ DOCX).
+  /// وسوم التذييل (سطر التذييل في PDF).
   static const List<String> footerMarkers = <String>[
     'FTR1',
     'FTR2',

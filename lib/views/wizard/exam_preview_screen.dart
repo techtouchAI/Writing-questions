@@ -34,14 +34,11 @@ import '../../models/subject_layout.dart';
 import '../../models/tex_content.dart';
 import '../../providers/exam_document_provider.dart';
 import '../../providers/exam_wizard_controller.dart';
-import '../../services/docx_document_export_service.dart';
 import '../../services/export_file_service.dart';
-import '../../services/math_image_renderer.dart';
 import '../../services/page_frame_store.dart';
 import '../../services/exact_export_service.dart';
 import '../../services/page_snapshot_service.dart';
 import '../../services/pdf_export_service.dart';
-import '../../services/shape_image_renderer.dart';
 import '../widgets/floating_element_view.dart';
 import '../widgets/formula_inserter.dart';
 import '../widgets/ltr_numeric_field.dart';
@@ -327,14 +324,18 @@ typedef CanonicalPreviewAssetLoader =
   required ExamDocument document,
 });
 
-/// الخطوة 3: معاينة A4 تفاعلية ترسم هندسة [LayoutDocument] مباشرةً.
+/// الخطوة 3: معاينة A4 تفاعلية بسطحين — يُختار أحدهما بحقن الوصلات.
 ///
-/// - **مصدر الهندسة**: [CanonicalLayoutService] يحسم الأسطر والمواضع والصفحات؛
-///   يرسم [CanonicalLayoutPreviewPage] هذه الهندسة بلا إعادة التفاف أو تقسيم.
-/// - **التحرير المباشر**: نقرات canonical تتحول إلى source offset، ويُستخدم
-///   حقل IME مخفي للإدخال من دون طبقة نص ثانية.
-/// - **المسار القديم**: تبقى أدوات القياس/الترقيم الخاصة بالمحرر متاحة للتوافق،
-///   لكنها لا تقرر هندسة المعاينة الحية أو تصدير Word القابل للتحرير.
+/// - **سطح الورقة التفاعلي (الافتراضي)**: بلا وصلات محقونة تُبنى الورقة
+///   كودجات قابلة للتحرير ([_buildPage]) فوق ترقيم المتحكم المقاس
+///   ([ExamWizardController.pagination])؛ المعادلات تُرسم في مكانها، والنقر
+///   يفتح محرر المحتوى المختلط. هذا سطح الإنتاج.
+/// - **سطح canonical (محقون)**: مع [canonicalLayoutResolver] و
+///   [canonicalPreviewAssetLoader] تُرسم هندسة [LayoutDocument] مباشرةً
+///   ([CanonicalLayoutPreviewPage]) بلا إعادة التفاف أو تقسيم، والنقرات
+///   تتحول إلى source offset عبر حقل IME مخفي. للاختبارات والمراجعة.
+/// - **التصدير**: PDF المتجهي يحسم هندسته عند الطلب دون اعتماد على
+///   حالة المعاينة الحية؛ Word مطابق للمعاينة (صور صفحاتها) دائماً.
 /// - **التحديد والتنسيق**: تحديد سؤال/فرع/ترويسة/مربع نص (منفرد أو متعدد)
 ///   ثم تنسيقه من شريط المعاينة (خط/حجم/عريض/محاذاة/إطار).
 /// - **إعادة الترتيب**: سحب سؤال كامل أو فرع داخل سؤاله؛ الإفلات على فرع
@@ -389,8 +390,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// يكبح زخارف التحديد من صورة Exact (إطارات التحديد ومقابض العناصر).
   bool _suppressSelectionChrome = false;
 
-  /// النمط الافتراضي يحافظ على PDF المتجهي وWord القابل للتحرير؛ يُفعّل Exact
-  /// صراحةً فقط عند أولوية التطابق البصري التام على البحث والتحرير النصي.
+  /// النمط الافتراضي يحافظ على PDF المتجهي (Word صور دائماً)؛ يُفعّل
+  /// Exact صراحةً فقط عند أولوية التطابق البصري التام على البحث النصي.
   bool _exactExport = false;
   ExamWizardController? _controller;
   _AttachmentRef? _selectedAttachment;
@@ -596,10 +597,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
   }
 
+  /// Canonical surface iff both seams are injected; otherwise the interactive
+  /// paper surface (the seam-free production default).
+  bool get _useCanonicalSurface =>
+      widget.canonicalLayoutResolver != null &&
+      widget.canonicalPreviewAssetLoader != null;
+
   /// Makes the visible preview converge on the current document without ever
   /// showing geometry/assets resolved for an older document. Build calls this
   /// as a fallback, while model notifications call it after field sync.
   void _ensureCanonicalPreview([ExamWizardController? owner]) {
+    if (!_useCanonicalSurface) return;
     final controller = owner ?? _controller;
     if (controller == null || _exactCaptureInProgress) return;
     final sourceDocument = controller.document;
@@ -2463,61 +2471,20 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
   }
 
-  /// تصدير Word:
-  /// - **Editable** (افتراضي): مسار Word الأصلي (نص + OMML + جداول) قابل للتحرير.
-  /// - **Exact** (اختياري): كل صفحة صورة صفحتها النهائية — مطابق للمعاينة
-  ///   بالبناء، وغير قابل للتحرير (يُعلَن ذلك في الواجهة).
-  Future<void> _exportWord({
-    bool? exact,
-  }) async {
+  /// تصدير Word (مطابق للمعاينة دائماً): كل صفحة صورة صفحتها النهائية —
+  /// مطابق للمعاينة بالبناء، وغير قابل للتحرير (يُعلَن ذلك في الواجهة).
+  /// مسار Word القابل للتحرير أُزيل مع مرحلة PDF-first (C5).
+  Future<void> _exportWord() async {
     if (_isBusy) {
       return;
     }
     final controller = _controller!;
     final document = controller.document;
-    final useExact = exact ?? _exactExport;
     setState(() => _isBusy = true);
     try {
-      if (useExact) {
-        final file = await ExactExportService.exportDocxFile(
-          snapshots: await _capturePreviewPages(),
-          baseName: '${document.name}_ورقة_الامتحان',
-        );
-        if (!mounted) {
-          return;
-        }
-        await _saveToLibrary();
-        if (!mounted) {
-          return;
-        }
-        _showMessage('تم إنشاء ملف Word مطابق للمعاينة (الصفحات صور).');
-        await DocxDocumentExportService.shareDocxFile(file);
-        return;
-      }
-      final sourceIr = controller.documentIr;
-      final measurementLayout =
-          identical(_canonicalPreviewSourceDocument, document)
-              ? _canonicalPreviewLayout
-              : null;
-      final editablePaginationInput =
-          await DocxDocumentExportService.resolveEditablePaginationInput(
-        document: document,
-        sourceIr: sourceIr,
-        measurementLayout: measurementLayout,
-      );
-      if (!mounted ||
-          !identical(_controller, controller) ||
-          !identical(controller.document, document)) {
-        throw const ExportException(
-          'تغيّر المستند أثناء إعداد مسار Word القابل للتحرير. أعد المحاولة.',
-        );
-      }
-      final file = await DocxDocumentExportService.exportDocumentToDocx(
-        document: document,
-        shapeRasterizer: ShapeImageRenderer.asRasterizer,
-        legacyPaginationInput: editablePaginationInput,
-        // تُصدر المعادلات القابلة للتمثيل كـ OMML قابل للتحرير؛ المرسم احتياط.
-        mathRasterizer: MathImageRenderer.asRasterizer,
+      final file = await ExactExportService.exportDocxFile(
+        snapshots: await _capturePreviewPages(),
+        baseName: '${document.name}_ورقة_الامتحان',
       );
       if (!mounted) {
         return;
@@ -2526,8 +2493,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       if (!mounted) {
         return;
       }
-      _showMessage('تم إنشاء ملف Word.');
-      await DocxDocumentExportService.shareDocxFile(file);
+      _showMessage('تم إنشاء ملف Word مطابق للمعاينة (الصفحات صور).');
+      await ExactExportService.shareDocxFile(file);
     } catch (error, stackTrace) {
       ExportFileService.logError('Wizard Word export failed', error, stackTrace);
       if (mounted) {
@@ -2971,8 +2938,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 document.formatNumber(canonicalReviewLayout?.pageCount ?? 0),
               ),
               const Divider(height: 20),
-              // Exact اختياري ومطفأ افتراضياً: يصدّر صفحات المعاينة صوراً؛
-              // المسار الافتراضي يحافظ على النص المتجه وWord القابل للتحرير.
+              // Exact اختياري ومطفأ افتراضياً: يصدّر PDF صفحاتِ المعاينة
+              // صوراً؛ Word مطابق للمعاينة (صور) دائماً. المسار الافتراضي
+              // يحافظ على النص المتجه في PDF.
               SwitchListTile(
                 key: const ValueKey<String>('export-exact-mode'),
                 contentPadding: EdgeInsets.zero,
@@ -2985,11 +2953,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 title: const Text('مطابق للمعاينة (Exact)'),
                 subtitle: Text(
                   _exactExport
-                      ? 'عند تفعيله: PDF وWord = صور صفحات المعاينة نفسها دون '
-                          'أدوات التحرير؛ PDF بلا بحث/تحديد نصي وWord غير قابل للتحرير.'
-                      : 'الافتراضي: PDF نصي قابل للبحث وWord قابل للتحرير '
-                          '(نص ومعادلات OMML). فعّل Exact عندما تكون أولوية '
-                          'التطابق البصري التام.',
+                      ? 'عند تفعيله: PDF = صور صفحات المعاينة نفسها دون '
+                          'أدوات التحرير (بلا بحث/تحديد نصي)؛ Word صور دائماً.'
+                      : 'الافتراضي: PDF نصي قابل للبحث؛ Word = صور صفحات '
+                          'المعاينة (مطابق للمعاينة، غير قابل للتحرير). فعّل '
+                          'Exact عندما تكون أولوية التطابق البصري التام في PDF.',
                 ),
               ),
             ],
@@ -3015,7 +2983,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           FilledButton.tonalIcon(
             onPressed: () {
               Navigator.of(dialogContext).pop();
-              _exportWord(exact: _exactExport);
+              _exportWord();
             },
             icon: const Icon(Icons.description_outlined, size: 18),
             label: const Text('تصدير Word'),
@@ -3391,6 +3359,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   Widget build(BuildContext context) {
     final controller = context.watch<ExamWizardController>();
     final document = controller.document;
+    final layout = controller.layout;
+    final pagination = controller.pagination;
+    if (!_useCanonicalSurface) {
+      _trimPageKeysByIndices(pagination.pages.map((page) => page.index));
+    }
     if (!_exactCaptureInProgress) _ensureCanonicalPreview(controller);
     final canonicalCapture = _exactCaptureInProgress ? _canonicalCaptureLayout : null;
     final canonicalPreview = canonicalCapture ??
@@ -3577,10 +3550,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                           width: contentWidth,
                           child: Column(
                             children: <Widget>[
-                              if (canonicalPreview != null &&
+                              if (!_useCanonicalSurface)
+                                for (final page in pagination.pages)
+                                  _buildPaperZoomedPage(
+                                    controller,
+                                    layout,
+                                    page,
+                                    pagination.pageCount,
+                                  )
+                              else if (canonicalPreview != null &&
                                   canonicalAssets != null)
                                 for (final page in canonicalPreview.pages)
-                                  _buildZoomedPage(
+                                  _buildCanonicalZoomedPage(
                                     controller,
                                     canonicalPreview,
                                     page,
@@ -4457,7 +4438,42 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  Widget _buildZoomedPage(
+  // سطح الورقة التفاعلي (الافتراضي): FittedBox بنفس نسبة الأبعاد = تكبير
+  // تخطيطي صحيح (القياس الداخلي يبقى بالمقاس الحقيقي، والتفاعل مع الحقول
+  // يعمل تحت كل تكبير).
+  Widget _buildPaperZoomedPage(
+    ExamWizardController controller,
+    SubjectLayoutTemplate layout,
+    PaginatedPage page,
+    int pageCount,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: SizedBox(
+        width: ExamCanvasGeometry.width * _zoom,
+        height: ExamCanvasGeometry.height * _zoom,
+        child: FittedBox(
+          fit: BoxFit.fill,
+          child: SizedBox(
+            width: ExamCanvasGeometry.width,
+            height: ExamCanvasGeometry.height,
+            child: _buildPage(
+              controller,
+              layout,
+              page,
+              pageCount,
+              snapshotKeys: _pageSnapshotKeys,
+              canvasKeys: _pageCanvasKeys,
+              interactive: !_exactCaptureInProgress,
+              showPreviewChrome: !_exactCaptureInProgress,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCanonicalZoomedPage(
     ExamWizardController controller,
     LayoutDocument layout,
     LayoutPage page,
@@ -4497,9 +4513,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  // مرحّل قديم غير مستخدم: المعاينة النشطة ترسم LayoutDocument مباشرة؛
-  // يُحتفظ به مؤقتاً لتسهيل إزالة المكونات التفاعلية القديمة تدريجياً.
-  // ignore: unused_element
+  // سطح الورقة التفاعلي: تُبنى الصفحة كودجات قابلة للتحرير فوق ترقيم
+  // المتحكم المقاس (انظر [_buildPaperZoomedPage]).
   Widget _buildPage(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,

@@ -8,9 +8,19 @@ import 'dart:io';
 
 const String _vendoredText =
     'third_party/pdf/lib/src/widgets/text.dart';
+const String _vendoredGraphics =
+    'third_party/pdf/lib/src/pdf/graphics.dart';
 
 /// العلامة التي تتركها أداة الحقن، ووجودها دليل على أن التعديل مطبَّق.
 const String _patchedMarker = 'advanceWidth; // pdf-rtl-word-spacing-patch';
+
+/// علامة دعم رقم TJ اللاحق في drawString (التقارب على الهندسة الكنسية).
+const String _trailingTjMarker = 'pdf-trailing-tj-patch';
+
+/// مقطع توزيع التشكيل الذي تعكسه [CanonicalText] حرفياً (RTL عبر
+/// logicalToVisual، وغيره خام)؛ أي انحراف في المصدر المورّد يعني أن المرآة
+/// كذبت فيجب أن يفشل الفحص.
+const String _shapingDispatch = 'bidi.logicalToVisual(span.text!)';
 
 /// المواضع التي يجب أن تكون قد تغيّرت عن الأصل (تحقق ثانٍ مستقل عن العلامة).
 const List<String> _expectedPatched = <String>[
@@ -48,9 +58,27 @@ void main() {
       problems.add('ما زالت تحوي انعكاس RTL بعرض الحبر: $leftover');
     }
   }
+  if (!source.contains(_shapingDispatch)) {
+    problems.add('تغيّر مقطع توزيع التشكيل في pw.Text '
+        '($_shapingDispatch) الذي تعكسه CanonicalText');
+  }
+
+  final graphicsFile = File(_vendoredGraphics);
+  if (!graphicsFile.existsSync()) {
+    problems.add('لا توجد النسخة المُضمَّنة: $_vendoredGraphics');
+  } else {
+    final graphicsSource = graphicsFile.readAsStringSync();
+    if (!graphicsSource.contains(_trailingTjMarker)) {
+      problems.add('drawString لا تحمل علامة رقم TJ اللاحق ($_trailingTjMarker)');
+    }
+    if (!graphicsSource.contains('double? trailingTj')) {
+      problems.add('drawString تنقصها المعلمة trailingTj');
+    }
+  }
 
   if (problems.isEmpty) {
     stdout.writeln('حزمة pdf المُضمَّنة تحمل إصلاح مسافات الكلمات العربية ✔');
+    stdout.writeln('حزمة pdf المُضمَّنة تحمل دعم رقم TJ اللاحق ✔');
     return;
   }
 

@@ -22,12 +22,20 @@ class FlutterTextMetrics implements FontMetricsProvider {
   const FlutterTextMetrics();
 
   static Future<void>? _fontRegistration;
+  static bool _fontsReady = false;
 
   /// Register the same application font files used by PDF before TextPainter
   /// measures canonical runs. This is normally satisfied by the preview's
   /// first paint, but exports and headless tests may resolve layout directly.
-  static Future<void> ensureFontsLoaded() =>
-      _fontRegistration ??= _registerFonts();
+  ///
+  /// Once registration has actually completed, late callers receive a fresh
+  /// already-completed future instead of re-awaiting the memoized one: a
+  /// continuation on the memoized future is scheduled in whatever zone
+  /// completed it, which strands callers awaiting from another zone. The
+  /// fresh future preserves the await boundary with identical ordering.
+  static Future<void> ensureFontsLoaded() => _fontsReady
+      ? Future<void>.value()
+      : (_fontRegistration ??= _registerFonts());
 
   /// Resolve source-ordered directional runs with Flutter's Unicode bidi
   /// shaping, keeping every source code unit (including neutral punctuation,
@@ -125,6 +133,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
         // is unavailable; the required regular family must be measurable.
       }
     }
+    _fontsReady = true;
   }
 
   @override
@@ -344,6 +353,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
                 fallbackLeft: box.left,
                 fallbackRight: box.right,
               );
+              final runDirection = _documentDirection(box.direction);
               fragmentsByLine[lineIndex].add(
                 MeasuredRunFragment(
                   spanIndex: range.spanIndex,
@@ -352,12 +362,20 @@ class FlutterTextMetrics implements FontMetricsProvider {
                   endOffset: textRange.end - range.start,
                   x: LayoutUnits.pxToPt(runBounds.left),
                   width: LayoutUnits.pxToPt(runBounds.right - runBounds.left),
-                  direction: _documentDirection(box.direction),
+                  direction: runDirection,
                   baselineOffset: runBaselineOffset(
                     range.spanIndex,
-                    _documentDirection(box.direction),
+                    runDirection,
                   ),
                   height: LayoutUnits.pxToPt(box.bottom - box.top),
+                  words: _measureWords(
+                    painter,
+                    plainText.substring(textRange.start, textRange.end),
+                    textRange.start,
+                    runBounds.left,
+                    runBounds.right,
+                    runDirection,
+                  ),
                   mathBox: span.mathBox,
                 ),
               );
@@ -401,6 +419,17 @@ class FlutterTextMetrics implements FontMetricsProvider {
                     fragment.direction,
                   ),
                   height: LayoutUnits.pxToPt(fragment.bottom - fragment.top),
+                  words: _measureWords(
+                    painter,
+                    plainText.substring(
+                      fragment.startOffset,
+                      fragment.endOffset,
+                    ),
+                    fragment.startOffset,
+                    runBounds.left,
+                    runBounds.right,
+                    fragment.direction,
+                  ),
                   mathBox: span.mathBox,
                 ),
               );
@@ -429,6 +458,8 @@ class FlutterTextMetrics implements FontMetricsProvider {
                   metric.baseline - box.top,
                 ),
                 height: LayoutUnits.pxToPt(box.bottom - box.top),
+                // Placeholders are boxes, not shaped text: no measurable words.
+                words: const <LayoutWord>[],
                 mathBox: span.mathBox,
                 fixedAdvancePt: span.fixedAdvancePt,
               ),
@@ -536,8 +567,11 @@ class FlutterTextMetrics implements FontMetricsProvider {
       ranges.add((start: rangeStart, end: rangeEnd));
       cursor = rangeEnd;
     }
-    return _coalesceNonbreakingSpaceRanges(
-      _coalescePeriodRanges(ranges, plainText),
+    return _coalesceCurrencyRanges(
+      _coalesceNonbreakingSpaceRanges(
+        _coalescePeriodRanges(ranges, plainText),
+        plainText,
+      ),
       plainText,
     );
   }
@@ -564,6 +598,50 @@ class FlutterTextMetrics implements FontMetricsProvider {
       if (previous.end == range.start &&
           isPeriodRun(previous) &&
           isPeriodRun(range)) {
+        merged[merged.length - 1] = (start: previous.start, end: range.end);
+      } else {
+        merged.add(range);
+      }
+    }
+    return merged;
+  }
+
+  /// Keep a literal `$` glued to a following amount or identifier. ICU word
+  /// segmentation isolates `$` (currency symbols join no word class per
+  /// UAX #29), which would split an escaped dollar `$5` into `$` | `5`
+  /// runs and break the source-offset map across the removed slash.
+  /// [_wordRanges] only processes non-math spans (math and fixed-advance
+  /// spans bypass it), so every `$` here is a literal dollar, and
+  /// prefix-currency cohesion mirrors UAX #14 (no break between a currency
+  /// prefix and its number). Strict adjacency only: `$ 5` stays split.
+  List<({int start, int end})> _coalesceCurrencyRanges(
+    List<({int start, int end})> ranges,
+    String text,
+  ) {
+    if (ranges.length < 2) return ranges;
+    bool startsAmount(({int start, int end}) range) {
+      if (range.start >= range.end || range.start >= text.length) {
+        return false;
+      }
+      final rune = text.codeUnitAt(range.start);
+      return (rune >= 0x30 && rune <= 0x39) ||
+          (rune >= 0x41 && rune <= 0x5A) ||
+          (rune >= 0x61 && rune <= 0x7A) ||
+          (rune >= 0x0660 && rune <= 0x0669) ||
+          (rune >= 0x06F0 && rune <= 0x06F9);
+    }
+
+    final merged = <({int start, int end})>[];
+    for (final range in ranges) {
+      if (merged.isEmpty) {
+        merged.add(range);
+        continue;
+      }
+      final previous = merged.last;
+      if (previous.end == range.start &&
+          previous.end > previous.start &&
+          text.codeUnitAt(previous.end - 1) == 0x24 &&
+          startsAmount(range)) {
         merged[merged.length - 1] = (start: previous.start, end: range.end);
       } else {
         merged.add(range);
@@ -732,6 +810,62 @@ class FlutterTextMetrics implements FontMetricsProvider {
       }
     }
     return nearest;
+  }
+
+  /// Word geometry inside one measured fragment, resolved with the same
+  /// [_caretBounds] machinery as the fragment box so words and their run can
+  /// never disagree on positions. [fragmentText] is the fragment's exact
+  /// laid-out paragraph slice and [baseOffset] its paragraph-absolute UTF-16
+  /// start, so word boundaries index the string the painter shaped. Words
+  /// split on ASCII whitespace — the same word notion the PDF emitter uses —
+  /// and pitches close exactly: every non-last word advances to the next
+  /// word's [x], and the last word ends at the fragment's trailing edge
+  /// ([fragmentLeftPx]/[fragmentRightPx] selected by [direction]). Within a
+  /// single-direction fragment, word edges are monotonic along the visual
+  /// axis, so the absolute pitch never masks disorder. Each word also
+  /// carries its own shaped text advance (the caret interval width, never
+  /// reaching into the following space): the width a positioned emitter
+  /// executes, so gaps stay out of advances.
+  List<LayoutWord> _measureWords(
+    TextPainter painter,
+    String fragmentText,
+    int baseOffset,
+    double fragmentLeftPx,
+    double fragmentRightPx,
+    DocumentDirection direction,
+  ) {
+    final matches = canonicalWordPattern
+        .allMatches(fragmentText)
+        .toList(growable: false);
+    if (matches.isEmpty) return const <LayoutWord>[];
+    final startsPx = List<double>.filled(matches.length, 0);
+    final textPx = List<double>.filled(matches.length, 0);
+    for (var index = 0; index < matches.length; index++) {
+      final match = matches[index];
+      final bounds = _caretBounds(
+        painter,
+        baseOffset + match.start,
+        baseOffset + match.end,
+        fallbackLeft: fragmentLeftPx,
+        fallbackRight: fragmentRightPx,
+      );
+      startsPx[index] = bounds.left;
+      textPx[index] = bounds.right - bounds.left;
+    }
+    final trailingPx =
+        direction == DocumentDirection.ltr ? fragmentRightPx : fragmentLeftPx;
+    final words = <LayoutWord>[];
+    for (var index = 0; index < matches.length; index++) {
+      final nextPx =
+          index + 1 < matches.length ? startsPx[index + 1] : trailingPx;
+      words.add(LayoutWord(
+        text: matches[index].group(0)!,
+        x: LayoutUnits.pxToPt(startsPx[index]),
+        advance: LayoutUnits.pxToPt((nextPx - startsPx[index]).abs()),
+        textAdvance: LayoutUnits.pxToPt(textPx[index]),
+      ));
+    }
+    return words;
   }
 
   /// Selection boxes with `BoxWidthStyle.tight` describe glyph ink and can
@@ -954,6 +1088,15 @@ class FlutterTextMetrics implements FontMetricsProvider {
         direction: direction ?? fragment.direction,
         baselineOffset: fragment.baselineOffset,
         height: fragment.height,
+        words: <LayoutWord>[
+          for (final word in fragment.words)
+            LayoutWord(
+              text: word.text,
+              x: word.x + dx,
+              advance: word.advance,
+              textAdvance: word.textAdvance,
+            ),
+        ],
         mathBox: fragment.mathBox,
         fixedAdvancePt: fragment.fixedAdvancePt,
       );

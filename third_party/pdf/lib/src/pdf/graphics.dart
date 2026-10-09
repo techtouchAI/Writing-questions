@@ -496,6 +496,14 @@ class PdfGraphics {
   }
 
   /// This draws a string.
+  ///
+  /// [trailingTj] appends a trailing adjustment number to the emitted TJ
+  /// array (`[<hex> N] TJ`), in thousandths of an em exactly as a PDF viewer
+  /// executes it (each unit shifts the text pen by 1/1000 em). The canonical
+  /// PDF emitter derives it mathematically from the font advance of the
+  /// drawn word minus its canonical advance, so the executed advance lands
+  /// on canonical geometry. A null or zero value emits the historical
+  /// `[<hex>] TJ` bytes unchanged. // pdf-trailing-tj-patch
   void drawString(
     PdfFont font,
     double size,
@@ -507,6 +515,7 @@ class PdfGraphics {
     double? scale,
     PdfTextRenderingMode mode = PdfTextRenderingMode.fill,
     double? rise,
+    double? trailingTj,
   }) {
     assert(() {
       if (_page.settings.verbose) {
@@ -557,6 +566,11 @@ class PdfGraphics {
 
     _buf.putString('[');
     font.putText(_buf, s);
+    if (trailingTj != null && trailingTj != 0) {
+      // pdf-trailing-tj-patch: viewer-executed advance correction.
+      _buf.putString(' ');
+      PdfNum(trailingTj).output(_page, _buf);
+    }
     _buf.putString(']TJ ');
 
     assert(() {

@@ -5,10 +5,11 @@
 //     Flutter (96dpi = بكسل اللوحة نفسه).
 //   * `build/visual_parity/vector.pdf` — PDF متجهي مرسوم من LayoutDocument
 //     نفسه الذي عُرض في المعاينة.
-//   * `build/visual_parity/editable.docx` — Word قابل للتحرير من مسار
-//     DocumentIR → LegacyDocxAdapter → PaginationEngine.
 //   * `build/visual_parity/exact.pdf` و`exact.docx` — مسار Exact المنفصل
-//     المبني من لقطات المعاينة نفسها.
+//     المبني من لقطات المعاينة نفسها (وهو Word الوحيد اليوم).
+//
+// (حُذف في C5 مع Word القابل للتحرير: قطعة `editable.docx` من مسار
+// DocumentIR → LegacyDocxAdapter → PaginationEngine.)
 //   * `build/visual_parity/manifest.json` — عدد الصفحات وأبعادها.
 //
 // ثم يصيّر CI كل مسار مستقل (poppler لـPDF، LibreOffice ثم poppler لـWord)
@@ -48,12 +49,9 @@ import 'package:writing_questions_app/layout/canonical/canonical_layout_preview.
 import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
-import 'package:writing_questions_app/services/docx_document_export_service.dart';
 import 'package:writing_questions_app/services/exact_export_service.dart';
-import 'package:writing_questions_app/services/math_image_renderer.dart';
 import 'package:writing_questions_app/services/page_snapshot_service.dart';
 import 'package:writing_questions_app/services/pdf_export_service.dart';
-import 'package:writing_questions_app/services/shape_image_renderer.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 
 /// مجلد القطع الذي يقرؤه سكربت التحقق البصري في CI.
@@ -237,13 +235,19 @@ ExamDocument _fixtureDocument() {
 
 /// وسم مراحل الركيزة في مخرجات CI: بيان آخر ما وصلت إليه الركيزة عند الفشل
 /// (لا يُترك التشخيص لتخمين رقم الخروج).
-void _stage(String message) => debugPrint('[fixture] $message');
+final _fixtureWallClock = Stopwatch();
+
+void _stage(String message) =>
+    debugPrint('[fixture] +${_fixtureWallClock.elapsedMilliseconds}ms $message');
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('تركيبة الانحدار البصري: لقطات المعاينة + ملفات Exact',
       (tester) async {
+    _fixtureWallClock
+      ..reset()
+      ..start();
     await _loadAppFonts();
     _stage('الخطوط حُمّلت');
 
@@ -308,9 +312,32 @@ void main() {
       ),
     );
     await tester.pump(const Duration(milliseconds: 100));
-    await tester.runAsync(
-      () => previewWorkFinished.future.timeout(const Duration(seconds: 60)),
-    );
+    // The preview settles through the fake clock (debounce timer, resolver,
+    // loader microtasks): waiting for its signal must PUMP, or the signal
+    // parks behind an undelivered microtask and any wall-clock timeout fires
+    // while the work is one pump from done (measured: load()=28ms, then 60s
+    // of nothing). Bounded frame loop on the model's own condition — the
+    // standard flutter_test idiom, no sleeps, no wall timeouts.
+    var settlePumps = 0;
+    while (settlePumps < 500 && !previewWorkFinished.isCompleted) {
+      await tester.pump(const Duration(milliseconds: 100));
+      // The asset chain spans both clocks: pumps deliver fake-zone
+      // timers/microtasks, while engine futures (image codec) land only
+      // on real event-loop turns — yield one (event-queue turn with no
+      // waiting, not a sleep).
+      await tester.runAsync(() async {
+        await Future(() {});
+      });
+      settlePumps++;
+    }
+    _stage('Preview settled after $settlePumps pumps');
+    if (!previewWorkFinished.isCompleted) {
+      fail(
+        'Canonical preview preparation never settled after $settlePumps pumps: '
+        'previewFailure=$previewFailure. The resolver/loader chain did not '
+        'complete; see [fixture] stages above for the last completed phase.',
+      );
+    }
     await tester.pump();
     if (previewFailure != null) {
       fail('Canonical preview preparation failed: $previewFailure');
@@ -340,21 +367,6 @@ void main() {
     _stage('LayoutDocument pages: $pageCount');
     expect(pageCount, greaterThan(1),
         reason: 'التركيبة يجب أن تكون متعددة الصفحات لتغطية الترقيم.');
-
-    // Resolve the independent editable-Word plan in its own real-async window.
-    // Do not nest this resolver inside the later export runAsync callback: font
-    // and math metric work there used to trigger a reentrant test binding call.
-    _stage('Resolving editable DOCX pagination');
-    final editablePaginationResult = await tester.runAsync(
-      () => DocxDocumentExportService.resolveEditablePaginationInput(
-        document: controller.document,
-        sourceIr: canonicalLayout.source,
-        measurementLayout: canonicalLayout,
-      ).timeout(const Duration(minutes: 2)),
-    );
-    expect(editablePaginationResult, isNotNull);
-    final editablePaginationInput = editablePaginationResult!;
-    _stage('Editable DOCX pagination resolved');
 
     // (2) نافذة تكفي لعرض كل الصفحات دفعة واحدة: كل الصفحات تُبنى في `Column`
     // غير كسول، لكن اللقط يحتاج الصفحة **مرسومة فعلاً**، وما خرج من نافذة
@@ -420,67 +432,65 @@ void main() {
         reason: 'لقطة لكل صفحة معاينة (${snapshotList.length}/$pageCount).');
     snapshots.addAll(snapshotList);
 
-    // التحويلات غير المتزامنة تعمل خارج fake-async الخاص بـtestWidgets:
-    // تشترك مسارات التصدير في مصادرها الحقيقية، لكن لا تُعلَّق عمليات الضغط/الخطوط.
-    final exportArtifacts = await tester.runAsync(() async {
-      // Vector PDF يستهلك كائن LayoutDocument الحي نفسه — لا يحسب تدفقاً ثانياً.
-      final vectorPdfBytes = await PdfExportService.buildDocumentPdfBytes(
-        document: controller.document,
-        layoutDocument: canonicalLayout,
-      );
-      _stage('Vector PDF generated: ${vectorPdfBytes.length} bytes');
-
-      // Editable DOCX مستقل: DocumentIR → LegacyDocxAdapter → PaginationEngine.
-      // لا نمرر إليه تعيين صفحات PDF canonical؛ Exact يبقى مساراً آخر أدناه.
-      _stage('Editable DOCX build started');
-      final editableDocxBytes =
-          await DocxDocumentExportService.buildDocumentDocxBytes(
-        document: controller.document,
-        shapeRasterizer: (element, widthPx, heightPx) async {
-          _stage('Editable DOCX shape rasterization started: ${element.id}');
-          final raster = await ShapeImageRenderer.rasterize(
-            element,
-            widthPx,
-            heightPx,
-          ).timeout(const Duration(seconds: 30));
-          _stage(
-            'Editable DOCX shape rasterization completed: ${element.id} '
-            '(${raster?.length ?? 0} bytes)',
+    // التصدير يُدار بالمضخات لا بـ`runAsync`: ترسيم المحرك (الأشكال عبر
+    // `toImage`، والمعادلات عبر مضيف اللقطات) يكتمل عبر الأُطر كما في
+    // الإنتاج — داخل `runAsync` يبقى معلَّقاً (shape-1 لا يكتمل أبداً) وتبتلع
+    // المنطقة مهلات `.timeout` الداخلية. المنطق نفسه حرفياً؛ المتغير فقط
+    // سائق الانتظار (مضخات محدودة بدل انتظار حقيقي).
+    Uint8List? exportVector;
+    Uint8List? exportExactPdf;
+    Uint8List? exportExactDocx;
+    var exportsDone = false;
+    Object? exportError;
+    StackTrace? exportStack;
+    unawaited(
+      Future(() async {
+        try {
+          // Vector PDF يستهلك كائن LayoutDocument الحي نفسه — لا يحسب تدفقاً ثانياً.
+          exportVector = await PdfExportService.buildDocumentPdfBytes(
+            document: controller.document,
+            layoutDocument: canonicalLayout,
           );
-          return raster;
-        },
-        mathRasterizer: (latex, fontSizePt) async {
-          _stage('Editable DOCX math rasterization started: $latex');
-          final raster = await MathImageRenderer.rasterize(
-            latex,
-            fontSizePt,
-          ).timeout(const Duration(seconds: 30));
-          _stage(
-            'Editable DOCX math rasterization completed: $latex '
-            '(${raster?.pngBytes.length ?? 0} bytes)',
-          );
-          return raster;
-        },
-        legacyPaginationInput: editablePaginationInput,
-        onProgress: (stage) => _stage('Editable DOCX: $stage'),
-      ).timeout(const Duration(minutes: 2));
-      _stage('Editable DOCX generated: ${editableDocxBytes.length} bytes');
+          _stage('Vector PDF generated: ${exportVector!.length} bytes');
 
-      // Exact: صفحات الصور الملتقطة أعلاه فقط — مستقل عن vector/editable.
-      final exactPdfBytes =
-          await ExactExportService.buildPdfFromSnapshots(snapshots);
-      final exactDocxBytes = ExactExportService.buildDocxFromSnapshots(snapshots);
-      _stage('Exact PDF/DOCX generated');
-      return (
-        vectorPdfBytes: vectorPdfBytes,
-        editableDocxBytes: editableDocxBytes,
-        exactPdfBytes: exactPdfBytes,
-        exactDocxBytes: exactDocxBytes,
+          // Exact: صفحات الصور الملتقطة أعلاه فقط — مستقل عن vector.
+          exportExactPdf =
+              await ExactExportService.buildPdfFromSnapshots(snapshots);
+          exportExactDocx = ExactExportService.buildDocxFromSnapshots(snapshots);
+          _stage('Exact PDF/DOCX generated');
+          exportsDone = true;
+        } catch (error, stack) {
+          exportError = error;
+          exportStack = stack;
+        }
+      }),
+    );
+    var pumpCount = 0;
+    for (;
+        pumpCount < 1200 && !exportsDone && exportError == null;
+        pumpCount++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    if (exportError != null) {
+      Error.throwWithStackTrace(exportError!, exportStack!);
+    }
+    final exportArtifacts = exportsDone
+        ? (
+            vectorPdfBytes: exportVector!,
+            exactPdfBytes: exportExactPdf!,
+            exactDocxBytes: exportExactDocx!,
+          )
+        : null;
+    _stage('exports finished after pumps: done=$exportsDone');
+    if (!exportsDone && exportError == null) {
+      fail(
+        'HANG: exports did not complete after $pumpCount pumps: '
+        'vector=${exportVector != null}, '
+        'exactPdf=${exportExactPdf != null}, exactDocx=${exportExactDocx != null}',
       );
-    });
+    }
     expect(exportArtifacts, isNotNull);
     final vectorPdfBytes = exportArtifacts!.vectorPdfBytes;
-    final editableDocxBytes = exportArtifacts.editableDocxBytes;
     final exactPdfBytes = exportArtifacts.exactPdfBytes;
     final exactDocxBytes = exportArtifacts.exactDocxBytes;
     final manifest = <String, Object?>{
@@ -490,7 +500,6 @@ void main() {
       'dpi': PageSnapshotService.canvasDpi,
       'files': <String>[
         'vector.pdf',
-        'editable.docx',
         'exact.pdf',
         'exact.docx',
         for (var index = 0; index < snapshots.length; index++)
@@ -507,7 +516,6 @@ void main() {
           .writeAsBytesSync(snapshots[index].pngBytes);
     }
     File('$_artifactDir/vector.pdf').writeAsBytesSync(vectorPdfBytes);
-    File('$_artifactDir/editable.docx').writeAsBytesSync(editableDocxBytes);
     File('$_artifactDir/exact.pdf').writeAsBytesSync(exactPdfBytes);
     File('$_artifactDir/exact.docx').writeAsBytesSync(exactDocxBytes);
     File('$_artifactDir/manifest.json')
@@ -524,5 +532,10 @@ void main() {
     expect(_fixtureDocument().questions[2].bodyAlign, PaperAlign.left);
     _stage('كُتبت القطع: ${Directory(_artifactDir).absolute.path} '
         '(${snapshots.length} صفحات)');
-  });
+  },
+      // حدّ المدة المشروعة لا تسامح مع التعلّق: التركيبة تُصدّر وترسم
+      // مستنداً كاملاً (عمل حائط حقيقي بالدقائق)، وكل تعلّق حقيقي يفشل
+      // بسرعة عبر الحراس الداخلية (عدّاد المضخات، حارسا runAsync)
+      // مع اسم المرحلة — أما 60s الافتراضية فأقصر من العمل المشروع نفسه.
+      timeout: const Timeout(Duration(minutes: 10)));
 }

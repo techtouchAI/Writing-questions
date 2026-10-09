@@ -1,0 +1,201 @@
+name: Extended / Diagnostic tests (non-blocking)
+
+# Extended suite: hang reproductions, isolation instruments, diagnostic
+# probes, the full-cycle scenario, and canonical tests 2-6.
+# Informational only — this workflow is never a required check.
+# Canonical tests 2-6 return to Required only after proven hang-free,
+# fast, and stable across runs while protecting a required contract.
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - 'arena/**'
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: extended-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  extended:
+    name: Extended diagnostics (iso, repro, probes, canonical 2-6)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.22.3'
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Run extended suites
+        id: test
+        shell: bash
+        run: |
+          set -o pipefail
+          # Both invocations always run: a red iso/repro must not starve the
+          # canonical subset (pipefail alone would abort the step early).
+          ext_status=0
+          flutter test --reporter json --timeout 120s \
+            test/wizard/canonical_iso_2a_screen_then_runasync_test.dart \
+            test/wizard/canonical_iso_2b_direct_then_runasync_test.dart \
+            test/wizard/canonical_iso_2c_runasync_twice_test.dart \
+            test/wizard/canonical_iso_3_gesture_alone_test.dart \
+            test/wizard/canonical_iso_7_paper_alone_test.dart \
+            test/wizard/canonical_hang_repro_test.dart \
+            test/wizard/exam_builder_comprehensive_scenario_test.dart \
+            2>&1 | tee "$RUNNER_TEMP/extended-test.log" || ext_status=$?
+          # Canonical extended subset: tests 2-6 only (test-1 + E7 gate
+          # the PR in the main workflow). Single --name regex: repeated
+          # --plain-name flags intersect (match nothing), --name alternates.
+          flutter test --reporter json --timeout 120s \
+            test/wizard/canonical_preview_screen_test.dart \
+            --name 'maps RTL mixed floating text|floating drag|preparation failure|stale layout|disposing while canonical' \
+            2>&1 | tee "$RUNNER_TEMP/extended-canonical.log" || ext_status=$?
+          exit $ext_status
+
+      - name: Build extended digests
+        if: always()
+        shell: bash
+        run: |
+          python3 tool/flutter_test_digest.py \
+            --log "$RUNNER_TEMP/extended-test.log" \
+            --out "$RUNNER_TEMP/extended-digest"
+          cat "$RUNNER_TEMP/extended-digest/counts.txt" || true
+          if [ -f "$RUNNER_TEMP/extended-canonical.log" ]; then
+            python3 tool/flutter_test_digest.py \
+              --log "$RUNNER_TEMP/extended-canonical.log" \
+              --out "$RUNNER_TEMP/extended-canonical-digest"
+            cat "$RUNNER_TEMP/extended-canonical-digest/counts.txt" || true
+          fi
+
+      # Same vacuous-run rule as the gate: the 12 extended-file tests
+      # (plus their suite loads) and exactly the 5 canonical hang tests
+      # (plus their suite load).
+      - name: Guard against vacuous extended runs
+        if: always()
+        shell: bash
+        run: |
+          total_of() {
+            awk -F'[= ]' '{s=0; for (i=1; i<=NF; i++) { if ($i=="passed" || $i=="failed" || $i=="skipped") s+=$(i+1) }; print s+0}' "$1"
+          }
+          files_total=$(total_of "$RUNNER_TEMP/extended-digest/counts.txt")
+          if [ "$files_total" -lt 10 ]; then
+            echo "extended files ran $files_total tests (< 10); failing loudly" >&2
+            exit 1
+          fi
+          if [ -f "$RUNNER_TEMP/extended-canonical-digest/counts.txt" ]; then
+            canon_total=$(total_of "$RUNNER_TEMP/extended-canonical-digest/counts.txt")
+            if [ "$canon_total" -ne 6 ]; then
+              echo "extended canonical ran $canon_total tests (!= 6); failing loudly" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Publish extended failures
+        if: failure() && steps.test.outcome == 'failure'
+        shell: bash
+        run: |
+          publish_one() {
+            local text="$1"
+            [ -n "$text" ] || return 0
+            text="${text//%/%25}"
+            text="${text//$'\r'/%0D}"
+            text="${text//$'\n'/%0A}"
+            echo "::error title=$2::$text"
+          }
+          publish_chunked() {
+            local file="$1" title="$2" chunk='' size=0 part=1 lbs line
+            [ -f "$file" ] && [ -s "$file" ] || return 0
+            while IFS= read -r line || [ -n "$line" ]; do
+              lbs="$(printf '%s\n' "$line" | wc -c | tr -d ' ')"
+              if [ $((size + lbs)) -gt 3000 ] && [ -n "$chunk" ]; then
+                publish_one "$chunk" "$title (part $part)"
+                part=$((part + 1)); chunk=''; size=0
+              fi
+              chunk+="$line"$'\n'; size=$((size + lbs))
+            done < "$file"
+            if [ "$part" -gt 1 ]; then
+              publish_one "$chunk" "$title (part $part)"
+            else
+              publish_one "$chunk" "$title"
+            fi
+            return 0
+          }
+          for DIGEST in "$RUNNER_TEMP/extended-digest" "$RUNNER_TEMP/extended-canonical-digest"; do
+            case "$DIGEST" in
+              *-canonical-digest) suffix=' (canonical 2-6)' ;;
+              *) suffix='' ;;
+            esac
+            [ -f "$DIGEST/counts.txt" ] || continue
+            if [ -s "$DIGEST/failing.txt" ]; then
+              total="$(wc -l < "$DIGEST/failing.txt" | tr -d ' ')"
+              publish_chunked "$DIGEST/failing.txt" "Extended failing tests ($total)$suffix"
+            fi
+          done
+          i=0
+          for DIGEST in "$RUNNER_TEMP/extended-digest" "$RUNNER_TEMP/extended-canonical-digest"; do
+            for f in "$DIGEST"/excerpt_*.txt; do
+              [ -f "$f" ] || break
+              i=$((i + 1))
+              if [ "$i" -gt 10 ]; then break 2; fi
+              name="$(sed -n '2p' "$f" | sed 's/^TEST: //')"
+              publish_one "$(cat "$f")" "Extended failure ($i): ${name:0:120}"
+            done
+          done
+          if [ -s "$RUNNER_TEMP/extended-digest/diag.txt" ]; then
+            head -c 9000 "$RUNNER_TEMP/extended-digest/diag.txt" > "$RUNNER_TEMP/ext_diag_head.txt"
+            publish_chunked "$RUNNER_TEMP/ext_diag_head.txt" 'Extended diagnostics ([diag])'
+          fi
+          if [ -s "$RUNNER_TEMP/extended-canonical-digest/diag.txt" ]; then
+            head -c 9000 "$RUNNER_TEMP/extended-canonical-digest/diag.txt" > "$RUNNER_TEMP/ext_canon_diag_head.txt"
+            publish_chunked "$RUNNER_TEMP/ext_canon_diag_head.txt" 'Extended canonical diagnostics ([diag])'
+          fi
+
+      - name: Publish extended slowest tests
+        if: always()
+        shell: bash
+        run: |
+          if [ -s "$RUNNER_TEMP/extended-digest/slowest.txt" ]; then
+            text="$(cat "$RUNNER_TEMP/extended-digest/slowest.txt")"
+            text="${text//%/%25}"
+            text="${text//$'\r'/%0D}"
+            text="${text//$'\n'/%0A}"
+            echo "::notice title=Extended slowest tests::$text"
+          fi
+          if [ -s "$RUNNER_TEMP/extended-canonical-digest/slowest.txt" ]; then
+            text="$(cat "$RUNNER_TEMP/extended-canonical-digest/slowest.txt")"
+            text="${text//%/%25}"
+            text="${text//$'\r'/%0D}"
+            text="${text//$'\n'/%0A}"
+            echo "::notice title=Extended canonical slowest::$text"
+          fi
+
+      - name: Upload extended logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: extended-diagnostics
+          path: |
+            ${{ runner.temp }}/extended-test.log
+            ${{ runner.temp }}/extended-canonical.log
+            ${{ runner.temp }}/extended-digest/*
+            ${{ runner.temp }}/extended-canonical-digest/*
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,8 +1,11 @@
 // نمط التصدير في حوار المراجعة: «مطابق للمعاينة (Exact)» مقابل النص المتجه.
 //
-// Exact نمط اختياري لا افتراضي: المسار المعتاد يبقي PDF نصياً وWord قابلاً
-// للتحرير. عند تفعيله يجب أن يُعلَن صراحةً أن PDF صورة غير قابلة للبحث وأن
-// Word صفحات صور غير قابلة للتحرير. الاختبار يقرأ الوصف من حوار المستخدم نفسه.
+// Exact نمط اختياري لا افتراضي، ويخصّ PDF وحده: المسار المعتاد يبقي PDF
+// نصياً قابلاً للبحث، بينما Word صور صفحات المعاينة دائماً (مطابق للمعاينة
+// وغير قابل للتحرير — يُعلَن ذلك في الوضع الافتراضي نفسه). عند تفعيل Exact
+// يجب أن يُعلَن صراحةً أن PDF صار صوراً بلا بحث/تحديد نصي. الاختبار يقرأ
+// الوصف من حوار المستخدم نفسه. (حُدّث العقد في C5 مع إزالة Word القابل
+// للتحرير: لا OMML بعد اليوم.)
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -84,20 +87,22 @@ void main() {
       expect(
         tester.widget<SwitchListTile>(switchFinder).value,
         isFalse,
-        reason: 'المسار الافتراضي نصي وقابل للتحرير.',
+        reason: 'PDF الافتراضي نصي؛ Word صور دائماً.',
       );
-      expect(find.textContaining('OMML'), findsOneWidget);
-      expect(find.textContaining('غير قابل للتحرير'), findsNothing);
-      expect(find.textContaining('صور صفحات المعاينة'), findsNothing);
+      expect(find.textContaining('OMML'), findsNothing);
+      expect(find.textContaining('غير قابل للتحرير'), findsOneWidget);
+      expect(find.textContaining('صور صفحات المعاينة'), findsOneWidget);
       expect(find.text('صفحات المعاينة'), findsOneWidget);
 
-      // Toggle the same live review dialog: normal mode stays editable, while
-      // Exact must disclose the loss of searchability/editability explicitly.
+      // Toggle the same live review dialog: Exact must disclose the loss of
+      // PDF searchability explicitly (Word stays image-only in both modes,
+      // disclosed in the default state above).
       await tester.tap(switchFinder);
       await tester.pump();
       expect(tester.widget<SwitchListTile>(switchFinder).value, isTrue);
       expect(find.textContaining('صور صفحات المعاينة'), findsOneWidget);
-      expect(find.textContaining('غير قابل للتحرير'), findsOneWidget);
+      expect(find.textContaining('بلا بحث/تحديد نصي'), findsOneWidget);
+      expect(find.textContaining('Word صور دائماً'), findsOneWidget);
       expect(find.textContaining('OMML'), findsNothing);
     },
   );

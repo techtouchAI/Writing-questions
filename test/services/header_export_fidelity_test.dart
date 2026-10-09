@@ -1,36 +1,31 @@
-// صدق ترويسة واحدة عبر المخرجات الثلاثة — المصدر الوحيد `document.header.style`:
-//   * DOCX: حجم الخط/تباعد الأسطر/المحاذاة/مسافة الفقرات/الخط/اللون/مائل/
-//     تسطير تصل كلها إلى `word/document.xml` (والافتراضي 10pt مطابقةً
-//     للمعاينة والـ PDF)، والبسملة والتذييل لا يتأثران بمحاذاة الترويسة،
+// صدق ترويسة واحدة عبر المعاينة وPDF — المصدر الوحيد `document.header.style`:
 //   * PDF: الحجم والمسافة الرأسية والمحاذاة المقاسة من المحتوى المرسوم،
 //   * المعاينة: ودجت الترويسة يقرأ الإعداد نفسه (حجم/محاذاة/مسافة فقرات)،
-//   * والأربعة files العينات تُكتب في build/math_samples للمراجعة البشرية:
-//     test-header-default.docx / test-header-modified.docx
-//     test-header-default.pdf  / test-header-modified.pdf
-import 'dart:convert';
+//   * والعينتان تُكتبان في build/math_samples للمراجعة البشرية:
+//     test-header-default.pdf / test-header-modified.pdf
+//
+// (حُذفت في C5 مع Word القابل للتحرير: مجموعة DOCX — وصول كل خاصية إلى
+// `word/document.xml` وعينتا docx — Word اليوم صور صفحات المعاينة.)
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/layout/blueprint/exam_blueprint.dart';
 import 'package:writing_questions_app/layout/paper_metrics.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
-import 'package:writing_questions_app/models/exam_catalog.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/pdf_engine/paginated_pdf_exam_engine.dart';
-import 'package:writing_questions_app/services/docx_document_export_service.dart';
 import 'package:writing_questions_app/views/widgets/tex_text.dart';
 import 'package:writing_questions_app/views/wizard/paper_header_footer_view.dart';
 
 import '../pdf_engine/pdf_content_probe.dart';
 
-/// تعديل كامل لإعداد الترويسة — كل خاصية تدعمها المخرجات الثلاثة.
+/// تعديل كامل لإعداد الترويسة — كل خاصية تدعمها المعاينة وPDF.
 const PaperTextStyle _modifiedHeaderStyle = PaperTextStyle(
   font: PaperFont.tajawal,
   fontSize: 16,
@@ -63,29 +58,6 @@ ExamDocument _doc({PaperTextStyle headerStyle = PaperTextStyle.empty}) {
   );
 }
 
-/// جدول الترويسة = أول جدول في المستند.
-String _headerTable(String xml) {
-  final start = xml.indexOf('<w:tbl>');
-  expect(start, greaterThan(-1));
-  return xml.substring(start, xml.indexOf('</w:tbl>', start));
-}
-
-/// جدول التذييل = آخر جدول في المستند.
-String _footerTable(String xml) {
-  final start = xml.lastIndexOf('<w:tbl>');
-  expect(start, greaterThan(-1));
-  return xml.substring(start, xml.indexOf('</w:tbl>', start));
-}
-
-/// فقرة كاملة تحتضن أول ظهور لـ[needle].
-String _paragraphOf(String xml, String needle) {
-  final at = xml.indexOf(needle);
-  expect(at, greaterThan(-1), reason: needle);
-  final open = xml.lastIndexOf('<w:p>', at);
-  final close = xml.indexOf('</w:p>', at);
-  return xml.substring(open, close);
-}
-
 Future<void> _writeSample(String name, Uint8List bytes) async {
   final directory = Directory('build/math_samples');
   if (!directory.existsSync()) {
@@ -99,83 +71,6 @@ Future<void> _writeSample(String name, Uint8List bytes) async {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-
-  group('DOCX — إعداد الترويسة يصل إلى الملف', () {
-    test('افتراضي: 10pt وارتفاع سطر 1.6× معامل الورقة كالمعاينة والـ PDF',
-        () async {
-      final document = _doc();
-      final bytes = await DocxDocumentExportService.buildDocumentDocxBytes(
-        document: document,
-      );
-      final xml = utf8.decode(
-        ZipDecoder().decodeBytes(bytes).findFile('word/document.xml')!.content
-            as List<int>,
-      );
-      final header = _headerTable(xml);
-
-      // الحجم الافتراضي للترويسة 10pt = 20 نصف نقطة (كان 22: انحراف عن
-      // المعاينة والـ PDF)، والخط الافتراضي Noto Naskh Arabic.
-      expect(header, contains('<w:sz w:val="20"/>'));
-      expect(header, contains('w:cs="Noto Naskh Arabic"'));
-      // ارتفاع السطر: 240 × 1.6 × heightScale(=1) — رقم المعاينة والـ PDF.
-      expect(header, contains('w:line="384"'));
-      // بلا مسافة فقرات مخصصة: لا w:after في سطور الترويسة.
-      expect(header, isNot(contains('w:after=')));
-      // العمود اليمين موسَّط افتراضياً، وسطور الوسط غامقة.
-      expect(header, contains('<w:jc w:val="center"/>'));
-      expect(header, contains('<w:b/>'));
-
-      await _writeSample('test-header-default.docx', bytes);
-    });
-
-    test('معدَّل: كل خاصية تظهر في XML فعلياً', () async {
-      final document = _doc(headerStyle: _modifiedHeaderStyle);
-      final bytes = await DocxDocumentExportService.buildDocumentDocxBytes(
-        document: document,
-      );
-      final xml = utf8.decode(
-        ZipDecoder().decodeBytes(bytes).findFile('word/document.xml')!.content
-            as List<int>,
-      );
-      final header = _headerTable(xml);
-
-      // الحجم 16pt = 32 نصف نقطة.
-      expect(header, contains('<w:sz w:val="32"/>'));
-      expect(header, isNot(contains('<w:sz w:val="20"/>')));
-      // تباعد الأسطر 2.0 → 480.
-      expect(header, contains('w:line="480"'));
-      // المحاذاة يسار تتجاوز محاذاة الأعمدة.
-      expect(header, contains('<w:jc w:val="left"/>'));
-      // مسافة الفقرات بعد كل سطر: 8 بكسل منطقي ← تويب.
-      final expectedAfter = (PaperMetrics.pt(8) * 20).round();
-      expect(header, contains('w:after="$expectedAfter"'));
-      // الخط واللون والمائل والتسطير، وبلا غامق (أُلغي صراحةً).
-      expect(header, contains('w:cs="Tajawal"'));
-      expect(header, contains('<w:color w:val="FF0000"/>'));
-      expect(header, contains('<w:i/>'));
-      expect(header, contains('<w:u w:val="single"/>'));
-      expect(header, isNot(contains('<w:b/>')));
-
-      // البسملة خارج تنسيق الترويسة: موسَّطة دائماً وبحجمها وخطها.
-      final bismillah = _paragraphOf(xml, ExamCatalog.bismillah);
-      expect(bismillah, contains('<w:jc w:val="center"/>'));
-      expect(bismillah, contains('<w:sz w:val="34"/>'));
-      expect(bismillah, contains('w:cs="Amiri"'));
-      expect(bismillah, isNot(contains('w:after=')));
-      expect(bismillah, isNot(contains('<w:i/>')));
-
-      // التذييل: محاذاة الترويسة ومسافة فقراتها لا تسربان إليه، لكن
-      // الخط/الحجم/التباعد (تنسيق النص) تصل كما في المعاينة.
-      final footer = _footerTable(xml);
-      expect(footer, isNot(contains('<w:jc w:val="left"/>')));
-      expect(footer, contains('<w:jc w:val="center"/>'));
-      expect(footer, isNot(contains('w:after=')));
-      expect(footer, contains('<w:sz w:val="32"/>'));
-      expect(footer, contains('w:line="480"'));
-
-      await _writeSample('test-header-modified.docx', bytes);
-    });
-  });
 
   group('PDF — إعداد الترويسة مرسوم فعلاً', () {
     test('الحجم والمسافة الرأسية والمحاذاة تتغير بين الافتراضي والمعدَّل',

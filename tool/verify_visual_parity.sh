@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# التحقق البصري الخارجي: يصيّر Exact وVector PDF وEditable/Exact DOCX
+# التحقق البصري الخارجي: يصيّر Vector PDF وExact (PDF/DOCX)
 # بمحركات مستقلة، ثم يقارن كل صفحة بلقطة المعاينة المقابلة بمقياس RMSE.
 # الفحص على ملفات الإخراج الفعلية (لا callbacks أو صور screenshots بديلة).
 #
+# (حُذف في C5 مسار Editable DOCX مع مولّده؛ Word الوحيد اليوم هو Exact.)
+#
 # المدخلات (تنتجها test/visual/visual_parity_fixture_test.dart):
-#   manifest.json, preview_page_N.png, vector.pdf, editable.docx,
-#   exact.pdf, exact.docx
+#   manifest.json, preview_page_N.png, vector.pdf, exact.pdf, exact.docx
 #
 # الاستعمال: tool/verify_visual_parity.sh [مجلد القطع] [سقف PDF] [سقف Word]
 set -euo pipefail
@@ -54,8 +55,7 @@ RENDERED="$ARTIFACTS/rendered"
 REPORT="$ARTIFACTS/report.txt"
 rm -rf "$RENDERED"
 mkdir -p "$RENDERED/vector_pdf" "$RENDERED/exact_pdf" \
-  "$RENDERED/editable_docx" "$RENDERED/exact_docx" \
-  "$RENDERED/editable_docx_pdf" "$RENDERED/exact_docx_pdf" "$RENDERED/norm"
+  "$RENDERED/exact_docx" "$RENDERED/exact_docx_pdf" "$RENDERED/norm"
 
 # التقرير يُفتح هنا (لا بعد التصيير): لو فشل أمر خارجي يبقى سببه مكتوباً
 # وقابلاً للنشر بدل أن يضيع مع رقم الخروج.
@@ -118,10 +118,10 @@ for track in vector exact; do
   fi
 done
 
-# LibreOffice يحوّل كلا مساري Word إلى PDF ثم poppler يصيّرهما. إعداد ملف
+# LibreOffice يحوّل Word (Exact اليوم) إلى PDF ثم poppler يصيّره. إعداد ملف
 # تعريف منفصل يمنع تعارض القفل، مع تعطيل الضغط الفاقد/تصغير الصور الوسيطة.
 LO_EXPORT_OPTIONS='pdf:writer_pdf_Export:{"UseLosslessCompression":{"type":"boolean","value":"true"},"ReduceImageResolution":{"type":"boolean","value":"false"}}'
-convert_docx() { # <editable|exact>
+convert_docx() { # <exact>
   local track="$1"
   local outdir="$RENDERED/${track}_docx_pdf"
   local output="$outdir/$track.pdf"
@@ -145,7 +145,6 @@ convert_docx() { # <editable|exact>
     return 1
   fi
 }
-convert_docx editable
 convert_docx exact
 
 # ------------------------------ المقارنة ------------------------------
@@ -258,13 +257,12 @@ check_track() { # <وسم> <مجلد التصيير> <سقف>
 
 {
   echo "Vector PDF: RMSE ≤ $PDF_THRESHOLD مقابل لقطة الصفحة نفسها."
-  echo "Editable DOCX وExact DOCX: RMSE ≤ $DOCX_THRESHOLD."
+  echo "Exact DOCX: RMSE ≤ $DOCX_THRESHOLD."
   echo "Exact DOCX يحتفظ أيضاً بفحص بايتات الصور المضمّنة (تطابق تام)."
   echo
 } >>"$REPORT"
 check_track "Vector-PDF" "$RENDERED/vector_pdf" "$PDF_THRESHOLD" 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
 check_track "Exact-PDF" "$RENDERED/exact_pdf" "$PDF_THRESHOLD" 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
-check_track "Editable-Word" "$RENDERED/editable_docx" "$DOCX_THRESHOLD" 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
 check_track "Exact-Word" "$RENDERED/exact_docx" "$DOCX_THRESHOLD" 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
 check_embedded_media 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
 

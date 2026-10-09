@@ -1066,6 +1066,16 @@ class _LayoutBuilder {
           style: item.span.style,
           logicalIndex: item.span.logicalIndex * 1000000 + fragment.startOffset,
           visualIndex: visualIndex,
+          words: List<LayoutWord>.unmodifiable(
+            fragment.words.map(
+              (word) => LayoutWord(
+                text: word.text,
+                x: x + word.x,
+                advance: word.advance,
+                textAdvance: word.textAdvance,
+              ),
+            ),
+          ),
           sourceStartOffset: sourceStart,
           sourceEndOffset: sourceEnd,
           sourceOffsetMap: runSourceMap,
@@ -2046,6 +2056,16 @@ LayoutBlock _scaleBlock(
         style: scaleStyle(run.style),
         logicalIndex: run.logicalIndex,
         visualIndex: run.visualIndex,
+        words: List<LayoutWord>.unmodifiable(
+          run.words.map(
+            (word) => LayoutWord(
+              text: word.text,
+              x: scaleOriginX + (word.x - scaleOriginX) * factor,
+              advance: word.advance * factor,
+              textAdvance: word.textAdvance * factor,
+            ),
+          ),
+        ),
         sourceStartOffset: run.sourceStartOffset,
         sourceEndOffset: run.sourceEndOffset,
         sourceOffsetMap: run.sourceOffsetMap,
@@ -2138,6 +2158,16 @@ LayoutLine _moveLine(LayoutLine line, double dx, double dy) =>
               style: run.style,
               logicalIndex: run.logicalIndex,
               visualIndex: run.visualIndex,
+              words: List<LayoutWord>.unmodifiable(
+                run.words.map(
+                  (word) => LayoutWord(
+                    text: word.text,
+                    x: word.x + dx,
+                    advance: word.advance,
+                    textAdvance: word.textAdvance,
+                  ),
+                ),
+              ),
               sourceStartOffset: run.sourceStartOffset,
               sourceEndOffset: run.sourceEndOffset,
               sourceOffsetMap: run.sourceOffsetMap,

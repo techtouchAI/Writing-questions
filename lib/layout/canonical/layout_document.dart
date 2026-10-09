@@ -208,6 +208,39 @@ class LayoutLine {
 /// A visual fragment of a semantic inline node. `semanticNode` retains the
 /// actual DocumentIR object reference; IDs are deterministic tree paths and
 /// never depend on matching text after layout.
+/// One measurable word inside a [LayoutRun]: the emission unit for
+/// canonical-positioned text. [x] is the word's visual left edge in points
+/// (same frame as the run's [LayoutRun.x]); [advance] is the visual pitch to
+/// the next word's [x], or to the run's trailing edge (right in LTR, left in
+/// RTL) for the last word, so pitches telescope exactly onto the run box.
+/// [textAdvance] is the shaped advance of the word's own text alone (same
+/// caret interval as [x], no surrounding spaces): the width a positioned
+/// emitter executes for the word, so inter-word gaps stay positions.
+/// Words never contain whitespace: inter-word gaps are positions, not glyphs.
+/// Math runs carry no words (their box is measured externally, not shaped
+/// text); pure-whitespace runs carry none either.
+class LayoutWord {
+  const LayoutWord({
+    required this.text,
+    required this.x,
+    required this.advance,
+    required this.textAdvance,
+  });
+
+  final String text;
+  final double x;
+  final double advance;
+  final double textAdvance;
+}
+
+/// Canonical word content: runs of non-ASCII-whitespace. This is
+/// deliberately not `\S`: ECMAScript `\s` (which Dart implements) also
+/// matches NBSP, NNBSP, and other Unicode spaces, and splitting on it would
+/// tear apart the NBSP-glued tokens the metrics coalescers keep together.
+/// Every canonical word split/match in the engine, the PDF emitter, and the
+/// parity probe must use this pattern so all three agree on word identity.
+final RegExp canonicalWordPattern = RegExp('[^ \\t\\n\\r\\f\\v]+');
+
 class LayoutRun {
   const LayoutRun({
     required this.id,
@@ -225,6 +258,7 @@ class LayoutRun {
     required this.style,
     required this.logicalIndex,
     required this.visualIndex,
+    required this.words,
     this.sourceStartOffset = 0,
     this.sourceEndOffset = 0,
     this.sourceOffsetMap,
@@ -247,6 +281,7 @@ class LayoutRun {
   final LayoutTextStyle style;
   final int logicalIndex;
   final int visualIndex;
+  final List<LayoutWord> words;
 
   /// UTF-16 source interval for this measured fragment, relative to the
   /// semantic inline span's source text; the end offset is exclusive. Unlike

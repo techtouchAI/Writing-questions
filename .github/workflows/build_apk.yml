@@ -13,6 +13,17 @@ on:
       - main
       - master
   workflow_dispatch:
+    inputs:
+      test_path:
+        description: 'Optional: run only this test path (skips APK build + visual job)'
+        required: false
+        default: ''
+        type: string
+      test_name:
+        description: 'Optional: with test_path, run only tests matching this name (--plain-name)'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -65,12 +76,100 @@ jobs:
           set -o pipefail
           flutter analyze --fatal-infos 2>&1 | tee "$RUNNER_TEMP/flutter-analyze.log"
 
-      - name: Run tests
+      - name: Run required tests
         id: test
         shell: bash
         run: |
           set -o pipefail
-          flutter test 2>&1 | tee "$RUNNER_TEMP/flutter-test.log"
+          # json: stable machine protocol for the digest (expanded greps rot
+          # with format drift, and emoji markers silently miss failures).
+          # --timeout 120s: the framework default is 10 min per widget test,
+          # so one hang costs a full CI cycle; nothing green needs even 60 s.
+          #
+          # REQUIRED GATE (ci_gate_review): every suite except the extended
+          # set — iso_*/hang_repro/comprehensive scenario (extended
+          # workflow), the canonical hang subset below, and the visual
+          # fixture (the visual-parity job runs it once; see W2).
+          mapfile -t gate_files < <(find test -name '*_test.dart' \
+            ! -path 'test/visual/*' \
+            ! -name 'canonical_iso_*' \
+            ! -name 'canonical_hang_repro_test.dart' \
+            ! -name 'exam_builder_comprehensive_scenario_test.dart' \
+            ! -name 'canonical_preview_screen_test.dart' | sort)
+          if [ "${#gate_files[@]}" -eq 0 ]; then
+            echo 'gate file list is empty; refusing to run the full suite' >&2
+            exit 1
+          fi
+          args=(--reporter json --timeout 120s)
+          if [ -n "${{ inputs.test_path }}" ]; then
+            args+=("${{ inputs.test_path }}")
+          else
+            args+=("${gate_files[@]}")
+          fi
+          if [ -n "${{ inputs.test_name }}" ]; then
+            args+=(--plain-name "${{ inputs.test_name }}")
+          fi
+          # Both invocations always run: a red suite must not starve the
+          # gate subset (pipefail alone would abort the step early).
+          gate_status=0
+          flutter test "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/flutter-test.log" || gate_status=$?
+          # Canonical gate subset (W3): test-1 (tap to source offsets) and
+          # E7 (paper default) stay Required; tests 2-6 run in Extended
+          # until proven hang-free, fast, and stable across runs
+          # (re-promotion rule). Single --name regex: repeated
+          # --plain-name flags intersect (match nothing), --name alternates.
+          if [ -z "${{ inputs.test_path }}" ]; then
+            flutter test --reporter json --timeout 120s \
+              test/wizard/canonical_preview_screen_test.dart \
+              --name 'screen tap follows|seam-free screen shows' \
+              2>&1 | tee "$RUNNER_TEMP/flutter-test-canonical-gate.log" || gate_status=$?
+          fi
+          exit $gate_status
+
+      # Structured diagnostics from the JSON reporter (see the digest step):
+      # GitHub truncates every annotation at 4 KiB, so the digest pre-chunks
+      # failure names/excerpts/timelines annotation-safe. Always exits 0 —
+      # diagnostics must never fail the build they diagnose.
+      - name: Build test digest
+        if: always()
+        shell: bash
+        run: |
+          python3 tool/flutter_test_digest.py \
+            --log "$RUNNER_TEMP/flutter-test.log" \
+            --out "$RUNNER_TEMP/test-digest"
+          cat "$RUNNER_TEMP/test-digest/counts.txt" || true
+          if [ -f "$RUNNER_TEMP/flutter-test-canonical-gate.log" ]; then
+            python3 tool/flutter_test_digest.py \
+              --log "$RUNNER_TEMP/flutter-test-canonical-gate.log" \
+              --out "$RUNNER_TEMP/test-digest-gate"
+            cat "$RUNNER_TEMP/test-digest-gate/counts.txt" || true
+          fi
+
+      # Vacuous-run guards: a drifted --name (or an emptied file list)
+      # must fail loudly, never pass silent. Main suite: ~634 tests (72
+      # files incl. suite-load pseudo-tests; static 547 + 15 loop-generated
+      # + 72 pseudo — recalibrated in C5b after the editable-DOCX suite
+      # deletion; floor 600 keeps a 30+ margin); canonical subset: exactly
+      # test-1 + E7 + its load pseudo-test.
+      - name: Guard against vacuous gate runs
+        if: ${{ always() && inputs.test_path == '' }}
+        shell: bash
+        run: |
+          total_of() {
+            awk -F'[= ]' '{s=0; for (i=1; i<=NF; i++) { if ($i=="passed" || $i=="failed" || $i=="skipped") s+=$(i+1) }; print s+0}' "$1"
+          }
+          main_total=$(total_of "$RUNNER_TEMP/test-digest/counts.txt")
+          if [ "$main_total" -lt 600 ]; then
+            echo "main gate ran $main_total tests (< 600); failing loudly" >&2
+            exit 1
+          fi
+          if [ -f "$RUNNER_TEMP/test-digest-gate/counts.txt" ]; then
+            gate_total=$(total_of "$RUNNER_TEMP/test-digest-gate/counts.txt")
+            if [ "$gate_total" -ne 3 ]; then
+              echo "canonical gate ran $gate_total tests (!= 3); failing loudly" >&2
+              exit 1
+            fi
+          fi
 
       # عينات التصدير التي تكتبها الاختبارات إلى build/math_samples — docx من
       # مُصدِّر Word وpdf من مُصدِّر PDF — تُرفع مرفقاً عندما يحمل آخر رسائل
@@ -88,10 +187,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # بوابة P0 (test/export_gate) تكتب القطع الأربعة + المصفوفة إلى
+      # بوابة P0 (test/export_gate) تكتب القطع الثلاثة + المصفوفة إلى
       # build/export_gate؛ تُرفع دائماً لأن الدليل هو غرض البوابة لا رقم
-      # الخروج: من راجع الانحدار يريد vector.pdf وeditable.docx وخريطة
-      # 15×4، لا رسالة «1 test failed».
+      # الخروج: من راجع الانحدار يريد vector.pdf وexact وخريطة
+      # 15×3، لا رسالة «1 test failed». (حُذف editable.docx في C5.)
       - name: Upload P0 export-gate artifacts
         if: always()
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -123,13 +222,24 @@ jobs:
           # نجاحٌ بلا رقم ليس دليلاً: التعليقات هي القناة الوحيدة التي يقرأها
           # من لا يملك سجلّات التشغيل، فتنشر الحصيلة في الجولة الخضراء كما في
           # الحمراء (لا يُستنتج «نُجحت» من حالة الفحص وحدها).
-          if [ -f "$RUNNER_TEMP/flutter-test.log" ]; then
+          if [ -f "$RUNNER_TEMP/test-digest/counts.txt" ]; then
+            counts="$(cat "$RUNNER_TEMP/test-digest/counts.txt")"
+            counts="${counts//%/%25}"; counts="${counts//:/%3A}"
+            counts="${counts//$'\r'/%0D}"; counts="${counts//$'\n'/%0A}"
+            echo "::notice title=P0 gate — flutter test::$counts"
+          elif [ -f "$RUNNER_TEMP/flutter-test.log" ]; then
             # `|| true` لازم: الخطوة تشتغل بـ `-e -o pipefail`، وgrep بلا مطابقة
             # يخرج 1 — أي أن «صفر أخطاء» كان يُفشل نفس الخطوة التي تنشر النجاح.
             counts="$({ grep -oE '[0-9]+ tests? passed|[0-9]+ tests? failed|All tests passed!|[0-9]+:[0-9]+ \+[0-9]+ ~?[0-9]* ?-?[0-9]*' "$RUNNER_TEMP/flutter-test.log" || true; } | tail -n 4 | tr '\n' ' ')"
             counts="${counts//%/%25}"; counts="${counts//:/%3A}"
             counts="${counts//$'\r'/%0D}"; counts="${counts//$'\n'/%0A}"
             echo "::notice title=P0 gate — flutter test::$counts"
+          fi
+          if [ -f "$RUNNER_TEMP/test-digest-gate/counts.txt" ]; then
+            gate_counts="$(cat "$RUNNER_TEMP/test-digest-gate/counts.txt")"
+            gate_counts="${gate_counts//%/%25}"; gate_counts="${gate_counts//:/%3A}"
+            gate_counts="${gate_counts//$'\r'/%0D}"; gate_counts="${gate_counts//$'\n'/%0A}"
+            echo "::notice title=Canonical gate — flutter test::$gate_counts"
           fi
           if [ -f build/export_gate/matrix.txt ]; then
             tally=""
@@ -156,7 +266,11 @@ jobs:
             evidence="${evidence//$'\r'/%0D}"; evidence="${evidence//$'\n'/%0A}"
             echo "::notice title=P0 gate — summary::$evidence"
           fi
-      - name: Publish analyzer and test diagnostics
+      # GitHub caps error annotations at ~10 per step: one publisher step per
+      # category so a long failure list can never starve the excerpts (or the
+      # reverse). The tiny publish helpers repeat per step on purpose — no
+      # cross-step coupling.
+      - name: Publish analyzer findings
         if: failure() && (steps.analyze.outcome == 'failure' || steps.test.outcome == 'failure')
         shell: bash
         run: |
@@ -169,54 +283,6 @@ jobs:
             excerpt="${excerpt//$'\r'/%0D}"
             excerpt="${excerpt//$'\n'/%0A}"
             echo "::error title=$label::$excerpt"
-          }
-          # ينشر أسماء كل الاختبارات الفاشلة في تعليق واحد مبكّر — التغطية
-          # (cap ~50 تعليقاً) لا تقطعه، وبدونه تختفي أسماء الفشل خلف
-          # مقاطع الأدلة الطويلة.
-          publish_failure_names() {
-            local file="$1" names count
-            [ -f "$file" ] || return 0
-            names="$(grep -E 'dart: .+ \(failed\)$' "$file" \
-              | sed -E 's/.*dart: //; s/ \(failed\)$//' \
-              | sort -u)"
-            [ -n "$names" ] || return 0
-            count="$(printf '%s\n' "$names" | wc -l | tr -d ' ')"
-            names="${names//%/%25}"
-            names="${names//$'\r'/%0D}"
-            names="${names//$'\n'/%0A}"
-            echo "::error title=Failing tests ($count)::$names"
-          }
-          # ينشر سياق كل اختبار فاشل (رسالة التوقّع والفرق) في تعليق **مستقل
-          # صغير** لكل اختبار: حجم التعليق الواحد محدود (~4KB) وسقف عدد
-          # التعليقات على التشغيل محدود أيضاً، فالتجميع في تعليق ضخم كان
-          # يُبتر قبل آخر الفشولات. تُقدَّم أخطاء التشغيل على أخطاء التحميل
-          # (الترجمة)، وأسماء كل الفشولات تُنشر دائماً في تعليق مستقل قبلها.
-          publish_first_failure() {
-            local file="$1" label="$2" markers line start entry count=0
-            [ -f "$file" ] || return 0
-            markers="$( { grep -n -E '❌.*\(failed\)' "$file" | grep -v 'loading ' || true; \
-                         grep -n -E '❌ loading ' "$file" || true; } | cut -d: -f1 | head -n 8 )"
-            while read -r line; do
-              [ -n "$line" ] || continue
-              start=$((line > 2 ? line - 2 : 1))
-              entry="$(sed -n "${start},$((start + 34))p" "$file")"
-              [ -n "$entry" ] || continue
-              count=$((count + 1))
-              entry="${entry:0:2300}"
-              entry="${entry//%/%25}"
-              entry="${entry//$'\r'/%0D}"
-              entry="${entry//$'\n'/%0A}"
-              echo "::error title=$label ($count)::$entry"
-            done <<< "$markers"
-            if [ "$count" -eq 0 ]; then
-              # لا علامة فشل ظاهرة في السجل: ننشر آخر 140 سطراً كاملة.
-              entry="$(tail -n 140 "$file")"
-              [ -n "$entry" ] || return 0
-              entry="${entry//%/%25}"
-              entry="${entry//$'\r'/%0D}"
-              entry="${entry//$'\n'/%0A}"
-              echo "::error title=$label::$entry"
-            fi
           }
           # المحلل قد يُنتج عشرات الأخطاء فلا يكفي ذيل السجل: ننشر **كل**
           # أخطاء المحلل (منزوعة التكرار) ثم ملخّص التحذيرات/الملاحظات،
@@ -231,20 +297,6 @@ jobs:
             lines="${lines//$'\r'/%0D}"
             lines="${lines//$'\n'/%0A}"
             echo "::error title=$label ($count)::$lines"
-          }
-          # أخطاء مترجم Dart تُطبع **قبل** «Failed to load» فتبقى خارج نوافذ
-          # مقاطع الفشل: بدونها يصير فشل تحميل الاختبار بلا سبب مسمّى.
-          publish_compile_errors() {
-            local file="$1" lines count
-            [ -f "$file" ] || return 0
-            lines="$(grep -E '\.dart:[0-9]+:[0-9]+: (Error|Warning):' "$file" \
-              | sed -E 's|/home/runner/work/[^ ]*/||' | sort -u | head -n 30 || true)"
-            [ -n "$lines" ] || return 0
-            count="$(printf '%s\n' "$lines" | wc -l | tr -d ' ')"
-            lines="${lines//%/%25}"
-            lines="${lines//$'\r'/%0D}"
-            lines="${lines//$'\n'/%0A}"
-            echo "::error title=Dart compiler errors ($count)::$lines"
           }
           # ملاحظات `warning`/`info` تُفشل الخطوة بـ`--fatal-infos` أيضاً، لكن
           # النشر كان يقتصر على `error` فيصل الفشل بلا رقم ولا قاعدة. هنا
@@ -263,46 +315,184 @@ jobs:
           publish_analyzer_findings "$RUNNER_TEMP/flutter-analyze.log" 'warning' 'Analyzer warnings' 60
           publish_analyzer_findings "$RUNNER_TEMP/flutter-analyze.log" 'info' 'Analyzer infos' 60
           publish_analyzer_tally "$RUNNER_TEMP/flutter-analyze.log"
-          publish_compile_errors "$RUNNER_TEMP/flutter-test.log"
-          publish_gate_stages() {
-            local file="$1" lines count
-            [ -f "$file" ] || return 0
-            lines="$(grep -F '[p0-gate]' "$file" | tail -n 24 || true)"
-            [ -n "$lines" ] || return 0
-            count="$(printf '%s\n' "$lines" | wc -l | tr -d ' ')"
-            lines="${lines//%/%25}"
-            lines="${lines//$'\r'/%0D}"
-            lines="${lines//$'\n'/%0A}"
-            echo "::error title=P0 gate stages ($count)::$lines"
-          }
-          publish_gate_stages "$RUNNER_TEMP/flutter-test.log"
-          # سبب فشل واحد لكل اختبار بوابة: نافذة «مقطع الفشل» المشتركة تُقتطع
-          # عند حد GitHub، فتنحصر القراءة في أول اختبار فقط. الحل: تعليق مستقل
-          # لكل P0-GATE-NN يحمل أول أسطر بعده حتى السبب (reason).
-          publish_gate_reasons() {
-            local file="$1" id block
-            [ -f "$file" ] || return 0
-            for id in 00 01 01B 02 03 04 05 06 07 08 09 10 11 99; do
-              block="$(awk -v pat="P0-GATE-$id:" '
-                index($0, pat) > 0 && index($0, "❌") > 0 && index($0, "(failed)") > 0 {
-                  show = 9; next
-                }
-                index($0, "::endgroup::") > 0 { if (show > 0) { show = 0 }; next }
-                index($0, "❌") > 0 || index($0, "✅") > 0 { next }
-                show > 0 { print "  " substr($0, 1, 200); show-- }
-              ' "$file" | head -n 9)"
-              [ -n "$block" ] || continue
-              block="${block//%/%25}"
-              block="${block//$'\r'/%0D}"
-              block="${block//$'\n'/%0A}"
-              echo "::error title=P0-GATE-$id reason::$block"
-            done
-          }
-          publish_gate_reasons "$RUNNER_TEMP/flutter-test.log"
-          publish_failure_names "$RUNNER_TEMP/flutter-test.log"
           publish_tail "$RUNNER_TEMP/flutter-analyze.log" 'Flutter analyzer log excerpt'
-          publish_tail "$RUNNER_TEMP/flutter-test.log" 'Flutter test log excerpt'
-          publish_first_failure "$RUNNER_TEMP/flutter-test.log" 'Failing test excerpts'
+
+      - name: Publish failing test names
+        if: failure() && steps.test.outcome == 'failure'
+        shell: bash
+        run: |
+          # تعليق واحد بمحتوى مُهيَّأ سلفاً (الملخِّص يقطع المقاطع عند ~3KB؛
+          # GitHub يبتر الرسائل عند 4KB).
+          publish_one() {
+            local text="$1"
+            [ -n "$text" ] || return 0
+            text="${text//%/%25}"
+            text="${text//$'\r'/%0D}"
+            text="${text//$'\n'/%0A}"
+            echo "::error title=$2::$text"
+          }
+          # القوائم الطويلة (أسماء الفشل، الخطوط الزمنية) تُنشر مجزأة بدقة
+          # البايت (~3KB للجزء) فلا يُسقَط أي عنصر عند حد GitHub.
+          publish_chunked() {
+            local file="$1" title="$2" chunk='' size=0 part=1 lbs line
+            [ -f "$file" ] && [ -s "$file" ] || return 0
+            while IFS= read -r line || [ -n "$line" ]; do
+              lbs="$(printf '%s\n' "$line" | wc -c | tr -d ' ')"
+              if [ $((size + lbs)) -gt 3000 ] && [ -n "$chunk" ]; then
+                publish_one "$chunk" "$title (part $part)"
+                part=$((part + 1)); chunk=''; size=0
+              fi
+              chunk+="$line"$'\n'; size=$((size + lbs))
+            done < "$file"
+            if [ "$part" -gt 1 ]; then
+              publish_one "$chunk" "$title (part $part)"
+            else
+              publish_one "$chunk" "$title"
+            fi
+            return 0
+          }
+          DIGEST="$RUNNER_TEMP/test-digest"
+          if [ -f "$DIGEST/counts.txt" ]; then
+            if [ -f "$DIGEST/summary.md" ]; then
+              cat "$DIGEST/summary.md" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            # إخفاقات التحميل أولاً: تفسّر غياب ملفات كاملة.
+            if [ -s "$DIGEST/compile_errors.txt" ]; then
+              publish_one "$(cat "$DIGEST/compile_errors.txt")" 'Dart compiler errors'
+            fi
+            # كل اسم فاشل، مجزأً — لا يُبتر أبداً.
+            if [ -s "$DIGEST/failing.txt" ]; then
+              total="$(wc -l < "$DIGEST/failing.txt" | tr -d ' ')"
+              publish_chunked "$DIGEST/failing.txt" "Failing tests ($total)"
+            fi
+          else
+            publish_one 'test digest unavailable (log had no JSON events)' 'Test digest missing'
+          fi
+          # Canonical-gate digest (second flutter run in the gate step).
+          GATEDIGEST="$RUNNER_TEMP/test-digest-gate"
+          if [ -s "$GATEDIGEST/compile_errors.txt" ]; then
+            publish_one "$(cat "$GATEDIGEST/compile_errors.txt")" 'Dart compiler errors (canonical gate)'
+          fi
+          if [ -s "$GATEDIGEST/failing.txt" ]; then
+            gate_total="$(wc -l < "$GATEDIGEST/failing.txt" | tr -d ' ')"
+            publish_chunked "$GATEDIGEST/failing.txt" "Failing canonical-gate tests ($gate_total)"
+          fi
+
+      - name: Publish test failure excerpts
+        if: failure() && steps.test.outcome == 'failure'
+        shell: bash
+        run: |
+          publish_one() {
+            local text="$1"
+            [ -n "$text" ] || return 0
+            text="${text//%/%25}"
+            text="${text//$'\r'/%0D}"
+            text="${text//$'\n'/%0A}"
+            echo "::error title=$2::$text"
+          }
+          DIGEST="$RUNNER_TEMP/test-digest"
+          [ -f "$DIGEST/counts.txt" ] || exit 0
+          # مقاطع الأخطاء الأولى، بسقف 10 تعليقات (الأسماء تغطي الكل).
+          total="$(ls "$DIGEST"/excerpt_*.txt 2>/dev/null | wc -l | tr -d ' ' || true)"
+          i=0
+          for f in "$DIGEST"/excerpt_*.txt; do
+            [ -f "$f" ] || break
+            i=$((i + 1))
+            if [ "$i" -gt 10 ]; then break; fi
+            name="$(sed -n '2p' "$f" | sed 's/^TEST: //')"
+            publish_one "$(cat "$f")" "Test failure ($i/$total): ${name:0:120}"
+          done
+          GATEDIGEST="$RUNNER_TEMP/test-digest-gate"
+          gate_total="$(ls "$GATEDIGEST"/excerpt_*.txt 2>/dev/null | wc -l | tr -d ' ' || true)"
+          j=0
+          for f in "$GATEDIGEST"/excerpt_*.txt; do
+            [ -f "$f" ] || break
+            j=$((j + 1))
+            if [ "$j" -gt 10 ]; then break; fi
+            name="$(sed -n '2p' "$f" | sed 's/^TEST: //')"
+            publish_one "$(cat "$f")" "Gate failure ($j/$gate_total): ${name:0:120}"
+          done
+
+      - name: Publish P0 gate and debug timelines
+        if: failure() && steps.test.outcome == 'failure'
+        shell: bash
+        run: |
+          publish_one() {
+            local text="$1"
+            [ -n "$text" ] || return 0
+            text="${text//%/%25}"
+            text="${text//$'\r'/%0D}"
+            text="${text//$'\n'/%0A}"
+            echo "::error title=$2::$text"
+          }
+          publish_chunked() {
+            local file="$1" title="$2" chunk='' size=0 part=1 lbs line
+            [ -f "$file" ] && [ -s "$file" ] || return 0
+            while IFS= read -r line || [ -n "$line" ]; do
+              lbs="$(printf '%s\n' "$line" | wc -c | tr -d ' ')"
+              if [ $((size + lbs)) -gt 3000 ] && [ -n "$chunk" ]; then
+                publish_one "$chunk" "$title (part $part)"
+                part=$((part + 1)); chunk=''; size=0
+              fi
+              chunk+="$line"$'\n'; size=$((size + lbs))
+            done < "$file"
+            if [ "$part" -gt 1 ]; then
+              publish_one "$chunk" "$title (part $part)"
+            else
+              publish_one "$chunk" "$title"
+            fi
+            return 0
+          }
+          DIGEST="$RUNNER_TEMP/test-digest"
+          [ -f "$DIGEST/counts.txt" ] || exit 0
+          # سبب مستقل لكل اختبار بوابة فاشل (المعرّفات ثابتة فالعدد محدود).
+          for f in "$DIGEST"/p0_*.txt; do
+            [ -f "$f" ] || break
+            id="${f##*/p0_}"; id="${id%.txt}"
+            publish_one "$(cat "$f")" "P0-GATE-$id reason"
+          done
+          # تقدّم البوابة: آخر 24 مرحلة (أسطر نظيفة بلا تغليف JSON) بعد
+          # إسقاط ثرثرة التشكيل المتكررة التي كانت تطغى على النافذة كلها.
+          if [ -s "$DIGEST/p0gate_timeline.txt" ]; then
+            stages="$(grep -v 'bidi shaped input' "$DIGEST/p0gate_timeline.txt" | tail -n 24)"
+            count="$(printf '%s\n' "$stages" | wc -l | tr -d ' ')"
+            publish_one "$stages" "P0 gate stages (last $count)"
+          fi
+          # قناة printf-debugging: مخرجات [diag] مجزأة ومحدودة كي لا تُجوّع
+          # أسباب البوابة أعلاه.
+          if [ -s "$DIGEST/diag.txt" ]; then
+            head -c 9000 "$DIGEST/diag.txt" > "$RUNNER_TEMP/diag_head.txt"
+            publish_chunked "$RUNNER_TEMP/diag_head.txt" 'Test diagnostics ([diag])'
+          fi
+          if [ -s "$RUNNER_TEMP/test-digest-gate/diag.txt" ]; then
+            head -c 9000 "$RUNNER_TEMP/test-digest-gate/diag.txt" > "$RUNNER_TEMP/diag_gate_head.txt"
+            publish_chunked "$RUNNER_TEMP/diag_gate_head.txt" 'Gate diagnostics ([diag])'
+          fi
+          # الركيزة تعمل داخل هذه الحزمة أيضاً؛ ذيلها يوجّه تنقيح التعلّق.
+          if [ -s "$DIGEST/fixture_timeline.txt" ]; then
+            publish_one "$(tail -n 15 "$DIGEST/fixture_timeline.txt")" 'Fixture progress (build job)'
+          fi
+
+      # Slowest-tests timing (T1): informational on green AND red — gate
+      # performance is evidence, not just failure forensics.
+      - name: Publish slowest tests
+        if: always()
+        shell: bash
+        run: |
+          publish_one() {
+            local text="$1"
+            [ -n "$text" ] || return 0
+            text="${text//%/%25}"
+            text="${text//$'\r'/%0D}"
+            text="${text//$'\n'/%0A}"
+            echo "::notice title=$2::$text"
+          }
+          if [ -s "$RUNNER_TEMP/test-digest/slowest.txt" ]; then
+            publish_one "$(cat "$RUNNER_TEMP/test-digest/slowest.txt")" 'Slowest tests (top 15)'
+          fi
+          if [ -s "$RUNNER_TEMP/test-digest-gate/slowest.txt" ]; then
+            publish_one "$(cat "$RUNNER_TEMP/test-digest-gate/slowest.txt")" 'Slowest canonical-gate tests'
+          fi
 
       - name: Upload validation diagnostics on failure
         if: failure()
@@ -312,12 +502,17 @@ jobs:
           path: |
             ${{ runner.temp }}/flutter-analyze.log
             ${{ runner.temp }}/flutter-test.log
+            ${{ runner.temp }}/flutter-test-canonical-gate.log
             ${{ runner.temp }}/flutter-build.log
+            ${{ runner.temp }}/test-digest/*
+            ${{ runner.temp }}/test-digest-gate/*
           if-no-files-found: ignore
           retention-days: 7
 
       - name: Build release APK
         id: build
+        # Targeted runs (dispatch with test_path) iterate on tests only.
+        if: ${{ inputs.test_path == '' }}
         shell: bash
         run: |
           set -o pipefail
@@ -344,6 +539,7 @@ jobs:
           publish_excerpt 'Flutter/Gradle build log tail' "$(tail -n 80 "$file")"
 
       - name: Upload APK artifact
+        if: ${{ inputs.test_path == '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: writing-questions-release-apk
@@ -352,12 +548,14 @@ jobs:
           retention-days: 14
 
   # --------------------------------------------------------------------------
-  # التحقق البصري الخارجي: يُصيّر Vector PDF وEditable DOCX وExact المستقل
+  # التحقق البصري الخارجي: يُصيّر Vector PDF وExact المستقل
   # بمحرّكات أخرى ويقارن كل صفحة بالمعاينة عبر RMSE فعلي (انظر
   # tool/verify_visual_parity.sh). فشل أي مسار هو فشل CI.
   # --------------------------------------------------------------------------
   visual-parity:
-    name: Visual regression (Vector/Editable/Exact vs preview)
+    name: Visual regression (Vector/Exact vs preview)
+    # Targeted runs skip the visual job unless the target is the fixture.
+    if: ${{ inputs.test_path == '' || startsWith(inputs.test_path, 'test/visual') }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -391,8 +589,17 @@ jobs:
         run: |
           mkdir -p build/visual_parity
           set -o pipefail
-          flutter test test/visual/visual_parity_fixture_test.dart 2>&1 \
+          flutter test --reporter json test/visual/visual_parity_fixture_test.dart 2>&1 \
             | tee build/visual_parity/fixture_test.log
+
+      - name: Build fixture digest
+        if: always()
+        shell: bash
+        run: |
+          python3 tool/flutter_test_digest.py \
+            --log build/visual_parity/fixture_test.log \
+            --out build/visual_parity/digest
+          cat build/visual_parity/digest/counts.txt || true
 
       - name: Compare rendered files against the preview (RMSE)
         run: bash tool/verify_visual_parity.sh build/visual_parity
@@ -417,11 +624,37 @@ jobs:
           fi
 
           log=build/visual_parity/fixture_test.log
+          digest=build/visual_parity/digest
+          if [ -f "$digest/counts.txt" ]; then
+            # (1) كامل الخط الزمني للركيزة مجزأً (~3KB للجزء؛ GitHub يبتر عند
+            # 4KB) — نافذة «آخر 8 أسطر» كانت تخفي موقع التعلّق الحقيقي.
+            if [ -s "$digest/fixture_timeline.txt" ]; then
+              rm -rf "$RUNNER_TEMP/fixture_chunks" && mkdir -p "$RUNNER_TEMP/fixture_chunks"
+              split -C 3000 --numeric-suffixes=1 "$digest/fixture_timeline.txt" \
+                "$RUNNER_TEMP/fixture_chunks/part_"
+              chunks=("$RUNNER_TEMP"/fixture_chunks/part_*)
+              if [ "${#chunks[@]}" -eq 1 ]; then
+                annotate "$(cat "${chunks[0]}")" "مسار الركيزة"
+              else
+                k=0
+                for c in "${chunks[@]}"; do
+                  k=$((k + 1))
+                  annotate "$(cat "$c")" "مسار الركيزة (جزء $k من ${#chunks[@]})"
+                done
+              fi
+            fi
+            # (2) رسالة الفشل نفسها (توقّع/استثناء) بلا تغليف JSON.
+            for f in "$digest"/excerpt_*.txt; do
+              [ -f "$f" ] || break
+              name="$(sed -n '2p' "$f" | sed 's/^TEST: //')"
+              annotate "$(cat "$f")" "سبب فشل الركيزة: ${name:0:100}"
+            done
+            exit 0
+          fi
+          # احتياط: الملخّص غائب (فشل التشغيل قبل الاختبارات).
           [ -f "$log" ] || exit 0
-          # (1) مراحل الركيزة: آخر ما وصلت إليه قبل الفشل.
           stages="$(grep -F '[fixture]' "$log" | tail -n 8 || true)"
           [ -z "$stages" ] || annotate "$stages" "مسار الركيزة"
-          # (2) رسالة الفشل نفسها (توقّع/استثناء) بأسطرها التالية.
           failure="$(grep -m 1 -A 14 -F -e '[E]' -e 'Expected:' -e 'Actual:' -e 'Exception' -e 'assertion' "$log" || true)"
           [ -z "$failure" ] || annotate "$failure" "سبب فشل الركيزة"
 

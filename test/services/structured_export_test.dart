@@ -1,19 +1,11 @@
-// البنية لا النص المدموج: أجزاء العنصر تُصدَّر **جريانات/كتلاً مستقلة**.
+// البنية لا النص المدموج: الخيارات في PDF **صناديق ثابتة العرض** تتشارك
+// السطر وتلتفّ كما في المعاينة (لا نصاً واحداً يفصل بينه بمسافات NBSP)،
+// والقيم (العرض والفجوة) هي قيم العقد نفسه.
 //
-// كانت `TitleLineBlueprint.line` و`PointBlueprint.line` و`OptionBlueprint.line`
-// تُدمج (الرقم ← المنطوق ← الدرجة ← التسمية) في نص واحد، فيفقد الراسم قدرته
-// على إعطاء كل جزء تنسيقه وموضعه (الرقم غامق، الدرجة عند حافة السطر، الخيار
-// في صندوقه). هذه الاختبارات تُثبّت أن:
-//   * Word: كل جزء جريان `<w:r>` مستقل (وعددها > 1 في الفقرة الواحدة).
-//   * PDF: الخيارات في **صناديق ثابتة العرض** تتشارك السطر وتلتفّ كما في
-//     المعاينة (لا نصاً واحداً يفصل بينه بمسافات NBSP).
-//   * القيم (الحجم/الإزاحة/الفجوة/ارتفاع السطر) هي قيم العقد نفسه.
-import 'dart:convert';
-
-import 'package:archive/archive.dart';
+// (حُذفت في C5 مع Word القابل للتحرير: جريانات `<w:r>` المستقلة لكل جزء
+// وقيم `w:ind/w:sz/w:line` من العقد — Word اليوم صور لا بنية.)
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:writing_questions_app/layout/blueprint/exam_blueprint.dart';
 import 'package:writing_questions_app/layout/paper_metrics.dart';
 import 'package:writing_questions_app/layout/visual/visual_metrics.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
@@ -24,7 +16,6 @@ import 'package:writing_questions_app/models/point_kind.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/pdf_engine/paginated_pdf_exam_engine.dart';
-import 'package:writing_questions_app/services/docx_document_export_service.dart';
 
 import '../pdf_engine/pdf_content_probe.dart';
 
@@ -58,155 +49,8 @@ ExamDocument _document() => ExamDocument(
       ],
     );
 
-Future<String> _docxXml(ExamDocument document) async {
-  final bytes = await DocxDocumentExportService.buildDocumentDocxBytes(
-    document: document,
-  );
-  final archive = ZipDecoder().decodeBytes(bytes);
-  return utf8.decode(archive.findFile('word/document.xml')!.content as List<int>);
-}
-
-/// فقرة Word التي تحوي [needle] كاملةً (من `<w:p>` إلى `</w:p>`).
-String _paragraphWith(String xml, String needle) {
-  for (final match in RegExp('<w:p>.*?</w:p>', dotAll: true).allMatches(xml)) {
-    if (match.group(0)!.contains(needle)) {
-      return match.group(0)!;
-    }
-  }
-  fail('لم أجد فقرة تحوي «$needle».');
-}
-
-int _runsIn(String paragraph) => RegExp('<w:r>').allMatches(paragraph).length;
-
-/// جريان Word واحد: نصّه (مقاطع `<w:t>` مجمّعة) وهل هو غامق.
-class _Run {
-  const _Run(this.text, this.bold);
-  final String text;
-  final bool bold;
-}
-
-/// جريانات فقرة Word بترتيبها وبخصائص كل جريان.
-List<_Run> _runs(String paragraph) {
-  final runs = <_Run>[];
-  for (final match
-      in RegExp(r'<w:r>(.*?)</w:r>', dotAll: true).allMatches(paragraph)) {
-    final run = match.group(1)!;
-    final rPr = RegExp(r'<w:rPr>(.*?)</w:rPr>', dotAll: true)
-        .firstMatch(run)
-        ?.group(1);
-    final text = RegExp(r'<w:t[^>]*>(.*?)</w:t>', dotAll: true)
-        .allMatches(run)
-        .map((piece) => piece.group(1))
-        .join();
-    runs.add(_Run(text, rPr?.contains('<w:b/>') ?? false));
-  }
-  return runs;
-}
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-
-  group('Word: الأجزاء جريانات مستقلة', () {
-    test('سطر العنوان: الرقم والمنطوق والدرجة في جريانات منفصلة', () async {
-      final document = _document();
-      // الرقم من نفس البناء الدلالي الذي يقرؤه الراسمون (لا صياغة في الاختبار).
-      final titleLine = ExamBlueprint.from(document).questions.single.title;
-      final label = titleLine.number;
-      final xml = await _docxXml(document);
-      final title = _paragraphWith(xml, 'Stmt');
-      expect(_runsIn(title), greaterThanOrEqualTo(3),
-          reason: 'الرقم ← المنطوق ← الدرجة ثلاثة جريانات، لا نص واحد.');
-      expect(title.contains('>$label</w:t>') || title.contains('>$label<'),
-          isTrue,
-          reason: 'رقم السؤال «$label» جريان مستقل.');
-      // مجمّع النص يعيد السطر كما في المعاينة (الأجزاء تفصلها مسافة واحدة).
-      final plain = RegExp(r'<w:t[^>]*>(.*?)</w:t>', dotAll: true)
-          .allMatches(title)
-          .map((match) => match.group(1))
-          .join();
-      // الأجزاء الثلاثة متتالية بمسافة واحدة، والدرجة في آخر السطر.
-      expect(plain, startsWith('$label Stmt '));
-      expect(plain, contains('12'));
-      expect(plain, endsWith(')'));
-    });
-
-    test('سطر النقطة: التسمية غامقة وحدها والنص غير غامق', () async {
-      final xml = await _docxXml(_document());
-      final point = _paragraphWith(xml, 'PointOne');
-      final runs = _runs(point);
-      expect(runs.length, greaterThanOrEqualTo(3),
-          reason: 'الرقم ← النص ← الدرجة ثلاثة جريانات.');
-
-      // الجريان الذي يحوي نص النقطة ليس غامقاً…
-      final textRun = runs.firstWhere(
-        (run) => run.text.contains('PointOne'),
-        orElse: () => fail('لا جريان يحوي نص النقطة.'),
-      );
-      expect(textRun.bold, isFalse,
-          reason: 'نص النقطة ليس غامقاً (كانت النقطة المدموجة تُطبعه غامقاً).');
-
-      // …وجريان التسمية (الرقم) غامق وحده.
-      final others = runs.where((run) => !run.text.contains('PointOne')).toList();
-      expect(others.any((run) => run.bold), isTrue,
-          reason: 'تسمية النقطة جريان غامق مستقل عن نصها.');
-    });
-
-    test('صف الخيارات: لكل خيار تسمية ونص جريانين مستقلين', () async {
-      final xml = await _docxXml(_document());
-      final options = _paragraphWith(xml, 'OptA');
-      // 4 تسميات + 4 نصوص = 8 جريانات على الأقل (وفواصل بينها).
-      expect(_runsIn(options), greaterThanOrEqualTo(8),
-          reason: 'كل خيار: التسمية جريان والنص جريان — لا سطر مدموج.');
-      for (final label in const <String>['A)', 'B)', 'C)', 'D)']) {
-        expect(options.contains('>$label</w:t>') || options.contains('>$label<'),
-            isTrue,
-            reason: 'تسمية الخيار $label جريان مستقل.');
-      }
-      expect(options.contains('<w:r><w:rPr>'), isTrue);
-    });
-  });
-
-  group('Word: قيم العقد نفسها (لا أرقام محلية)', () {
-    test('الحجم والإزاحة وارتفاع السطر والفجوة من ExamTypography/VisualMetrics',
-        () async {
-      final xml = await _docxXml(_document());
-      final point = _paragraphWith(xml, 'PointOne');
-      // P0.5-A: `w:ind` يُعلن بالاتجاه أولاً — `w:start` مع الفيزيائي
-      // المقابل لاتجاه الورقة (هنا عربية ⇒ right)، والقيمة من العقد وحدها.
-      expect(
-        point.contains(
-          '<w:ind w:start="${PaperMetrics.twips(VisualMetrics.pointIndentPx)}" '
-          'w:right="${PaperMetrics.twips(VisualMetrics.pointIndentPx)}"/>',
-        ),
-        isTrue,
-        reason: 'إزاحة النقطة من VisualMetrics لا رقم مكتوب في الخدمة.',
-      );
-      expect(point.contains('<w:sz w:val="21"/>'), isTrue,
-          reason: 'حجم النقطة 10.5pt → 21 نصف نقطة من العقد.');
-      expect(point.contains('w:line="360"'), isTrue,
-          reason: 'ارتفاع سطر النقطة 1.5 → 360 تويب من العقد.');
-
-      final options = _paragraphWith(xml, 'OptA');
-      // P0.5-A: `w:ind` يُعلن بالاتجاه أولاً — `w:start` مع الفيزيائي
-      // المقابل لاتجاه الورقة (هنا عربية ⇒ right)، والقيمة من العقد وحدها.
-      expect(
-        options.contains(
-          '<w:ind w:start="${PaperMetrics.twips(VisualMetrics.pointIndentPx) + PaperMetrics.twips(VisualMetrics.optionIndentPx)}" '
-          'w:right="${PaperMetrics.twips(VisualMetrics.pointIndentPx) + PaperMetrics.twips(VisualMetrics.optionIndentPx)}"/>',
-        ),
-        isTrue,
-        reason: 'إزاحة الخيارات = إزاحة النقطة + إزاحتها من العقد.',
-      );
-      expect(options.contains('<w:sz w:val="21"/>'), isTrue);
-      expect(options.contains('w:line="336"'), isTrue,
-          reason: 'ارتفاع سطر الخيار 1.4 → 336 تويب من العقد.');
-      expect(
-        options.contains('w:before="${PaperMetrics.twips(VisualMetrics.optionTopGapPx)}"'),
-        isTrue,
-        reason: 'الفجوة قبل صف الخيارات من العقد (2px → 30 تويب).',
-      );
-    });
-  });
 
   group('PDF: الخيارات صناديق ثابتة العرض في سطر واحد', () {
     test('ثلاثة خيارات تشترك السطر والرابع يلتفّ، والعرض عرض العقد', () async {

@@ -55,6 +55,7 @@ class MeasuredRunFragment {
     required this.direction,
     required this.baselineOffset,
     required this.height,
+    required this.words,
     this.mathBox,
     this.fixedAdvancePt,
   });
@@ -68,6 +69,11 @@ class MeasuredRunFragment {
   final DocumentDirection direction;
   final double baselineOffset;
   final double height;
+
+  /// Measurable words inside this fragment, in paragraph-relative points
+  /// (same frame as [x]). Empty for math (externally measured box, not
+  /// shaped text) and for fragments without word text.
+  final List<LayoutWord> words;
   final LayoutMathBox? mathBox;
   final double? fixedAdvancePt;
 }

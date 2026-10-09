@@ -3,17 +3,14 @@ import 'package:provider/provider.dart';
 
 import '../models/exam_document.dart';
 import '../providers/exam_document_provider.dart';
-import '../services/docx_document_export_service.dart';
 import '../services/export_file_service.dart';
-import '../services/math_image_renderer.dart';
 import '../services/pdf_export_service.dart';
-import '../services/shape_image_renderer.dart';
 import 'settings_screen.dart';
 import 'widgets/pdf_preview_screen.dart';
 import 'wizard/exam_wizard_screen.dart';
 
 /// الإجراءات المتاحة على ورقة محفوظة في المكتبة.
-enum _DocumentAction { open, duplicate, rename, exportPdf, exportWord, delete }
+enum _DocumentAction { open, duplicate, rename, exportPdf, delete }
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -176,37 +173,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// تصدير Word مباشر من المكتبة (يُحدِّث طابع الورقة الزمني).
-  Future<void> _exportWord(BuildContext context, ExamDocument document) async {
-    if (_busyDocumentId != null) {
-      return;
-    }
-    setState(() => _busyDocumentId = document.id);
-    try {
-      final file = await DocxDocumentExportService.exportDocumentToDocx(
-        document: document,
-        shapeRasterizer: ShapeImageRenderer.asRasterizer,
-        mathRasterizer: MathImageRenderer.asRasterizer,
-      );
-      if (!context.mounted) {
-        return;
-      }
-      await context.read<ExamDocumentProvider>().saveDocument(document.touched());
-      if (!context.mounted) {
-        return;
-      }
-      _showMessage('تم إنشاء ملف Word.');
-      await DocxDocumentExportService.shareDocxFile(file);
-    } catch (error, stackTrace) {
-      ExportFileService.logError('Home Word export failed', error, stackTrace);
-      _showMessage('تعذر إنشاء ملف الـ Word. حاول مرة أخرى.', isError: true);
-    } finally {
-      if (mounted) {
-        setState(() => _busyDocumentId = null);
-      }
-    }
-  }
-
   Future<void> _onDocumentAction(
     BuildContext context,
     _DocumentAction action,
@@ -221,8 +187,6 @@ class _HomeScreenState extends State<HomeScreen> {
         await _renameDocument(context, document);
       case _DocumentAction.exportPdf:
         await _exportPdf(context, document);
-      case _DocumentAction.exportWord:
-        await _exportWord(context, document);
       case _DocumentAction.delete:
         await _confirmDeleteDocument(context, document);
     }
@@ -356,7 +320,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'صمم الترويسة والأسئلة بفروعها، وحرر الورقة مباشرة على معاينة A4، ثم صدّرها PDF أو Word.',
+            'صمم الترويسة والأسئلة بفروعها، وحرر الورقة مباشرة على معاينة A4، ثم صدّرها PDF أو Word مطابقاً للمعاينة.',
             style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
           ),
           const SizedBox(height: 18),
@@ -496,13 +460,6 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed:
                   busy ? null : () => _exportPdf(context, document),
             ),
-            IconButton(
-              tooltip: 'تصدير Word مباشر',
-              visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.description_outlined),
-              onPressed:
-                  busy ? null : () => _exportWord(context, document),
-            ),
             PopupMenuButton<_DocumentAction>(
               enabled: !busy,
               tooltip: 'إجراءات الورقة',
@@ -545,15 +502,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.picture_as_pdf_outlined),
                 title: Text('تصدير PDF'),
-              ),
-            ),
-            PopupMenuItem<_DocumentAction>(
-              value: _DocumentAction.exportWord,
-              child: ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.description_outlined),
-                title: Text('تصدير Word'),
               ),
             ),
             PopupMenuDivider(),
