@@ -217,7 +217,7 @@ def part_b(bp, manifest):
 # ---------------------------------------------------------------- E: horizontal origin ladder
 def part_e(bp, manifest):
     """Flutter vs PDF x-offset at 1/8 px origin steps. dx > 0 => Flutter right of PDF."""
-    hx = manifest['ladder'].get('hx', [])
+    hx = manifest.get('hx', [])
     if not hx:
         return
     say('== E: horizontal origin ladder (Flutter vs PDF at 1/8 px origin steps). dx>0 => Flutter right.')
