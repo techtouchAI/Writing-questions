@@ -406,6 +406,28 @@ def part_c4(art):
                             f"{sg / max(total_g, 1e-12):.2f} rmse-without o/g="
                             f"{np.sqrt(max(total_o - so, 0) / n):.4f}/{np.sqrt(max(total_g - sg, 0) / n):.4f}")
             say(f'C4 p{index + 1} categories (pixels inside each band; first claim): ' + ' | '.join(line))
+            ratio = []
+            for name, m in cats.items():
+                if m.any() and gp[m].sum() > 0:
+                    ratio.append(f'{name}={gv[m].sum() / gp[m].sum():.2f}')
+            say(f'C4 p{index + 1} ink vector/preview per category: ' + ' '.join(ratio))
+            # Localise residual outside text bands and math boxes: 8x8 pt blocks, top 6 by SSE (orig).
+            block = int(round(8 * PT2PX))
+            out_sse = ((gp - gv) ** 2) * cats['outside']
+            tops = []
+            for by in range(0, H, block):
+                for bx in range(0, W, block):
+                    v = out_sse[by:by + block, bx:bx + block].sum()
+                    if v > 0:
+                        tops.append((v, by, bx))
+            tops.sort(reverse=True)
+            total_out = out_sse.sum()
+            desc = []
+            for v, by, bx in tops[:6]:
+                sl = (slice(by, by + block), slice(bx, bx + block))
+                desc.append(f'x{(bx + CROP) / PT2PX:.0f}pt y{(by + CROP) / PT2PX:.0f}pt '
+                            f'share={v / max(total_out, 1e-12):.2f} pre_ink={gp[sl].sum():.1f} vec_ink={gv[sl].sum():.1f}')
+            say(f'C4 p{index + 1} outside-band SSE top blocks (8pt): ' + ' | '.join(desc))
 
 
 # ---------------------------------------------------------------- C5 composition classes
