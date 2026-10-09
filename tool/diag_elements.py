@@ -194,6 +194,31 @@ def part_c8(art):
                 f'SSE share: element zones={sse_union / max(total, 1e-12):.2f} '
                 f'non-text remainder={(sse_nontext - sse_union) / max(total, 1e-12):.2f} '
                 f'text+math={1 - sse_nontext / max(total, 1e-12):.2f} | elements={len(rows_out)}')
+            # Diagnostic exclusion scenarios (measurement only; none is a fix or a gate pass).
+            diff2_all = (gp - gv) ** 2
+            float_zone = np.zeros((H, W), bool)
+            for e2 in els:
+                if e2['src'] != 'float' or e2['type'] != 'shape' or not e2['framed'] or abs(e2['rot']) >= 0.01:
+                    continue
+                fx0 = e2['x'] * PT2PX - CROP
+                fy0 = e2['y'] * PT2PX - CROP
+                fx1 = (e2['x'] + e2['w']) * PT2PX - CROP
+                fy1 = (e2['y'] + e2['h']) * PT2PX - CROP
+                fz = zone_mask('border', fx0, fy0, fx1, fy1, e2['stroke'] * PT2PX, H, W) & non_text
+                float_zone |= fz
+            italic_m = cats['italic']
+            math_m = cats['math']
+            scen = [
+                ('framed-float zones', float_zone),
+                ('all element zones', union),
+                ('element zones+italic bands', union | italic_m),
+                ('element zones+italic+math', union | italic_m | math_m),
+            ]
+            parts = []
+            for label, msk in scen:
+                rem = float(diff2_all[~msk].sum())
+                parts.append(f'{label}={math.sqrt(rem / n):.4f}')
+            say(f'C8 p{index + 1} exclusion scenarios (diag only, RMSE over remaining pixels): ' + ' | '.join(parts))
             rows_out.sort(key=lambda r: -r[0])
             for sse, e, st in rows_out[:4]:
                 desc = ''
