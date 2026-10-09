@@ -48,6 +48,8 @@ LayoutRun _mathFallbackRun(String latex) => LayoutRun(
     );
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   // Regression (C6): the fallback math baseline offset was measured from the
   // LaTeX source while the painter emitted the readable text. The maximum word
   // ascent of the two strings differs, so the emitted baseline drifted from
