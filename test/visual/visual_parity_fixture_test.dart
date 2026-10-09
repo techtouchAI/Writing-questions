@@ -47,6 +47,8 @@ import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/pdf_engine/exam_fonts.dart';
 import 'package:writing_questions_app/layout/canonical/canonical_layout_preview.dart';
 import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
+import 'package:writing_questions_app/layout/canonical/layout_document.dart';
+import 'package:writing_questions_app/layout/document_direction.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/services/exact_export_service.dart';
@@ -520,6 +522,8 @@ void main() {
     File('$_artifactDir/exact.docx').writeAsBytesSync(exactDocxBytes);
     File('$_artifactDir/manifest.json')
         .writeAsStringSync(const JsonEncoder.withIndent('  ').convert(manifest));
+    // [C6-DIAG] temporary geometry dump (diagnostic only; removed before merge).
+    _diagWriteGeometry(canonicalLayout, controller.document);
 
     // فحوص سريعة على القطع نفسها (تفشل مبكراً برسالة مفهومة قبل مقارنة CI).
     for (final snapshot in snapshots) {
@@ -538,4 +542,124 @@ void main() {
       // بسرعة عبر الحراس الداخلية (عدّاد المضخات، حارسا runAsync)
       // مع اسم المرحلة — أما 60s الافتراضية فأقصر من العمل المشروع نفسه.
       timeout: const Timeout(Duration(minutes: 10)));
+}
+
+// [C6-DIAG] temporary: canonical geometry dump for tool/diag_visual_geometry.py.
+void _diagWriteGeometry(LayoutDocument layout, ExamDocument document) {
+  Map<String, Object?> rectJson(double x, double y, double w, double h) =>
+      <String, Object?>{'x': x, 'y': y, 'w': w, 'h': h};
+
+  final pages = <Object?>[];
+  for (final page in layout.pages) {
+    final words = <Object?>[];
+    final math = <Object?>[];
+    final decorations = <Object?>[];
+    final floats = <Object?>[];
+
+    void addLine(LayoutLine line) {
+      for (final run in line.runs) {
+        if (run.advance <= 0 || run.text.isEmpty) continue;
+        if (run.isMath) {
+          math.add(<String, Object?>{
+            ...rectJson(run.x, line.baseline - run.baselineOffset, run.width,
+                run.height),
+            'id': run.id,
+            'text': run.text,
+          });
+          continue;
+        }
+        final family = run.style.font.family;
+        final rtl = run.direction == DocumentDirection.rtl;
+        if (run.words.isEmpty) {
+          words.add(<String, Object?>{
+            't': run.text,
+            'x': run.x,
+            'y': line.baseline,
+            'adv': run.advance,
+            'size': run.style.fontSizePt,
+            'bold': run.style.bold,
+            'italic': run.style.italic,
+            'rtl': rtl,
+            'font': family,
+            'run': run.id,
+          });
+          continue;
+        }
+        for (final word in run.words) {
+          words.add(<String, Object?>{
+            't': word.text,
+            'x': word.x,
+            'y': line.baseline,
+            'adv': word.textAdvance,
+            'size': run.style.fontSizePt,
+            'bold': run.style.bold,
+            'italic': run.style.italic,
+            'rtl': rtl,
+            'font': family,
+            'run': run.id,
+          });
+        }
+      }
+    }
+
+    void addBlocks(Iterable<LayoutBlock> blocks) {
+      for (final block in blocks) {
+        for (final decoration in block.decorations) {
+          decorations.add(<String, Object?>{
+            ...rectJson(decoration.rect.left, decoration.rect.top,
+                decoration.rect.width, decoration.rect.height),
+            'kind': decoration.kind.name,
+            'stroke': decoration.strokeWidthPt,
+            'color': decoration.colorArgb,
+            'owner': 'block',
+          });
+        }
+        addBlocks(block.children);
+      }
+    }
+
+    for (final block in page.blocks) {
+      for (final line in block.allLines) {
+        addLine(line);
+      }
+    }
+    addBlocks(page.blocks);
+    for (final decoration in page.decorations) {
+      decorations.add(<String, Object?>{
+        ...rectJson(decoration.rect.left, decoration.rect.top,
+            decoration.rect.width, decoration.rect.height),
+        'kind': decoration.kind.name,
+        'stroke': decoration.strokeWidthPt,
+        'color': decoration.colorArgb,
+        'owner': 'page',
+      });
+    }
+    for (final placement in page.floatingElements) {
+      if (placement.deferredReason != null) continue;
+      final element = document.floatingElementById(placement.reference.id);
+      floats.add(<String, Object?>{
+        ...rectJson(placement.rect.left, placement.rect.top,
+            placement.rect.width, placement.rect.height),
+        'type': element?.type.name ?? 'unknown',
+        'framed': placement.framed,
+        'stroke': placement.strokeWidthPt,
+        'rotation': placement.rotationDegrees,
+      });
+      for (final line in placement.labelLines) {
+        addLine(line);
+      }
+    }
+    pages.add(<String, Object?>{
+      'index': page.index,
+      'widthPt': page.pageSize.width,
+      'heightPt': page.pageSize.height,
+      'words': words,
+      'math': math,
+      'decorations': decorations,
+      'floats': floats,
+    });
+  }
+  File('$_artifactDir/diag_geometry.json').writeAsStringSync(
+    jsonEncode(<String, Object?>{'pages': pages}),
+  );
 }

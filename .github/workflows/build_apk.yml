@@ -604,6 +604,15 @@ jobs:
       - name: Compare rendered files against the preview (RMSE)
         run: bash tool/verify_visual_parity.sh build/visual_parity
 
+      # [C6-DIAG] TEMPORARY, non-blocking diagnostics (removed before merge).
+      - name: "[C6-DIAG] geometry vs preview diagnostics"
+        if: always()
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/diag-venv"
+          "$RUNNER_TEMP/diag-venv/bin/pip" install -q numpy pillow pymupdf
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_visual_geometry.py build/visual_parity || true
+
       # سبب الفشل يُنشر كتعليق على التشغيل: سجلات CI قد لا تكون مقروءة من كل
       # بيئة، والملخّص يجب أن يحمل السبب لا رقم الخروج وحده.
       - name: Publish visual parity report
