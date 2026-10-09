@@ -478,13 +478,6 @@ void main() {
         pumpCount < 1200 && !exportsDone && exportError == null;
         pumpCount++) {
       await tester.pump(const Duration(milliseconds: 50));
-      // Math rasters and image encoding complete on real event-loop turns
-      // (same idiom as the preview settle loop above): yield one per frame.
-      // This is an event-queue turn, not a sleep, and the export itself is
-      // still driven by the fake-clock pumps.
-      await tester.runAsync(() async {
-        await Future(() {});
-      });
     }
     if (exportError != null) {
       Error.throwWithStackTrace(exportError!, exportStack!);
