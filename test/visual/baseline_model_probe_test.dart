@@ -330,6 +330,26 @@ void main() {
           final text = scriptEntry.value[0] as String;
           final rtl = scriptEntry.value[1] as bool;
           final script = scriptEntry.key;
+          // Line metrics of the production TextStyle (pt units), used to test
+          // whether the baseline offset follows from font metrics.
+          final metricPainter = TextPainter(
+            text: TextSpan(
+              text: text,
+              style: _style(family, size, bold, italic, lh),
+            ),
+            textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
+            textScaler: TextScaler.noScaling,
+            maxLines: 1,
+          )..layout(maxWidth: double.infinity);
+          final lineMetrics = metricPainter.computeLineMetrics().first;
+          final metrics = <String, Object>{
+            'baseline_pt': lineMetrics.baseline,
+            'ascent_pt': lineMetrics.ascent,
+            'descent_pt': lineMetrics.descent,
+            'height_pt': lineMetrics.height,
+            'preferred_lh_pt': metricPainter.preferredLineHeight,
+          };
+          metricPainter.dispose();
           final pngs = <String>[];
           for (var i = 0; i < _fracs.length; i++) {
             final baselinePt = (_baselineBasePx + _fracs[i]) * _ptPerPx;
@@ -389,6 +409,7 @@ void main() {
             'text': text,
             'pdf': pdfPath,
             'png': pngs,
+            'metrics': metrics,
           });
         }
       }

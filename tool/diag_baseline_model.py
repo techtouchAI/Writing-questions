@@ -212,24 +212,25 @@ def part_b(bp, manifest):
 
 
 # ---------------------------------------------------------------- C: fixture
-def line_bands(words, H, W):
-    lines = {}
+def run_bands(words, H, W):
+    """One band per (baseline, run): Preview paints each run at its own TextPainter."""
+    runs = {}
     for w in words:
-        lines.setdefault(round(w['y'], 2), []).append(w)
+        runs.setdefault((round(w['y'], 2), w.get('run')), []).append(w)
     rows = []
-    for key, group in sorted(lines.items()):
+    for key, group in sorted(runs.items(), key=lambda kv: (kv[0][0], str(kv[0][1]))):
         size = max(w['size'] for w in group)
         x0 = int(math.floor(min(w['x'] for w in group) * PT2PX)) - CROP - 2
         x1 = int(math.ceil(max(w['x'] + w['adv'] for w in group) * PT2PX)) - CROP + 2
-        yc = key * PT2PX - CROP
+        yc = key[0] * PT2PX - CROP
         y0 = int(math.floor(yc - TEXT_UP * size * PT2PX))
         y1 = int(math.ceil(yc + TEXT_DOWN * size * PT2PX))
         x0, x1 = max(x0, M), min(x1, W - M)
         y0, y1 = max(y0, M), min(y1, H - M)
         if y1 - y0 < 8 or x1 - x0 < 8:
             continue
-        rows.append({'key': key, 'group': group, 'size': size, 'x0': x0, 'x1': x1,
-                     'y0': y0, 'y1': y1, 'yfull': key * PT2PX})
+        rows.append({'group': group, 'size': size, 'x0': x0, 'x1': x1,
+                     'y0': y0, 'y1': y1, 'yfull': key[0] * PT2PX})
     return rows
 
 
@@ -240,9 +241,10 @@ def part_c(art, deltas, tmp):
     prefix = os.path.join(tmp, 'vec')
     subprocess.run(['pdftoppm', '-r', '96', '-png', os.path.join(art, 'vector.pdf'), prefix], check=True)
     rendered = sorted(glob.glob(prefix + '-*.png'))
-    say('== C: fixture validation. Fb_obs = floor(y) - int_dy; Fb_pred = floor(y) + round(frac+d).')
-    say('C line: p y frac lh font size bold ital scr | int_dy_obs dy_pred | ok')
-    total_pred = total_ok = 0
+    say('== C: fixture validation, per run. Fb_obs = floor(y) - int_dy; Fb_pred = floor(y) + round(frac+d).')
+    say('C run: p y frac lh font size b i scr | int_dy_obs | pred_same pred_latd | ok_same ok_latd')
+    say('C pred_latd uses the Latin (flat-bottom lI) delta for the same style: script-independent baseline.')
+    totals = {'runs': 0, 'pred': 0, 'ok_same': 0, 'ok_lat': 0, 'ital': 0, 'ital_ok_lat': 0}
     for index in range(pages_n):
         preview = load_rgb01(os.path.join(art, f'preview_page_{index + 1}.png'))
         vec = load_rgb01(rendered[index])
@@ -250,15 +252,13 @@ def part_c(art, deltas, tmp):
         va = vec[CROP:-CROP, CROP:-CROP]
         H, W = pa.shape[:2]
         gp, gv = pa.mean(axis=2), va.mean(axis=2)
-        page_words = geo['pages'][index]['words']
-        bands = line_bands(page_words, H, W)
+        bands = run_bands(geo['pages'][index]['words'], H, W)
         base_rmse = rp.rmse(pa, va)
         oracle = va.copy()
         model = va.copy()
         claimed_o = np.zeros((H, W), bool)
         claimed_m = np.zeros((H, W), bool)
-        n_pred = n_ok = 0
-        mismatches = []
+        page = {'runs': 0, 'pred': 0, 'ok_same': 0, 'ok_lat': 0, 'ital': 0, 'ital_ok_lat': 0}
         for b in bands:
             y0, y1, x0, x1 = b['y0'], b['y1'], b['x0'], b['x1']
             ref = gp[y0:y1, x0:x1]
@@ -271,50 +271,90 @@ def part_c(art, deltas, tmp):
             dy_obs = best[2]
             g0 = b['group'][0]
             scr = 'ar' if g0['rtl'] else 'lat'
-            family = g0['font']
-            tag = tag_of(family, g0['size'], g0['bold'], g0['italic'], g0['lh'] if g0['lh'] is not None else -1)
-            floor_y = int(math.floor(b['yfull']))
+            tag = tag_of(g0['font'], g0['size'], g0['bold'], g0['italic'], g0['lh'])
             frac = b['yfull'] % 1.0
-            mixed = len(set((w['font'], w['size'], w['bold'], w['italic'], w.get('lh'), w['rtl']) for w in b['group'])) > 1
-            d = deltas.get((tag, scr))
-            # Counterfactual integer shifts (dy only, dx=0). Band pixels claimed once.
-            if dy_obs is not None:
-                sl = (slice(y0, y1), slice(x0, x1))
-                if not claimed_o[sl].any():
-                    oracle[sl] = va[y0 + dy_obs:y1 + dy_obs, x0:x1]
-                    claimed_o[sl] = True
-            if d is not None and not mixed:
-                pred_round = round_half_up(frac + d['mid'])
-                dy_pred = -pred_round
-                n_pred += 1
-                ok = dy_pred == dy_obs
-                if ok:
-                    n_ok += 1
-                else:
-                    mismatches.append(b)
-                sl = (slice(y0, y1), slice(x0, x1))
+            sl = (slice(y0, y1), slice(x0, x1))
+            if not claimed_o[sl].any():
+                oracle[sl] = va[y0 + dy_obs:y1 + dy_obs, x0:x1]
+                claimed_o[sl] = True
+            d_same = deltas.get((tag, scr))
+            d_lat = deltas.get((tag, 'lat'))
+            page['runs'] += 1
+            pred_same = pred_lat = 'na'
+            ok_same = ok_lat = 'na'
+            if d_lat is not None:
+                pred_lat_v = -round_half_up(frac + d_lat['mid'])
+                pred_lat = f'{pred_lat_v:+d}'
+                ok_lat = pred_lat_v == dy_obs
+                page['pred'] += 1
+                page['ok_lat'] += int(ok_lat)
+                if g0['italic']:
+                    page['ital'] += 1
+                    page['ital_ok_lat'] += int(ok_lat)
                 if not claimed_m[sl].any():
-                    model[sl] = va[y0 + dy_pred:y1 + dy_pred, x0:x1]
+                    model[sl] = va[y0 + pred_lat_v:y1 + pred_lat_v, x0:x1]
                     claimed_m[sl] = True
-                mark = 'ok' if ok else 'XX'
-                pred_txt = f'{dy_pred:+d}'
-            else:
-                mark, pred_txt = 'na', 'na'
-                sl = (slice(y0, y1), slice(x0, x1))
-                if not claimed_m[sl].any():
-                    model[sl] = va[y0:y1, x0:x1]
-                    claimed_m[sl] = True
-            say(f"C p{index + 1} y{b['yfull']:.2f} f{frac:.2f} lh{g0['lh']} {family[:6]} "
-                f"s{b['size']:.1f} b{int(bool(g0['bold']))} i{int(bool(g0['italic']))} {scr}"
-                f"{' mix' if mixed else ''} | {dy_obs:+d} {pred_txt} | {mark}")
-        total_pred += n_pred
-        total_ok += n_ok
+                ok_lat = 'ok' if ok_lat else 'XX'
+            if d_same is not None:
+                pred_same_v = -round_half_up(frac + d_same['mid'])
+                pred_same = f'{pred_same_v:+d}'
+                ok_same = pred_same_v == dy_obs
+                page['ok_same'] += int(ok_same)
+                ok_same = 'ok' if ok_same else 'XX'
+            if not claimed_m[sl].any():
+                model[sl] = va[y0:y1, x0:x1]
+                claimed_m[sl] = True
+            ital = ' i' if g0['italic'] else ''
+            say(f"C p{index + 1} y{b['yfull']:.2f} f{frac:.2f} lh{g0['lh']} {g0['font'][:6]} "
+                f"s{b['size']:.1f} b{int(bool(g0['bold']))}{ital} {scr} | {dy_obs:+d} | "
+                f"{pred_same} {pred_lat} | {ok_same} {ok_lat}")
+        for k in totals:
+            totals[k] += page[k]
         r_o = rp.rmse(pa, oracle)
         r_m = rp.rmse(pa, model)
-        say(f'C page {index + 1}: lines={len(bands)} predicted={n_pred} agree={n_ok} '
-            f'rmse_orig={base_rmse:.6f} rmse_oracle_int={r_o:.6f} rmse_model_int={r_m:.6f} '
-            f'(counterfactual; not a fix)')
-    say(f'C total: predicted={total_pred} agree={total_ok}')
+        say(f"C page {index + 1}: runs={page['runs']} predicted={page['pred']} "
+            f"agree_latd={page['ok_lat']} agree_same={page['ok_same']} italic={page['ital']}"
+            f"(agree {page['ital_ok_lat']}) rmse_orig={base_rmse:.6f} "
+            f"rmse_oracle_int={r_o:.6f} rmse_model_latd_int={r_m:.6f} (counterfactual, not a fix)")
+    say(f"C total: runs={totals['runs']} predicted={totals['pred']} agree_latd={totals['ok_lat']} "
+        f"agree_same={totals['ok_same']} italic_agree={totals['ital_ok_lat']}/{totals['ital']}")
+
+
+def round_half_up_wrap(x):
+    return x - math.floor(x + 0.5)
+
+
+# ---------------------------------------------------------------- D: mechanism
+def part_d(manifest):
+    """Does the style delta follow from Flutter line metrics (pt-space rounding)?"""
+    say('== D: delta (Latin, mod 1) vs metric-rounding candidates. Candidates are device-px offsets.')
+    say('D style | d_lat | base_px frac | cand pt-round pt-floor pt-ceil px-round | best')
+    for entry in manifest['sweep']:
+        if entry['script'] != 'lat':
+            continue
+        d = None
+        # Latin delta per style, from part A (computed earlier, stored in manifest order).
+        d = DELTA_CACHE.get((entry['tag'], 'lat'))
+        if d is None:
+            continue
+        m = entry['metrics']
+        base_pt = m['baseline_pt']
+        base_px = base_pt * PT2PX
+        cands = {
+            'pt-round': (round(base_pt) - base_pt) * PT2PX,
+            'pt-floor': (math.floor(base_pt) - base_pt) * PT2PX,
+            'pt-ceil': (math.ceil(base_pt) - base_pt) * PT2PX,
+            'px-round': round(base_px) - base_px,
+        }
+        dmod = round_half_up_wrap(d['mid'])
+        errs = {k: abs(round_half_up_wrap(v - dmod)) for k, v in cands.items()}
+        best = min(errs, key=errs.get)
+        say(f"D {entry['tag']} {dmod:+.3f} | {base_px:.3f} {base_px % 1:.3f} | "
+            + ' '.join(f"{k}={round_half_up_wrap(v):+.3f}" for k, v in cands.items())
+            + f" | {best} err={errs[best]:.3f}")
+
+
+DELTA_CACHE = {}
 
 
 def main(art, bp):
@@ -322,6 +362,7 @@ def main(art, bp):
     deltas = {}
     try:
         deltas = part_a(bp, manifest)
+        DELTA_CACHE.update(deltas)
     except Exception:  # noqa: BLE001 - diagnostics must not mask other parts
         say('A FAILED: ' + traceback.format_exc()[-900:].replace('\n', ' | '))
     flush('C6-MODEL')
@@ -330,6 +371,11 @@ def main(art, bp):
     except Exception:  # noqa: BLE001
         say('B FAILED: ' + traceback.format_exc()[-900:].replace('\n', ' | '))
     flush('C6-MODEL-B')
+    try:
+        part_d(manifest)
+    except Exception:  # noqa: BLE001
+        say('D FAILED: ' + traceback.format_exc()[-900:].replace('\n', ' | '))
+    flush('C6-MODEL-D')
     try:
         with tempfile.TemporaryDirectory() as tmp:
             part_c(art, deltas, tmp)
