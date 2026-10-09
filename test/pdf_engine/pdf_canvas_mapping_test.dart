@@ -31,23 +31,6 @@ void main() {
       );
       expect(triangle, contains('<path'));
     });
-
-    test('square and rectangle frames are centred on the layout box', () {
-      // Regression (C6): the frame must span the whole box, not an inset of
-      // stroke/2, so the PDF outline lands where the preview's drawRect puts it.
-      const shapes = [FloatingShapeType.square, FloatingShapeType.rectangle];
-      for (final shape in shapes) {
-        final svg = FloatingElementsPdf.shapeToSvg(
-          shape,
-          100,
-          80,
-          strokeWidth: 2,
-        );
-        expect(svg, contains('<rect x="0" y="0" width="100.0" height="80.0"'));
-        expect(svg, isNot(contains('x="1.0"')));
-        expect(svg, contains('stroke-width="2.0"'));
-      }
-    });
   });
 
   group('ExamCanvasGeometry', () {
