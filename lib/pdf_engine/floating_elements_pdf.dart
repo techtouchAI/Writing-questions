@@ -264,10 +264,10 @@ abstract final class FloatingElementsPdf {
     switch (shape) {
       case FloatingShapeType.square:
       case FloatingShapeType.rectangle:
-        shapeTag(
-          'rect x="${stroke / 2}" y="${stroke / 2}" '
-          'width="${width - stroke}" height="${height - stroke}"',
-        );
+        // Centred on the layout box, as the preview draws it (drawRect, stroke
+        // centred on the edge). An inset of stroke/2 moved the PDF outline
+        // inward by about one pixel per side (C6 measurement).
+        shapeTag('rect x="0" y="0" width="$width" height="$height"');
       case FloatingShapeType.circle:
         final cx = width / 2;
         final cy = height / 2;
