@@ -78,8 +78,6 @@ void main() {
         text: TextSpan(text: probeCase.text, style: style),
         textDirection: direction,
       )..layout();
-      final baselineFromTop =
-          painter.computeDistanceToActualBaseline(TextBaseline.alphabetic);
       final advancePx = painter.width;
       painter.dispose();
 
@@ -98,13 +96,16 @@ void main() {
                   child: Stack(
                     clipBehavior: Clip.hardEdge,
                     children: <Widget>[
-                      Positioned(
-                        left: _leftPx,
-                        top: _baselinePx + probeCase.extraPx - baselineFromTop,
-                        child: Text(
-                          probeCase.text,
-                          style: style,
-                          textDirection: direction,
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: _ProductionLinePainter(
+                            text: probeCase.text,
+                            family: _family,
+                            sizePx: sizePx,
+                            rtl: probeCase.rtl,
+                            baselineY: _baselinePx + probeCase.extraPx,
+                            leftX: _leftPx,
+                          ),
                         ),
                       ),
                       const Positioned(
@@ -192,4 +193,55 @@ void main() {
           .writeAsBytesSync(pdfBytes!);
     }
   });
+}
+
+// [C6-DIAG] Mirrors CanonicalLayoutPreview._paintText exactly: TextPainter with
+// the production line-height factor, painted at baseline - the first line
+// metric's baseline (no Text widget, no computeDistanceToActualBaseline).
+const double _productionLineHeight = 1.45;
+
+class _ProductionLinePainter extends CustomPainter {
+  const _ProductionLinePainter({
+    required this.text,
+    required this.family,
+    required this.sizePx,
+    required this.rtl,
+    required this.baselineY,
+    required this.leftX,
+  });
+
+  final String text;
+  final String family;
+  final double sizePx;
+  final bool rtl;
+  final double baselineY;
+  final double leftX;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          fontFamily: family,
+          fontSize: sizePx,
+          color: const Color(0xFF000000),
+          height: _productionLineHeight,
+        ),
+      ),
+      textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
+      textScaler: TextScaler.noScaling,
+      maxLines: 1,
+    )..layout(maxWidth: double.infinity);
+    try {
+      final metrics = painter.computeLineMetrics();
+      final baseline = metrics.isEmpty ? 0.0 : metrics.first.baseline;
+      painter.paint(canvas, Offset(leftX, baselineY - baseline));
+    } finally {
+      painter.dispose();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ProductionLinePainter oldDelegate) => false;
 }
