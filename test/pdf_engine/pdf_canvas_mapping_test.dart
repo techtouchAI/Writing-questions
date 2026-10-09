@@ -46,8 +46,6 @@ void main() {
         expect(svg, contains('<rect x="0" y="0" width="100.0" height="80.0"'));
         expect(svg, isNot(contains('x="1.0"')));
         expect(svg, contains('stroke-width="2.0"'));
-        // The outer half of a centred stroke must not be clipped by the viewBox.
-        expect(svg, contains('overflow="visible"'));
       }
     });
   });

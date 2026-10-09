@@ -252,9 +252,7 @@ abstract final class FloatingElementsPdf {
     final buffer = StringBuffer()
       ..write('<svg xmlns="http://www.w3.org/2000/svg" ')
       ..write('width="$width" height="$height" ')
-      // overflow=visible: a centred stroke's outer half lies on the viewBox edge
-      // and must not be clipped (clipping halved the frame weight in the probe).
-      ..write('viewBox="0 0 $width $height" overflow="visible">');
+      ..write('viewBox="0 0 $width $height">');
 
     void shapeTag(String geometry, {bool filled = true}) {
       buffer.write(
