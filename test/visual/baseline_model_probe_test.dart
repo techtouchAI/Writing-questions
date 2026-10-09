@@ -533,6 +533,95 @@ void main() {
         });
       }
 
+      // Horizontal origin ladder: the same text at 1/8 px origin steps. Flutter
+      // (Skia) may quantize glyph x; the PDF path places text at the exact x.
+      final hx = <Map<String, Object?>>[];
+      const hxTexts = <String>['ااا', 'واختبار', 'lI'];
+      const hxRtl = <bool>[true, true, false];
+      for (var i = 0; i < hxTexts.length; i++) {
+        for (var k = 0; k < 8; k++) {
+          final xPx = _leftPx + k / 8;
+          final key = GlobalKey();
+          await tester.pumpWidget(
+            _frame(
+              key,
+              _ProdLinePainter(
+                text: hxTexts[i],
+                family: ladderFamily,
+                sizePt: ladderSize,
+                bold: false,
+                italic: false,
+                lineHeight: ladderLh,
+                rtl: hxRtl[i],
+                baselinePt: _baselineBasePx * _ptPerPx,
+                leftPt: xPx * _ptPerPx,
+              ),
+            ),
+          );
+          await tester.pump();
+          final pngPath = '$_outDir/hx_fl_${i}_$k.png';
+          await _capture(tester, key, pngPath);
+          final width = _advancePt(
+            hxTexts[i],
+            ladderFamily,
+            ladderSize,
+            false,
+            false,
+            ladderLh,
+            hxRtl[i],
+          );
+          final pdfBytes = await tester.runAsync(() async {
+            final font = fonts.fontFor(naskh, bold: false);
+            final doc = pw.Document();
+            doc.addPage(
+              pw.Page(
+                pageFormat: const PdfPageFormat(_pageWpt, _pageHpt),
+                margin: pw.EdgeInsets.zero,
+                build: (context) {
+                  final offset = PdfTextMetrics.baselineOffsetFromTop(
+                    font: font.getFont(context),
+                    fontSizePt: ladderSize,
+                    text: hxTexts[i],
+                  );
+                  return pw.SizedBox(
+                    width: _pageWpt,
+                    height: _pageHpt,
+                    child: pw.Stack(
+                      children: <pw.Widget>[
+                        pw.Positioned(
+                          left: xPx * _ptPerPx,
+                          top: _baselineBasePx * _ptPerPx - offset,
+                          child: CanonicalText(
+                            text: hxTexts[i],
+                            font: font,
+                            fontSizePt: ladderSize,
+                            color: PdfColors.black,
+                            canonicalAdvancePt: width,
+                            rtl: hxRtl[i],
+                            underline: false,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            );
+            return doc.save();
+          });
+          final pdfPath = '$_outDir/hx_${i}_$k.pdf';
+          File(pdfPath).writeAsBytesSync(pdfBytes!);
+          hx.add(<String, Object?>{
+            'text': hxTexts[i],
+            'rtl': hxRtl[i],
+            'k': k,
+            'x': xPx,
+            'png': pngPath,
+            'pdf': pdfPath,
+          });
+        }
+      }
+
       File('$_outDir/manifest.json').writeAsStringSync(
         jsonEncode(<String, Object?>{
           'sweep': sweep,
@@ -542,6 +631,7 @@ void main() {
             'lh': ladderLh,
             'items': ladderItems,
           },
+          'hx': hx,
         }),
       );
     },

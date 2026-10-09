@@ -214,6 +214,30 @@ def part_b(bp, manifest):
                 f"{ink(fl) / max(ink(pp), 1e-9):.3f}")
 
 
+# ---------------------------------------------------------------- E: horizontal origin ladder
+def part_e(bp, manifest):
+    """Flutter vs PDF x-offset at 1/8 px origin steps. dx > 0 => Flutter right of PDF."""
+    hx = manifest['ladder'].get('hx', [])
+    if not hx:
+        return
+    say('== E: horizontal origin ladder (Flutter vs PDF at 1/8 px origin steps). dx>0 => Flutter right.')
+    say('E text k x_frac | best_dx rmse_at_best rmse_at_0 | pred if floor(x*4)/4: dx=-(frac(x*4)/4)')
+    with tempfile.TemporaryDirectory() as tmp:
+        for item in hx:
+            fl = rp.darkness(load_gray(item['png']))
+            pp = rp.darkness(poppler_gray(item['pdf'], 0, tmp))
+            best = None
+            for dx in np.arange(-1.0, 1.0 + 1e-9, 1.0 / 32):
+                v = rp.rmse(pp, rp.sample_shifted(fl, 0.0, dx))
+                if best is None or v < best[0]:
+                    best = (v, float(dx))
+            zero = rp.rmse(pp, fl)
+            x = item['x']
+            frac4 = (x * 4) % 1.0 / 4.0
+            say(f"E {item['text']!r} k{item['k']} x{x - math.floor(x):.3f} | {best[1]:+.3f} "
+                f"{best[0]:.4f} {zero:.4f} | {-frac4:+.3f}")
+
+
 # ---------------------------------------------------------------- C: fixture
 def bands_of(words, H, W, by):
     """Bands per (baseline, run) when by='run'; per baseline when by='line'."""
@@ -386,6 +410,11 @@ def main(art, bp):
     except Exception:  # noqa: BLE001
         say('D FAILED: ' + traceback.format_exc()[-900:].replace('\n', ' | '))
     flush('C6-MODEL-D')
+    try:
+        part_e(bp, manifest)
+    except Exception:  # noqa: BLE001
+        say('E FAILED: ' + traceback.format_exc()[-900:].replace('\n', ' | '))
+    flush('C6-MODEL-E')
     try:
         with tempfile.TemporaryDirectory() as tmp:
             part_c(art, DELTA_CACHE, tmp)
