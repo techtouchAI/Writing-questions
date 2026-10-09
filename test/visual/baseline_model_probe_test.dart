@@ -13,7 +13,6 @@
 
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -401,7 +400,7 @@ void main() {
       const ladderSize = 11.0;
       const ladderLh = 1.7;
       final ladderItems = <Map<String, Object?>>[];
-      final naskh = PaperFont.naskh;
+      const naskh = PaperFont.naskh;
       for (var i = 0; i < _ladderTexts.length; i++) {
         final text = _ladderTexts[i];
         final rtl = _ladderRtl[i];
@@ -437,7 +436,7 @@ void main() {
         )..layout(maxWidth: double.infinity);
         final words = <Map<String, Object?>>[];
         for (final m in RegExp(r'\S+').allMatches(text)) {
-          final boxes = measure.getBoxesForRange(
+          final boxes = measure.getBoxesForSelection(
             TextSelection(baseOffset: m.start, extentOffset: m.end),
           );
           var left = double.infinity;
