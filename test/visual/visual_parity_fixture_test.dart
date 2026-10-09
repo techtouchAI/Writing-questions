@@ -56,7 +56,6 @@ import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/services/exact_export_service.dart';
 import 'package:writing_questions_app/services/page_snapshot_service.dart';
 import 'package:writing_questions_app/services/pdf_export_service.dart';
-import 'package:writing_questions_app/views/widgets/math_snapshot_host.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 
 /// مجلد القطع الذي يقرؤه سكربت التحقق البصري في CI.
@@ -269,9 +268,6 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        // يطابق lib/main.dart: مضيف اللقطات يُركَّب عبر `builder` فتُقاس
-        // المعادلات بالمسار الإنتاجي نفسه (لا بنص LaTeX الاحتياطي).
-        builder: (_, child) => MathSnapshotHost(child: child),
         home: ChangeNotifierProvider<ExamWizardController>.value(
           value: controller,
           child: ExamPreviewScreen(
