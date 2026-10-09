@@ -637,6 +637,13 @@ jobs:
         run: |
           "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_composition.py build/visual_parity || true
 
+      # [C6-DIAG] element-level residual (decorations, floating shapes), non-blocking.
+      - name: "[C6-DIAG] element residual"
+        if: always()
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_elements.py build/visual_parity || true
+
       # سبب الفشل يُنشر كتعليق على التشغيل: سجلات CI قد لا تكون مقروءة من كل
       # بيئة، والملخّص يجب أن يحمل السبب لا رقم الخروج وحده.
       - name: Publish visual parity report
