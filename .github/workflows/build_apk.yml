@@ -644,6 +644,14 @@ jobs:
         run: |
           "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_elements.py build/visual_parity || true
 
+      # [C6-DIAG] element probe: frames / dividers / borders, Preview vs PDF paths (non-blocking).
+      - name: "[C6-DIAG] element probe"
+        if: always()
+        shell: bash
+        run: |
+          flutter test test/visual/element_probe_test.dart || true
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_element_probe.py build/visual_parity || true
+
       # سبب الفشل يُنشر كتعليق على التشغيل: سجلات CI قد لا تكون مقروءة من كل
       # بيئة، والملخّص يجب أن يحمل السبب لا رقم الخروج وحده.
       - name: Publish visual parity report
