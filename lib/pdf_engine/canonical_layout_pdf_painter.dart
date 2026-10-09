@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../layout/canonical/c6_experiment_snap.dart';
 import '../layout/canonical/layout_document.dart';
 import '../layout/document_direction.dart';
 import '../models/equation_model.dart';
@@ -230,7 +231,7 @@ class CanonicalLayoutPdfPainter {
       return <pw.Widget>[
         pw.Positioned(
           left: run.x - originX,
-          top: line.baseline - run.baselineOffset - originY,
+          top: c6SnapBaselinePt(line.baseline) - run.baselineOffset - originY,
           child: pw.Image(
             pw.MemoryImage(raster.pngBytes),
             width: run.width,
@@ -245,7 +246,7 @@ class CanonicalLayoutPdfPainter {
     // exactly as before; CanonicalText replicates the replaced ink offsets
     // inside it.
     final top =
-        line.baseline - _pdfTextTopOffset(run, fonts, context) - originY;
+        c6SnapBaselinePt(line.baseline) - _pdfTextTopOffset(run, fonts, context) - originY;
     pw.Widget wordWidget(String text, double left, double advance) =>
         pw.Positioned(
           left: left,

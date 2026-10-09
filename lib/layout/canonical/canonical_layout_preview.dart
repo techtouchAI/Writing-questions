@@ -12,6 +12,7 @@ import '../../services/math_snapshot_renderer.dart';
 import '../document_direction.dart';
 import 'canonical_layout_interaction.dart';
 import 'layout_document.dart';
+import 'c6_experiment_snap.dart';
 import 'layout_units.dart';
 
 /// Decoded renderer assets for the Preview painter. These images are kept
@@ -340,7 +341,7 @@ class _CanonicalLayoutPreviewPainter extends CustomPainter {
           : metrics.first.baseline;
       painter.paint(
         canvas,
-        Offset(run.x, line.baseline - baselineOffset),
+        Offset(run.x, c6SnapBaselinePt(line.baseline) - baselineOffset),
       );
     } finally {
       painter.dispose();
