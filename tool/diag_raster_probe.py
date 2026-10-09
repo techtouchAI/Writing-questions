@@ -201,7 +201,7 @@ def probe(art, tag):
                 bottoms[name] = int(on[-1]) + 1
         say(f'[C6-PROBE] {tag}pt frac-curve baseline_frac={frac:.2f} '
             + ' '.join(f'{name}_bottom={bottoms[name]}' for name in ('flutter', 'poppler', 'mupdf') if name in bottoms))
-        clusters = ink_clusters(results['poppler'])
+        clusters = []  # edge lines dropped (bottoms are in frac-curve); annotation budget
         for c0, c1 in clusters:
             fe = vertical_edges(results['flutter'], c0, c1)
             pe = vertical_edges(results['poppler'], c0, c1)

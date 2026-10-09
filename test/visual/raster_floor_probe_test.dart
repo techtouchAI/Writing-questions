@@ -29,7 +29,7 @@ const double _leftPx = 20;
 
 class _Case {
   const _Case(this.tag, this.text, this.sizePt, this.rtl,
-      [this.extraPx = 0]);
+      [this.extraPx = 0, this.lineHeight = 1.45]);
   final String tag;
   final String text;
   final double sizePt;
@@ -37,6 +37,9 @@ class _Case {
   // Extra baseline shift (px) applied identically to Flutter and PDF, to test
   // whether Skia snaps baselines to whole device pixels.
   final double extraPx;
+  // Paragraph line-height factor (production: document.layout.lineHeightFactor;
+  // the visual fixture uses 1.8).
+  final double lineHeight;
 }
 
 const List<_Case> _cases = <_Case>[
@@ -60,6 +63,17 @@ const List<_Case> _cases = <_Case>[
   _Case('11_lI_p70', 'lI', 11, false, 0.7),
   _Case('11_lI_p80', 'lI', 11, false, 0.8),
   _Case('11_lI_p90', 'lI', 11, false, 0.9),
+  _Case('11_lI_h18_p00', 'lI', 11, false, 0.0, 1.8),
+  _Case('11_lI_h18_p20', 'lI', 11, false, 0.2, 1.8),
+  _Case('11_lI_h18_p40', 'lI', 11, false, 0.4, 1.8),
+  _Case('11_lI_h18_p50', 'lI', 11, false, 0.5, 1.8),
+  _Case('11_lI_h18_p60', 'lI', 11, false, 0.6, 1.8),
+  _Case('11_lI_h18_p70', 'lI', 11, false, 0.7, 1.8),
+  _Case('11_lI_h18_p80', 'lI', 11, false, 0.8, 1.8),
+  _Case('11_lI_h18_p90', 'lI', 11, false, 0.9, 1.8),
+  _Case('11_lI_h10_p00', 'lI', 11, false, 0.0, 1.0),
+  _Case('11_lI_h10_p50', 'lI', 11, false, 0.5, 1.0),
+  _Case('11_lI_h10_p70', 'lI', 11, false, 0.7, 1.0),
 ];
 
 void main() {
@@ -118,6 +132,7 @@ void main() {
                             rtl: probeCase.rtl,
                             baselineY: _baselinePx + probeCase.extraPx,
                             leftX: _leftPx,
+                            lineHeight: probeCase.lineHeight,
                           ),
                         ),
                       ),
@@ -211,7 +226,6 @@ void main() {
 // [C6-DIAG] Mirrors CanonicalLayoutPreview._paintText exactly: TextPainter with
 // the production line-height factor, painted at baseline - the first line
 // metric's baseline (no Text widget, no computeDistanceToActualBaseline).
-const double _productionLineHeight = 1.45;
 
 class _ProductionLinePainter extends CustomPainter {
   const _ProductionLinePainter({
@@ -221,6 +235,7 @@ class _ProductionLinePainter extends CustomPainter {
     required this.rtl,
     required this.baselineY,
     required this.leftX,
+    required this.lineHeight,
   });
 
   final String text;
@@ -229,6 +244,7 @@ class _ProductionLinePainter extends CustomPainter {
   final bool rtl;
   final double baselineY;
   final double leftX;
+  final double lineHeight;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -239,7 +255,7 @@ class _ProductionLinePainter extends CustomPainter {
           fontFamily: family,
           fontSize: sizePx,
           color: const Color(0xFF000000),
-          height: _productionLineHeight,
+          height: lineHeight,
         ),
       ),
       textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
