@@ -28,11 +28,15 @@ const double _baselinePx = 40;
 const double _leftPx = 20;
 
 class _Case {
-  const _Case(this.tag, this.text, this.sizePt, this.rtl);
+  const _Case(this.tag, this.text, this.sizePt, this.rtl,
+      [this.extraPx = 0]);
   final String tag;
   final String text;
   final double sizePt;
   final bool rtl;
+  // Extra baseline shift (px) applied identically to Flutter and PDF, to test
+  // whether Skia snaps baselines to whole device pixels.
+  final double extraPx;
 }
 
 const List<_Case> _cases = <_Case>[
@@ -40,6 +44,9 @@ const List<_Case> _cases = <_Case>[
   _Case('11_lI', 'lI', 11, false),
   _Case('14_lI', 'lI', 14, false),
   _Case('11_ar', 'واختبار', 11, true),
+  _Case('11_lI_b25', 'lI', 11, false, 0.25),
+  _Case('11_lI_b50', 'lI', 11, false, 0.5),
+  _Case('11_lI_b75', 'lI', 11, false, 0.75),
 ];
 
 void main() {
@@ -93,7 +100,7 @@ void main() {
                     children: <Widget>[
                       Positioned(
                         left: _leftPx,
-                        top: _baselinePx - baselineFromTop,
+                        top: _baselinePx + probeCase.extraPx - baselineFromTop,
                         child: Text(
                           probeCase.text,
                           style: style,
@@ -139,7 +146,8 @@ void main() {
             build: (context) {
               // Production C1 mapping: top = baseline - offsetFromTop.
               // Baseline is 40px from the top = 30pt; the probe is 45pt tall.
-              final baselinePt = _baselinePx * 0.75;
+              const baselinePt = (_baselinePx) * 0.75;
+              final pdfBaselinePt = baselinePt + probeCase.extraPx * 0.75;
               final offset = PdfTextMetrics.baselineOffsetFromTop(
                 font: font.getFont(context),
                 fontSizePt: probeCase.sizePt,
@@ -152,7 +160,7 @@ void main() {
                   children: <pw.Widget>[
                     pw.Positioned(
                       left: _leftPx * 0.75,
-                      top: baselinePt - offset,
+                      top: pdfBaselinePt - offset,
                       child: CanonicalText(
                         text: probeCase.text,
                         font: font,

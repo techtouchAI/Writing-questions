@@ -54,6 +54,44 @@ def rmse(a, b):
     return float(np.sqrt(np.mean((a - b) ** 2)))
 
 
+def sample_shifted(img, dy, dx):
+    """Bilinear sample of a 2D image displaced by (dy, dx) px (same shape out)."""
+    h, w = img.shape
+    ys = np.arange(h, dtype=np.float64) + dy
+    xs = np.arange(w, dtype=np.float64) + dx
+    yi = np.clip(np.floor(ys).astype(int), 0, h - 2)
+    xi = np.clip(np.floor(xs).astype(int), 0, w - 2)
+    ty = (np.clip(ys, 0, h - 1) - yi)[:, None]
+    tx = (np.clip(xs, 0, w - 1) - xi)[None, :]
+    a = img[yi[:, None], xi[None, :]]
+    b = img[yi[:, None], xi[None, :] + 1]
+    c = img[yi[:, None] + 1, xi[None, :]]
+    d = img[yi[:, None] + 1, xi[None, :] + 1]
+    return (1 - ty) * (1 - tx) * a + (1 - ty) * tx * b + ty * (1 - tx) * c + ty * tx * d
+
+
+def subpixel_fit(ref, mov, span=1.0, step=0.125):
+    """Best continuous translation of mov onto ref. Returns (rmse, dx, dy)."""
+    best = None
+    for dy in np.arange(-span, span + 1e-9, step):
+        for dx in np.arange(-span, span + 1e-9, step):
+            value = rmse(ref, sample_shifted(mov, dy, dx))
+            if best is None or value < best[0]:
+                best = (value, float(dx), float(dy))
+    return best
+
+
+def hist_match_rmse(ref, mov):
+    """RMSE after histogram specification of mov onto ref (tone-only bound)."""
+    src = np.clip(np.round(mov * 255), 0, 255).astype(int).ravel()
+    dst = np.clip(np.round(ref * 255), 0, 255).astype(int).ravel()
+    hs = np.bincount(src, minlength=256).cumsum() / src.size
+    hr = np.bincount(dst, minlength=256).cumsum() / dst.size
+    lut = np.searchsorted(hr, hs, side='left').clip(0, 255) / 255.0
+    matched = lut[np.clip(np.round(mov * 255), 0, 255).astype(int)]
+    return rmse(ref, matched)
+
+
 def probe(art, tag):
     pdf_path = os.path.join(art, f'raster_probe_{tag}.pdf')
     flutter_path = os.path.join(art, f'raster_probe_flutter_{tag}.png')
@@ -95,6 +133,14 @@ def probe(art, tag):
         say(f'[C6-PROBE] {tag}pt {name:8s} rect_ink(expect 200)={rect_ink(gray):8.3f} '
             f'text_ink={ink:8.3f} ratio_to_linear={ink / ref_ink:6.4f} '
             f'full_px={full} partial_px={partial}')
+    if {'flutter', 'poppler'} <= results.keys():
+        fl = results['flutter']
+        po = results['poppler']
+        zero = rmse(fl, po)
+        best = subpixel_fit(fl, po)
+        say(f'[C6-PROBE] {tag}pt fit flutter<-poppler: rmse0={zero:.6f} '
+            f'subpixel_best={best[0]:.6f} at dx={best[1]:+.3f} dy={best[2]:+.3f} '
+            f'tone_only(hist-match)={hist_match_rmse(fl, po):.6f}')
     if {'flutter', 'poppler', 'mupdf'} <= results.keys():
         say(f'[C6-PROBE] {tag}pt text rmse flutter-vs-poppler={rmse(results["flutter"], results["poppler"]):.6f} '
             f'flutter-vs-mupdf={rmse(results["flutter"], results["mupdf"]):.6f} '
