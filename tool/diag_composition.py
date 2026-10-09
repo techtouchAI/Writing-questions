@@ -138,6 +138,16 @@ def aligned_gray(gv, bands, fits):
     return out
 
 
+def gamma_fit(ref, mov):
+    """Best single exponent ink' = ink**g on darkness (tone-only oracle). Returns (rmse, g)."""
+    best = None
+    for g in np.linspace(0.5, 2.0, 31):
+        v = rp.rmse(ref, np.clip(mov, 0.0, 1.0) ** g)
+        if best is None or v < best[0]:
+            best = (v, float(g))
+    return best
+
+
 def sse_shares(ref, mov):
     core = (ref > 0.5) | (mov > 0.5)
     edge = ((ref > 0.05) | (mov > 0.05)) & ~core
@@ -215,8 +225,9 @@ def part_c1(bp, man, tmp):
         r0 = rp.rmse(pp, fl)
         fit = rp.subpixel_fit(pp, fl, span=1.0, step=0.125)
         hist = rp.hist_match_rmse(pp, fl)
+        gam = gamma_fit(pp, fl)
         say(f"C1 img {it['text']!r}: {r0:.4f} | {fit[0]:.4f} dx={fit[1]:+.3f} dy={fit[2]:+.3f} | "
-            f'{hist:.4f} | ink {fl.sum() / max(pp.sum(), 1e-9):.3f}')
+            f'{hist:.4f} | ink {fl.sum() / max(pp.sum(), 1e-9):.3f} | exp {gam[0]:.4f} g={gam[1]:.2f}')
 
 
 # ---------------------------------------------------------------- C2 fixture word origins
@@ -306,9 +317,45 @@ def part_c3(art):
     worst.sort(reverse=True)
     for mx, p, t, rtl in worst[:6]:
         say(f'C3   worst max={mx:.3f}pt p{p} {t!r} rtl={int(rtl)}')
+    for pi, page in enumerate(geo['pages']):
+        for w in page['words']:
+            if w['t'][:14] != worst[0][2] or w.get('gl') is None or not w.get('gl'):
+                continue
+            cand = window_origins(chars_of(vec_pdf, pi), w['x'] - 0.5, w['x'] + w['adv'] + 0.5, w['y'])
+            say(f"C3 detail {w['t'][:14]!r}: pdf origins(rel)={[round(c - w['x'], 2) for c in cand]} "
+                f"flutter gl={[round(g, 2) for g in w['gl']]}")
+            break
+        else:
+            continue
+        break
 
 
 # ---------------------------------------------------------------- C4 decomposition per page
+def category_masks(page, bands, H, W):
+    """Pixel masks: math boxes, italic/bold/rtl/ltr bands, and the remainder (outside text)."""
+    out = {'math': np.zeros((H, W), bool), 'italic': np.zeros((H, W), bool),
+           'bold': np.zeros((H, W), bool), 'rtl': np.zeros((H, W), bool),
+           'ltr': np.zeros((H, W), bool)}
+    for m in page.get('math', []):
+        x0 = max(int(math.floor(m['x'] * PT2PX)) - CROP, 0)
+        x1 = min(int(math.ceil((m['x'] + m['w']) * PT2PX)) - CROP, W)
+        y0 = max(int(math.floor(m['y'] * PT2PX)) - CROP, 0)
+        y1 = min(int(math.ceil((m['y'] + m['h']) * PT2PX)) - CROP, H)
+        out['math'][y0:y1, x0:x1] = True
+    claimed = out['math'].copy()
+    for b in bands:
+        g0 = b['group'][0]
+        key = 'italic' if g0['italic'] else ('bold' if g0['bold'] else ('rtl' if g0['rtl'] else 'ltr'))
+        sl = (slice(b['y0'], b['y1']), slice(b['x0'], b['x1']))
+        region = np.zeros((H, W), bool)
+        region[sl] = True
+        region &= ~claimed
+        out[key] |= region
+        claimed |= region
+    out['outside'] = ~claimed
+    return out
+
+
 def part_c4(art):
     manifest = json.load(open(os.path.join(art, 'manifest.json'), encoding='utf-8'))
     geo = json.load(open(os.path.join(art, 'diag_geometry.json'), encoding='utf-8'))
@@ -342,6 +389,23 @@ def part_c4(art):
                 f'| SSE core/edge/bg orig={sh_o[0]:.2f}/{sh_o[1]:.2f}/{sh_o[2]:.2f} '
                 f'geo={sh_g[0]:.2f}/{sh_g[1]:.2f}/{sh_g[2]:.2f} | runs={len(bands)}')
             CHAR_CACHE.setdefault('c4_fits', {})[index] = (bands, fits)
+            gam = gamma_fit(gp, ga)
+            cats = category_masks(geo['pages'][index], bands, H, W)
+            say(f'C4 p{index + 1} tone-exponent oracle after geo: rmse={gam[0]:.4f} g={gam[1]:.2f} '
+                f'| ink geo/preview={ga.sum() / max(gp.sum(), 1e-9):.3f} orig={gv.sum() / max(gp.sum(), 1e-9):.3f}')
+            line = []
+            total_o = ((gp - gv) ** 2).sum()
+            total_g = ((gp - ga) ** 2).sum()
+            n = gp.size
+            for name, m in cats.items():
+                if not m.any():
+                    continue
+                so = ((gp - gv) ** 2)[m].sum()
+                sg = ((gp - ga) ** 2)[m].sum()
+                line.append(f"{name}:{int(m.sum())}px share o/g={so / max(total_o, 1e-12):.2f}/"
+                            f"{sg / max(total_g, 1e-12):.2f} rmse-without o/g="
+                            f"{np.sqrt(max(total_o - so, 0) / n):.4f}/{np.sqrt(max(total_g - sg, 0) / n):.4f}")
+            say(f'C4 p{index + 1} categories (pixels inside each band; first claim): ' + ' | '.join(line))
 
 
 # ---------------------------------------------------------------- C5 composition classes
@@ -455,8 +519,9 @@ def part_c7(bp, man, tmp):
     say('== C7 AA / rasterizer: upright lat and ar at f=0; Poppler vs MuPDF and Flutter vs Poppler')
     say('C7 cols: rmse0 | geo(dy,dx)->rmse | tone | ink ratio')
     pm_geo, pm_tone, fp_geo, fp_tone, fp_ink, fp_r0, ar_geo, ar_r0 = [], [], [], [], [], [], [], []
+    ar_gam, ar_ink, lat_gam = [], [], []
     for e in man['sweep']:
-        if '_n_lh' not in e['tag'] or e['script'] != 'lat':
+        if '_rn_lh' not in e['tag'] or e['script'] != 'lat':
             continue
         pdf = e['pdf']
         pp = rp.darkness(dbm.poppler_gray(pdf, 0, tmp))
@@ -472,21 +537,28 @@ def part_c7(bp, man, tmp):
         fp_tone.append(rp.hist_match_rmse(pp, fl))
         fp_ink.append(fl.sum() / max(pp.sum(), 1e-9))
         fp_r0.append(rp.rmse(pp, fl))
+        lat_gam.append(gamma_fit(pp, fl))
     for e in man['sweep']:
-        if '_n_lh' not in e['tag'] or e['script'] != 'ar':
+        if '_rn_lh' not in e['tag'] or e['script'] != 'ar':
             continue
         pp = rp.darkness(dbm.poppler_gray(e['pdf'], 0, tmp))
         fl = png_dark(e['png'][0])
         ar_r0.append(rp.rmse(pp, fl))
         ar_geo.append(rp.subpixel_fit(pp, fl, span=1.0, step=0.125)[0])
+        ar_gam.append(gamma_fit(pp, fl))
+        ar_ink.append(fl.sum() / max(pp.sum(), 1e-9))
+    if lat_gam:
+        say(f'C7 Latin tone-exponent oracle: median rmse={np.median([v for v, _ in lat_gam]):.4f} '
+            f'median g={np.median([g for _, g in lat_gam]):.2f}')
     if pm_geo:
-        say(f'C7 Latin upright n={len(pm_geo)} medians: poppler-vs-mupdf rmse0 n/a, geo={np.median(pm_geo):.4f} '
+        say(f'C7 Latin upright n={len(pm_geo)} medians: poppler-vs-mupdf geo={np.median(pm_geo):.4f} '
             f'tone={np.median(pm_tone):.4f} | flutter-vs-poppler rmse0={np.median(fp_r0):.4f} '
             f'geo={np.median(fp_geo):.4f} tone={np.median(fp_tone):.4f} ink={np.median(fp_ink):.3f} '
             f'(min {np.min(fp_ink):.3f} max {np.max(fp_ink):.3f})')
     if ar_r0:
         say(f'C7 Arabic upright n={len(ar_r0)} medians: flutter-vs-poppler rmse0={np.median(ar_r0):.4f} '
-            f'geo={np.median(ar_geo):.4f}')
+            f'geo={np.median(ar_geo):.4f} ink={np.median(ar_ink):.3f} '
+            f'exp-oracle rmse={np.median([v for v, _ in ar_gam]):.4f} g={np.median([g for _, g in ar_gam]):.2f}')
 
 
 def main(art, bp):
