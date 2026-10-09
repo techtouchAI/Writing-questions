@@ -175,6 +175,12 @@ def probe(art, tag):
             f'subpixel_best={best[0]:.6f} at dx={best[1]:+.3f} dy={best[2]:+.3f} '
             f'tone_only(hist-match)={hist_match_rmse(fl, po):.6f}')
     if {'flutter', 'poppler'} <= results.keys():
+        rows = np.arange(60, dtype=np.float64)
+        for name in ('flutter', 'poppler'):
+            prof = results[name].sum(axis=1)
+            centroid = float((rows * prof).sum() / prof.sum())
+            window = ' '.join(f'{y}:{prof[y]:.2f}' for y in range(22, 44))
+            say(f'[C6-PROBE] {tag}pt rowink {name:8s} centroid_y={centroid:.3f} rows22-43 {window}')
         clusters = ink_clusters(results['poppler'])
         for c0, c1 in clusters:
             fe = vertical_edges(results['flutter'], c0, c1)
