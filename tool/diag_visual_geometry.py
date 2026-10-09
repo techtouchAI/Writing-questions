@@ -83,6 +83,27 @@ def subpixel_fit(ref_band, vec, y0, y1, x0, x1, span=1.5, step=0.25):
     return best
 
 
+def hist_match_rmse(ref_gray, vec_gray):
+    """RMSE (0..1) after histogram specification of vec onto ref (tone-only bound)."""
+    src = np.clip(np.round(vec_gray), 0, 255).astype(int).ravel()
+    dst = np.clip(np.round(ref_gray), 0, 255).astype(int).ravel()
+    hs = np.bincount(src, minlength=256).cumsum() / src.size
+    hr = np.bincount(dst, minlength=256).cumsum() / dst.size
+    lut = np.searchsorted(hr, hs, side='left').clip(0, 255)
+    matched = lut[np.clip(np.round(vec_gray), 0, 255).astype(int)]
+    return math.sqrt(float(np.mean((ref_gray - matched) ** 2))) / 255.0
+
+
+def box3(img):
+    """3x3 box blur on a 2D float array (edges clamped)."""
+    p = np.pad(img, 1, mode='edge')
+    acc = np.zeros_like(img)
+    for dy in range(3):
+        for dx in range(3):
+            acc += p[dy:dy + img.shape[0], dx:dx + img.shape[1]]
+    return acc / 9.0
+
+
 def paint_rect(mask, x0, y0, x1, y1, value):
     h, w = mask.shape
     xs, xe = max(0, int(math.floor(x0))), min(w, int(math.ceil(x1)))
@@ -160,6 +181,17 @@ def main(art):
                     best = (value, dx, dy)
         zero = rmse(ref, va[m:-m, m:-m])
         out(f'global shift: rmse0={zero:.6f} best={best[0]:.6f} at dx={best[1]} dy={best[2]}')
+        # (1b) raster-floor probes (no geometry change): tone, sharpness, ink coverage
+        gp = pa.mean(axis=2) * 255.0
+        gv = va.mean(axis=2) * 255.0
+        ink_ratio = float((255.0 - gp).sum() / max(1.0, (255.0 - gv).sum()))
+        tone = hist_match_rmse(gp, gv)
+        gvb = box3(gv)
+        gpb = box3(gp)
+        blur_v = math.sqrt(float(np.mean((gp[m:-m, m:-m] - gvb[m:-m, m:-m]) ** 2))) / 255.0
+        blur_p = math.sqrt(float(np.mean((gpb[m:-m, m:-m] - gv[m:-m, m:-m]) ** 2))) / 255.0
+        out(f'raster-floor probes: ink(ref/vec)={ink_ratio:.4f} hist-match-rmse={tone:.6f} '
+            f'blur-vec-rmse={blur_v:.6f} blur-ref-rmse={blur_p:.6f}')
 
         page = geo['pages'][index]
         words = page['words']
