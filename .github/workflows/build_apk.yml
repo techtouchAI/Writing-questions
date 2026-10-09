@@ -604,37 +604,6 @@ jobs:
       - name: Compare rendered files against the preview (RMSE)
         run: bash tool/verify_visual_parity.sh build/visual_parity
 
-      # [C6-DIAG-2] تشخيص مؤقت لا يُدمج: لا يغيّر الحدّ ولا الصور المرجعية ولا
-      # حالة الركيزة. الخطوات تعمل بعد المقارنة الرسمية وتُسجَّل فقط؛ `|| true`
-      # لا يخفي نتيجة المقارنة الرسمية السابقة.
-      - name: "[C6-DIAG-2] install analysis tools"
-        if: always()
-        shell: bash
-        run: |
-          python3 -m venv "$RUNNER_TEMP/diag-venv"
-          "$RUNNER_TEMP/diag-venv/bin/pip" install -q numpy pillow
-
-      - name: "[C6-DIAG-2] contract lifecycle probe"
-        if: always()
-        shell: bash
-        run: flutter test test/visual/diag_c6_contract_probe_test.dart || true
-
-      - name: "[C6-DIAG-2] frame matrix probe"
-        if: always()
-        shell: bash
-        run: flutter test test/visual/diag_c6_frame_probe_test.dart || true
-
-      - name: "[C6-DIAG-2] italic isolation probe"
-        if: always()
-        shell: bash
-        run: flutter test test/visual/diag_c6_italic_probe_test.dart || true
-
-      - name: "[C6-DIAG-2] analyze probe outputs"
-        if: always()
-        shell: bash
-        run: |
-          "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_analysis.py build/visual_parity || true
-
       # سبب الفشل يُنشر كتعليق على التشغيل: سجلات CI قد لا تكون مقروءة من كل
       # بيئة، والملخّص يجب أن يحمل السبب لا رقم الخروج وحده.
       - name: Publish visual parity report
