@@ -175,6 +175,16 @@ def probe(art, tag):
             f'subpixel_best={best[0]:.6f} at dx={best[1]:+.3f} dy={best[2]:+.3f} '
             f'tone_only(hist-match)={hist_match_rmse(fl, po):.6f}')
     if {'flutter', 'poppler'} <= results.keys():
+        frac_match = re.search(r'_[bfp](\d\d)$', tag)
+        frac = int(frac_match.group(1)) / 100.0 if frac_match else 0.0
+        bottoms = {}
+        for name in ('flutter', 'poppler', 'mupdf'):
+            if name in results:
+                profile = results[name].sum(axis=1)
+                on = np.where(profile > 0.02 * profile.max())[0]
+                bottoms[name] = int(on[-1]) + 1
+        say(f'[C6-PROBE] {tag}pt frac-curve baseline_frac={frac:.2f} '
+            + ' '.join(f'{name}_bottom={bottoms[name]}' for name in ('flutter', 'poppler', 'mupdf') if name in bottoms))
         rows = np.arange(60, dtype=np.float64)
         for name in ('flutter', 'poppler'):
             prof = results[name].sum(axis=1)

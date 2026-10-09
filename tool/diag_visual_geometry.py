@@ -136,6 +136,86 @@ def emit_notices(lines, title):
     flush()
 
 
+# [C6-DIAG] device-grid investigation (TEMPORARY, read-only: no production effect).
+# Answers: (a) is there a global origin/registration offset between the preview
+# PNG and the vector raster (sub-pixel, whole interior and per horizontal band,
+# which also exposes scale); (b) per canonical line, the device-pixel fraction of
+# its baseline against the integer and sub-pixel vertical offset of the vector
+# render; (c) a regression of sub-pixel dy on baseline y (scale check).
+def grid_investigation(index, pa, va, words):
+    H, W = pa.shape[:2]
+    gp = pa.mean(axis=2)
+    gv = va.mean(axis=2)
+    m = 8
+
+    def fit2d(y0, y1, x0, x1, span, step):
+        ref = gp[y0:y1, x0:x1]
+        best = None
+        for dy in np.arange(-span, span + 1e-9, step):
+            for dx in np.arange(-span, span + 1e-9, step):
+                cand = sample_shifted(gv, y0, y1, x0, x1, dy, dx)
+                value = rmse(ref, cand)
+                if best is None or value < best[0]:
+                    best = (value, float(dx), float(dy))
+        return best
+
+    out(f'[grid p{index + 1}] origin fits (ref=preview, +dy = vector lower; span 1.0 step 0.0625)')
+    third = (H - 2 * m) // 3
+    bands = [('interior', m, H - m), ('top', m, m + third),
+             ('mid', m + third, m + 2 * third), ('bottom', m + 2 * third, H - m)]
+    for name, y0, y1 in bands:
+        zero = rmse(gp[y0:y1, m:W - m], gv[y0:y1, m:W - m])
+        best = fit2d(y0, y1, m, W - m, 1.0, 0.0625)
+        out(f'[grid p{index + 1}]   {name:<8s} rows {y0}-{y1}: rmse0={zero:.6f} '
+            f'best={best[0]:.6f} dx={best[1]:+.4f} dy={best[2]:+.4f}')
+
+    lines = {}
+    for w in words:
+        lines.setdefault(round(w['y'], 2), []).append(w)
+    rows = []
+    for key, group in sorted(lines.items()):
+        size = max(w['size'] for w in group)
+        x0 = int(math.floor(min(w['x'] for w in group) * PT2PX)) - CROP - 2
+        x1 = int(math.ceil(max(w['x'] + w['adv'] for w in group) * PT2PX)) - CROP + 2
+        yc = key * PT2PX - CROP
+        y0 = int(math.floor(yc - TEXT_UP * size * PT2PX))
+        y1 = int(math.ceil(yc + TEXT_DOWN * size * PT2PX))
+        x0, x1 = max(x0, m), min(x1, W - m)
+        y0, y1 = max(y0, m), min(y1, H - m)
+        if y1 - y0 < 8 or x1 - x0 < 8:
+            continue
+        ref = gp[y0:y1, x0:x1]
+        ibest = None
+        for dy in range(-2, 3):
+            for dx in range(-2, 3):
+                value = rmse(ref, gv[y0 + dy:y1 + dy, x0 + dx:x1 + dx])
+                if ibest is None or value < ibest[0]:
+                    ibest = (value, dx, dy)
+        sub = fit2d(y0, y1, x0, x1, 1.0, 0.0625)
+        rows.append({'y_px': key * PT2PX, 'frac': (key * PT2PX) % 1.0,
+                     'int_dy': ibest[2], 'sub_dy': sub[2], 'sub_dx': sub[1],
+                     'sub_rmse': sub[0], 'zero_rmse': rmse(ref, gv[y0:y1, x0:x1]),
+                     'sample': ' '.join(w['t'] for w in group[:3])[:24]})
+    out(f'[grid p{index + 1}] lines={len(rows)} (frac = device-px fraction of canonical baseline)')
+    for r in rows:
+        out(f'[grid p{index + 1}]   y_px={r["y_px"]:8.2f} frac={r["frac"]:.3f} '
+            f'int_dy={r["int_dy"]:+d} sub_dy={r["sub_dy"]:+.3f} sub_dx={r["sub_dx"]:+.3f} '
+            f'rmse0={r["zero_rmse"]:.4f} sub={r["sub_rmse"]:.4f} "{r["sample"]}"')
+    edges = [i / 10.0 for i in range(11)]
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        bucket = [r for r in rows if lo <= r['frac'] < hi]
+        if bucket:
+            out(f'[grid p{index + 1}] frac [{lo:.1f},{hi:.1f}) n={len(bucket)} '
+                f'int_dy={sorted(set(r["int_dy"] for r in bucket))} '
+                f'mean_sub_dy={np.mean([r["sub_dy"] for r in bucket]):+.3f}')
+    if len(rows) >= 3:
+        ys = np.array([r['y_px'] for r in rows])
+        dys = np.array([r['sub_dy'] for r in rows])
+        slope, intercept = np.polyfit(ys, dys, 1)
+        out(f'[grid p{index + 1}] regression sub_dy = {slope:+.6f} * y_px {intercept:+.4f} '
+            f'(scale check: pdftoppm-page-size-rounding would give slope ~ +0.00043)')
+
+
 def main(art):
     diag = os.path.join(art, 'diag')
     os.makedirs(diag, exist_ok=True)
@@ -210,6 +290,7 @@ def main(art):
 
         page = geo['pages'][index]
         words = page['words']
+        grid_investigation(index, pa, va, words)
         # (2) category masks (cropped coordinate frame)
         labels = np.zeros((H + 2 * CROP, W + 2 * CROP), dtype=np.uint8)
         cat_id = {'text': 1, 'decor': 2, 'float': 3, 'math': 4}

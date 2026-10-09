@@ -50,7 +50,17 @@ const List<_Case> _cases = <_Case>[
 
   _Case('11_lI_f41', 'lI', 11, false, 0.41),
   _Case('11_lI_f88', 'lI', 11, false, 0.88),
-  _Case('11_lI_f69', 'lI', 11, false, 0.69),];
+  _Case('11_lI_f69', 'lI', 11, false, 0.69),
+  _Case('11_lI_p10', 'lI', 11, false, 0.1),
+  _Case('11_lI_p20', 'lI', 11, false, 0.2),
+  _Case('11_lI_p30', 'lI', 11, false, 0.3),
+  _Case('11_lI_p40', 'lI', 11, false, 0.4),
+  _Case('11_lI_p50', 'lI', 11, false, 0.5),
+  _Case('11_lI_p60', 'lI', 11, false, 0.6),
+  _Case('11_lI_p70', 'lI', 11, false, 0.7),
+  _Case('11_lI_p80', 'lI', 11, false, 0.8),
+  _Case('11_lI_p90', 'lI', 11, false, 0.9),
+];
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

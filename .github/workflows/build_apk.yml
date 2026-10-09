@@ -618,6 +618,7 @@ jobs:
         if: always()
         shell: bash
         run: |
+          echo "::notice title=C6-DIAG versions::$(pdftoppm -v 2>&1 | head -n 1) ; $(flutter --version 2>/dev/null | head -n 1) ; pymupdf $("$RUNNER_TEMP/diag-venv/bin/python" -c 'import pymupdf; print(pymupdf.__version__)' 2>/dev/null)" || true
           flutter test test/visual/raster_floor_probe_test.dart || true
           "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_raster_probe.py build/visual_parity || true
 
