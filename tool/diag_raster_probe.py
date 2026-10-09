@@ -28,9 +28,25 @@ def say(line):
 
 
 def flush():
-    message = '\n'.join(LINES)
-    message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-    print(f'::notice title=C6-PROBE::{message}')
+    """Emit LINES as <=3500-byte ::notice chunks (GitHub caps annotations per step at 10)."""
+    chunk, size, part = [], 0, 1
+
+    def emit():
+        nonlocal chunk, size, part
+        if not chunk:
+            return
+        text = '\n'.join(chunk)
+        text = text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+        print(f'::notice title=C6-PROBE ({part})::{text}', flush=True)
+        chunk, size, part = [], 0, part + 1
+
+    for line in LINES:
+        cost = len(line.encode('utf-8')) + 1
+        if size + cost > 3500 and chunk:
+            emit()
+        chunk.append(line)
+        size += cost
+    emit()
 
 
 def gray_of(array):
@@ -185,12 +201,6 @@ def probe(art, tag):
                 bottoms[name] = int(on[-1]) + 1
         say(f'[C6-PROBE] {tag}pt frac-curve baseline_frac={frac:.2f} '
             + ' '.join(f'{name}_bottom={bottoms[name]}' for name in ('flutter', 'poppler', 'mupdf') if name in bottoms))
-        rows = np.arange(60, dtype=np.float64)
-        for name in ('flutter', 'poppler'):
-            prof = results[name].sum(axis=1)
-            centroid = float((rows * prof).sum() / prof.sum())
-            window = ' '.join(f'{y}:{prof[y]:.2f}' for y in range(22, 44))
-            say(f'[C6-PROBE] {tag}pt rowink {name:8s} centroid_y={centroid:.3f} rows22-43 {window}')
         clusters = ink_clusters(results['poppler'])
         for c0, c1 in clusters:
             fe = vertical_edges(results['flutter'], c0, c1)
@@ -214,13 +224,10 @@ def main(art):
         return 0
     for tag in tags:
         probe(art, tag)
-        flush()
-        LINES.clear()
     return 0
 
 
 if __name__ == '__main__':
     code = main(sys.argv[1] if len(sys.argv) > 1 else 'build/visual_parity')
-    if LINES:
-        flush()
+    flush()
     sys.exit(code)
