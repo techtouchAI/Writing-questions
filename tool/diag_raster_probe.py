@@ -8,7 +8,7 @@ Inputs (written by test/visual/raster_floor_probe_test.dart, one per size tag):
 Each PDF is rasterized at 96 dpi by poppler (pdftoppm, the gate's renderer) and
 by MuPDF, with a 1200 dpi MuPDF reference. A calibration rectangle is present in
 both, so coverage gain or loss is measured against exact area. Results are
-emitted as one ::notice annotation so they are readable from the check run.
+emitted as one ::notice annotation per size tag so they are readable from the check run.
 """
 import glob
 import os
@@ -155,10 +155,13 @@ def main(art):
         return 0
     for tag in tags:
         probe(art, tag)
+        flush()
+        LINES.clear()
     return 0
 
 
 if __name__ == '__main__':
     code = main(sys.argv[1] if len(sys.argv) > 1 else 'build/visual_parity')
-    flush()
+    if LINES:
+        flush()
     sys.exit(code)
