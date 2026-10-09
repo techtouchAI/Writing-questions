@@ -64,7 +64,7 @@ def fmt(v):
 def part_contract(d):
     lines = ["Contract lifecycle probe (production PdfMathRasters.rasterize, host via MaterialApp.builder)"]
     results = {}
-    for name in ("contract_pump_only.json", "contract_pump_yield.json"):
+    for name in ("contract_nohost.json", "contract_pump_only.json", "contract_pump_yield.json"):
         p = os.path.join(d, "c6diag", name)
         if not os.path.exists(p):
             lines.append(f"{name}: MISSING (probe did not write output)")
@@ -80,10 +80,12 @@ def part_contract(d):
         lines.append(f"  hashes={r['hashes']}")
         if r.get("lastFailure"):
             lines.append(f"  lastFailure={str(r['lastFailure'])[:300]}")
-    if len(results) == 2:
+    if "contract_pump_only.json" in results and "contract_pump_yield.json" in results:
         a, b = results["contract_pump_only.json"], results["contract_pump_yield.json"]
-        same = a["hashes"] == b["hashes"] and a["sizes"] == b["sizes"]
-        lines.append(f"pump-only vs pump+yield identical output: {same}")
+        if a["rasters"] and b["rasters"]:
+            lines.append(f"host pump-only vs pump+yield identical: {a['hashes'] == b['hashes']}")
+        else:
+            lines.append("host pump-only vs pump+yield: not comparable (pump-only produced no rasters)")
     return lines
 
 

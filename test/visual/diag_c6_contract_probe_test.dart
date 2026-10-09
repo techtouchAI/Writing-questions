@@ -28,10 +28,12 @@ const List<String> _formulas = <String>[
 Future<Map<String, Object?>> _drive(
   WidgetTester tester, {
   required bool yieldEachPump,
+  required bool withHost,
 }) async {
+  // withHost=false mirrors the gate fixture's MaterialApp (no MathSnapshotHost).
   await tester.pumpWidget(
     MaterialApp(
-      builder: (_, child) => MathSnapshotHost(child: child),
+      builder: withHost ? (_, child) => MathSnapshotHost(child: child) : null,
       home: const SizedBox.shrink(),
     ),
   );
@@ -80,7 +82,7 @@ Future<Map<String, Object?>> _drive(
   }
 
   return <String, Object?>{
-    'mode': yieldEachPump ? 'pump+yield' : 'pump-only',
+    'mode': '${withHost ? 'host' : 'nohost'} ${yieldEachPump ? 'pump+yield' : 'pump-only'}',
     'done': got != null,
     'pumps': pumps,
     'formulas': _formulas.length,
@@ -94,15 +96,21 @@ Future<Map<String, Object?>> _drive(
 void main() {
   testWidgets('[C6-DIAG-2] math lifecycle pump-only', (tester) async {
     Directory(_outDir).createSync(recursive: true);
-    final result = await _drive(tester, yieldEachPump: false);
+    final result = await _drive(tester, yieldEachPump: false, withHost: true);
     File('$_outDir/contract_pump_only.json')
         .writeAsStringSync(jsonEncode(result));
   }, timeout: const Timeout(Duration(minutes: 5)));
 
   testWidgets('[C6-DIAG-2] math lifecycle pump+yield', (tester) async {
     Directory(_outDir).createSync(recursive: true);
-    final result = await _drive(tester, yieldEachPump: true);
+    final result = await _drive(tester, yieldEachPump: true, withHost: true);
     File('$_outDir/contract_pump_yield.json')
         .writeAsStringSync(jsonEncode(result));
+  }, timeout: const Timeout(Duration(minutes: 5)));
+
+  testWidgets('[C6-DIAG-2] math lifecycle no host (gate contract)', (tester) async {
+    Directory(_outDir).createSync(recursive: true);
+    final result = await _drive(tester, yieldEachPump: true, withHost: false);
+    File('$_outDir/contract_nohost.json').writeAsStringSync(jsonEncode(result));
   }, timeout: const Timeout(Duration(minutes: 5)));
 }

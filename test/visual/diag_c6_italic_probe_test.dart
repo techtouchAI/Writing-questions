@@ -13,13 +13,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:writing_questions_app/models/exam_font.dart';
 
 const double _pageWpx = 420;
 const double _pageHpx = 200;
 const double _pageWpt = 315;
 const double _pageHpt = 150;
 const String _outDir = 'build/visual_parity/c6diag';
-const String _regularAsset = 'assets/fonts/NotoNaskhArabic-Regular.ttf';
 
 /// y = top of the line box in pt; baseline is y + 14 pt.
 const List<Map<String, Object>> _lines = <Map<String, Object>>[
@@ -46,7 +46,7 @@ class _TextPainterProbe extends CustomPainter {
         text: TextSpan(
           text: text,
           style: TextStyle(
-            fontFamily: 'NotoNaskhArabic',
+            fontFamily: ExamFont.arabicFamily,
             fontSize: fontSize,
             fontWeight: FontWeight.w400,
             fontStyle: italic ? FontStyle.italic : FontStyle.normal,
@@ -109,10 +109,20 @@ Future<void> _capture(WidgetTester tester, GlobalKey key, String path) async {
   File(path).writeAsBytesSync(png!);
 }
 
+/// Same font setup as the gate fixture (_loadAppFonts). Without it, text in a
+/// widget test renders with the Ahem test font (blocks), which invalidates the probe.
+Future<void> _loadProbeFonts() async {
+  final loader = FontLoader(ExamFont.arabicFamily);
+  loader.addFont(rootBundle.load(ExamFont.regularAsset));
+  loader.addFont(rootBundle.load(ExamFont.boldAsset));
+  await loader.load();
+}
+
 void main() {
   testWidgets('[C6-DIAG-2] italic isolation', (tester) async {
     Directory(_outDir).createSync(recursive: true);
-    final fontData = await tester.runAsync(() => rootBundle.load(_regularAsset));
+    await tester.runAsync(_loadProbeFonts);
+    final fontData = await tester.runAsync(() => rootBundle.load(ExamFont.regularAsset));
     final font = pw.Font.ttf(fontData!);
 
     final manifest = <Map<String, Object?>>[];
