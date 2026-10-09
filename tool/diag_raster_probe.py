@@ -167,8 +167,7 @@ def probe(art, tag):
     scale = 1200 / 96
     ref_ink = float(darkness(ref)[:, : int(90 * scale)].sum()) / scale ** 2
 
-    say(f'[C6-PROBE] size={tag}pt shapes flutter={flutter.shape} poppler={poppler.shape} '
-        f'mupdf={mupdf.shape} linear-reference(mupdf 1200dpi)={ref_ink:.3f}')
+    say(f'[C6-PROBE] {tag}pt linear-ref={ref_ink:.3f}')
     results = {}
     for name, gray in (('flutter', flutter), ('poppler', poppler), ('mupdf', mupdf)):
         if gray.shape != (60, 200):
@@ -179,9 +178,7 @@ def probe(art, tag):
         full = int((region >= 0.95).sum())
         partial = int(((region > 0.05) & (region < 0.95)).sum())
         results[name] = region
-        say(f'[C6-PROBE] {tag}pt {name:8s} rect_ink(expect 200)={rect_ink(gray):8.3f} '
-            f'text_ink={ink:8.3f} ratio_to_linear={ink / ref_ink:6.4f} '
-            f'full_px={full} partial_px={partial}')
+        say(f'[C6-PROBE] {tag}pt {name} ink={ink:.3f} ratio={ink / ref_ink:.4f} rect={rect_ink(gray):.1f}')
     if {'flutter', 'poppler'} <= results.keys():
         fl = results['flutter']
         po = results['poppler']

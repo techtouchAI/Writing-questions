@@ -29,7 +29,7 @@ const double _leftPx = 20;
 
 class _Case {
   const _Case(this.tag, this.text, this.sizePt, this.rtl,
-      [this.extraPx = 0, this.lineHeight = 1.45]);
+      [this.extraPx = 0, this.lineHeight = 1.45, this.ptLogical = false]);
   final String tag;
   final String text;
   final double sizePt;
@@ -40,6 +40,10 @@ class _Case {
   // Paragraph line-height factor (production: document.layout.lineHeightFactor;
   // the visual fixture uses 1.8).
   final double lineHeight;
+  // true: lay out in pt on a canvas scaled by 4/3, exactly as
+  // CanonicalLayoutPreview._paintText does. false: lay out in px (the earlier
+  // probe mode, which does NOT match production).
+  final bool ptLogical;
 }
 
 const List<_Case> _cases = <_Case>[
@@ -74,6 +78,20 @@ const List<_Case> _cases = <_Case>[
   _Case('11_lI_h10_p00', 'lI', 11, false, 0.0, 1.0),
   _Case('11_lI_h10_p50', 'lI', 11, false, 0.5, 1.0),
   _Case('11_lI_h10_p70', 'lI', 11, false, 0.7, 1.0),
+  _Case('11_lI_pt18_p00', 'lI', 11, false, 0.0, 1.8, true),
+  _Case('11_lI_pt18_p20', 'lI', 11, false, 0.2, 1.8, true),
+  _Case('11_lI_pt18_p40', 'lI', 11, false, 0.4, 1.8, true),
+  _Case('11_lI_pt18_p50', 'lI', 11, false, 0.5, 1.8, true),
+  _Case('11_lI_pt18_p60', 'lI', 11, false, 0.6, 1.8, true),
+  _Case('11_lI_pt18_p70', 'lI', 11, false, 0.7, 1.8, true),
+  _Case('11_lI_pt18_p80', 'lI', 11, false, 0.8, 1.8, true),
+  _Case('11_lI_pt18_p90', 'lI', 11, false, 0.9, 1.8, true),
+  _Case('11_lI_pt145_p00', 'lI', 11, false, 0.0, 1.45, true),
+  _Case('11_lI_pt145_p50', 'lI', 11, false, 0.5, 1.45, true),
+  _Case('11_lI_pt145_p70', 'lI', 11, false, 0.7, 1.45, true),
+  _Case('11_lI_pt10_p00', 'lI', 11, false, 0.0, 1.0, true),
+  _Case('11_lI_pt10_p50', 'lI', 11, false, 0.5, 1.0, true),
+  _Case('11_lI_pt10_p70', 'lI', 11, false, 0.7, 1.0, true),
 ];
 
 void main() {
@@ -133,6 +151,7 @@ void main() {
                             baselineY: _baselinePx + probeCase.extraPx,
                             leftX: _leftPx,
                             lineHeight: probeCase.lineHeight,
+                            ptLogical: probeCase.ptLogical,
                           ),
                         ),
                       ),
@@ -236,6 +255,7 @@ class _ProductionLinePainter extends CustomPainter {
     required this.baselineY,
     required this.leftX,
     required this.lineHeight,
+    required this.ptLogical,
   });
 
   final String text;
@@ -245,15 +265,22 @@ class _ProductionLinePainter extends CustomPainter {
   final double baselineY;
   final double leftX;
   final double lineHeight;
+  final bool ptLogical;
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Production: fontSize in pt, canvas scaled by LayoutUnits.ptToPx(1) (4/3).
+    final scale = ptLogical ? 4 / 3 : 1.0;
+    canvas.save();
+    if (ptLogical) {
+      canvas.scale(scale);
+    }
     final painter = TextPainter(
       text: TextSpan(
         text: text,
         style: TextStyle(
           fontFamily: family,
-          fontSize: sizePx,
+          fontSize: ptLogical ? sizePx * 0.75 : sizePx,
           color: const Color(0xFF000000),
           height: lineHeight,
         ),
@@ -265,9 +292,13 @@ class _ProductionLinePainter extends CustomPainter {
     try {
       final metrics = painter.computeLineMetrics();
       final baseline = metrics.isEmpty ? 0.0 : metrics.first.baseline;
-      painter.paint(canvas, Offset(leftX, baselineY - baseline));
+      painter.paint(
+        canvas,
+        Offset(leftX / scale, (baselineY / scale) - baseline),
+      );
     } finally {
       painter.dispose();
+      canvas.restore();
     }
   }
 
