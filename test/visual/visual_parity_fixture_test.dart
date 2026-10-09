@@ -603,7 +603,11 @@ void _diagWriteGeometry(LayoutDocument layout, ExamDocument document) {
           });
           continue;
         }
-        for (final word in run.words) {
+        // [C6-DIAG] pv: word left inside the run paragraph that Preview paints
+        // (pt, relative to run.x); rx: run origin (pt, page space).
+        final previewLefts = _diagPreviewWordLefts(run);
+        for (var wi = 0; wi < run.words.length; wi++) {
+          final word = run.words[wi];
           words.add(<String, Object?>{
             't': word.text,
             'x': word.x,
@@ -616,6 +620,8 @@ void _diagWriteGeometry(LayoutDocument layout, ExamDocument document) {
             'font': family,
             'lh': run.style.lineHeightFactor,
             'run': run.id,
+            'rx': run.x,
+            'pv': previewLefts[wi],
             'gl': _diagGlyphLefts(word.text, run),
           });
         }
@@ -722,6 +728,74 @@ List<double> _diagGlyphLefts(String text, LayoutRun run) {
           .reduce((a, b) => a < b ? a : b));
     }
     lefts.sort();
+    return lefts;
+  } finally {
+    painter.dispose();
+  }
+}
+
+// [C6-DIAG] Word left edges (pt, relative to run.x) inside the run paragraph
+// exactly as Preview paints it (same TextStyle fields as CanonicalLayoutPreview).
+// -1 marks a word that could not be located in run.text.
+List<double> _diagPreviewWordLefts(LayoutRun run) {
+  // Math runs paint an image or EquationModel.readableText, not run.text.
+  if (run.isMath || run.text.isEmpty || run.words.isEmpty) {
+    return List<double>.filled(run.words.length, -1.0);
+  }
+  final style = run.style;
+  final text = run.text;
+  final painter = TextPainter(
+    text: TextSpan(
+      text: text,
+      style: TextStyle(
+        fontFamily: style.font.family,
+        fontSize: style.fontSizePt,
+        fontWeight: style.bold ? FontWeight.w700 : FontWeight.w400,
+        fontStyle: style.italic ? FontStyle.italic : FontStyle.normal,
+        letterSpacing: style.letterSpacingPt,
+        height: style.lineHeightFactor,
+      ),
+    ),
+    textDirection: run.direction == DocumentDirection.rtl
+        ? TextDirection.rtl
+        : TextDirection.ltr,
+    textScaler: TextScaler.noScaling,
+    maxLines: 1,
+  )..layout(maxWidth: double.infinity);
+  try {
+    final lefts = <double>[];
+    // Words may be stored in visual order, so claim each occurrence once
+    // instead of assuming logical order.
+    final claimed = <int>{};
+    for (final word in run.words) {
+      var start = -1;
+      if (word.text.isNotEmpty) {
+        var search = 0;
+        while (true) {
+          final i = text.indexOf(word.text, search);
+          if (i < 0) break;
+          if (!claimed.contains(i)) {
+            start = i;
+            break;
+          }
+          search = i + 1;
+        }
+      }
+      if (start < 0) {
+        lefts.add(-1.0);
+        continue;
+      }
+      claimed.add(start);
+      final end = start + word.text.length;
+      final boxes = painter.getBoxesForSelection(
+        TextSelection(baseOffset: start, extentOffset: end),
+      );
+      var left = double.infinity;
+      for (final box in boxes) {
+        if (box.left < left) left = box.left;
+      }
+      lefts.add(left.isFinite ? left : -1.0);
+    }
     return lefts;
   } finally {
     painter.dispose();

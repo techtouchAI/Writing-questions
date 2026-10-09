@@ -622,9 +622,159 @@ void main() {
         }
       }
 
+      // [C6-DIAG] Composition ladder: fixture-style Arabic/mixed texts at the
+      // fixture's most common Arabic style (NotoNaskh 10.5pt, lh 1.5), f = 0.
+      // Flutter: whole-run paragraph. PDF: one CanonicalText per word at Flutter's
+      // word box, top offset from the whole run text (production C1 path).
+      // Per word we also store Flutter glyph lefts (relative to the word left).
+      const l2Size = 10.5;
+      const l2Lh = 1.5;
+      const l2Family = 'NotoNaskhArabic';
+      const l2Texts = <String>[
+        'واختبار   السطر',
+        'الرحيم   الرحمن',
+        'بسم الله الرحمن الرحيم',
+        'ااا ااا ااا ااا',
+        '(واختبار)',
+        'واختبار 2026',
+        'answer واختبار',
+        'واختبار answer',
+        'Vocabulary words',
+        '2026   2027',
+      ];
+      const l2Rtl = <bool>[
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        true,
+        false,
+        false,
+      ];
+      final ladder2 = <Map<String, Object?>>[];
+      for (var i = 0; i < l2Texts.length; i++) {
+        final text = l2Texts[i];
+        final rtl = l2Rtl[i];
+        final key = GlobalKey();
+        await tester.pumpWidget(
+          _frame(
+            key,
+            _ProdLinePainter(
+              text: text,
+              family: l2Family,
+              sizePt: l2Size,
+              bold: false,
+              italic: false,
+              lineHeight: l2Lh,
+              rtl: rtl,
+              baselinePt: _baselineBasePx * _ptPerPx,
+              leftPt: _leftPx * _ptPerPx,
+            ),
+          ),
+        );
+        await tester.pump();
+        final pngPath = '$_outDir/l2_fl_$i.png';
+        await _capture(tester, key, pngPath);
+
+        final measure = TextPainter(
+          text: TextSpan(text: text, style: _style(l2Family, l2Size, false, false, l2Lh)),
+          textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
+          textScaler: TextScaler.noScaling,
+          maxLines: 1,
+        )..layout(maxWidth: double.infinity);
+        final words = <Map<String, Object?>>[];
+        for (final m in RegExp(r'\S+').allMatches(text)) {
+          final boxes = measure.getBoxesForSelection(
+            TextSelection(baseOffset: m.start, extentOffset: m.end),
+          );
+          var left = double.infinity;
+          var right = double.negativeInfinity;
+          for (final b in boxes) {
+            if (b.left < left) left = b.left;
+            if (b.right > right) right = b.right;
+          }
+          final gl = <double>[];
+          for (var c = m.start; c < m.end; c++) {
+            final cb = measure.getBoxesForSelection(
+              TextSelection(baseOffset: c, extentOffset: c + 1),
+            );
+            if (cb.isEmpty) continue;
+            var cl = double.infinity;
+            for (final b in cb) {
+              if (b.left < cl) cl = b.left;
+            }
+            gl.add(cl - left);
+          }
+          gl.sort();
+          words.add(<String, Object?>{
+            'w': m.group(0),
+            'x': left,
+            'adv': right - left,
+            'gl': gl,
+          });
+        }
+        measure.dispose();
+
+        final pdfPath = '$_outDir/l2_pdf_$i.pdf';
+        final pdfBytes = await tester.runAsync(() async {
+          final font = fonts.fontFor(PaperFont.naskh, bold: false);
+          final doc = pw.Document();
+          doc.addPage(
+            pw.Page(
+              pageFormat: const PdfPageFormat(_pageWpt, _pageHpt),
+              margin: pw.EdgeInsets.zero,
+              build: (context) {
+                final offset = PdfTextMetrics.baselineOffsetFromTop(
+                  font: font.getFont(context),
+                  fontSizePt: l2Size,
+                  text: text,
+                );
+                final top = _baselineBasePx * _ptPerPx - offset;
+                return pw.SizedBox(
+                  width: _pageWpt,
+                  height: _pageHpt,
+                  child: pw.Stack(
+                    children: <pw.Widget>[
+                      for (final word in words)
+                        pw.Positioned(
+                          left: _leftPx * _ptPerPx + (word['x']! as double),
+                          top: top,
+                          child: CanonicalText(
+                            text: word['w']! as String,
+                            font: font,
+                            fontSizePt: l2Size,
+                            color: PdfColors.black,
+                            canonicalAdvancePt: word['adv']! as double,
+                            rtl: rtl,
+                            underline: false,
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          );
+          return doc.save();
+        });
+        File(pdfPath).writeAsBytesSync(pdfBytes!);
+        ladder2.add(<String, Object?>{
+          'i': i,
+          'text': text,
+          'rtl': rtl,
+          'png': pngPath,
+          'pdf': pdfPath,
+          'words': words,
+        });
+      }
+
       File('$_outDir/manifest.json').writeAsStringSync(
         jsonEncode(<String, Object?>{
           'sweep': sweep,
+          'ladder2': ladder2,
           'ladder': <String, Object?>{
             'family': ladderFamily,
             'size': ladderSize,
