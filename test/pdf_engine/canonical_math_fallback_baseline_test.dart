@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/document_direction.dart';
@@ -8,6 +9,18 @@ import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/pdf_engine/canonical_layout_pdf_painter.dart';
 import 'package:writing_questions_app/pdf_engine/exam_fonts.dart';
 import 'package:writing_questions_app/pdf_engine/pdf_text_metrics.dart';
+
+/// Resolves [font] to the embedded [PdfFont] the painter measures against.
+PdfFont _pdfFontOf(pw.Font font) {
+  final pdfDocument = PdfDocument();
+  final page = PdfPage(pdfDocument, pageFormat: PdfPageFormat.a4);
+  final context = pw.Context(
+    document: pdfDocument,
+    page: page,
+    canvas: page.getGraphics(),
+  );
+  return font.getFont(context);
+}
 
 /// Math run in the text-fallback path: `text` is the LaTeX source, while the
 /// painter emits `EquationModel.readableText(text)`.
@@ -41,7 +54,9 @@ void main() {
   // the canonical baseline. Both values must come from the emitted text.
   test('math fallback baseline offset is measured from the emitted text',
       () async {
-    final font = pw.Font.ttf(await rootBundle.load(ExamFonts.regularAsset));
+    final font = _pdfFontOf(
+      pw.Font.ttf(await rootBundle.load(ExamFonts.regularAsset)),
+    );
     const candidates = <String>[
       r'\frac{a}{b}',
       r'\sqrt{x^{2}+1}',

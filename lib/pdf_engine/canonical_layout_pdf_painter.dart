@@ -298,7 +298,7 @@ class CanonicalLayoutPdfPainter {
   /// Measured from [emittedRunText] with [font], the same font the widget uses.
   static double textTopOffset({
     required LayoutRun run,
-    required pw.Font font,
+    required PdfFont font,
   }) =>
       PdfTextMetrics.baselineOffsetFromTop(
         font: font,
