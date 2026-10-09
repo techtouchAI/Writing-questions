@@ -40,6 +40,8 @@ const String _arText = 'ااا';
 const List<double> _fracs = <double>[
   0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, //
 ];
+// Latin (flat-bottom lI) gets a 0.02 sweep: delta intervals are then ~0.02 wide.
+final List<double> _fineFracs = List<double>.generate(50, (i) => i * 0.02);
 
 const Map<String, List<String>> _familyAssets = <String, List<String>>{
   'NotoNaskhArabic': <String>[ExamFont.regularAsset, ExamFont.boldAsset],
@@ -203,6 +205,7 @@ Future<void> _capture(
 }
 
 Future<Uint8List> _sweepPdf({
+  required List<double> fracs,
   required ExamFonts fonts,
   required PaperFont paperFont,
   required bool bold,
@@ -213,7 +216,7 @@ Future<Uint8List> _sweepPdf({
 }) async {
   final font = fonts.fontFor(paperFont, bold: bold);
   final doc = pw.Document();
-  for (final frac in _fracs) {
+  for (final frac in fracs) {
     final baselinePt = (_baselineBasePx + frac) * _ptPerPx;
     doc.addPage(
       pw.Page(
@@ -350,9 +353,10 @@ void main() {
             'preferred_lh_pt': metricPainter.preferredLineHeight,
           };
           metricPainter.dispose();
+          final fracs = script == 'lat' ? _fineFracs : _fracs;
           final pngs = <String>[];
-          for (var i = 0; i < _fracs.length; i++) {
-            final baselinePt = (_baselineBasePx + _fracs[i]) * _ptPerPx;
+          for (var i = 0; i < fracs.length; i++) {
+            final baselinePt = (_baselineBasePx + fracs[i]) * _ptPerPx;
             final key = GlobalKey();
             await tester.pumpWidget(
               _frame(
@@ -386,6 +390,7 @@ void main() {
           );
           final pdfBytes = await tester.runAsync(
             () => _sweepPdf(
+              fracs: fracs,
               fonts: fonts,
               paperFont: paperFont,
               bold: bold,
@@ -409,6 +414,7 @@ void main() {
             'text': text,
             'pdf': pdfPath,
             'png': pngs,
+            'fracs': fracs,
             'metrics': metrics,
           });
         }
@@ -529,7 +535,6 @@ void main() {
 
       File('$_outDir/manifest.json').writeAsStringSync(
         jsonEncode(<String, Object?>{
-          'fracs': _fracs,
           'sweep': sweep,
           'ladder': <String, Object?>{
             'family': ladderFamily,
