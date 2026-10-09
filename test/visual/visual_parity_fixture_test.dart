@@ -49,6 +49,8 @@ import 'package:writing_questions_app/layout/canonical/canonical_layout_preview.
 import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/document_direction.dart';
+import 'package:writing_questions_app/models/equation_model.dart';
+import 'package:writing_questions_app/services/math_snapshot_renderer.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/services/exact_export_service.dart';
@@ -552,7 +554,7 @@ void _diagWriteGeometry(LayoutDocument layout, ExamDocument document) {
   final pages = <Object?>[];
   for (final page in layout.pages) {
     final words = <Object?>[];
-    final math = <Object?>[];
+    final mathBoxes = <Object?>[];
     final decorations = <Object?>[];
     final floats = <Object?>[];
 
@@ -560,11 +562,15 @@ void _diagWriteGeometry(LayoutDocument layout, ExamDocument document) {
       for (final run in line.runs) {
         if (run.advance <= 0 || run.text.isEmpty) continue;
         if (run.isMath) {
-          math.add(<String, Object?>{
+          mathBoxes.add(<String, Object?>{
             ...rectJson(run.x, line.baseline - run.baselineOffset, run.width,
                 run.height),
             'id': run.id,
             'text': run.text,
+            'readable': EquationModel.readableText(run.text),
+            'baseline': line.baseline,
+            'source': run.mathBox?.source ?? 'none',
+            'size': run.style.fontSizePt,
           });
           continue;
         }
@@ -597,6 +603,7 @@ void _diagWriteGeometry(LayoutDocument layout, ExamDocument document) {
             'rtl': rtl,
             'font': family,
             'run': run.id,
+            'gl': _diagGlyphLefts(word.text, run),
           });
         }
       }
@@ -650,11 +657,12 @@ void _diagWriteGeometry(LayoutDocument layout, ExamDocument document) {
       }
     }
     pages.add(<String, Object?>{
+      'mathAvailable': MathSnapshotRenderer.isAvailable,
       'index': page.index,
       'widthPt': page.pageSize.width,
       'heightPt': page.pageSize.height,
       'words': words,
-      'math': math,
+      'math': mathBoxes,
       'decorations': decorations,
       'floats': floats,
     });
@@ -662,4 +670,47 @@ void _diagWriteGeometry(LayoutDocument layout, ExamDocument document) {
   File('$_artifactDir/diag_geometry.json').writeAsStringSync(
     jsonEncode(<String, Object?>{'pages': pages}),
   );
+}
+
+// [C6-DIAG] Flutter glyph left edges (pt, relative to word origin) for the same
+// style Preview paints with. Visual-order sorted; ligatures show as fewer boxes.
+List<double> _diagGlyphLefts(String text, LayoutRun run) {
+  if (text.isEmpty) return const <double>[];
+  final style = run.style;
+  final painter = TextPainter(
+    text: TextSpan(
+      text: text,
+      style: TextStyle(
+        fontFamily: style.font.family,
+        fontSize: style.fontSizePt,
+        fontWeight: style.bold ? FontWeight.w700 : FontWeight.w400,
+        fontStyle: style.italic ? FontStyle.italic : FontStyle.normal,
+        letterSpacing: style.letterSpacingPt,
+        height: style.lineHeightFactor,
+      ),
+    ),
+    textDirection: run.direction == DocumentDirection.rtl
+        ? TextDirection.rtl
+        : TextDirection.ltr,
+    textScaler: TextScaler.noScaling,
+    maxLines: 1,
+  )..layout(maxWidth: double.infinity);
+  try {
+    final lefts = <double>[];
+    for (var index = 0; index < text.length; index++) {
+      final boxes = painter.getBoxesForSelection(
+        TextSelection(baseOffset: index, extentOffset: index + 1),
+      );
+      if (boxes.isEmpty) {
+        continue;
+      }
+      lefts.add(boxes
+          .map((box) => box.left)
+          .reduce((a, b) => a < b ? a : b));
+    }
+    lefts.sort();
+    return lefts;
+  } finally {
+    painter.dispose();
+  }
 }

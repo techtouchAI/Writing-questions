@@ -195,13 +195,14 @@ def main(art):
                     if bestl is None or value < bestl[0]:
                         bestl = (value, dx, dy)
             sample = ' '.join(w['t'] for w in group[:4])[:38]
+            frac = (key * PT2PX) % 1.0
             rows.append((line_sse, key, size, group[0]['font'], zero_band, bestl, sample,
-                         len(group), line_sse / total_sse * 100))
+                         len(group), line_sse / total_sse * 100, frac))
         rows.sort(key=lambda r: -r[0])
         out('top lines by SSE (best-shift: dx,dy in px; +dy = vector content lower than preview):')
         for r in rows[:14]:
-            _, key, size, font, z, bl, sample, n, share = r
-            out(f'  y={key:7.2f} s={size:4.1f} {font[:6]:<6} r0={z:.4f} '
+            _, key, size, font, z, bl, sample, n, share, frac = r
+            out(f'  y={key:7.2f} px_frac={frac:.2f} s={size:4.1f} {font[:6]:<6} r0={z:.4f} '
                 f'best={bl[0]:.4f}({bl[1]:+d},{bl[2]:+d}) sse%={share:5.2f} n={n} "{sample}"')
         shifted = [r for r in rows if r[5][1] != 0 or r[5][2] != 0]
         out(f'lines={len(rows)} lines_with_nonzero_best_shift={len(shifted)}')
@@ -221,6 +222,8 @@ def main(art):
             cy = np.array([c[1] for c in chars]) if chars else np.zeros(0)
             dxs, dys, size_bad, miss, examples = [], [], 0, 0, []
             for w in words:
+                if not w['t'].strip():
+                    continue
                 if cx.size == 0:
                     miss += 1
                     continue
@@ -251,6 +254,53 @@ def main(art):
                 out(f'pdf-origin check: no matches (words={len(words)} chars={len(chars)})')
             for e in examples:
                 out('  ' + e)
+
+            # glyph-level: emitted glyph origins vs Flutter glyph lefts per word
+            gl_diffs, gl_mismatch, worst = [], 0, []
+            for w in words:
+                gl = w.get('gl') or []
+                if not w['t'].strip() or not gl or cx.size == 0:
+                    continue
+                sel = np.where((np.abs(cy - w['y']) < 0.6) &
+                               (cx > w['x'] - 1.0) & (cx < w['x'] + w['adv'] + 1.0))[0]
+                if sel.size == 0:
+                    continue
+                pdf_xs = np.sort(cx[sel])
+                if pdf_xs.size != len(gl):
+                    gl_mismatch += 1
+                    continue
+                d = pdf_xs - (w['x'] + np.asarray(gl))
+                gl_diffs.extend(np.abs(d).tolist())
+                worst.append((float(np.abs(d).max()), w['t'][:16], float(d[int(np.argmax(np.abs(d)))])))
+            if gl_diffs:
+                g = np.asarray(gl_diffs)
+                out(f'glyph check (Flutter boxes vs PDF origins): glyphs={g.size} '
+                    f'median={np.median(g):.4f}pt max={g.max():.4f}pt '
+                    f'>0.1pt={int(np.sum(g > 0.1))} words_count_mismatch={gl_mismatch}')
+                worst.sort(reverse=True)
+                for mx, t, sd in worst[:6]:
+                    out(f'  glyph-worst max={mx:.3f} signed={sd:+.3f} "{t}"')
+            else:
+                out(f'glyph check: no comparable words (mismatch={gl_mismatch})')
+
+            # math: emitted readable text origin vs canonical math box
+            mrows = []
+            for mb in page.get('math', []):
+                if cx.size == 0:
+                    break
+                near = np.where((np.abs(cy - mb['baseline']) < 6.0) &
+                                (np.abs(cx - mb['x']) < 6.0))[0]
+                if near.size == 0:
+                    mrows.append(f'  math MISS x={mb["x"]:.1f} bl={mb["baseline"]:.1f} '
+                                 f'src={mb.get("source")} "{mb["text"][:18]}"')
+                    continue
+                k = near[int(np.argmin(np.abs(cx[near] - mb['x']) + np.abs(cy[near] - mb['baseline'])))]
+                mrows.append(f'  math x={mb["x"]:.1f} w={mb["w"]:.1f} h={mb["h"]:.1f} '
+                             f'dx={cx[k] - mb["x"]:+.3f} dy={cy[k] - mb["baseline"]:+.3f} '
+                             f'src={mb.get("source")} "{mb["readable"][:14]}" pdf="{chars[k][2]}"')
+            out(f'math boxes={len(page.get("math", []))} mathAvailable={page.get("mathAvailable")}')
+            for row in mrows[:10]:
+                out(row)
         except Exception as error:  # diagnostics never fail the build
             out(f'pdf-origin check failed: {error!r}')
 
