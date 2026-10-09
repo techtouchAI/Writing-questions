@@ -192,6 +192,21 @@ def main(art):
         blur_p = math.sqrt(float(np.mean((gpb[m:-m, m:-m] - gv[m:-m, m:-m]) ** 2))) / 255.0
         out(f'raster-floor probes: ink(ref/vec)={ink_ratio:.4f} hist-match-rmse={tone:.6f} '
             f'blur-vec-rmse={blur_v:.6f} blur-ref-rmse={blur_p:.6f}')
+        # (1c) control: same PDF rasterized by a second engine (MuPDF). If MuPDF and
+        # poppler disagree about as much as poppler and the preview, the residual is
+        # rasterizer-intrinsic rather than geometry.
+        pix = pdf[index].get_pixmap(dpi=96, alpha=False)
+        mu = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+        mu = mu[:, :, :3].astype(np.float64) / 255.0
+        if mu.shape == vec.shape:
+            mua = mu[CROP:-CROP, CROP:-CROP]
+            gmu = mua.mean(axis=2) * 255.0
+            out(f'control: mupdf-vs-poppler={rmse(va, mua):.6f} mupdf-vs-preview={rmse(pa, mua):.6f} '
+                f'poppler-vs-preview={page_rmse:.6f} ink(ref/mupdf)={float((255.0 - gp).sum() / max(1.0, (255.0 - gmu).sum())):.4f} '
+                f'hist-match(mupdf->ref)={hist_match_rmse(gp, gmu):.6f} '
+                f'mupdf-blur-vs-ref={math.sqrt(float(np.mean((gp - box3(gmu)) ** 2))) / 255.0:.6f}')
+        else:
+            out(f'control: SIZE mismatch mupdf={mu.shape} vector={vec.shape}')
 
         page = geo['pages'][index]
         words = page['words']
