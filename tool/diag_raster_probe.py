@@ -92,6 +92,39 @@ def hist_match_rmse(ref, mov):
     return rmse(ref, matched)
 
 
+def ink_clusters(region, col_min=0.3):
+    """Contiguous ink column clusters: list of (c0, c1) inclusive."""
+    cols = region.sum(axis=0) > col_min
+    out, start = [], None
+    for x, on in enumerate(cols):
+        if on and start is None:
+            start = x
+        if not on and start is not None:
+            out.append((start, x - 1))
+            start = None
+    if start is not None:
+        out.append((start, len(cols) - 1))
+    return out
+
+
+def vertical_edges(region, c0, c1):
+    """Median sub-pixel top and bottom ink edges over columns c0..c1."""
+    tops, bots = [], []
+    for x in range(c0, c1 + 1):
+        col = region[:, x]
+        rows = np.where(col >= 0.5)[0]
+        if rows.size == 0:
+            continue
+        r0, r1 = rows[0], rows[-1]
+        top = r0 - (col[r0 - 1] if r0 > 0 else 0.0)
+        bot = (r1 + 1) + (col[r1 + 1] if r1 + 1 < col.size else 0.0)
+        tops.append(top)
+        bots.append(bot)
+    if not tops:
+        return None
+    return float(np.median(tops)), float(np.median(bots))
+
+
 def probe(art, tag):
     pdf_path = os.path.join(art, f'raster_probe_{tag}.pdf')
     flutter_path = os.path.join(art, f'raster_probe_flutter_{tag}.png')
@@ -141,6 +174,16 @@ def probe(art, tag):
         say(f'[C6-PROBE] {tag}pt fit flutter<-poppler: rmse0={zero:.6f} '
             f'subpixel_best={best[0]:.6f} at dx={best[1]:+.3f} dy={best[2]:+.3f} '
             f'tone_only(hist-match)={hist_match_rmse(fl, po):.6f}')
+    if {'flutter', 'poppler'} <= results.keys():
+        clusters = ink_clusters(results['poppler'])
+        for c0, c1 in clusters:
+            fe = vertical_edges(results['flutter'], c0, c1)
+            pe = vertical_edges(results['poppler'], c0, c1)
+            if fe is None or pe is None:
+                continue
+            say(f'[C6-PROBE] {tag}pt edge cols {c0}-{c1} flutter top={fe[0]:.3f} bot={fe[1]:.3f} '
+                f'poppler top={pe[0]:.3f} bot={pe[1]:.3f} '
+                f'delta top={fe[0] - pe[0]:+.3f} delta bot={fe[1] - pe[1]:+.3f}')
     if {'flutter', 'poppler', 'mupdf'} <= results.keys():
         say(f'[C6-PROBE] {tag}pt text rmse flutter-vs-poppler={rmse(results["flutter"], results["poppler"]):.6f} '
             f'flutter-vs-mupdf={rmse(results["flutter"], results["mupdf"]):.6f} '
