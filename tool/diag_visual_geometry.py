@@ -52,6 +52,37 @@ def rmse(a, b):
     return math.sqrt(float(np.mean((a - b) ** 2)))
 
 
+def sample_shifted(img, y0, y1, x0, x1, dy, dx):
+    """Bilinear sample of img over [y0:y1, x0:x1] displaced by (dy, dx) px."""
+    ys = np.arange(y0, y1, dtype=np.float64) + dy
+    xs = np.arange(x0, x1, dtype=np.float64) + dx
+    yi = np.clip(np.floor(ys).astype(int), 0, img.shape[0] - 2)
+    xi = np.clip(np.floor(xs).astype(int), 0, img.shape[1] - 2)
+    ty = (np.clip(ys, 0, img.shape[0] - 1) - yi)[:, None]
+    tx = (np.clip(xs, 0, img.shape[1] - 1) - xi)[None, :]
+    if img.ndim == 3:
+        ty = ty[:, :, None]
+        tx = tx[:, :, None]
+    a = img[yi[:, None], xi[None, :]]
+    b = img[yi[:, None], xi[None, :] + 1]
+    c = img[yi[:, None] + 1, xi[None, :]]
+    d = img[yi[:, None] + 1, xi[None, :] + 1]
+    return (1 - ty) * (1 - tx) * a + (1 - ty) * tx * b + ty * (1 - tx) * c + ty * tx * d
+
+
+def subpixel_fit(ref_band, vec, y0, y1, x0, x1, span=1.5, step=0.25):
+    """Best continuous (dy, dx) translation of vec against ref_band (grid search)."""
+    best = None
+    grid = np.arange(-span, span + 1e-9, step)
+    for dy in grid:
+        for dx in grid:
+            cand = sample_shifted(vec, y0, y1, x0, x1, dy, dx)
+            value = rmse(ref_band, cand)
+            if best is None or value < best[0]:
+                best = (value, float(dx), float(dy))
+    return best
+
+
 def paint_rect(mask, x0, y0, x1, y1, value):
     h, w = mask.shape
     xs, xe = max(0, int(math.floor(x0))), min(w, int(math.ceil(x1)))
@@ -194,16 +225,19 @@ def main(art):
                     value = rmse(ref_band, cand)
                     if bestl is None or value < bestl[0]:
                         bestl = (value, dx, dy)
+            # sub-pixel translation (0.25px grid, bilinear) on the line band
+            sub = subpixel_fit(ref_band, va, ya, yb, xa, xb, span=2.0, step=0.25)
             sample = ' '.join(w['t'] for w in group[:4])[:38]
             frac = (key * PT2PX) % 1.0
             rows.append((line_sse, key, size, group[0]['font'], zero_band, bestl, sample,
-                         len(group), line_sse / total_sse * 100, frac))
+                         len(group), line_sse / total_sse * 100, frac, sub))
         rows.sort(key=lambda r: -r[0])
         out('top lines by SSE (best-shift: dx,dy in px; +dy = vector content lower than preview):')
         for r in rows[:14]:
-            _, key, size, font, z, bl, sample, n, share, frac = r
-            out(f'  y={key:7.2f} px_frac={frac:.2f} s={size:4.1f} {font[:6]:<6} r0={z:.4f} '
-                f'best={bl[0]:.4f}({bl[1]:+d},{bl[2]:+d}) sse%={share:5.2f} n={n} "{sample}"')
+            _, key, size, font, z, bl, sample, n, share, frac, sub = r
+            out(f'  y={key:7.2f} fr={frac:.2f} s={size:4.1f} {font[:6]:<6} r0={z:.4f} '
+                f'int=({bl[1]:+d},{bl[2]:+d})->{bl[0]:.4f} '
+                f'sub=({sub[1]:+.2f},{sub[2]:+.2f})->{sub[0]:.4f} sse%={share:5.2f} n={n} "{sample}"')
         shifted = [r for r in rows if r[5][1] != 0 or r[5][2] != 0]
         out(f'lines={len(rows)} lines_with_nonzero_best_shift={len(shifted)}')
 
