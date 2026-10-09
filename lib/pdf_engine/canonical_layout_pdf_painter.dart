@@ -259,11 +259,7 @@ class CanonicalLayoutPdfPainter {
         );
     if (run.isMath) {
       return <pw.Widget>[
-        wordWidget(
-          EquationModel.readableText(run.text),
-          run.x - originX,
-          run.advance,
-        ),
+        wordWidget(emittedRunText(run), run.x - originX, run.advance),
       ];
     }
     if (run.words.isEmpty) {
@@ -287,13 +283,29 @@ class CanonicalLayoutPdfPainter {
   ) {
     final font =
         fonts.fontFor(run.style.font, bold: run.style.bold).getFont(context);
-    return PdfTextMetrics.baselineOffsetFromTop(
-      font: font,
-      fontSizePt: run.style.fontSizePt,
-      text: run.text,
-      letterSpacingPt: run.style.letterSpacingPt ?? 0,
-    );
+    return textTopOffset(run: run, font: font);
   }
+
+  /// The text the painter actually emits for [run].
+  ///
+  /// Math runs in the fallback path emit their readable form, so every
+  /// measurement of the emitted baseline must use this string, never the
+  /// LaTeX source in [LayoutRun.text] (the maximum word ascent differs).
+  static String emittedRunText(LayoutRun run) =>
+      run.isMath ? EquationModel.readableText(run.text) : run.text;
+
+  /// Distance from the top of the text widget to the emitted baseline, in pt.
+  /// Measured from [emittedRunText] with [font], the same font the widget uses.
+  static double textTopOffset({
+    required LayoutRun run,
+    required pw.Font font,
+  }) =>
+      PdfTextMetrics.baselineOffsetFromTop(
+        font: font,
+        fontSizePt: run.style.fontSizePt,
+        text: emittedRunText(run),
+        letterSpacingPt: run.style.letterSpacingPt ?? 0,
+      );
 
   pw.Widget _paintFloat(
     LayoutFloatPlacement placement, {
