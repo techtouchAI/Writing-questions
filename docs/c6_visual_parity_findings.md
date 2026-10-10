@@ -86,3 +86,39 @@ At `stroke = 2.0 pt`:
 ## 7. Recommendation
 
 C6 cannot be closed by the frame fix alone. Its maximum page-level gain is about 0.007 against a 0.05–0.06 gap that is mostly text. Report C6 as blocked. Do not claim a visual match. Decide on items 1–3 before implementing any change.
+
+## 8. Frame fix on the gate (measured, CI)
+
+Official gate results, page 1 / page 2 Vector PDF RMSE (ceiling 0.02):
+
+| Commit | Change | Page 1 | Page 2 |
+|---|---|---|---|
+| `main` | baseline | 0.0750014 | 0.079265 |
+| `70edaf5` | inset removed (geometry only) | 0.0711328 | 0.079265 |
+| `c7f5f26` | plus `clip: false` on the `SvgImage` | 0.0711328 | 0.079265 |
+| `77f47f4` | plus wrapper `overflow` visible for generated square/rectangle frames | 0.0683264 | 0.079265 |
+
+Both pages still FAIL. Exact-PDF 0 on both pages. Exact-Word 0.0608117 / 0.0688867 (OK). Analyze, test and build APK succeeded on `77f47f4` (run `38043681973`). The `clip: false` change alone did nothing on the gate. The cause was the wrapper, not the `SvgImage`.
+
+Root cause of the no-change result: `CanonicalLayoutPdfPainter` wraps each floating element in `pw.Stack(overflow: pw.Overflow.clip)`. That clip cut the outer half of the stroke whatever the `SvgImage` flag was. `FloatingElementsPdf.build` has no callers in `lib`. Its tests cover dead code, so the live fix is tested through `svgClipsToBox` and `centredFrameOverflows`.
+
+Rendered edge ink at 96 dpi, page 1 frame (px per edge, from the gate's PNGs):
+
+| Image | left | right | top | bottom |
+|---|---|---|---|---|
+| Preview (Flutter, antialiased) | 2.66 | 2.66 | 2.86 | 2.75 |
+| Vector PDF, `c7f5f26` | 0.90 | 1.01 | 1.94 | 1.79 |
+| Vector PDF, `77f47f4` | 1.79 | 1.79 | 2.72 | 2.69 |
+
+The PDF trace (`tool/diag_c6_pdf_frame.py`, run `38044063653`) finds no clip active on the frame's fill or stroke, and no image drawn over the frame. So the remaining vertical thinning is not a clip.
+
+Poppler probe (the gate's `pdftoppm`, isolated frame at the fixture's geometry, run `38044421042`), px per edge:
+
+| Case | left | right | top | bottom |
+|---|---|---|---|---|
+| 2 pt centred stroke (production shape) | 2.00 | 2.00 | 3.00 | 3.00 |
+| Same ring as filled even-odd outline | 2.71 | 2.71 | 2.78 | 2.78 |
+
+Poppler snaps stroked rectangle edges to whole pixels. The stroke is therefore 0.7 px thin on the vertical edges and off on the horizontal ones. The filled ring is within about 0.1 px of the Preview on every edge. This is a measured candidate, not yet a change. It would alter how the frame is emitted in the PDF (content only; no Preview or expected-image change). It needs approval before implementation, and a gate run afterwards.
+
+Status: the frame is mostly accounted for. Page 1 (0.0683) is close to the earlier "framed float excluded" value (0.0681). The remaining gap is the text residual (section 5). C6 remains BLOCKED.
