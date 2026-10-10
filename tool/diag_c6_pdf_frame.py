@@ -145,6 +145,7 @@ def trace_content(doc, page, raw, ctm0, depth, state, clips0=(), lw0=1.0):
             xref = state["xobjects"].get(name)
             if xref is None:
                 state["unresolved"] += 1
+                state.setdefault("unresolved_names", []).append(name)
             else:
                 fm = _form_matrix(doc, xref)
                 trace_content(
@@ -209,7 +210,9 @@ def frame_clip_report(doc, page):
     fx0, fy0, fx1, fy1 = FRAME_CHECK_PT
     frame = (fx0 - 4, fy0 - 4, fx1 + 4, fy1 + 4)
     lines = [
-        f"  trace: page H={H:.2f} forms={state['forms']} unresolved_Do={state['unresolved']} paint_ops={len(state['records'])}"
+        f"  trace: page H={H:.2f} forms={state['forms']} unresolved_Do={state['unresolved']} "
+        f"unresolved_names={state.get('unresolved_names', [])} "
+        f"xobjects={sorted(state['xobjects'])} paint_ops={len(state['records'])}"
     ]
     for rec in state["records"]:
         b = top(rec["bbox"])
@@ -262,6 +265,76 @@ def edge_thickness(path):
     return f"{os.path.basename(path)} {pm.width}x{pm.height}: " + "; ".join(out)
 
 
+def _edge_ink(pm, x0, y0, x1, y1):
+    """Ink per edge (px) of the box x0..x1, y0..y1 (already in px)."""
+    pad = 6
+    rows = range(y0 + 6, y1 - 6)
+    cols = range(x0 + 6, x1 - 6)
+    res = {}
+    for name, xs in (("left", range(x0 - pad, x0 + pad)), ("right", range(x1 - pad, x1 + pad))):
+        res[name] = sum(sum(_ink(pm, x, y) for y in rows) / len(rows) for x in xs)
+    for name, ys in (("top", range(y0 - pad, y0 + pad)), ("bottom", range(y1 - pad, y1 + pad))):
+        res[name] = sum(sum(_ink(pm, x, y) for x in cols) / len(cols) for y in ys)
+    return res
+
+
+def poppler_stroke_probe(out_dir):
+    """Render isolated 2 pt rectangles with the gate's pdftoppm (Poppler).
+
+    Same size and page as the fixture frame (90 x 67.5 pt). Cases: unclipped at
+    three x offsets, and clipped to its own box. Ink per edge in px at 96 dpi
+    (centred 2 pt stroke ~ 2.67 px; clipped ~ 1.33 px).
+    """
+    import glob
+    import shutil
+    import subprocess
+
+    import pymupdf
+
+    if shutil.which("pdftoppm") is None:
+        return ["poppler probe: pdftoppm not on PATH"]
+    W, H = 595.0, 842.0
+    w, h, y0 = 90.0, 67.5, 200.0
+    cases = [
+        ("unclipped dx0", 100.0, False),
+        ("unclipped dx0.25", 100.25, False),
+        ("unclipped dx0.5", 100.5, False),
+        ("clipped dx0", 100.0, True),
+    ]
+    doc = pymupdf.open()
+    for _name, x, clip in cases:
+        page = doc.new_page(width=W, height=H)
+        if clip:
+            body = (
+                f"q {x} {y0} {w} {h} re W n 0 0 0 RG 2 w {x} {y0} {w} {h} re S Q\n"
+            )
+        else:
+            body = f"q 0 0 0 RG 2 w {x} {y0} {w} {h} re S Q\n"
+        xref = doc.get_new_xref()
+        doc.update_object(xref, "<<>>")
+        doc.update_stream(xref, body.encode("ascii"))
+        page.set_contents(xref)
+    pdf = os.path.join(out_dir, "c6diag", "poppler_stroke.pdf")
+    os.makedirs(os.path.dirname(pdf), exist_ok=True)
+    doc.save(pdf)
+    prefix = os.path.join(out_dir, "c6diag", "poppler_stroke")
+    subprocess.run(["pdftoppm", "-r", "96", "-png", pdf, prefix], check=True)
+    pngs = sorted(glob.glob(prefix + "-*.png"))
+    lines = [f"poppler probe: {len(pngs)} pages, box {w}x{h} pt at y={y0}"]
+    k = 4.0 / 3.0
+    for (name, x, _clip), png in zip(cases, pngs):
+        pm = pymupdf.Pixmap(png)
+        x0, x1 = round(x * k), round((x + w) * k)
+        y_top = round((H - (y0 + h)) * k)
+        y_bot = round((H - y0) * k)
+        e = _edge_ink(pm, x0, y_top, x1, y_bot)
+        lines.append(
+            f"  {name}: left={e['left']:.2f} right={e['right']:.2f} "
+            f"top={e['top']:.2f} bottom={e['bottom']:.2f} px"
+        )
+    return lines
+
+
 def rendered_frames(d):
     lines = []
     pngs = []
@@ -294,6 +367,10 @@ def main():
             lines.append(f"{name}: ERROR " + traceback.format_exc()[-600:])
     if not lines:
         lines = ["no PDF found in " + d]
+    try:
+        lines.extend(poppler_stroke_probe(d))
+    except Exception:  # noqa: BLE001
+        lines.append("poppler probe ERROR " + traceback.format_exc()[-600:])
     try:
         lines.extend(rendered_frames(d))
     except Exception:  # noqa: BLE001
