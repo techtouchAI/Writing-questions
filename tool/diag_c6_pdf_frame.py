@@ -313,11 +313,12 @@ def _edge_ink(pm, x0, y0, x1, y1):
 
 
 def poppler_stroke_probe(out_dir):
-    """Render isolated 2 pt rectangles with the gate's pdftoppm (Poppler).
+    """Render frame variants with the gate's pdftoppm (Poppler), fixture geometry.
 
-    Same size and page as the fixture frame (90 x 67.5 pt). Cases: unclipped at
-    three x offsets, and clipped to its own box. Ink per edge in px at 96 dpi
-    (centred 2 pt stroke ~ 2.67 px; clipped ~ 1.33 px).
+    Box 90 x 67.5 pt at the fixture's position on the 595.28 x 841.89 page.
+    Variants: a 2 pt centred stroke (production shape), the same ring drawn as a
+    filled even-odd outline, and both with the offset at 100 pt. Ink per edge
+    in px at 96 dpi. Preview reference: ~2.66 px per edge.
     """
     import glob
     import shutil
@@ -327,47 +328,59 @@ def poppler_stroke_probe(out_dir):
 
     if shutil.which("pdftoppm") is None:
         return ["poppler probe: pdftoppm not on PATH"]
-    W, H = 595.0, 842.0
-    w, h, y0 = 90.0, 67.5, 200.0
+    W, H = 595.28, 841.89
+    w, h = 90.0, 67.5
+    fx, fy_top = 87.76, 221.77  # fixture frame, top-origin pt
+    fy = H - fy_top - h  # PDF bottom-left origin
     cases = [
-        ("unclipped dx0", 100.0, False),
-        ("unclipped dx0.25", 100.25, False),
-        ("unclipped dx0.5", 100.5, False),
-        ("clipped dx0", 100.0, True),
+        ("stroke fixture", "q 0 0 0 RG 2 w {x} {y} {w} {h} re S Q", fx, fy),
+        (
+            "fill-ring fixture",
+            "q 0 0 0 rg {xo} {yo} {wo} {ho} re {xi} {yi} {wi} {hi} re f* Q",
+            fx,
+            fy,
+        ),
+        ("stroke dx100", "q 0 0 0 RG 2 w {x} {y} {w} {h} re S Q", 100.0, 200.0),
+        (
+            "fill-ring dx100",
+            "q 0 0 0 rg {xo} {yo} {wo} {ho} re {xi} {yi} {wi} {hi} re f* Q",
+            100.0,
+            200.0,
+        ),
     ]
     doc = pymupdf.open()
-    for _name, x, clip in cases:
+    boxes = []
+    for name, tmpl, x, y in cases:
         page = doc.new_page(width=W, height=H)
-        if clip:
-            body = (
-                f"q {x} {y0} {w} {h} re W n 0 0 0 RG 2 w {x} {y0} {w} {h} re S Q\n"
-            )
-        else:
-            body = f"q 0 0 0 RG 2 w {x} {y0} {w} {h} re S Q\n"
+        body = tmpl.format(
+            x=x, y=y, w=w, h=h,
+            xo=x - 1, yo=y - 1, wo=w + 2, ho=h + 2,
+            xi=x + 1, yi=y + 1, wi=w - 2, hi=h - 2,
+        ) + "\n"
         xref = doc.get_new_xref()
         doc.update_object(xref, "<<>>")
         doc.update_stream(xref, body.encode("ascii"))
         page.set_contents(xref)
+        boxes.append((name, x, y))
     pdf = os.path.join(out_dir, "c6diag", "poppler_stroke.pdf")
     os.makedirs(os.path.dirname(pdf), exist_ok=True)
     doc.save(pdf)
     prefix = os.path.join(out_dir, "c6diag", "poppler_stroke")
     subprocess.run(["pdftoppm", "-r", "96", "-png", pdf, prefix], check=True)
-    pngs = sorted(glob.glob(prefix + "-*.png"))
-    lines = [f"poppler probe: {len(pngs)} pages, box {w}x{h} pt at y={y0}"]
+    pngs = sorted(glob.glob(prefix + "-*.png"), key=lambda q: int(q.rsplit("-", 1)[1].split(".")[0]))
+    lines = [f"poppler probe: {len(pngs)} pages, box {w}x{h} pt, page {W}x{H}"]
     k = 4.0 / 3.0
-    for (name, x, _clip), png in zip(cases, pngs):
+    for (name, x, y), png in zip(boxes, pngs):
         pm = pymupdf.Pixmap(png)
         x0, x1 = round(x * k), round((x + w) * k)
-        y_top = round((H - (y0 + h)) * k)
-        y_bot = round((H - y0) * k)
+        y_top = round((H - (y + h)) * k)
+        y_bot = round((H - y) * k)
         e = _edge_ink(pm, x0, y_top, x1, y_bot)
         lines.append(
             f"  {name}: left={e['left']:.2f} right={e['right']:.2f} "
             f"top={e['top']:.2f} bottom={e['bottom']:.2f} px"
         )
     return lines
-
 
 def rendered_frames(d):
     lines = []
