@@ -241,6 +241,29 @@ abstract final class FloatingElementsPdf {
     }
   }
 
+  /// Whether a generated shape's SVG is clipped to its box when embedded in the
+  /// PDF. Square and rectangle frames are drawn on their box with a centred
+  /// stroke, as the Preview draws them, so they must not be clipped: the clip
+  /// cuts the outer half of the stroke (C6). Other shapes keep SvgImage's
+  /// default until they are measured.
+  static bool shapeClipsToBox(FloatingShapeType shape) =>
+      shape != FloatingShapeType.square && shape != FloatingShapeType.rectangle;
+
+  /// Whether the SVG of a shape element is clipped to its own box. User SVG
+  /// (svgSource) keeps SvgImage's default.
+  static bool svgClipsToBox(FloatingElement element) =>
+      element.svgSource != null ||
+      shapeClipsToBox(element.shape ?? FloatingShapeType.square);
+
+  /// Whether a floating element's centred frame stroke extends past its box, so
+  /// the wrapper that clips floating content must not clip it (C6). Only
+  /// generated square/rectangle frames.
+  static bool centredFrameOverflows(FloatingElement element) =>
+      element.type == FloatingElementType.shape &&
+      !element.isTextBox &&
+      element.svgSource == null &&
+      !shapeClipsToBox(element.shape ?? FloatingShapeType.square);
+
   /// يولد SVG لشكل بنفس بنية راسم اللوحة: خطوط سوداء وتعبئة بيضاء.
   static String shapeToSvg(
     FloatingShapeType shape,
@@ -264,9 +287,10 @@ abstract final class FloatingElementsPdf {
     switch (shape) {
       case FloatingShapeType.square:
       case FloatingShapeType.rectangle:
+        // The stroke is centred on the layout box, as in the canonical Preview
+        // (C6). Insetting by stroke/2 moved the frame about half a stroke off.
         shapeTag(
-          'rect x="${stroke / 2}" y="${stroke / 2}" '
-          'width="${width - stroke}" height="${height - stroke}"',
+          'rect x="0" y="0" width="$width" height="$height"',
         );
       case FloatingShapeType.circle:
         final cx = width / 2;

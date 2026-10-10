@@ -366,7 +366,11 @@ class CanonicalLayoutPdfPainter {
           );
           localChildren.add(
             pw.Positioned.fill(
-              child: pw.SvgImage(svg: svg, fit: pw.BoxFit.fill),
+              child: pw.SvgImage(
+                svg: svg,
+                fit: pw.BoxFit.fill,
+                clip: FloatingElementsPdf.svgClipsToBox(element),
+              ),
             ),
           );
         }
@@ -409,7 +413,11 @@ class CanonicalLayoutPdfPainter {
       height: height,
       child: pw.Stack(
         fit: pw.StackFit.expand,
-        overflow: pw.Overflow.clip,
+        // A centred frame stroke extends half its width past the box. Clipping
+        // here cut it in half in the PDF but not in the Preview (C6).
+        overflow: FloatingElementsPdf.centredFrameOverflows(element)
+            ? pw.Overflow.visible
+            : pw.Overflow.clip,
         children: localChildren,
       ),
     );
