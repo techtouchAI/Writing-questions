@@ -42,6 +42,10 @@ def inspect(path):
         raw = page.read_contents() or b""  # bytes in PyMuPDF >= 1.2x
         clips = len(CLIP.findall(raw))
         out.append(f"  p{pno + 1}: content={len(raw)}B clip_ops={clips}")
+        try:
+            out.extend(frame_clip_report(doc, page))
+        except Exception:  # noqa: BLE001
+            out.append("  frame_clip_report ERROR " + traceback.format_exc()[-400:])
         for dr in page.get_drawings():
             r = dr["rect"]
             near_frame = (80 <= r.width <= 140 and 60 <= r.height <= 110) or (
@@ -55,6 +59,173 @@ def inspect(path):
                 f"items={len(dr['items'])}"
             )
     return out
+
+
+TOKEN = re.compile(
+    rb"\[[^\]]*\]|\((?:\\.|[^\\)])*\)|<[^<>]*>|/[^\s/\[\]()<>{}]*"
+    rb"|[-+]?(?:\d+\.?\d*|\.\d+)|[A-Za-z'\"*]+"
+)
+NUMBER = re.compile(rb"[-+]?(?:\d+\.?\d*|\.\d+)")
+STROKE_OPS = {"S", "s", "B", "B*", "b", "b*"}
+PAINT_OPS = STROKE_OPS | {"f", "F", "f*", "n"}
+
+
+def _mul(m, n):
+    return (
+        m[0] * n[0] + m[1] * n[2],
+        m[0] * n[1] + m[1] * n[3],
+        m[2] * n[0] + m[3] * n[2],
+        m[2] * n[1] + m[3] * n[3],
+        m[4] * n[0] + m[5] * n[2] + n[4],
+        m[4] * n[1] + m[5] * n[3] + n[5],
+    )
+
+
+def _pt(m, x, y):
+    return (m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5])
+
+
+def _bbox(points):
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _overlap(a, b):
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def _contains(a, b):
+    return a[0] <= b[0] and a[1] <= b[1] and a[2] >= b[2] and a[3] >= b[3]
+
+
+def trace_content(doc, page, raw, ctm0, depth, state, clips0=(), lw0=1.0):
+    """Walk one content stream. Records paint ops and the clips active at each."""
+    ctm = ctm0
+    stack = []
+    clips = list(clips0)
+    lw = lw0
+    pend_clip = False
+    pts = []
+    args = []
+    for tok in TOKEN.findall(raw):
+        if NUMBER.fullmatch(tok):
+            args.append(float(tok))
+            continue
+        if tok[:1] in (b"/", b"(", b"<", b"["):
+            args.append(tok)
+            continue
+        op = tok.decode("latin-1")
+        nums = [a for a in args if isinstance(a, float)]
+        if op == "q":
+            stack.append((ctm, list(clips), lw))
+        elif op == "Q":
+            if stack:
+                ctm, clips, lw = stack.pop()
+        elif op == "cm" and len(nums) >= 6:
+            ctm = _mul(tuple(nums[-6:]), ctm)
+        elif op == "w" and nums:
+            lw = nums[-1]
+        elif op == "re" and len(nums) >= 4:
+            x, y, w, h = nums[-4:]
+            for cx, cy in ((x, y), (x + w, y), (x + w, y + h), (x, y + h)):
+                pts.append(_pt(ctm, cx, cy))
+        elif op in ("m", "l") and len(nums) >= 2:
+            pts.append(_pt(ctm, nums[-2], nums[-1]))
+        elif op == "c" and len(nums) >= 6:
+            for i in (0, 2, 4):
+                pts.append(_pt(ctm, nums[-6 + i], nums[-5 + i]))
+        elif op in ("v", "y") and len(nums) >= 4:
+            for i in (0, 2):
+                pts.append(_pt(ctm, nums[-4 + i], nums[-3 + i]))
+        elif op in ("W", "W*"):
+            pend_clip = True
+        elif op == "Do" and depth < 4:
+            name = args[-1][1:].decode("latin-1") if args and isinstance(args[-1], bytes) else ""
+            xref = state["xobjects"].get(name)
+            if xref is None:
+                state["unresolved"] += 1
+            else:
+                fm = _form_matrix(doc, xref)
+                trace_content(
+                    doc,
+                    page,
+                    doc.xref_stream(xref) or b"",
+                    _mul(fm, ctm),
+                    depth + 1,
+                    state,
+                    clips,
+                    lw,
+                )
+                state["forms"] += 1
+        elif op in PAINT_OPS:
+            bbox = _bbox(pts) if pts else None
+            if pend_clip and bbox:
+                clips.append(bbox)
+            if bbox and not pend_clip:
+                dev_w = lw * abs(ctm[0] * ctm[3] - ctm[1] * ctm[2]) ** 0.5
+                state["records"].append(
+                    {
+                        "op": op,
+                        "bbox": bbox,
+                        "dev_w": dev_w if op in STROKE_OPS else None,
+                        "clips": list(clips),
+                        "depth": depth,
+                    }
+                )
+            pend_clip = False
+            pts = []
+        args = []
+    return ctm
+
+
+def _form_matrix(doc, xref):
+    try:
+        kind, val = doc.xref_get_key(xref, "Matrix")
+        if kind == "array":
+            nums = [float(v) for v in val.strip("[] ").split()]
+            if len(nums) == 6:
+                return tuple(nums)
+    except Exception:  # noqa: BLE001
+        pass
+    return (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+
+
+FRAME_CHECK_PT = (87.76, 221.77, 177.76, 289.27)
+
+
+def frame_clip_report(doc, page):
+    """Which clip paths partly cut the frame stroke, in top-origin page points."""
+    H = page.mediabox.y1
+    state = {"xobjects": {}, "records": [], "forms": 0, "unresolved": 0}
+    for entry in page.get_xobjects():
+        state["xobjects"][entry[7]] = entry[0]
+    raw = page.read_contents() or b""
+    trace_content(doc, page, raw, (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), 0, state)
+
+    def top(b):
+        return (b[0], H - b[3], b[2], H - b[1])
+
+    fx0, fy0, fx1, fy1 = FRAME_CHECK_PT
+    frame = (fx0 - 4, fy0 - 4, fx1 + 4, fy1 + 4)
+    lines = [
+        f"  trace: page H={H:.2f} forms={state['forms']} unresolved_Do={state['unresolved']} paint_ops={len(state['records'])}"
+    ]
+    for rec in state["records"]:
+        b = top(rec["bbox"])
+        if not _overlap(b, frame):
+            continue
+        half = (rec["dev_w"] or 0.0) / 2.0  # a stroke reaches half its width past the path
+        ext = (b[0] - half, b[1] - half, b[2] + half, b[3] + half)
+        cutters = [top(c) for c in rec["clips"] if _overlap(top(c), ext) and not _contains(top(c), ext)]
+        lines.append(
+            f"  frame op={rec['op']} d={rec['depth']} bbox=({b[0]:.2f},{b[1]:.2f},{b[2]:.2f},{b[3]:.2f}) "
+            f"dev_w={rec['dev_w'] if rec['dev_w'] is None else round(rec['dev_w'], 3)} "
+            f"clips_active={len(rec['clips'])} partial_cutters={len(cutters)}"
+        )
+        for c in cutters[:12]:
+            lines.append(f"    cutter ({c[0]:.2f},{c[1]:.2f},{c[2]:.2f},{c[3]:.2f})")
+    return lines
 
 
 # Frame box from the Vector PDF (pt), page 1: (87.76, 221.77) - (177.76, 289.27).
