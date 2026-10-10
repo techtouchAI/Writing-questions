@@ -4,16 +4,14 @@
 // centred stroke lands inside the layout box. The canonical Preview draws the
 // stroke centred on the box itself, so the PDF frame sits about stroke/2 off.
 //
-// Defect 2 (clip): pw.SvgImage clips to its box by default. The outer half of a
-// centred stroke is cut away, which halves the visible frame thickness.
-//
-// Clipping is detected in the uncompressed content stream by the `W n` operator
-// that SvgImage emits when clip is true.
-import 'dart:typed_data';
-
+// Defect 2 (clip): CanonicalLayoutPdfPainter wraps each floating element in a
+// pw.Stack with Overflow.clip, and pw.SvgImage clips to its own box by default.
+// Either clip cuts the outer half of a centred stroke, so the PDF frame is about
+// half as thick as the Preview's. The painter's live decisions are
+// FloatingElementsPdf.svgClipsToBox and centredFrameOverflows. They are tested
+// here. The end-to-end effect is measured by the visual gate's rendered edge
+// thickness (tool/diag_c6_pdf_frame.py).
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/pdf_engine/floating_elements_pdf.dart';
 
@@ -21,20 +19,7 @@ final RegExp _rectPattern = RegExp(
   r'<rect x="([-\d.]+)" y="([-\d.]+)" width="([-\d.]+)" height="([-\d.]+)"',
 );
 
-Future<String> _pdfContent(pw.Widget widget) async {
-  final doc = pw.Document(compress: false);
-  doc.addPage(
-    pw.Page(
-      pageFormat: const PdfPageFormat(200, 200),
-      margin: pw.EdgeInsets.zero,
-      build: (context) => widget,
-    ),
-  );
-  final Uint8List bytes = await doc.save();
-  return String.fromCharCodes(bytes);
-}
-
-FloatingElement _frame(FloatingShapeType shape, {String? svgSource}) {
+FloatingElement _shape(FloatingShapeType shape, {String? svgSource}) {
   return FloatingElement(
     type: FloatingElementType.shape,
     shape: shape,
@@ -48,8 +33,6 @@ FloatingElement _frame(FloatingShapeType shape, {String? svgSource}) {
 }
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-
   group('floating square/rectangle frame', () {
     test('is drawn on the full layout box, not inset by stroke/2', () {
       for (final shape in <FloatingShapeType>[
@@ -66,37 +49,38 @@ void main() {
       }
     });
 
-    test('generated frame is not clipped, user SVG still is', () async {
-      final generated = FloatingElementsPdf.shapeToSvg(
+    test('generated frame is not clipped by its SVG or its wrapper', () {
+      for (final shape in <FloatingShapeType>[
         FloatingShapeType.square,
-        100,
-        80,
-        strokeWidth: 2.0,
-      );
+        FloatingShapeType.rectangle,
+      ]) {
+        final element = _shape(shape);
+        expect(FloatingElementsPdf.svgClipsToBox(element), isFalse,
+            reason: '$shape SVG must not clip its centred stroke');
+        expect(FloatingElementsPdf.centredFrameOverflows(element), isTrue,
+            reason: '$shape wrapper must let its centred stroke overflow');
+      }
+    });
 
-      final generatedPdf = await _pdfContent(
-        FloatingElementsPdf.build(
-          _frame(FloatingShapeType.square),
-          widthPt: 100,
-          heightPt: 80,
-        ),
-      );
-      expect(
-        generatedPdf,
-        isNot(contains(' W n')),
-        reason: 'the generated frame must not clip its centred stroke',
-      );
+    test('other generated shapes keep the clip', () {
+      for (final shape in <FloatingShapeType>[
+        FloatingShapeType.circle,
+        FloatingShapeType.triangle,
+      ]) {
+        final element = _shape(shape);
+        expect(FloatingElementsPdf.svgClipsToBox(element), isTrue, reason: '$shape');
+        expect(FloatingElementsPdf.centredFrameOverflows(element), isFalse,
+            reason: '$shape');
+      }
+    });
 
-      // Control: the same markup supplied as user SVG keeps SvgImage's default
-      // clip. This proves the detector works and that user SVG is unchanged.
-      final userPdf = await _pdfContent(
-        FloatingElementsPdf.build(
-          _frame(FloatingShapeType.square, svgSource: generated),
-          widthPt: 100,
-          heightPt: 80,
-        ),
+    test('user SVG in a square element keeps the clip', () {
+      final element = _shape(
+        FloatingShapeType.square,
+        svgSource: '<svg xmlns="http://www.w3.org/2000/svg"/>',
       );
-      expect(userPdf, contains(' W n'));
+      expect(FloatingElementsPdf.svgClipsToBox(element), isTrue);
+      expect(FloatingElementsPdf.centredFrameOverflows(element), isFalse);
     });
   });
 }

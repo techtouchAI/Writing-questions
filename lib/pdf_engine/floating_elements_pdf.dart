@@ -108,11 +108,7 @@ abstract final class FloatingElementsPdf {
     return pw.SizedBox(
       width: widthPt,
       height: heightPt,
-      child: pw.SvgImage(
-        svg: svg,
-        fit: pw.BoxFit.fill,
-        clip: element.svgSource != null || shapeClipsToBox(shape),
-      ),
+      child: pw.SvgImage(svg: svg, fit: pw.BoxFit.fill),
     );
   }
 
@@ -252,6 +248,21 @@ abstract final class FloatingElementsPdf {
   /// default until they are measured.
   static bool shapeClipsToBox(FloatingShapeType shape) =>
       shape != FloatingShapeType.square && shape != FloatingShapeType.rectangle;
+
+  /// Whether the SVG of a shape element is clipped to its own box. User SVG
+  /// (svgSource) keeps SvgImage's default.
+  static bool svgClipsToBox(FloatingElement element) =>
+      element.svgSource != null ||
+      shapeClipsToBox(element.shape ?? FloatingShapeType.square);
+
+  /// Whether a floating element's centred frame stroke extends past its box, so
+  /// the wrapper that clips floating content must not clip it (C6). Only
+  /// generated square/rectangle frames.
+  static bool centredFrameOverflows(FloatingElement element) =>
+      element.type == FloatingElementType.shape &&
+      !element.isTextBox &&
+      element.svgSource == null &&
+      !shapeClipsToBox(element.shape ?? FloatingShapeType.square);
 
   /// يولد SVG لشكل بنفس بنية راسم اللوحة: خطوط سوداء وتعبئة بيضاء.
   static String shapeToSvg(
