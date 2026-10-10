@@ -304,5 +304,32 @@ class LineSpacingTest(unittest.TestCase):
         self.assertAlmostEqual(spc[0]["ratio"], 43.0 / 40.0, delta=0.03)
 
 
+
+class PerFontTest(unittest.TestCase):
+    def test_font_groups_need_five_valid_words(self):
+        words = [(60, 120 + 30 * i, "Hello", 16, (0, 0, 0)) for i in range(6)]
+        words += [(300, 120 + 30 * i, "tiny", 16, (0, 0, 0)) for i in range(2)]
+        ref_doc = pymupdf.open()
+        p = ref_doc.new_page(width=595.28, height=841.89)
+        for x, y, t, fs, col in words:
+            fn = "helv" if t == "Hello" else "tiro"
+            p.insert_text((x, y), t, fontsize=fs, fontname=fn, color=col)
+        sub_doc = pymupdf.open()
+        q = sub_doc.new_page(width=595.28, height=841.89)
+        for x, y, t, fs, col in words:
+            fn = "helv" if t == "Hello" else "tiro"
+            q.insert_text((x, y), t, fontsize=fs, fontname=fn, color=col)
+        ref = _render(ref_doc)
+        sub = _render(sub_doc)
+        w, dr, im, _, _ = g.page_inputs(ref_doc[0])
+        recs, _ = g.analyse_pair(w, dr, im, ref, sub)
+        lrs = g.line_measures(recs, w, ref, sub)
+        s = g.summarise(recs, lrs, g.line_spacing(lrs), "test")
+        keys = set(s["words"])
+        fonts = [k for k in keys if k.startswith("font:")]
+        self.assertEqual(len(fonts), 1, fonts)
+        self.assertIn("helv", fonts[0].lower())
+
+
 if __name__ == "__main__":
     unittest.main()

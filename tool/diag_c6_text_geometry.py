@@ -596,6 +596,11 @@ def summarise(records, line_recs, spacing, label):
         out = {"all": per}
         for sc in sorted({x["script"] for x in per}):
             out[sc] = [x for x in per if x["script"] == sc]
+        # Per font, for fonts with enough words to say anything (min 5, see report).
+        fonts = Counter(x["font"] for x in per)
+        for fn in sorted(fonts):
+            if fonts[fn] >= 5:
+                out["font:" + str(fn)] = [x for x in per if x["font"] == fn]
         return out
 
     stats = {}
@@ -679,7 +684,8 @@ def fmt_reg(r):
 
 def summary_lines(tag, s):
     out = [f"{tag} {s['label']}: words valid {s['words_valid']}/{s['words_total']}; excluded {json.dumps(s['excluded'], ensure_ascii=False)}"]
-    for g in ("all", "arabic", "latin"):
+    font_groups = sorted(k for k in s["words"] if k.startswith("font:"))
+    for g in ("all", "arabic", "latin") + tuple(font_groups):
         if g not in s["words"]:
             continue
         x = s["words"][g]
@@ -689,6 +695,8 @@ def summary_lines(tag, s):
             f"  [{g}] n={x['n']} W50 ratio {fmt_ci(x.get('w_ratio'))}  H50 ratio {fmt_ci(x.get('h_ratio'))}  "
             f"dx med {fmt_ci(x.get('dx_med'), 3)}  dy med {fmt_ci(x.get('dy_med'), 3)}"
         )
+        if g.startswith("font:"):  # per-font: the width and height line only
+            continue
         out.append(
             f"       edges dl {fmt_ci(x.get('dl_med'), 3)} dr {fmt_ci(x.get('dr_med'), 3)} "
             f"dt {fmt_ci(x.get('dt_med'), 3)} db {fmt_ci(x.get('db_med'), 3)}"
