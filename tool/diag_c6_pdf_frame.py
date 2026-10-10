@@ -143,9 +143,29 @@ def trace_content(doc, page, raw, ctm0, depth, state, clips0=(), lw0=1.0):
         elif op == "Do" and depth < 4:
             name = args[-1][1:].decode("latin-1") if args and isinstance(args[-1], bytes) else ""
             xref = state["xobjects"].get(name)
-            if xref is None:
+            if xref is not None and _is_image(doc, xref):
+                # An image occupies the unit square in user space.
+                state["records"].append(
+                    {
+                        "op": "Do:image",
+                        "bbox": _bbox([_pt(ctm, 0, 0), _pt(ctm, 1, 0), _pt(ctm, 1, 1), _pt(ctm, 0, 1)]),
+                        "dev_w": None,
+                        "clips": list(clips),
+                        "depth": depth,
+                    }
+                )
+            elif xref is None:
                 state["unresolved"] += 1
                 state.setdefault("unresolved_names", []).append(name)
+                state["records"].append(
+                    {
+                        "op": "Do:unresolved",
+                        "bbox": _bbox([_pt(ctm, 0, 0), _pt(ctm, 1, 0), _pt(ctm, 1, 1), _pt(ctm, 0, 1)]),
+                        "dev_w": None,
+                        "clips": list(clips),
+                        "depth": depth,
+                    }
+                )
             else:
                 fm = _form_matrix(doc, xref)
                 trace_content(
@@ -180,6 +200,13 @@ def trace_content(doc, page, raw, ctm0, depth, state, clips0=(), lw0=1.0):
     return ctm
 
 
+def _is_image(doc, xref):
+    try:
+        return doc.xref_get_key(xref, "Subtype")[1] == "/Image"
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _form_matrix(doc, xref):
     try:
         kind, val = doc.xref_get_key(xref, "Matrix")
@@ -201,6 +228,8 @@ def frame_clip_report(doc, page):
     state = {"xobjects": {}, "records": [], "forms": 0, "unresolved": 0}
     for entry in page.get_xobjects():
         state["xobjects"][entry[7]] = entry[0]
+    for entry in page.get_images(full=True):
+        state["xobjects"].setdefault(entry[7], entry[0])
     raw = page.read_contents() or b""
     trace_content(doc, page, raw, (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), 0, state)
 
@@ -217,6 +246,11 @@ def frame_clip_report(doc, page):
     for rec in state["records"]:
         b = top(rec["bbox"])
         if not _overlap(b, frame):
+            continue
+        if rec["op"].startswith("Do:"):
+            lines.append(
+                f"  frame {rec['op']} d={rec['depth']} bbox=({b[0]:.2f},{b[1]:.2f},{b[2]:.2f},{b[3]:.2f})"
+            )
             continue
         half = (rec["dev_w"] or 0.0) / 2.0  # a stroke reaches half its width past the path
         ext = (b[0] - half, b[1] - half, b[2] + half, b[3] + half)
