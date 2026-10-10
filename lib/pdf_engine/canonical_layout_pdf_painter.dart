@@ -366,7 +366,12 @@ class CanonicalLayoutPdfPainter {
           );
           localChildren.add(
             pw.Positioned.fill(
-              child: pw.SvgImage(svg: svg, fit: pw.BoxFit.fill),
+              child: pw.SvgImage(
+                svg: svg,
+                fit: pw.BoxFit.fill,
+                clip: element.svgSource != null ||
+                    FloatingElementsPdf.shapeClipsToBox(shape),
+              ),
             ),
           );
         }
