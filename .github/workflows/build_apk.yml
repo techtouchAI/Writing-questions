@@ -654,6 +654,20 @@ jobs:
         run: |
           "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_nontext_excess.py build/visual_parity || true
 
+      # [C6-DIAG-8] glyph-edge coverage profile, Preview vs PDF. Non-gating; writes only under c6diag/.
+      - name: "[C6-DIAG-8] glyph-edge coverage profile (Preview vs PDF)"
+        if: always()
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_coverage_profile.py build/visual_parity || true
+
+      # [C6-DIAG-9] page-rule geometry: Preview and PDF rasters against the PDF drawing. Non-gating.
+      - name: "[C6-DIAG-9] page rule geometry (Preview and PDF against the drawing)"
+        if: always()
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_rule_geometry.py build/visual_parity || true
+
       - name: "[C6-DIAG-3] math equivalence probe"
         if: always()
         shell: bash
