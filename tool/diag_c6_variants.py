@@ -80,19 +80,31 @@ def page_rmse(rendered, preview, work, tag):
 
 
 def ring_content(raw):
-    """Replace the single 90 x 67.5 pt stroked rectangle with a filled ring."""
-    hits = [
-        m
-        for m in RE_STROKE.finditer(raw)
-        if abs(float(m.group(3)) - FRAME_W) < 0.05 and abs(float(m.group(4)) - FRAME_H) < 0.05
-    ]
+    """Replace the single 90 x 67.5 pt stroked rectangle with a filled ring.
+
+    Signed sizes are accepted (a flipped CTM gives a negative height). The ring
+    is built from the normalised rectangle, 1 pt outside and inside its edges.
+    Returns (content, matches), or (content, 0) with candidates when not unique.
+    """
+    hits = []
+    cands = []
+    for m in RE_STROKE.finditer(raw):
+        x, y, w, h = (float(v) for v in m.groups())
+        if abs(abs(w) - FRAME_W) < 0.05 and abs(abs(h) - FRAME_H) < 0.05:
+            hits.append(m)
+        if max(abs(w), abs(h)) > 40 and len(cands) < 6:
+            before = raw[max(0, m.start() - 60):m.start()].decode("latin-1").replace("\n", " | ")
+            cands.append(f"{x:.2f} {y:.2f} {w:.2f} {h:.2f} re S <- [{before}]")
     if len(hits) != 1:
-        return raw, len(hits)
+        return raw, f"{len(hits)} matches; large re S candidates: {cands}"
     m = hits[0]
     x, y, w, h = (float(v) for v in m.groups())
+    x0 = x if w > 0 else x + w
+    y0 = y if h > 0 else y + h
+    W, H = abs(w), abs(h)
     rep = (
-        f"q {RING_RGB} rg {x - 1:.4f} {y - 1:.4f} {w + 2:.4f} {h + 2:.4f} re "
-        f"{x + 1:.4f} {y + 1:.4f} {w - 2:.4f} {h - 2:.4f} re f* Q"
+        f"q {RING_RGB} rg {x0 - 1:.4f} {y0 - 1:.4f} {W + 2:.4f} {H + 2:.4f} re "
+        f"{x0 + 1:.4f} {y0 + 1:.4f} {W - 2:.4f} {H - 2:.4f} re f* Q"
     ).encode("ascii")
     return raw[: m.start()] + rep + raw[m.end():], 1
 
