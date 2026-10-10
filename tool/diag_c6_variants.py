@@ -79,34 +79,29 @@ def page_rmse(rendered, preview, work, tag):
     return rmse(norm, ref)
 
 
-def ring_content(raw):
-    """Replace the single 90 x 67.5 pt stroked rectangle with a filled ring.
+# The fixture's frame, as the pdf package writes it (CTM: translate, y-flip).
+# Verified in the content dump of run 38050067620: a closed 90 x 67.5 path,
+# stroked with 2 w, 1 J, 1 j, after a white fill of the same path.
+FRAME_STROKE = re.compile(
+    rb"0 0 m 90 0 l 90 67\.5 l 0 67\.5 l 0 0 l h 1 J 1 j 4 M \[\] 0 d 2 w S"
+)
+RING_PATH = (
+    f"q {RING_RGB} rg -1 -1 m 91 -1 l 91 68.5 l -1 68.5 l -1 -1 l h "
+    "1 1 m 1 66.5 l 89 66.5 l 89 1 l 1 1 l h f* Q"
+).encode("ascii")
 
-    Signed sizes are accepted (a flipped CTM gives a negative height). The ring
-    is built from the normalised rectangle, 1 pt outside and inside its edges.
-    Returns (content, matches), or (content, 0) with candidates when not unique.
+
+def ring_content(raw):
+    """Replace the frame's 2 pt centred stroke with a filled even-odd ring.
+
+    The ring spans 1 pt outside and 1 pt inside the path, the same bounds as
+    the centred stroke. Returns (content, matches).
     """
-    hits = []
-    cands = []
-    for m in RE_STROKE.finditer(raw):
-        x, y, w, h = (float(v) for v in m.groups())
-        if abs(abs(w) - FRAME_W) < 0.05 and abs(abs(h) - FRAME_H) < 0.05:
-            hits.append(m)
-        if max(abs(w), abs(h)) > 40 and len(cands) < 6:
-            before = raw[max(0, m.start() - 60):m.start()].decode("latin-1").replace("\n", " | ")
-            cands.append(f"{x:.2f} {y:.2f} {w:.2f} {h:.2f} re S <- [{before}]")
+    hits = list(FRAME_STROKE.finditer(raw))
     if len(hits) != 1:
-        return raw, f"{len(hits)} matches; large re S candidates: {cands}"
+        return raw, len(hits)
     m = hits[0]
-    x, y, w, h = (float(v) for v in m.groups())
-    x0 = x if w > 0 else x + w
-    y0 = y if h > 0 else y + h
-    W, H = abs(w), abs(h)
-    rep = (
-        f"q {RING_RGB} rg {x0 - 1:.4f} {y0 - 1:.4f} {W + 2:.4f} {H + 2:.4f} re "
-        f"{x0 + 1:.4f} {y0 + 1:.4f} {W - 2:.4f} {H - 2:.4f} re f* Q"
-    ).encode("ascii")
-    return raw[: m.start()] + rep + raw[m.end():], 1
+    return raw[: m.start()] + RING_PATH + raw[m.end():], 1
 
 
 def write_pdf(src, dst, transform):
