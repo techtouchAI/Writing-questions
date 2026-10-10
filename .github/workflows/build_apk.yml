@@ -604,6 +604,31 @@ jobs:
       - name: Compare rendered files against the preview (RMSE)
         run: bash tool/verify_visual_parity.sh build/visual_parity
 
+      # [C6-DIAG-3] تشخيص مؤقت لا يُدمج: غير مُلزِم، لا يغيّر الحدّ ولا الصور
+      # المرجعية ولا نتيجة المقارنة الرسمية السابقة.
+      - name: "[C6-DIAG-3] install diagnostic tools"
+        if: always()
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/diag-venv"
+          "$RUNNER_TEMP/diag-venv/bin/pip" install -q pymupdf
+
+      - name: "[C6-DIAG-3] inspect the Vector PDF frame"
+        if: always()
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_pdf_frame.py build/visual_parity || true
+
+      - name: "[C6-DIAG-3] math equivalence probe"
+        if: always()
+        shell: bash
+        run: |
+          flutter test test/visual/diag_c6_math_probe_test.dart || true
+          f=build/visual_parity/c6diag/math_equivalence.txt
+          if [ -f "$f" ]; then
+            while IFS= read -r line; do echo "::notice title=C6-DIAG-3 math::$line"; done < "$f"
+          fi
+
       # سبب الفشل يُنشر كتعليق على التشغيل: سجلات CI قد لا تكون مقروءة من كل
       # بيئة، والملخّص يجب أن يحمل السبب لا رقم الخروج وحده.
       - name: Publish visual parity report
