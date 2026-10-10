@@ -188,13 +188,47 @@ def rect_mask(shape, x0, y0, x1, y1, margin=1):
     return m
 
 
-def base_contamination(shape, text_boxes_pt, other_bboxes_pt, scales):
-    """Text and non-rule drawings, on the canonical transform, 1 px margin."""
-    m = nt.mask_from_pt(shape, text_boxes_pt, scales["sx"], scales["sy"])
-    m = _dilate1(m)
+def base_contamination(shape, text_boxes_pt, other_bboxes_pt, scales, parts=False):
+    """Text and non-rule drawings, on the canonical transform, 1 px margin.
+
+    With parts=True also returns the text and other-drawing masks separately (diagnostics only).
+    """
+    text_m = nt.mask_from_pt(shape, text_boxes_pt, scales["sx"], scales["sy"])
+    text_m = _dilate1(text_m)
+    other_m = np.zeros(shape, dtype=bool)
     for _, (x0, y0, x1, y1) in other_bboxes_pt:
-        m |= rect_mask(shape, x0 * scales["sx"], y0 * scales["sy"], x1 * scales["sx"], y1 * scales["sy"])
-    return m
+        other_m |= rect_mask(shape, x0 * scales["sx"], y0 * scales["sy"], x1 * scales["sx"], y1 * scales["sy"])
+    m = text_m | other_m
+    return (m, text_m, other_m) if parts else m
+
+
+def _band_view(m, rule, lo, hi, span_a):
+    """The band rows (or columns for a vertical rule) over the trimmed along-rule span."""
+    mm = m.T if rule["orient"] == "v" else m
+    a0, a1 = span_a
+    a = max(int(np.floor(a0)) + END_TRIM, 0)
+    b = min(int(np.ceil(a1)) - END_TRIM, mm.shape[1])
+    return mm[lo : hi + 1, a:b]
+
+
+def contamination_diag(rule, cont, base_cont, text_m, other_m, lo, hi, span_a):
+    """Per-source contamination in the band (diagnostic only; the measurement does not use it)."""
+    band = _band_view(cont, rule, lo, hi, span_a)
+    if band.size == 0:
+        return {"band_px": 0}
+    perp = cont & ~base_cont
+    clean_all = int((~band).all(axis=0).sum())
+    return {
+        "band_px": int(band.size),
+        "frac_text": float(_band_view(text_m, rule, lo, hi, span_a).mean()),
+        "frac_other": float(_band_view(other_m, rule, lo, hi, span_a).mean()),
+        "frac_perp": float(_band_view(perp, rule, lo, hi, span_a).mean()),
+        "clean_cols": clean_all,
+        # Clean columns if one source were ignored. Shows which mask removes the columns.
+        "clean_cols_if_no_text": int((~_band_view(cont & ~text_m, rule, lo, hi, span_a)).all(axis=0).sum()),
+        "clean_cols_if_no_other": int((~_band_view(cont & ~other_m, rule, lo, hi, span_a)).all(axis=0).sum()),
+        "clean_cols_if_no_perp": int((~_band_view(cont & base_cont, rule, lo, hi, span_a)).all(axis=0).sum()),
+    }
 
 
 def _dilate1(m):
@@ -297,7 +331,7 @@ def sse(a, b):
 # ----------------------------------------------------------------- per-rule measurement
 
 
-def measure_rule(rule, groups, rules, scales_a, scales_b, cov_p, cov_d, base_cont, shape):
+def measure_rule(rule, groups, rules, scales_a, scales_b, cov_p, cov_d, base_cont, shape, parts=None):
     cc_a = analytic_centre(rule, scales_a)
     cc_b = analytic_centre(rule, scales_b)
     t_a = analytic_thick(rule, scales_a)
@@ -324,6 +358,7 @@ def measure_rule(rule, groups, rules, scales_a, scales_b, cov_p, cov_d, base_con
         else:  # q is horizontal, crosses the band in rows near qc
             cont |= rect_mask(shape, lo, qc - 2, hi, qc + 2, 0)
     grouped = len(groups[rule["id"]]) > 1
+    cdiag = contamination_diag(rule, cont, base_cont, *parts, lo, hi, span_a) if parts is not None else None
 
     def side(cov):
         prof, ncl, (lo_, hi_) = profile(cov, cont, rule, span_a, rows)
@@ -373,6 +408,7 @@ def measure_rule(rule, groups, rules, scales_a, scales_b, cov_p, cov_d, base_con
         "span_A": [span_a[0], span_a[1]],
         "band": [lo, hi],
         "clean_cols": n_clean_cols,
+        "contam_diag": cdiag,
         "min_clean_per_row": int(ncl_p.min()) if ncl_p.size else 0,
         "prev": m_p,
         "pdf": m_d,
@@ -419,7 +455,9 @@ def analyse_page(page, prev_full, pdf_full, raw_size, prev_size, prev_path, pdf_
     # Contrast on each rule's own colour; per rule we re-project below.
     text_boxes = page_inputs_for_rules(page)
     other_nonrule = [(i, b) for i, b in other]
-    base_cont = base_contamination(shape, text_boxes, [(i, (b[0], b[1], b[2], b[3])) for i, b in other_nonrule], scales_a)
+    base_cont, text_m, other_m = base_contamination(
+        shape, text_boxes, [(i, (b[0], b[1], b[2], b[3])) for i, b in other_nonrule], scales_a, parts=True
+    )
     groups = groups_of(rules, scales_a)
     out_rules = []
     for ru in rules:
@@ -429,7 +467,7 @@ def analyse_page(page, prev_full, pdf_full, raw_size, prev_size, prev_path, pdf_
         if cp is None or cd is None:
             out_rules.append({"id": ru["id"], "skipped": "no contrast for colour"})
             continue
-        out_rules.append(measure_rule(ru, groups, rules, scales_a, scales_b, cp, cd, base_cont, shape))
+        out_rules.append(measure_rule(ru, groups, rules, scales_a, scales_b, cp, cd, base_cont, shape, (text_m, other_m)))
     return {
         "page": pidx_label,
         "page_pt": [page.rect.width, page.rect.height],
@@ -469,6 +507,13 @@ def report_lines(tag, res):
             f"{'GROUP' if r['grouped'] else 'isolated'} clean_cols={r['clean_cols']}"
         )
         out.append(head)
+        cd_ = r.get("contam_diag") or {}
+        if cd_.get("band_px"):
+            out.append(
+                f"    contamination in band: text {cd_['frac_text']:.2f} other {cd_['frac_other']:.2f} "
+                f"perp {cd_['frac_perp']:.2f}; clean cols {cd_['clean_cols']} (if no text {cd_['clean_cols_if_no_text']}, "
+                f"if no other {cd_['clean_cols_if_no_other']}, if no perp {cd_['clean_cols_if_no_perp']})"
+            )
         d = r.get("disp")
         if d:
             out.append(

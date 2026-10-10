@@ -29,6 +29,13 @@ Method (no fitting; every threshold is fixed before the data are seen)
   * Groups: all words, per script, per font (fonts with fewer than MIN_FONT_N valid words
     are marked indicative), and per vertical third of the page.
 
+Limitations (measured on the real fixture, run e97d97d)
+  * The class split is not renderer-invariant. Poppler against MuPDF direct has a total-mass
+    ratio of 1.004, but the full-class mass is 1.19 and the edge-class mass 0.98. Only total mass
+    and pixel counts should be read as renderer-stable. Class masses are descriptive.
+  * Darkening partial pixels can move them over the full threshold, so the interior and full
+    classes respond to darkness. The darkness dose response is a reference, not a correction.
+
 Inputs are read only; their SHA-256 hashes are checked before and after.
 Run: python tool/diag_c6_coverage_profile.py build/visual_parity
 """

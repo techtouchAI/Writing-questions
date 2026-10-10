@@ -163,6 +163,38 @@ class ProfileTest(unittest.TestCase):
         np.testing.assert_allclose(prof, [0, 0, 1, 1, 1, 0, 0])
 
 
+class ContaminationDiagTest(unittest.TestCase):
+    """The per-source attribution must name the mask that removes the clean columns."""
+
+    def test_text_covering_the_band_is_attributed_to_text(self):
+        shape = (60, 200)
+        text_m = np.zeros(shape, dtype=bool)
+        text_m[18:33, :] = True  # text over every column of the band rows 20..30
+        other_m = np.zeros(shape, dtype=bool)
+        base = text_m | other_m
+        rule = {"orient": "h"}
+        span = (10.0, 190.0)
+        d = rg.contamination_diag(rule, base.copy(), base, text_m, other_m, 20, 30, span)
+        width = int(np.ceil(190.0)) - rg.END_TRIM - (int(np.floor(10.0)) + rg.END_TRIM)
+        self.assertEqual(d["clean_cols"], 0)
+        self.assertEqual(d["clean_cols_if_no_text"], width)
+        self.assertEqual(d["clean_cols_if_no_other"], 0)
+        self.assertAlmostEqual(d["frac_text"], 1.0)
+        self.assertAlmostEqual(d["frac_other"], 0.0)
+        self.assertAlmostEqual(d["frac_perp"], 0.0)
+
+    def test_vertical_rule_uses_columns_as_band(self):
+        shape = (200, 60)  # rows along the rule, columns across it
+        other_m = np.zeros(shape, dtype=bool)
+        other_m[:, 18:33] = True  # an other drawing across the band columns 20..30 for the full length
+        text_m = np.zeros(shape, dtype=bool)
+        base = text_m | other_m
+        d = rg.contamination_diag({"orient": "v"}, base.copy(), base, text_m, other_m, 20, 30, (10.0, 190.0))
+        self.assertEqual(d["clean_cols"], 0)
+        self.assertGreater(d["clean_cols_if_no_other"], 0)
+        self.assertAlmostEqual(d["frac_other"], 1.0)
+
+
 class RuleMeasureTest(unittest.TestCase):
     """End to end on a synthetic page: the method must recover known displacements."""
 
