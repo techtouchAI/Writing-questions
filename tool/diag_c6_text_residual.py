@@ -199,7 +199,7 @@ def ink(img):
     return 1.0 - img[..., :3].mean(axis=2)
 
 
-def line_shift_probe(v, p, boxes, maxs=3, pad=2):
+def line_shift_probe(v, p, boxes, maxs=3, pad=2, row_shift=0):
     """Per-line integer-shift search of v against p. Evidence only, never applied.
 
     Returns per-line rows (err at zero shift, best err, best dx, best dy) and
@@ -211,16 +211,20 @@ def line_shift_probe(v, p, boxes, maxs=3, pad=2):
     for x0, y0, x1, y1 in boxes:
         a, b = int(np.floor(x0)) + pad, int(np.ceil(x1)) - pad
         c, d = int(np.floor(y0)) + pad, int(np.ceil(y1)) - pad
+        # row_shift moves the Preview region only (null control: different content).
+        pc, pd = c + row_shift, d + row_shift
         if a - maxs < 0 or c - maxs < 0 or b + maxs > w or d + maxs > h or b <= a or d <= c:
             continue
-        pr = p[c:d, a:b]
+        if pc - maxs < 0 or pd + maxs > h:
+            continue
+        pr = p[pc:pd, a:b]
         if ink(pr).sum() < 1.0:  # skip lines with almost no ink
             continue
         best = None
         err0 = None
         for dy in range(-maxs, maxs + 1):
             for dx in range(-maxs, maxs + 1):
-                vs = v[c + dy:d + dy, a + dx:b + dx]
+                vs = v[c + dy:d + dy, a + dx:b + dx]  # V moves; the Preview region is fixed
                 err = float(((vs - pr) ** 2).mean())
                 if dx == 0 and dy == 0:
                     err0 = err
@@ -233,6 +237,8 @@ def line_shift_probe(v, p, boxes, maxs=3, pad=2):
 def pooled_probe(rows):
     if not rows:
         return {"lines": 0}
+    from collections import Counter
+
     e0 = np.array([r["err0"] for r in rows])
     eb = np.array([r["best"] for r in rows])
     dx = np.array([r["dx"] for r in rows])
@@ -240,6 +246,8 @@ def pooled_probe(rows):
     return {
         "lines": len(rows),
         "zero_is_best": int(np.sum((dx == 0) & (dy == 0))),
+        "dy_hist": {str(k): v for k, v in sorted(Counter(dy.tolist()).items())},
+        "dx_hist": {str(k): v for k, v in sorted(Counter(dx.tolist()).items())},
         "median_dx": float(np.median(dx)),
         "median_dy": float(np.median(dy)),
         "pooled_mse_zero": float(e0.mean()),
@@ -264,13 +272,23 @@ def rmse_im(a, b, work, tag):
 
 
 def load_rgb(png):
-    """Return (samples HxWxC uint8, (w, h), note). The note reports the alpha state."""
+    """Return (samples HxWx3 uint8, (w, h), note) with RGB channels only.
+
+    pdftoppm writes a grayscale PNG for a page with no colour (page 2 here);
+    ImageMagick compares gray against RGB by replicating the gray channel, and
+    so does this. The note reports the alpha state.
+    """
     pm = pymupdf.Pixmap(png)
     arr = np.frombuffer(pm.samples, dtype=np.uint8).reshape(pm.height, pm.width, pm.n)
     note = ""
+    if pm.n in (1, 2):
+        if pm.n == 2:
+            note = " (gray+alpha; alpha all 255)" if np.all(arr[..., 1] == 255) else " (gray+alpha; NON-OPAQUE alpha)"
+        note += " (gray replicated to RGB)"
+        return np.repeat(arr[..., :1], 3, axis=2), (pm.width, pm.height), note
     if pm.n == 4:
         note = " (RGBA; alpha all 255)" if np.all(arr[..., 3] == 255) else " (RGBA; NON-OPAQUE alpha)"
-    return arr.copy(), (pm.width, pm.height), note
+    return arr[..., :3].copy(), (pm.width, pm.height), note
 
 
 def render(pdf, prefix):
@@ -345,7 +363,6 @@ def main():
             full, _, note_a = load_rgb(full_n)
             notext, _, note_b = load_rgb(text_n)
             prev, _, note_p = load_rgb(ref_n)
-            full, notext, prev = full[..., :3], notext[..., :3], prev[..., :3]
             if full.shape != (CH, CW, 3) or prev.shape != full.shape or notext.shape != full.shape:
                 raise RuntimeError(f"unexpected shapes {full.shape} {prev.shape} {notext.shape}")
 
@@ -442,6 +459,13 @@ def main():
                 line_boxes.append((x0, y0, x1, y1))
             probe = pooled_probe(line_shift_probe(fv, pv, line_boxes))
             lines.append(f"{tag} per-line integer-shift search (+-3 px, evidence only): " + json.dumps(probe))
+            # Null control: the same search against unrelated Preview content (40 px lower).
+            # Its optimistic reduction is what best-of-49 selection gives by chance.
+            null = pooled_probe(line_shift_probe(fv, pv, line_boxes, row_shift=40))
+            lines.append(
+                f"{tag} null control (Preview 40 px lower, unrelated content): "
+                + json.dumps({k: null.get(k) for k in ("lines", "pooled_rmse_zero", "pooled_rmse_best_per_line", "optimistic_reduction")})
+            )
 
             fonts = [f"{f[3]}({f[1]},{f[2]})" for f in page.get_fonts()]
             lines.append(f"{tag} embedded fonts: " + ", ".join(fonts))

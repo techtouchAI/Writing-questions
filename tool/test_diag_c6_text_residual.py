@@ -148,6 +148,33 @@ class DecomposeTest(unittest.TestCase):
         self.assertEqual(int(np.sum(diff_any & ~t)), 1)
 
 
+class LoadRgbTest(unittest.TestCase):
+    def test_gray_png_expands_to_rgb(self):
+        # pdftoppm writes gray PNGs for pages without colour; they must match RGB.
+        with tempfile.TemporaryDirectory() as tmp:
+            png = os.path.join(tmp, "gray.png")
+            pix = pymupdf.Pixmap(pymupdf.csGRAY, pymupdf.IRect(0, 0, 4, 3), 0)
+            pix.set_pixel(1, 1, (128,))
+            pix.save(png)
+            arr, size, note = d.load_rgb(png)
+            self.assertEqual(arr.shape, (3, 4, 3))
+            self.assertEqual(size, (4, 3))
+            self.assertEqual(int(arr[1, 1, 0]), 128)
+            self.assertTrue(np.all(arr[..., 0] == arr[..., 1]))
+            self.assertTrue(np.all(arr[..., 1] == arr[..., 2]))
+            self.assertIn("gray replicated", note)
+
+    def test_rgba_drops_alpha_and_reports_opacity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            png = os.path.join(tmp, "rgba.png")
+            pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 2, 2), True)
+            pix.clear_with(255)
+            pix.save(png)
+            arr, _, note = d.load_rgb(png)
+            self.assertEqual(arr.shape, (2, 2, 3))
+            self.assertIn("alpha all 255", note)
+
+
 class ShiftProbeTest(unittest.TestCase):
     def test_finds_known_shift(self):
         rng = np.random.default_rng(7)
