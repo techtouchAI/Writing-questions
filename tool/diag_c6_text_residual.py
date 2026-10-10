@@ -264,12 +264,13 @@ def rmse_im(a, b, work, tag):
 
 
 def load_rgb(png):
+    """Return (samples HxWxC uint8, (w, h), note). The note reports the alpha state."""
     pm = pymupdf.Pixmap(png)
     arr = np.frombuffer(pm.samples, dtype=np.uint8).reshape(pm.height, pm.width, pm.n)
-    alpha_note = ""
-    if pm.n == 4 and not np.all(arr[..., 3] == 255):
-        alpha_note = " (non-opaque alpha present)"
-    return arr.copy(), (pm.width, pm.height), alpha_note
+    note = ""
+    if pm.n == 4:
+        note = " (RGBA; alpha all 255)" if np.all(arr[..., 3] == 255) else " (RGBA; NON-OPAQUE alpha)"
+    return arr.copy(), (pm.width, pm.height), note
 
 
 def render(pdf, prefix):
@@ -339,11 +340,14 @@ def main():
             normalise(text_pngs[i], text_n)
             reference(os.path.join(d, f"preview_page_{pno}.png"), ref_n)
 
+            # The Preview PNG is RGBA and the PDF render is RGB. Compare RGB only, and
+            # require the Preview to be opaque so dropping alpha loses nothing.
             full, _, note_a = load_rgb(full_n)
             notext, _, note_b = load_rgb(text_n)
             prev, _, note_p = load_rgb(ref_n)
-            if full.shape != (CH, CW, 3) or prev.shape != full.shape:
-                raise RuntimeError(f"unexpected shapes {full.shape} {prev.shape}")
+            full, notext, prev = full[..., :3], notext[..., :3], prev[..., :3]
+            if full.shape != (CH, CW, 3) or prev.shape != full.shape or notext.shape != full.shape:
+                raise RuntimeError(f"unexpected shapes {full.shape} {prev.shape} {notext.shape}")
 
             # Validation: official RMSE (ImageMagick) against numpy on the same pair.
             official = rmse_im(full_n, ref_n, out, tag)
@@ -354,8 +358,8 @@ def main():
             channels = fv.shape[2]
             lines.append(
                 f"{tag} validation: RMSE official={official:.7f} numpy={numpy_rmse:.7f} "
-                f"(gate reference {'0.0683264' if pno == 1 else '0.079265'}) alpha{note_p}"
-                f"{note_a}{note_b}"
+                f"(gate reference {'0.0683264' if pno == 1 else '0.079265'}); Preview{note_p}; "
+                f"PDF render{note_a}; text-removed render{note_b}"
             )
 
             # Masks, in cropped gate coordinates.
