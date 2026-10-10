@@ -611,7 +611,7 @@ jobs:
         shell: bash
         run: |
           python3 -m venv "$RUNNER_TEMP/diag-venv"
-          "$RUNNER_TEMP/diag-venv/bin/pip" install -q pymupdf
+          "$RUNNER_TEMP/diag-venv/bin/pip" install -q pymupdf numpy
 
       - name: "[C6-DIAG-3] inspect the Vector PDF frame"
         if: always()
@@ -624,6 +624,21 @@ jobs:
         shell: bash
         run: |
           "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_variants.py build/visual_parity || true
+
+      - name: "[C6-DIAG-5] text-only residual isolation"
+        if: always()
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_text_residual.py build/visual_parity || true
+
+      - name: "[C6-DIAG-5] unit tests of the text residual diagnostic"
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p build/visual_parity/c6diag/text_residual
+          "$RUNNER_TEMP/diag-venv/bin/python" -m unittest discover -s tool -p 'test_diag_c6_*.py' \
+            > build/visual_parity/c6diag/text_residual/unittest.txt 2>&1 || true
+          tail -n 3 build/visual_parity/c6diag/text_residual/unittest.txt || true
 
       - name: "[C6-DIAG-3] math equivalence probe"
         if: always()
