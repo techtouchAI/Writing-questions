@@ -619,6 +619,12 @@ jobs:
         run: |
           "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_pdf_frame.py build/visual_parity || true
 
+      - name: "[C6-DIAG-4] whole-page frame ring and sub-pixel shift variants"
+        if: always()
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_variants.py build/visual_parity || true
+
       - name: "[C6-DIAG-3] math equivalence probe"
         if: always()
         shell: bash
