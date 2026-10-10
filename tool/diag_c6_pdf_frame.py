@@ -39,7 +39,7 @@ def inspect(path):
     out.append(f"  pages={doc.page_count}")
     for pno in range(min(doc.page_count, 2)):
         page = doc[pno]
-        raw = b"".join(page.read_contents() or [b""])
+        raw = page.read_contents() or b""  # bytes in PyMuPDF >= 1.2x
         clips = len(CLIP.findall(raw))
         out.append(f"  p{pno + 1}: content={len(raw)}B clip_ops={clips}")
         for dr in page.get_drawings():
