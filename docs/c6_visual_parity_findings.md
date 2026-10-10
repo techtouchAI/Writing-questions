@@ -122,3 +122,31 @@ Poppler probe (the gate's `pdftoppm`, isolated frame at the fixture's geometry, 
 Poppler snaps stroked rectangle edges to whole pixels. The stroke is therefore 0.7 px thin on the vertical edges and off on the horizontal ones. The filled ring is within about 0.1 px of the Preview on every edge. This is a measured candidate, not yet a change. It would alter how the frame is emitted in the PDF (content only; no Preview or expected-image change). It needs approval before implementation, and a gate run afterwards.
 
 Status: the frame is mostly accounted for. Page 1 (0.0683) is close to the earlier "framed float excluded" value (0.0681). The remaining gap is the text residual (section 5). C6 remains BLOCKED.
+
+## 9. Whole-page variants on the gate's pipeline (measured, CI)
+
+Run `38050338004` (commit `4eb6767`). The gate's Vector PDF is re-rendered with `pdftoppm -r 96`, resized to 794x1123, cropped 2 px, and compared with `compare -metric RMSE`. The base reproduces the gate exactly (p1 0.0683264, p2 0.079265). Diagnostic copies only; no production change. Script: `tool/diag_c6_variants.py`.
+
+| Variant | Page 1 RMSE | Delta | Page 2 RMSE | Delta |
+|---|---|---|---|---|
+| base (`77f47f4` output) | 0.0683264 | — | 0.0792650 | — |
+| frame stroke as filled even-odd ring (page 1 frame only; page 2 has no frame) | 0.0680394 | −0.0002870 | 0.0792650 | 0 (control) |
+| whole page shift x −0.50 pt | 0.0821047 | +0.0137783 | 0.1239410 | +0.0446760 |
+| shift x −0.25 | 0.0741713 | +0.0058449 | 0.0983627 | +0.0190977 |
+| shift x +0.25 | 0.0697469 | +0.0014205 | 0.0793495 | +0.0000845 |
+| shift x +0.50 | 0.0764797 | +0.0081533 | 0.1005340 | +0.0212690 |
+| shift y −0.50 | 0.0930992 | +0.0247728 | 0.1318110 | +0.0525460 |
+| shift y −0.25 | 0.0708284 | +0.0025020 | 0.0756405 | −0.0036245 |
+| shift y +0.25 | 0.0749152 | +0.0065888 | 0.0792650 | 0 |
+| shift y +0.50 | 0.0966097 | +0.0282833 | 0.1431470 | +0.0638820 |
+
+Frame edge ink, page 1 (px): base 1.79 / 1.79 / 2.83 / 2.69 (left, right, top, bottom); ring 2.42 / 2.42 / 2.63 / 2.49; Preview 2.66 / 2.66 / 2.86 / 2.75.
+
+Findings (measured):
+- The frame's content encoding is a closed `m/l/h` path, stroked with `2 w 1 J 1 j` under a flipped CTM. It is not a `re` operator. The trace found no clip or image over it.
+- The ring moves the vertical edges toward the Preview, but the page gain is −0.0003. The frame is not the limiting factor. Page 2 has no frame and is unchanged. The ring is not recommended as a standalone change.
+- Translation does not explain the gap. Page 1 is at its minimum with no shift. Shifts of ±0.25 pt add at most +0.007. Page 2 improves by 0.0036 at y −0.25 pt. That is the best point on this grid, but the page is still far from 0.02. It is not applied, because a fitted offset is not a fix.
+- The RMSE surface is shallow around zero (≤0.007 for ±0.25 pt). The residual of about 0.06 is therefore shape-level, not registration. Likely candidates are glyph rasterisation and antialiasing differences between Poppler and the Flutter Preview. This is a hypothesis, not measured directly.
+- Limitation: the shift probe moves the whole page, including the frame, images and text. A text-only isolation would need content filtering, which has not been done.
+
+Status: C6 remains BLOCKED. The official gate is red (page 1 0.0683264, page 2 0.079265).
