@@ -108,7 +108,8 @@ def trace_content(doc, page, raw, ctm0, depth, state, clips0=(), lw0=1.0):
     pend_clip = False
     pts = []
     args = []
-    for tok in TOKEN.findall(raw):
+    for mt in TOKEN.finditer(raw):
+        tok = mt.group(0)
         if NUMBER.fullmatch(tok):
             args.append(float(tok))
             continue
@@ -192,6 +193,9 @@ def trace_content(doc, page, raw, ctm0, depth, state, clips0=(), lw0=1.0):
                         "dev_w": dev_w if op in STROKE_OPS else None,
                         "clips": list(clips),
                         "depth": depth,
+                        "ctx": raw[max(0, mt.start() - 400):mt.end()].decode("latin-1")
+                        if depth == 0
+                        else "",
                     }
                 )
             pend_clip = False
@@ -262,6 +266,8 @@ def frame_clip_report(doc, page):
         )
         for c in cutters[:12]:
             lines.append(f"    cutter ({c[0]:.2f},{c[1]:.2f},{c[2]:.2f},{c[3]:.2f})")
+        if rec.get("ctx"):
+            lines.append("    ctx: " + rec["ctx"].replace("\r", " ").replace("\n", " | ")[-420:])
     return lines
 
 
