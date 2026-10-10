@@ -631,7 +631,7 @@ jobs:
         run: |
           "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_text_residual.py build/visual_parity || true
 
-      - name: "[C6-DIAG-5] unit tests of the text residual diagnostic"
+      - name: "[C6-DIAG-5..7] unit tests of the C6 diagnostics"
         if: always()
         shell: bash
         run: |
@@ -639,6 +639,20 @@ jobs:
           "$RUNNER_TEMP/diag-venv/bin/python" -m unittest discover -s tool -p 'test_diag_c6_*.py' \
             > build/visual_parity/c6diag/text_residual/unittest.txt 2>&1 || true
           tail -n 3 build/visual_parity/c6diag/text_residual/unittest.txt || true
+
+      # [C6-DIAG-6] تشخيص مؤقت لا يُدمج: هندسة النص مقابل التغطية. غير مُلزِم.
+      - name: "[C6-DIAG-6] text geometry vs coverage (glyph, line and spacing ratios)"
+        if: always()
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_text_geometry.py build/visual_parity || true
+
+      # [C6-DIAG-7] تشخيص مؤقت لا يُدمج: حبر المعاينة خارج قناع النص. غير مُلزِم.
+      - name: "[C6-DIAG-7] Preview ink outside the text mask"
+        if: always()
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_nontext_excess.py build/visual_parity || true
 
       - name: "[C6-DIAG-3] math equivalence probe"
         if: always()
