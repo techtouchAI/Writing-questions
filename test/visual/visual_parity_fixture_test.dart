@@ -65,7 +65,9 @@ final Uint8List _tinyPng = base64Decode(
 
 /// يحمّل خطوط التطبيق نفسها في بيئة الاختبار، فتكون الصفحة المعاينة نصاً
 /// حقيقياً (لا مربعات خط اختبار) والمقارنة البصرية ذات معنى.
-Future<void> _loadAppFonts() async {
+// عامة (بلا تغيير سلوكي) ليستخدمها مسبار C6 غير الملزم في
+// diag_c6_text_positions_test.dart بالمدخلات نفسها.
+Future<void> loadAppFonts() async {
   Future<void> load(String family, List<String> assets) async {
     final loader = FontLoader(family);
     for (final asset in assets) {
@@ -82,7 +84,7 @@ Future<void> _loadAppFonts() async {
   await load('Tajawal', <String>['assets/fonts/Tajawal-Regular.ttf']);
 }
 
-ExamDocument _fixtureDocument() {
+ExamDocument fixtureDocument() {
   return ExamDocument(
     name: 'تركيبة التحقق البصري',
     header: ExamHeaderModel.initial(
@@ -248,10 +250,10 @@ void main() {
     _fixtureWallClock
       ..reset()
       ..start();
-    await _loadAppFonts();
+    await loadAppFonts();
     _stage('الخطوط حُمّلت');
 
-    final controller = ExamWizardController(document: _fixtureDocument());
+    final controller = ExamWizardController(document: fixtureDocument());
     addTearDown(controller.dispose);
     final previewWorkFinished = Completer<void>();
     Object? previewFailure;
@@ -529,7 +531,7 @@ void main() {
       expect(snapshot.heightPx, greaterThan(1000));
     }
     // النمط الإنجليزي يظهر في الصفحة نفسها بمحاذاة يسار (تحقق تركيبي خفيف).
-    expect(_fixtureDocument().questions[2].bodyAlign, PaperAlign.left);
+    expect(fixtureDocument().questions[2].bodyAlign, PaperAlign.left);
     _stage('كُتبت القطع: ${Directory(_artifactDir).absolute.path} '
         '(${snapshots.length} صفحات)');
   },
