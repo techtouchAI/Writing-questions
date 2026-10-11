@@ -206,3 +206,108 @@ downloads its artifact, and is non-gating (`continue-on-error`). The RMSE step,
 its threshold and its reference images are unchanged. The math probe test
 (`test/visual/diag_c6_math_probe_test.dart`) is no longer run by CI. It remains
 in the repository for manual use.
+
+## 11. Text baseline and clip audit (read-only, code and font data, branch `b67de63`)
+
+Scope: this section records a code and font-file audit of the PDF text path
+(`canonical_text.dart`, `canonical_layout_pdf_painter.dart`,
+`pdf_text_metrics.dart`) against the Preview path
+(`canonical_layout_preview.dart`). No production change was made. The
+measurements below come from the font files in `assets/fonts/` and from the
+source. They are not renders. No RMSE value in this section is new.
+
+CI state of `b67de63` (verified from the run jobs, not local):
+- Analyze, test, and build APK: success. This also compiles and runs the Dart
+  change in `05bfa2f`.
+- C6 diagnostics (non-gating): success.
+- Visual regression: failure. Official RMSE p1 `0.0683264`, p2 `0.079265`
+  (both FAIL, ceiling 0.02). These are the same values as `de94e18`. The framed
+  text box and formula fix in `05bfa2f` does not touch the fixture, so no
+  change is expected there.
+
+### 11.1 Baseline: the ascent-offset hypothesis is refuted by the code
+
+The first hypothesis was that the PDF baseline comes from the pdf package's
+font ascent while the layout comes from Flutter's line ascent, which would give
+a constant per-font vertical offset. The code does not support it:
+
+- `canonical_layout_pdf_painter.dart` (lines 233 and 290) places each word
+  widget at `top = line.baseline − baselineOffsetFromTop`.
+- `pdf_text_metrics.dart` defines `baselineOffsetFromTop` as the maximum word
+  ascent from `PdfFont.stringMetrics`.
+- `canonical_text.dart` places the ink at `inkY = boxHeight − ascent`, that is,
+  one ascent below the widget top.
+
+The two terms cancel, so the emitted PDF baseline equals `line.baseline` by
+construction. The Preview paints its `TextPainter` so that its own baseline
+lands on `line.baseline`. Both sides therefore share the same layout baseline.
+The vertical residual is not explained by a font-ascent mismatch.
+
+The vendored pdf package reads the TTF `hhea` ascender (`ttf_parser.dart`
+line 193). This choice matters for the clip box (11.2), not for the baseline.
+
+Still open (not measured): whether Skia snaps the Preview glyph baseline to a
+device pixel. That would produce a per-line vertical difference of up to ±0.5
+px that depends on the fractional line position. It is a hypothesis for the
+Preview side only.
+
+### 11.2 Clip: the PDF text clips glyph ink (proven from font data and code)
+
+`CanonicalText.paint` draws each word inside
+`drawRect(0, 0, advance, maxHeight)` followed by `clipPath()`, where
+`maxHeight = (ascent − descent)·size` and `ascent`/`descent` are the font's
+`hhea` values. Relative to the baseline the clip spans `[baseline + descent, baseline + ascent]`
+(`descent` is negative), and horizontally `[0, advance]`. The Preview has no clip.
+
+Glyph outlines in the fixture fonts exceed this box (values in em, from
+`glyf` yMax/yMin, xMin and xMax − advance):
+
+| Font | Vertical overshoot above `hhea` ascent (0.643 Tajawal) | Vertical overshoot below `hhea` descent (−0.357 Tajawal) | Horizontal overhang |
+|---|---|---|---|
+| Tajawal Regular | `أ` 0.800, `آ` 0.773, `ُ` 0.745, `ً` 0.729, `ؤ` 0.702 | `ج ح خ ع غ` down to −0.375 | `ر`, `ز` xMin −0.093 (left of origin) |
+| Tajawal Bold | `أ` 0.878, `آ` 0.798, `ش` 0.799, `ُ` 0.823 | `ي` −0.411, `ج ح خ ع غ` −0.375 | `ر`, `ز` xMin −0.073 |
+| Amiri Regular | `ُ` 1.149, `ً` 1.130 (ascent 1.124) | `ٍ` −0.641 (descent −0.634) | harakat up to +0.38 beyond advance |
+| Noto Naskh Regular / Bold | none in the fixture characters | none | `ر`, `ز` xMin −0.02; `ع` xMax +0.025 |
+| Rakkas | none | none | harakat up to +0.24 beyond advance |
+
+The fixture source contains 51 distinct non-ASCII characters. Tajawal has one
+explicit selection (`visual_parity_fixture_test.dart` line 173). Whether every listed glyph lands on the rendered page is not
+verified locally.
+
+Consequence: the PDF removes the upper part of hamzas, madda signs and
+harakat, the lower tails of jeem/ha/kha/ain/ghain, and the left tail of
+final ر/ز. The Preview draws all of them. This is content loss in the PDF.
+It is a real defect in the sense of "no content loss", but its effect on RMSE
+has not been measured.
+
+The clip is pinned by a test, not an accident. `test/pdf_engine/canonical_text_test.dart`
+(test "differential parity with pw.Text … clip") compares the clip box of
+`CanonicalText` term-for-term with the legacy `pw.Text(overflow: clip)`. The
+clip was introduced in `f8d5eb4` (commit message: "the box clip pw.Text applies
+for TextOverflow.clip is replicated"). Removing or widening the clip therefore
+changes a documented differential contract. That is a decision for the owner
+of this contract, and it was not changed in this turn.
+
+Options for that decision:
+1. Keep the legacy clip (current behaviour, no RMSE change expected from this
+   point).
+2. Widen the clip to the glyph ink union (vertical from the glyph yMin/yMax of
+   the shaped word; horizontal from the first left and last right glyph
+   extents). This keeps the clip concept but removes the truncation. The pdf
+   package's `PdfFontMetrics.append` only keeps the first glyph's left and the
+   last glyph's right, so a per-glyph union needs a new helper.
+3. Remove the clip. This matches the Preview, which has no clip. It changes
+   the legacy differential test.
+
+Option 2 or 3 would be a production change. Its RMSE effect is unknown until
+the official gate runs.
+
+### 11.3 Open items after this audit
+
+- The text residual (ink excess and height excess) remains unexplained. The
+  clip (11.2) is a separate defect with a possibly smaller effect. Neither is
+  measured.
+- Preview baseline snapping (11.1) is a hypothesis, not checked.
+- The Arabic shaping path (harakat placement) is not checked against a render.
+- The official gate remains blocked: p1 `0.0683264` and p2 `0.079265`, both
+  above `0.02`.
