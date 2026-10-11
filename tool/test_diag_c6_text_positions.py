@@ -163,6 +163,24 @@ class EndToEndTests(unittest.TestCase):
             self.assertEqual(dy['n'], 2)
             self.assertAlmostEqual(dy['median'], 0.0, delta=0.05)
 
+    def test_unmatched_reasons_are_counted(self):
+        pdf = {1: {'width_pt': 10.0, 'height_pt': 10.0,
+                   'words': [_pdf_word(0, 10, 100), _pdf_word(50, 60, 100),
+                             _pdf_word(0, 10, 300)],
+                   'words_without_chars': 0}}
+        prev = [_prev_word(0, 10, 100),          # matched
+                _prev_word(20, 30, 100),         # no pdf x-overlap on line
+                _prev_word(0, 10, 500)]          # no pdf on baseline
+        meta = {'math_runs': 0, 'unmeasured_runs': 0}
+        layout = {1: {'page': 1, 'widthPt': 10.0, 'heightPt': 10.0}}
+        summary = d.run_analysis(pdf, prev, meta, layout)
+        dg = summary['diagnostics']
+        self.assertEqual(dg['matched'], 1)
+        self.assertEqual(dg['unmatched_preview_reasons'],
+                         {'F|no_x_overlap': 1, 'F|no_pdf_word_on_baseline': 1})
+        self.assertEqual(dg['unmatched_pdf_reasons'],
+                         {'F|no_x_overlap': 1, 'F|no_preview_word_on_baseline': 1})
+
     def test_annotation_lines_are_condensed(self):
         summary = d.run_analysis(
             {1: {'width_pt': 595.28, 'height_pt': 841.89,

@@ -249,9 +249,52 @@ def stats(values):
     return out
 
 
+def classify_unmatched(pdf_words, prev_words, pairs, pno):
+    """Reasons for words left unmatched. Counts only; no word is re-matched.
+
+    Preview word, no PDF word on its baseline: no_pdf_word_on_baseline.
+    Preview word, PDF words on its baseline but no IoU >= MIN_IOU:
+        overlap_below_min_iou (some overlap) or no_x_overlap (none).
+    PDF words get the symmetric reasons, against Preview words.
+    """
+    matched_i = {i for i, _, _ in pairs}
+    matched_j = {j for _, j, _ in pairs}
+    prev_reasons, pdf_reasons, examples = Counter(), Counter(), []
+    for j, p in enumerate(prev_words):
+        if j in matched_j:
+            continue
+        on_line = [q for q in pdf_words
+                   if abs(q['baseline'] - p['baseline']) <= BASELINE_TOL_PT]
+        if not on_line:
+            reason = 'no_pdf_word_on_baseline'
+        else:
+            best = max(interval_iou(q['x0'], q['x1'], p['left'], p['right'])
+                       for q in on_line)
+            reason = 'overlap_below_min_iou' if best > 0 else 'no_x_overlap'
+        prev_reasons[f'{p["font"]}|{reason}'] += 1
+        if len(examples) < 12:
+            examples.append(f'p{pno} preview "{p["text"]}" {reason} '
+                            f'left={p["left"]:.1f} right={p["right"]:.1f} '
+                            f'baseline={p["baseline"]:.1f}')
+    for i, q in enumerate(pdf_words):
+        if i in matched_i:
+            continue
+        on_line = [p for p in prev_words
+                   if abs(q['baseline'] - p['baseline']) <= BASELINE_TOL_PT]
+        if not on_line:
+            reason = 'no_preview_word_on_baseline'
+        else:
+            best = max(interval_iou(q['x0'], q['x1'], p['left'], p['right'])
+                       for p in on_line)
+            reason = 'overlap_below_min_iou' if best > 0 else 'no_x_overlap'
+        pdf_reasons[f'{q["font"]}|{reason}'] += 1
+    return prev_reasons, pdf_reasons, examples
+
+
 def run_analysis(pdf_pages, prev_words, preview_meta, layout_pages):
     matched = []
     per_page = {}
+    prev_reasons, pdf_reasons, pdf_examples = Counter(), Counter(), []
     for pno, pdf in pdf_pages.items():
         page_prev = [p for p in prev_words if p['page'] == pno]
         pairs = match_words(pdf['words'], page_prev)
@@ -262,6 +305,11 @@ def run_analysis(pdf_pages, prev_words, preview_meta, layout_pages):
                    'iou': iou, 'size_pdf': q['size'], 'size_preview': p['size']}
             rec.update(pair_metrics(q, p))
             matched.append(rec)
+        prev_reasons_page, pdf_reasons_page, examples_page = classify_unmatched(
+            pdf['words'], page_prev, pairs, pno)
+        prev_reasons.update(prev_reasons_page)
+        pdf_reasons.update(pdf_reasons_page)
+        pdf_examples.extend(examples_page)
         per_page[pno] = {
             'pdf_words': len(pdf['words']),
             'pdf_words_without_chars': pdf['words_without_chars'],
@@ -301,6 +349,24 @@ def run_analysis(pdf_pages, prev_words, preview_meta, layout_pages):
     for name, recs in groups.items():
         summary['groups'][name] = {m: stats([r[m] for r in recs]) for m in METRICS}
         summary['groups'][name]['_count'] = len(recs)
+    big = sorted((r for r in matched if abs(r['dx_left_pdf_preview']) > 1.0),
+                 key=lambda r: -abs(r['dx_left_pdf_preview']))
+    exact = sum(1 for r in matched if abs(r['dx_left_pdf_preview']) <= 0.05)
+    summary['diagnostics'] = {
+        'matched': len(matched),
+        'matched_abs_dx_le_0_05pt': exact,
+        'unmatched_preview_reasons': dict(prev_reasons),
+        'unmatched_pdf_reasons': dict(pdf_reasons),
+        'unmatched_examples': pdf_examples,
+        'abs_dx_gt_1pt_count': len(big),
+        'abs_dx_gt_1pt_examples': [
+            {'page': r['page'], 'font': r['font_preview'], 'rtl': r['rtl'],
+             'text_pdf': r['text_pdf'], 'text_preview': r['text_preview'],
+             'dx_left': round(r['dx_left_pdf_preview'], 2),
+             'width_ratio': round(r['width_ratio'], 3) if r['width_ratio'] else None,
+             'iou': round(r['iou'], 2)}
+            for r in big[:6]],
+    }
     return summary
 
 
@@ -344,6 +410,17 @@ KEY_METRICS = (
 def annotation_lines(summary):
     """Condensed view for the job annotations; full table is in the artifact."""
     lines = [f'matched per page: {summary["per_page"]}']
+    dg = summary['diagnostics']
+    lines.append(f'matched with |dx_left| <= 0.05pt: {dg["matched_abs_dx_le_0_05pt"]}'
+                 f' of {dg["matched"]}; |dx_left| > 1pt: {dg["abs_dx_gt_1pt_count"]}')
+    lines.append(f'unmatched preview by reason: {dg["unmatched_preview_reasons"]}')
+    lines.append(f'unmatched pdf by reason: {dg["unmatched_pdf_reasons"]}')
+    for ex in dg['abs_dx_gt_1pt_examples']:
+        lines.append(f'  dx>1pt p{ex["page"]} {ex["font"]} rtl={ex["rtl"]} '
+                     f'pdf="{ex["text_pdf"]}" prev="{ex["text_preview"]}" '
+                     f'dx={ex["dx_left"]} w={ex["width_ratio"]} iou={ex["iou"]}')
+    for ex in dg['unmatched_examples'][:8]:
+        lines.append(f'  unmatched: {ex}')
     for name, g in summary['groups'].items():
         if not (name == 'all' or name.startswith(('rtl=', 'font='))):
             continue
