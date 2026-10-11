@@ -748,6 +748,25 @@ jobs:
             echo "::endgroup::"
           done
 
+      # [C6-INK] تشخيص غير ملزم: كثافة الحبر داخل نوافذ الكلمات المتحقَّق منها
+      # فقط، مع ضابط PDF مقابل PDF. لا يغيّر البوابة أو العتبة أو الصور.
+      - name: C6 ink density inside verified word windows (non-gating)
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_ink_windows.py build/visual_parity
+
+      - name: Upload C6 ink-window diagnostics
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: c6-ink-windows
+          path: build/visual_parity/c6diag/ink_windows/*
+          if-no-files-found: ignore
+          retention-days: 14
+
   release:
     name: Attach APK to GitHub release
     needs: build
