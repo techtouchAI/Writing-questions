@@ -83,4 +83,59 @@ void main() {
       expect(FloatingElementsPdf.centredFrameOverflows(element), isFalse);
     });
   });
+
+  group('framed text box and formula (C6)', () {
+    FloatingElement textBox({required bool framed}) => FloatingElement(
+          type: FloatingElementType.shape,
+          shape: FloatingShapeType.textBox,
+          dx: 0,
+          dy: 0,
+          width: 100,
+          height: 80,
+          strokeWidth: 2.0,
+          framed: framed,
+        );
+
+    FloatingElement formula({required bool framed}) => FloatingElement(
+          type: FloatingElementType.formula,
+          label: r'\frac{a}{b}',
+          dx: 0,
+          dy: 0,
+          width: 100,
+          height: 60,
+          strokeWidth: 2.0,
+          framed: framed,
+        );
+
+    test('framed text box lets its border overflow the clip', () {
+      expect(
+        FloatingElementsPdf.centredFrameOverflows(textBox(framed: true)),
+        isTrue,
+      );
+    });
+
+    test('framed formula lets its border overflow the clip', () {
+      expect(
+        FloatingElementsPdf.centredFrameOverflows(formula(framed: true)),
+        isTrue,
+      );
+    });
+
+    test('unframed text box and formula keep the clip', () {
+      expect(
+        FloatingElementsPdf.centredFrameOverflows(textBox(framed: false)),
+        isFalse,
+      );
+      expect(
+        FloatingElementsPdf.centredFrameOverflows(formula(framed: false)),
+        isFalse,
+      );
+    });
+
+    test('framed text box and formula still use the default SVG clip rule', () {
+      // They draw no SVG, so the SVG clip decision is not used for them. The
+      // square/rectangle SVG rule must not leak into them.
+      expect(FloatingElementsPdf.svgClipsToBox(textBox(framed: true)), isTrue);
+    });
+  });
 }

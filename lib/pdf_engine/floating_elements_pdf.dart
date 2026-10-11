@@ -256,13 +256,22 @@ abstract final class FloatingElementsPdf {
       shapeClipsToBox(element.shape ?? FloatingShapeType.square);
 
   /// Whether a floating element's centred frame stroke extends past its box, so
-  /// the wrapper that clips floating content must not clip it (C6). Only
-  /// generated square/rectangle frames.
-  static bool centredFrameOverflows(FloatingElement element) =>
-      element.type == FloatingElementType.shape &&
-      !element.isTextBox &&
-      element.svgSource == null &&
-      !shapeClipsToBox(element.shape ?? FloatingShapeType.square);
+  /// the wrapper that clips floating content must not clip it (C6).
+  ///
+  /// Two cases draw a centred stroke on the box edge, as the canonical Preview
+  /// does (`_paintFloatFrame` and `_paintShape` draw with no clip):
+  /// - generated square/rectangle shapes, which are always framed;
+  /// - framed text boxes and framed formulas, which draw a border on the box.
+  /// Unframed text boxes and formulas keep the clip.
+  static bool centredFrameOverflows(FloatingElement element) {
+    final generatedFrame = element.type == FloatingElementType.shape &&
+        !element.isTextBox &&
+        element.svgSource == null &&
+        !shapeClipsToBox(element.shape ?? FloatingShapeType.square);
+    final framedBox = element.framed &&
+        (element.isTextBox || element.type == FloatingElementType.formula);
+    return generatedFrame || framedBox;
+  }
 
   /// يولد SVG لشكل بنفس بنية راسم اللوحة: خطوط سوداء وتعبئة بيضاء.
   static String shapeToSvg(
