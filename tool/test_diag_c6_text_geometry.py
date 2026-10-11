@@ -8,7 +8,6 @@ size change. These are validity checks of the method, not fixture tuning.
 """
 import os
 import sys
-import tempfile
 import unittest
 
 import numpy as np

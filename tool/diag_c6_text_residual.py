@@ -48,6 +48,8 @@ TOKEN = re.compile(
 )
 NUMBER = re.compile(rb"[-+]?(?:\d+\.?\d*|\.\d+)")
 SHOW_OPS = {"Tj", "TJ", "'", '"'}
+# Non-text painting operators. Inside BT..ET they are removed with the text by strip_text.
+PAINT_OPS = {"m", "l", "c", "v", "y", "h", "re", "f", "F", "f*", "S", "s", "B", "B*", "b", "b*", "n", "Do", "sh", "W", "W*"}
 
 
 def im(tool):
@@ -68,12 +70,14 @@ def strip_text(raw):
         "show_ops_removed": 0,
         "unclosed_BT": 0,
         "inline_images": 0,
+        "nontext_ops_removed": 0,  # painting ops inside BT..ET (removed with the text)
         "fonts_tf": {},
         "dropped_bytes": 0,
         "content_bytes": len(raw),
     }
     args = []
     pending_shows = 0  # show ops inside the current BT; counted only if it closes
+    pending_paint = 0  # painting ops inside the current BT; counted only if it closes
     for mt in TOKEN.finditer(raw):
         tok = mt.group(0)
         if NUMBER.fullmatch(tok) or tok[:1] in (b"/", b"(", b"<", b"["):
@@ -88,14 +92,19 @@ def strip_text(raw):
         if op == "BT":
             start = mt.start()
             pending_shows = 0
+            pending_paint = 0
         elif op == "ET" and start is not None:
             spans.append((start, mt.end()))
             st["text_objects"] += 1
             st["show_ops_removed"] += pending_shows
+            st["nontext_ops_removed"] += pending_paint
             start = None
             pending_shows = 0
+            pending_paint = 0
         elif op in SHOW_OPS and start is not None:
             pending_shows += 1
+        elif op in PAINT_OPS and start is not None:
+            pending_paint += 1
         args = []
     if start is not None:
         st["unclosed_BT"] += 1
