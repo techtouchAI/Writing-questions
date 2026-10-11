@@ -150,3 +150,59 @@ Findings (measured):
 - Limitation: the shift probe moves the whole page, including the frame, images and text. A text-only isolation would need content filtering, which has not been done.
 
 Status: C6 remains BLOCKED. The official gate is red (page 1 0.0683264, page 2 0.079265).
+
+## 10. Current state (CI, commit de94e18)
+
+Gate (`Compare rendered files against the preview (RMSE)`), ceiling 0.02:
+
+| Page | `main` f8d5eb4 | branch 60fa01c | branch de94e18 |
+|---|---|---|---|
+| p1 | 0.0750014 (FAIL) | 0.0683264 (FAIL) | 0.0683264 (FAIL) |
+| p2 | 0.079265 (FAIL) | 0.079265 (FAIL) | 0.079265 (FAIL) |
+
+The p1 change comes from the square/rectangle frame fix, the only production
+difference between the two commits. Page 2 has no frame and is unchanged.
+
+Evidence on the text residual (real CI annotations, not synthetic):
+
+- Raw `pdftoppm` output is 794x1123 on both pages, so the gate's resize is an
+  identity. Resampling is not the mechanism for the official pipeline. The
+  resample probe is synthetic only.
+- Renderer control on the PDF side (Poppler vs MuPDF direct): ink mass ratio
+  1.004. The PDF raster is stable across renderers, so the Preview-vs-PDF gap
+  (p2 mass ratio 1.297) lies on the Preview side of the comparison.
+- Glyph boxes (p2, regular face, n=187): width ratio 1.0085, height ratio 1.034.
+  The controls measure 0.99–1.01. Bold (n=31) agrees: width 1.013, height 1.031.
+- Edge pixel count ratio 0.997, edge ink mass ratio 1.226. The same edge
+  positions carry about 23% more ink in the PDF.
+- Pixels changed by text removal outside the exact mask: p1 3, p2 2. Outside
+  the PX-scaled mask: 0 on both pages. The PX mask cannot detect these pixels.
+  They are 0.13% of the p2 error outside text (21.7 of 16662.5).
+
+Interpretation (not proven): the residual is a text rasterisation difference
+in the Preview (edge coverage and vertical glyph grid-fitting). The width
+match and the height excess are consistent with vertical-only hinting. This
+cannot be proven from the sandbox: the Flutter test harness exposes no switch
+for text hinting or gamma, and no real renders are reachable.
+
+Not yet ruled out: Arabic shaping. The PDF path uses the vendored `pdf`
+shaper (presentation forms, lam-alef, shadda). The Preview uses HarfBuzz via
+`TextPainter`. The fixture string literals contain 27 harakat in 675 Arabic
+characters. The four Arabic words in the sample show no consistent pattern, so
+the sample is too small to decide.
+
+Open decisions (not implemented):
+
+- Occlusion: generated square/rectangle SVGs are filled white. The canonical
+  Preview does not fill shapes, but the paper editor does (`paper_shape_painter`).
+  The expected behaviour depends on which surface is the contract.
+- A legitimate PDF-side fix for the text residual has not been identified. Making
+  PDF text lighter or heavier to match the Preview would change the document
+  itself and is not a fix.
+
+CI structure: the C6 diagnostics were removed from the `visual-parity` job.
+They now run in the `c6-diagnostics` job, which needs `visual-parity`,
+downloads its artifact, and is non-gating (`continue-on-error`). The RMSE step,
+its threshold and its reference images are unchanged. The math probe test
+(`test/visual/diag_c6_math_probe_test.dart`) is no longer run by CI. It remains
+in the repository for manual use.
