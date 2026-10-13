@@ -621,5 +621,105 @@ class SnapDiagnosticTests(unittest.TestCase):
         self.assertTrue(d.decide_snap({**good, **bad}).startswith('SNAP_DOES_NOT_MATCH'))
 
 
+class H4Tests(unittest.TestCase):
+    """v7: single line, fractions 0.0 .. 0.9, two repeats, snapped control."""
+    FRACS = [round(0.1 * k, 1) for k in range(10)]
+
+    def _lines(self, group, snapped, prev_fn=None):
+        out = []
+        for rep, base in enumerate((60.0, 610.0)):
+            for k, f in enumerate(self.FRACS):
+                out.append({'index': len(out), 'group': group, 'snapped': snapped,
+                            'repeat': rep, 'fraction': f,
+                            'baselinePx': base + 50 * k + f,
+                            'winX0': 96, 'winX1': 136})
+        return out
+
+    def _image(self, lines, edge_fn):
+        """SYNTHETIC bars whose bottom edge is edge_fn(baseline)."""
+        dark = [[0.0] * W for _ in range(H)]
+        for ln in lines:
+            _bar(dark, edge_fn(ln), 100, 130)
+        return dark
+
+    def _case(self, plain_prev, snap_prev, pdf_edge=None):
+        """Build groups: 'T' (plain) and 'T+snap' (control)."""
+        pdf_edge = pdf_edge or (lambda ln: math.floor(ln['baselinePx']))
+        groups = {}
+        for group, snapped, prev_fn in (('T', False, plain_prev),
+                                        ('T+snap', True, snap_prev)):
+            lines = self._lines(group, snapped)
+            prev = self._image(lines, prev_fn)
+            pdf = self._image(lines, pdf_edge)
+            groups[group] = d.h4_summary(lines, prev, pdf)
+        return groups
+
+    def test_whole_pixel_rounding_is_supported(self):
+        # SYNTHETIC: preview edge = floor(B) + 1 from fraction 0.4 on; the
+        # snapped control and the PDF are floor(B).
+        plain = lambda ln: math.floor(ln['baselinePx']) + (
+            1 if ln['fraction'] >= 0.35 else 0)
+        snap = lambda ln: math.floor(ln['baselinePx'])
+        g = self._case(plain, snap)
+        self.assertEqual(d.decide_h4(g), 'H4_SUPPORTED (probe only, single line, not RMSE)')
+        self.assertEqual(d.step_location(g['T']), '0.3..0.4')
+
+    def test_continuous_offset_is_not_supported(self):
+        # SYNTHETIC: preview edge = B + 0.3 (no whole-pixel rounding) -> H5-like.
+        plain = lambda ln: ln['baselinePx'] + 0.3
+        snap = lambda ln: math.floor(ln['baselinePx'])
+        g = self._case(plain, snap)
+        self.assertTrue(d.decide_h4(g).startswith('H4_NOT_SUPPORTED'))
+
+    def test_snapped_control_mismatch_is_not_supported(self):
+        # SYNTHETIC: the control keeps a 1 px offset, so the fractional origin
+        # is not the cause.
+        plain = lambda ln: math.floor(ln['baselinePx']) + (
+            1 if ln['fraction'] >= 0.35 else 0)
+        snap = lambda ln: math.floor(ln['baselinePx']) + 1
+        g = self._case(plain, snap)
+        self.assertTrue(d.decide_h4(g).startswith('H4_NOT_SUPPORTED'))
+
+    def test_repeats_that_disagree_are_inconclusive(self):
+        # SYNTHETIC: repeat 1 sits one pixel lower than repeat 0.
+        def plain(ln):
+            base = math.floor(ln['baselinePx'])
+            return base + (1 if ln['fraction'] >= 0.35 else 0) + (
+                1 if ln['repeat'] == 1 else 0)
+        snap = lambda ln: math.floor(ln['baselinePx'])
+        g = self._case(plain, snap)
+        self.assertTrue(d.decide_h4(g).startswith('INCONCLUSIVE'))
+
+    def test_no_step_is_inconclusive(self):
+        # SYNTHETIC: the preview never steps: everything is floor(B).
+        flat = lambda ln: math.floor(ln['baselinePx'])
+        g = self._case(flat, flat)
+        self.assertTrue(d.decide_h4(g).startswith('INCONCLUSIVE'))
+
+    def test_window_rmse_is_zero_for_identical_and_positive_for_shift(self):
+        # SYNTHETIC: identical rasters -> RMSE 0 and no differing pixels;
+        # a 1 px shift -> RMSE > 0 and differing pixels.
+        lines = self._lines('T', False)
+        a = self._image(lines, lambda ln: math.floor(ln['baselinePx']))
+        b = self._image(lines, lambda ln: math.floor(ln['baselinePx']) + 1)
+        r0, ae0 = d.window_compare(a, a, 60.0, 96, 136)
+        r1, ae1 = d.window_compare(a, b, 60.0, 96, 136)
+        self.assertEqual(r0, 0.0)
+        self.assertEqual(ae0, 0)
+        self.assertGreater(r1, 0.0)
+        self.assertGreater(ae1, 0)
+
+    def test_nan_is_never_a_support(self):
+        # SYNTHETIC: a preview with no ink gives NaN, never SUPPORTED.
+        lines = self._lines('T', False)
+        empty = [[0.0] * W for _ in range(H)]
+        pdf = self._image(lines, lambda ln: math.floor(ln['baselinePx']))
+        snap_lines = self._lines('T+snap', True)
+        snap = self._image(snap_lines, lambda ln: math.floor(ln['baselinePx']))
+        g = {'T': d.h4_summary(lines, empty, pdf),
+             'T+snap': d.h4_summary(snap_lines, snap, pdf)}
+        self.assertTrue(d.decide_h4(g).startswith('INCONCLUSIVE'))
+
+
 if __name__ == '__main__':
     unittest.main()

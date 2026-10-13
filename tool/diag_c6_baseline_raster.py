@@ -401,6 +401,159 @@ def decide_snap(snap_results):
     return 'SNAP_MATCHES_PDF_FLOOR (probe only, not RMSE)'
 
 
+# ---- v7: H4 single-line test over fractions 0.0 .. 0.9 ----
+H4_TOL_PX = 0.05  # PROVISIONAL: a value counts as 0 or 1 px within this
+H4_STEP_PX = 1.0  # whole-pixel step expected by H4
+
+
+def window_compare(prev_dark, pdf_dark, baseline_px, x0, x1):
+    """Local comparison of the two rasters in the line's window.
+
+    Returns (rmse, ae): RMSE of the darkness difference (0..1, the same
+    scale as the official gate) and the number of pixels whose darkness
+    differs by more than 0.5. NaN if the window is empty.
+    """
+    base = int(math.floor(baseline_px))
+    lo = max(base - WIN_UP, 0)
+    hi = min(base + WIN_DOWN, len(prev_dark) - 1, len(pdf_dark) - 1)
+    sq, n, ae = 0.0, 0, 0
+    for r in range(lo, hi + 1):
+        for x in range(x0, x1):
+            d = prev_dark[r][x] - pdf_dark[r][x]
+            sq += d * d
+            n += 1
+            if abs(d) > 0.5:
+                ae += 1
+    if n == 0:
+        return float('nan'), 0
+    return math.sqrt(sq / n), ae
+
+
+def h4_summary(sub, prev_list, pdf_list):
+    """Per fraction: edge minus floor(B) for both rasters, averaged over the
+    repeats, with the repeat spread and the local window comparison."""
+    per = []
+    for ln in sub:
+        b = ln['baselinePx']
+        fb = math.floor(b)
+        x0 = int(round(ln.get('winX0', WIN_X0)))
+        x1 = int(round(ln.get('winX1', WIN_X1)))
+        ep, _ = bottom_edge(prev_list, b, x0, x1)
+        eq, _ = bottom_edge(pdf_list, b, x0, x1)
+        rmse, ae = window_compare(prev_list, pdf_list, b, x0, x1)
+        per.append({'fraction': round(float(ln['fraction']), 3),
+                    'repeat': int(ln.get('repeat', 0)), 'baselinePx': b,
+                    'floorB': fb, 'prevEdge': ep, 'pdfEdge': eq,
+                    'prevMinusFloor': ep - fb, 'pdfMinusFloor': eq - fb,
+                    'winRmse': rmse, 'winAe': ae})
+    out = []
+    for f in sorted({r['fraction'] for r in per}):
+        reps = sorted((r for r in per if r['fraction'] == f),
+                      key=lambda r: r['repeat'])
+        pm = [r['prevMinusFloor'] for r in reps]
+        qm = [r['pdfMinusFloor'] for r in reps]
+        if len(reps) > 1:
+            spread = max(abs(pm[0] - pm[-1]), abs(qm[0] - qm[-1]))
+        else:
+            spread = float('nan')
+        out.append({
+            'fraction': f,
+            'nRepeats': len(reps),
+            'prevMinusFloor': sum(pm) / len(pm),
+            'pdfMinusFloor': sum(qm) / len(qm),
+            'repeatSpread': spread,
+            'winRmse': sum(r['winRmse'] for r in reps) / len(reps),
+            'winAe': sum(r['winAe'] for r in reps) / len(reps),
+            'prevRaw': pm,
+            'pdfRaw': qm,
+        })
+    return out
+
+
+def decide_h4(groups):
+    """PRE-DECLARED H4 decision for the v7 single-line test (probe only).
+
+    H4_SUPPORTED: in every plain font the PDF edge is floor(B) (within
+        H4_TOL_PX) at every fraction, the preview edge is floor(B) or
+        floor(B)+1 (within H4_TOL_PX) at every fraction, at least one fraction
+        has the +1 step, the two repeats agree (within H4_TOL_PX), and every
+        snapped control arm has preview edge == floor(B) at every fraction.
+    H4_NOT_SUPPORTED: a preview offset is not whole-pixel (continuous, H5-like),
+        or the snapped control keeps a mismatch (the fractional origin is not
+        the cause).
+    INCONCLUSIVE: NaN values, repeats disagree, the PDF is not floor(B), or
+        no whole-pixel step appears.
+    A probe result for one line per fraction. It does not establish the RMSE
+    cause and does not generalise to a whole page.
+    """
+    plain = {k: v for k, v in groups.items() if not k.endswith(SNAP_SUFFIX)}
+    snapped = {k: v for k, v in groups.items() if k.endswith(SNAP_SUFFIX)}
+    if not plain or not snapped:
+        return 'INCONCLUSIVE - plain or snapped arm missing (probe only)'
+    for rows in groups.values():
+        for r in rows:
+            vals = [r['prevMinusFloor'], r['pdfMinusFloor'], r['repeatSpread']]
+            if any(math.isnan(v) for v in vals):
+                return 'INCONCLUSIVE - NaN measurement (probe only)'
+    for rows in groups.values():
+        if any(r['repeatSpread'] > H4_TOL_PX for r in rows):
+            return 'INCONCLUSIVE - the two repeats disagree (probe only)'
+    for rows in snapped.values():
+        if any(abs(r['prevMinusFloor']) > H4_TOL_PX for r in rows):
+            return 'H4_NOT_SUPPORTED - snapped control keeps a mismatch (probe only)'
+    for rows in plain.values():
+        for r in rows:
+            v = r['prevMinusFloor']
+            near0 = abs(v) <= H4_TOL_PX
+            near1 = abs(v - H4_STEP_PX) <= H4_TOL_PX
+            if not (near0 or near1):
+                return ('H4_NOT_SUPPORTED - preview offset is not whole-pixel '
+                        '(probe only)')
+    for rows in plain.values():
+        if any(abs(r['pdfMinusFloor']) > H4_TOL_PX for r in rows):
+            return 'INCONCLUSIVE - PDF edge is not floor(B) (probe only)'
+    if not any(abs(r['prevMinusFloor'] - H4_STEP_PX) <= H4_TOL_PX
+               for rows in plain.values() for r in rows):
+        return 'INCONCLUSIVE - no whole-pixel step in the preview (probe only)'
+    return 'H4_SUPPORTED (probe only, single line, not RMSE)'
+
+
+def step_location(rows):
+    """Fraction interval where the plain preview first reaches floor(B)+1."""
+    prev = None
+    for r in rows:
+        on = abs(r['prevMinusFloor'] - H4_STEP_PX) <= H4_TOL_PX
+        if on:
+            return f'{prev:.1f}..{r["fraction"]:.1f}' if prev is not None else f'<={r["fraction"]:.1f}'
+        prev = r['fraction']
+    return 'none'
+
+
+def h4_tables(groups):
+    """Markdown tables (one per font) for the Job Summary and annotations."""
+    tables = {}
+    for name in sorted(k for k in groups if not k.endswith(SNAP_SUFFIX)):
+        plain = groups[name]
+        snap = groups.get(name + SNAP_SUFFIX, [])
+        head = [
+            f'### H4 {name}: fraction, preview-floor(B), pdf-floor(B), '
+            f'window RMSE, window AE, snapped preview-floor(B), '
+            f'repeat spread (step at {step_location(plain)})',
+            '| frac | prev-floor | pdf-floor | win RMSE | win AE | snap prev-floor | spread |',
+            '|---|---|---|---|---|---|---|',
+        ]
+        body = []
+        for i, r in enumerate(plain):
+            sn = snap[i] if i < len(snap) else None
+            body.append('| {:.1f} | {:+.3f} | {:+.3f} | {:.4f} | {:.1f} | {} | {:.3f} |'.format(
+                r['fraction'], r['prevMinusFloor'], r['pdfMinusFloor'],
+                r['winRmse'], r['winAe'],
+                '{:+.3f}'.format(sn['prevMinusFloor']) if sn else 'n/a',
+                r['repeatSpread']))
+        tables[name] = head + body
+    return tables
+
+
 def decide_rounding(results):
     """PRE-DECLARED decision for v5 (probe only, thresholds provisional).
 
@@ -520,10 +673,16 @@ def _main(argv):
         control = float('nan')
         decision = decide_rounding(plain)
         snap_decision = decide_snap({k: v['snap'] for k, v in snapped.items()})
+    h4_groups = {name: h4_summary(
+        [lines[i] for i in idxs], prev_list, pdf_list)
+        for name, idxs in split_groups(lines).items()}
+    h4_decision = decide_h4(h4_groups)
+    h4_tabs = h4_tables(h4_groups)
     with open(os.path.join(out_dir, 'raster_results.json'), 'w',
               encoding='utf-8') as fh:
         json.dump({'groups': results, 'pdfControlMaxDiffPx': control,
-                   'decision': decision}, fh, indent=2)
+                   'decision': decision, 'h4': h4_groups,
+                   'h4Decision': h4_decision}, fh, indent=2)
 
     out = [
         '## C6 baseline sub-pixel probe (non-gating, provisional thresholds)',
@@ -569,7 +728,14 @@ def _main(argv):
         f'DECISION (pre-declared rule): {decision}',
         f'SNAP DECISION (v6 diagnostic columns, pre-declared rule): {snap_decision}',
     ]
+    out += ['', '## H4 single-line test, fractions 0.0 .. 0.9 (probe only)',
+            f'H4 DECISION (pre-declared rule): {h4_decision}']
+    for name in sorted(h4_tabs):
+        out += [''] + h4_tabs[name]
     _emit(out)
+    print(f"::notice title=C6-RASTER H4 verdict::{h4_decision}")
+    for name in sorted(h4_tabs):
+        _annotate(f'C6-RASTER H4 {name}', h4_tabs[name])
     print(f"::notice title=C6-RASTER verdict::{decision}")
     print(f"::notice title=C6-RASTER snap verdict::{snap_decision}")
     snap_lines = []
