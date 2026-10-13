@@ -1,4 +1,4 @@
-// [C6-RASTER] TEMPORARY baseline sub-pixel probe v5 (non-gating). Not for merge.
+// [C6-RASTER] TEMPORARY baseline sub-pixel probe v6 (non-gating). Not for merge.
 //
 // Question: does the Preview (Flutter) vs vector PDF (poppler) difference in
 // the vertical ink position depend on the FONT, at fixed baseline fractions?
@@ -7,6 +7,11 @@
 //   v5 keeps every v4 factor and changes only the glyph set to a single flat-
 //   bottomed 'H', so the ink bottom edge equals the baseline and can be
 //   measured below one pixel (descenders g y p would contaminate it).
+//   v6 adds four DIAGNOSTIC columns per font ("+snap" groups): the same font
+//   and fractions, but the paint baseline is first snapped to floor(B) whole
+//   device px. Only the preview paint origin changes; the PDF side is the same
+//   as the plain columns. Measures whether integer baseline snapping removes
+//   the preview-vs-PDF bottom-edge mismatch. Not a production change.
 //   Every column uses the same size (11 pt), the same production line-height
 //   factor on the preview side (LayoutConfiguration().lineHeightFactor), the
 //   same text, the same 20 baseline fractions 0.025 .. 0.975 device px, and
@@ -65,8 +70,12 @@ const List<_ProbeFont> _fonts = <_ProbeFont>[
 const int _rowsPerFont = 20;
 const double _rowPitchPx = 50;
 const double _firstBaselinePx = 60;
-const double _columnPitchPx = 195;
+const double _columnPitchPx = 97;
 const double _firstColumnPx = 20;
+/// Four plain columns (one per font) then four snapped columns (same fonts).
+const int _columnCount = 8;
+const int _snapColumnFrom = 4;
+const String _snapSuffix = '+snap';
 
 double _fractionOf(int row) => 0.025 + 0.05 * row;
 
@@ -79,7 +88,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    '[C6-RASTER] baseline sub-pixel probe v5 (non-gating)',
+    '[C6-RASTER] baseline sub-pixel probe v6 (non-gating)',
     (tester) async {
       await tester.runAsync(() async {
         final fontBytes = <String, ByteData>{};
@@ -106,8 +115,10 @@ void main() {
         canvas.scale(LayoutUnits.ptToPx(1));
 
         final lines = <Map<String, Object?>>[];
-        for (var c = 0; c < _fonts.length; c++) {
-          final font = _fonts[c];
+        for (var c = 0; c < _columnCount; c++) {
+          final fontIndex = c % _fonts.length;
+          final snapped = c >= _snapColumnFrom;
+          final font = _fonts[fontIndex];
           final xPx = _columnXPx(c);
           final xPt = LayoutUnits.pxToPt(xPx);
           for (var r = 0; r < _rowsPerFont; r++) {
@@ -129,19 +140,24 @@ void main() {
               maxLines: 1,
             )..layout(maxWidth: double.infinity);
             final innerBaselinePt = painter.computeLineMetrics().first.baseline;
-            final paintTopPt = baselinePt - innerBaselinePt;
+            // Snapped columns paint at floor(B) whole device px (diagnostic).
+            final paintBaselinePt = snapped
+                ? LayoutUnits.pxToPt(baselinePx.floorToDouble())
+                : baselinePt;
+            final paintTopPt = paintBaselinePt - innerBaselinePt;
             painter.paint(canvas, Offset(xPt, paintTopPt));
             painter.dispose();
             lines.add(<String, Object?>{
               'index': lines.length,
-              'group': font.family,
+              'group': snapped ? '${font.family}$_snapSuffix' : font.family,
               'column': c,
+              'fontIndex': fontIndex,
+              'snapped': snapped,
               'xPx': xPx,
-              // Horizontal measurement window for this column only. Covers the
-              // column's ink (about 21..86, 215..284, 410..489, 605..676 px) and
-              // no neighbouring column.
+              // Horizontal measurement window for this column only. The H ink
+              // spans about x+1 .. x+11 px; the next column starts at x+97 px.
               'winX0': (xPx - 4).round(),
-              'winX1': (xPx + 150).round(),
+              'winX1': (xPx + 40).round(),
               'heightFactor': height,
               'fraction': _fractionOf(r),
               'baselinePx': baselinePx,
@@ -149,6 +165,7 @@ void main() {
               'xPt': xPt,
               'previewInnerBaselinePt': innerBaselinePt,
               'previewPaintTopPt': paintTopPt,
+              'paintBaselinePx': LayoutUnits.ptToPx(paintBaselinePt),
             });
           }
         }
@@ -175,7 +192,7 @@ void main() {
             build: (context) {
               final children = <pw.Widget>[];
               for (final line in lines) {
-                final font = _fonts[line['column']! as int];
+                final font = _fonts[line['fontIndex']! as int];
                 final pdfFont = pdfFonts[font.family]!;
                 final pdfFace = pdfFont.getFont(context);
                 final baselinePt = line['baselinePt']! as double;
@@ -218,7 +235,7 @@ void main() {
         File('$_outDir/baseline_probe.pdf').writeAsBytesSync(pdfBytes);
 
         final out = <String, Object?>{
-          'schema': 'c6-baseline-raster-v5',
+          'schema': 'c6-baseline-raster-v6',
           'synthetic': false,
           'text': _probeText,
           'fontSizePt': _fontSizePt,
@@ -231,7 +248,7 @@ void main() {
         };
         File('$_outDir/probe.json')
             .writeAsStringSync(const JsonEncoder.withIndent('  ').convert(out));
-        expect(lines, hasLength(_fonts.length * _rowsPerFont));
+        expect(lines, hasLength(_columnCount * _rowsPerFont));
       });
     },
     timeout: const Timeout(Duration(minutes: 5)),

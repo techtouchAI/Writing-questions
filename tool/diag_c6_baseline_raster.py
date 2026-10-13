@@ -348,6 +348,59 @@ def edge_analysis(sub, prev_list, pdf_list, scale):
             'prevSteps': steps}
 
 
+SNAP_SUFFIX = '+snap'  # group name of the diagnostic columns (see Dart v6)
+
+
+def snap_analysis(sub, prev_list, pdf_list):
+    """v6: bottom edges relative to floor(B) for the snapped columns.
+
+    floor(B) is the whole device pixel that the paint baseline is snapped to.
+    If integer snapping removes the mismatch, the preview edge equals floor(B)
+    at every fraction (constant, offset 0), like the PDF edge.
+    """
+    rows = []
+    for ln in sub:
+        b = ln['baselinePx']
+        fb = math.floor(b)
+        x0 = int(round(ln.get('winX0', WIN_X0)))
+        x1 = int(round(ln.get('winX1', WIN_X1)))
+        ep, _ = bottom_edge(prev_list, b, x0, x1)
+        eq, _ = bottom_edge(pdf_list, b, x0, x1)
+        rows.append({'fraction': ln['fraction'], 'baselinePx': b,
+                     'floorB': fb, 'prevEdge': ep, 'pdfEdge': eq,
+                     'prevMinusFloor': ep - fb, 'pdfMinusFloor': eq - fb})
+    pm = [r['prevMinusFloor'] for r in rows]
+    qm = [r['pdfMinusFloor'] for r in rows]
+    nan = any(math.isnan(v) for v in pm + qm)
+    return {'rows': rows,
+            'prevMeanMinusFloor': float('nan') if nan else sum(pm) / len(pm),
+            'prevStdMinusFloor': float('nan') if nan else _std(pm),
+            'pdfMeanMinusFloor': float('nan') if nan else sum(qm) / len(qm),
+            'pdfStdMinusFloor': float('nan') if nan else _std(qm)}
+
+
+def decide_snap(snap_results):
+    """PRE-DECLARED v6 decision (probe only, thresholds provisional).
+
+    SNAP_MATCHES_PDF_FLOOR: in every font the snapped preview edge minus
+        floor(B) is constant (std <= FIT_STD_PX) and within DELTA_TOL_PX of 0.
+    SNAP_DOES_NOT_MATCH: some font fails that test.
+    INCONCLUSIVE: missing ink or no snapped groups.
+    This tests a candidate mechanism on the probe. It is not a production
+    change and does not establish the RMSE cause.
+    """
+    if not snap_results:
+        return 'INCONCLUSIVE - no snapped groups (probe only)'
+    for name, res in snap_results.items():
+        if math.isnan(res['prevMeanMinusFloor']) or math.isnan(res['prevStdMinusFloor']):
+            return 'INCONCLUSIVE - NaN snapped edge in %s (probe only)' % name
+    for res in snap_results.values():
+        if (res['prevStdMinusFloor'] > FIT_STD_PX
+                or abs(res['prevMeanMinusFloor']) > DELTA_TOL_PX):
+            return 'SNAP_DOES_NOT_MATCH (probe only)'
+    return 'SNAP_MATCHES_PDF_FLOOR (probe only, not RMSE)'
+
+
 def decide_rounding(results):
     """PRE-DECLARED decision for v5 (probe only, thresholds provisional).
 
@@ -454,13 +507,19 @@ def _main(argv):
         res['sizes'] = {'preview': [pw_, ph_], 'pdf': [qw_, qh_]}
         res['synthetic'] = False
         res['edge'] = edge_analysis(sub, prev_list, pdf_list, scale)
+        if sub and sub[0].get('snapped'):
+            res['snap'] = snap_analysis(sub, prev_list, pdf_list)
         results[name] = res
+    snapped = {k: v for k, v in results.items() if 'snap' in v}
+    plain = {k: v for k, v in results.items() if 'snap' not in v}
     if set(results) == {'A', 'B'}:
         control = pdf_control_max_diff(results)
         decision = decide_height(results, control)
+        snap_decision = 'not applicable (height groups)'
     else:
         control = float('nan')
-        decision = decide_rounding(results)
+        decision = decide_rounding(plain)
+        snap_decision = decide_snap({k: v['snap'] for k, v in snapped.items()})
     with open(os.path.join(out_dir, 'raster_results.json'), 'w',
               encoding='utf-8') as fh:
         json.dump({'groups': results, 'pdfControlMaxDiffPx': control,
@@ -496,12 +555,19 @@ def _main(argv):
             f"Edge (H bottom) pdf: delta={res['edge']['pdfFit']['delta']:+.3f} "
             f"std={res['edge']['pdfFit']['std']:.3f}",
         ]
+        if 'snap' in res:
+            sn = res['snap']
+            out.append(
+                f"Snap preview-floor(B): mean {sn['prevMeanMinusFloor']:+.3f} "
+                f"std {sn['prevStdMinusFloor']:.3f} | pdf-floor(B): mean "
+                f"{sn['pdfMeanMinusFloor']:+.3f} std {sn['pdfStdMinusFloor']:.3f}")
     out += [
         '',
         (f'PDF control (max |pdf - floor(B)| gap between groups, equal '
          f'fractions): {control:.3f} px') if control == control else
         'PDF control: not applicable (font groups)',
         f'DECISION (pre-declared rule): {decision}',
+        f'SNAP DECISION (v6 diagnostic columns, pre-declared rule): {snap_decision}',
     ]
     _emit(out)
     print(f"::notice title=C6-RASTER verdict::{decision}")

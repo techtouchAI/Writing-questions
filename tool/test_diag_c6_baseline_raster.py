@@ -571,5 +571,55 @@ class EdgeEndToEndTests(unittest.TestCase):
         self.assertTrue(d.decide_rounding(res).startswith('INCONCLUSIVE'))
 
 
+class SnapDiagnosticTests(unittest.TestCase):
+    """v6: integer-snapped paint baseline (diagnostic columns only)."""
+
+    def _lines(self):
+        out = []
+        for i in range(20):
+            frac = 0.025 + 0.05 * i
+            out.append({'index': i, 'group': 'T+snap', 'fraction': frac,
+                        'baselinePx': 60.0 + 50 * i + frac, 'snapped': True,
+                        'winX0': 96, 'winX1': 140})
+        return out
+
+    def _img(self, lines, offset):
+        """SYNTHETIC: bottom edge at floor(B) + offset (whole px)."""
+        dark = [[0.0] * W for _ in range(H)]
+        for ln in lines:
+            _bar(dark, math.floor(ln['baselinePx']) + offset, 100, 130)
+        return dark
+
+    def test_snapped_preview_at_floor_matches(self):
+        # SYNTHETIC: preview edge == floor(B) at every fraction -> match.
+        lines = self._lines()
+        res = {'T+snap': d.snap_analysis(lines, self._img(lines, 0), self._img(lines, 0))}
+        self.assertAlmostEqual(res['T+snap']['prevMeanMinusFloor'], 0.0, places=6)
+        self.assertLess(res['T+snap']['prevStdMinusFloor'], 1e-6)
+        self.assertEqual(d.decide_snap(res), 'SNAP_MATCHES_PDF_FLOOR (probe only, not RMSE)')
+
+    def test_one_pixel_offset_does_not_match(self):
+        # SYNTHETIC: preview edge == floor(B) + 1 -> mismatch, not a match.
+        lines = self._lines()
+        res = {'T+snap': d.snap_analysis(lines, self._img(lines, 1), self._img(lines, 0))}
+        self.assertAlmostEqual(res['T+snap']['prevMeanMinusFloor'], 1.0, places=6)
+        self.assertEqual(d.decide_snap(res), 'SNAP_DOES_NOT_MATCH (probe only)')
+
+    def test_missing_ink_or_no_groups_is_inconclusive(self):
+        # SYNTHETIC: an empty snapped window or no snapped group gives no verdict.
+        lines = self._lines()
+        empty = [[0.0] * W for _ in range(H)]
+        res = {'T+snap': d.snap_analysis(lines, empty, self._img(lines, 0))}
+        self.assertTrue(d.decide_snap(res).startswith('INCONCLUSIVE'))
+        self.assertTrue(d.decide_snap({}).startswith('INCONCLUSIVE'))
+
+    def test_mismatch_in_one_font_fails_the_snap_decision(self):
+        # SYNTHETIC: three fonts match, one is off by one pixel -> no match.
+        lines = self._lines()
+        good = {'T+snap': d.snap_analysis(lines, self._img(lines, 0), self._img(lines, 0))}
+        bad = {'A+snap': d.snap_analysis(lines, self._img(lines, 1), self._img(lines, 0))}
+        self.assertTrue(d.decide_snap({**good, **bad}).startswith('SNAP_DOES_NOT_MATCH'))
+
+
 if __name__ == '__main__':
     unittest.main()
