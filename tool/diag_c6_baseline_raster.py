@@ -571,6 +571,16 @@ def _main(argv):
     ]
     _emit(out)
     print(f"::notice title=C6-RASTER verdict::{decision}")
+    print(f"::notice title=C6-RASTER snap verdict::{snap_decision}")
+    snap_lines = []
+    for name in sorted(snapped):
+        sn = snapped[name]['snap']
+        snap_lines.append(
+            f"{name}: preview-floor(B) mean={sn['prevMeanMinusFloor']:+.3f} "
+            f"std={sn['prevStdMinusFloor']:.3f} | pdf-floor(B) "
+            f"mean={sn['pdfMeanMinusFloor']:+.3f} std={sn['pdfStdMinusFloor']:.3f}")
+    if snap_lines:
+        _annotate('C6-RASTER snap summary', snap_lines)
     for name in sorted(results):
         _annotate(f'C6-RASTER data {name}',
                   _data_lines(results[name], pw_, ph_, qw_, qh_))
