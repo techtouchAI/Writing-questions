@@ -134,6 +134,11 @@ void main() {
               'group': font.family,
               'column': c,
               'xPx': xPx,
+              // Horizontal measurement window for this column only. Covers the
+              // column's ink (about 21..86, 215..284, 410..489, 605..676 px) and
+              // no neighbouring column.
+              'winX0': xPx - 4,
+              'winX1': xPx + 150,
               'heightFactor': height,
               'fraction': _fractionOf(r),
               'baselinePx': baselinePx,

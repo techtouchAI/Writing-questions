@@ -334,5 +334,25 @@ class PerLineWindowTests(unittest.TestCase):
         self.assertTrue(all(math.isnan(r['previewCentroid'])
                             for r in res_default['rows']))
 
+
+class MeasurementValidityTests(unittest.TestCase):
+    def _res(self, centroids, std=0.45):
+        # SYNTHETIC: rows with given preview centroids.
+        rows = [{'previewCentroid': c, 'fraction': 0.1} for c in centroids]
+        return {'deltaStdPx': std, 'deltaMeanPx': 0.0, 'rows': rows}
+
+    def test_identical_groups_are_invalid_not_a_result(self):
+        # SYNTHETIC: two groups with identical centroids -> invalid measurement,
+        # even though their deltas look like a clear mismatch
+        c = [56.0 + 0.1 * i for i in range(20)]
+        res = {'A': self._res(c), 'B': self._res(c)}
+        self.assertTrue(d.decide_fonts(res).startswith('INVALID_MEASUREMENT'))
+
+    def test_different_groups_are_not_flagged(self):
+        # SYNTHETIC: groups with different centroids pass the validity check
+        res = {'A': self._res([56.0 + 0.1 * i for i in range(20)]),
+               'B': self._res([56.2 + 0.1 * i for i in range(20)])}
+        self.assertFalse(d.decide_fonts(res).startswith('INVALID_MEASUREMENT'))
+
 if __name__ == '__main__':
     unittest.main()

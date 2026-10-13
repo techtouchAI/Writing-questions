@@ -372,6 +372,15 @@ def decide_fonts(results):
                               std or mean differs across fonts by >= SEPARATION_PX.
     Otherwise INCONCLUSIVE. Probe only; does not establish the RMSE cause.
     """
+    names = sorted(results)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            ca = [r['previewCentroid'] for r in results[a]['rows']]
+            cb = [r['previewCentroid'] for r in results[b]['rows']]
+            if len(ca) == len(cb) and ca and all(
+                    abs(x - y) < 1e-9 for x, y in zip(ca, cb)):
+                return ('INVALID_MEASUREMENT - groups %s and %s have identical '
+                        'preview centroids (window or render problem)' % (a, b))
     stds = [res['deltaStdPx'] for res in results.values()]
     means = [res['deltaMeanPx'] for res in results.values()]
     if any(math.isnan(v) for v in stds + means):
