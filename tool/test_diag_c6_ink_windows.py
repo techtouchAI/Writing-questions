@@ -5,6 +5,8 @@ fixture: the real measurements are the CI notices of the visual-parity job.
 The end-to-end test swaps pdftoppm for MuPDF at the same scale (a stand-in),
 so it runs without poppler; the CI job uses pdftoppm itself.
 """
+import contextlib
+import io
 import json
 import os
 import sys
@@ -152,8 +154,37 @@ class VerdictTests(unittest.TestCase):
     def test_stable_is_stable(self):
         self.assertTrue(ink.verdict(self._g(50, 10, 0.02)).startswith('STABLE'))
 
+    def test_unchanged_mass_grid_cannot_test_stability(self):
+        # Flat grid: the shift test is uninformative, so it must NOT say STABLE.
+        text = ink.verdict(self._g(50, 10, 0.0))
+        self.assertTrue(text.startswith('INCONCLUSIVE'))
+        self.assertIn('cannot test stability', text)
+        self.assertEqual(ink.pattern(self._g(50, 10, 0.0)),
+                         'pattern: not assessed (verdict not STABLE)')
+
+    def test_best_shift_prefers_smaller_shift_on_tie(self):
+        flat = {f'{dx},{dy}': 0.5 for dx, dy in ink.SHIFTS}
+        self.assertEqual(ink.best_shift(flat), ('0,0', 0.5))
+        flat['1,0'] = 0.6
+        self.assertEqual(ink.best_shift(flat), ('1,0', 0.6))
+        self.assertEqual(ink.best_shift({k: None for k in flat}), (None, None))
+
+    def test_notice_splits_between_lines_and_numbers_parts(self):
+        lines = [f'line {i} ' + 'x' * 40 for i in range(30)]
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            ink._notice('T', lines, limit=300)
+        out = buf.getvalue().splitlines()
+        self.assertGreater(len(out), 1)
+        self.assertTrue(all(o.startswith('::notice title=T::') for o in out))
+        self.assertTrue(out[0].startswith('::notice title=T::[1/'))
+        # every original line survives intact, in order
+        joined = '|'.join(o.split('::', 2)[2] for o in out)
+        self.assertEqual(joined.count('line '), 30)
+        self.assertIn('line 0 ', out[0])
+
     def test_pattern_does_not_name_a_cause(self):
-        text = ink.pattern(self._g(50, 10, 0.0))
+        text = ink.pattern(self._g(50, 10, 0.02))
         self.assertIn('solid-core excess', text)
         self.assertNotIn('stroke weight', text)
         self.assertNotIn('edge smoothing', text)
@@ -228,7 +259,10 @@ class EndToEndTests(unittest.TestCase):
                 summary_path = os.path.join(tmp, 'step_summary.md')
                 os.environ['GITHUB_STEP_SUMMARY'] = summary_path
                 artifacts = self._make_inputs(tmp)
-                self.assertEqual(ink.run(artifacts), 0)
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    self.assertEqual(ink.run(artifacts), 0)
+                self.assertIn('::notice', buf.getvalue())  # synthetic, captured here
                 out_dir = os.path.join(artifacts, ink.REL_DIR)
                 with open(os.path.join(out_dir, ink.SUMMARY_JSON),
                           encoding='utf-8') as fh:
@@ -254,9 +288,11 @@ class EndToEndTests(unittest.TestCase):
             # Three words and two lines: the sample rule must say so.
             self.assertTrue(ink.verdict(s).startswith('INCONCLUSIVE'), name)
             self.assertTrue(grp['lines'])
+            self.assertEqual(set(s['iou_by_shift']), {f'{dx},{dy}' for dx, dy in ink.SHIFTS})
 
     def test_missing_inputs_is_non_gating(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp, \
+                contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(ink.run(tmp), 0)
             self.assertEqual(ink.main(['prog', tmp]), 0)
             self.assertEqual(ink.main(['prog']), 0)

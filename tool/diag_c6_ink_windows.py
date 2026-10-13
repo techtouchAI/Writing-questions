@@ -75,6 +75,7 @@ SHIFTS = [(dx, dy) for dy in (-1, 0, 1) for dx in (-1, 0, 1)]
 MIN_WORDS = 30  # below this the sample is too small to generalise
 MIN_LINES = 8
 SHIFT_TOL = 0.10  # PROVISIONAL: max change of the mass ratio over the 3x3 grid
+UNCHANGED_TOL = 1e-6  # mass ratio spread below this = the grid could not move it
 # Only the two selections of this round run. Each one is reported on its own;
 # their statistics are never pooled. PB was removed from this round (weaker
 # neighbour protection: Preview neighbours are not checked, ring test only).
@@ -90,12 +91,22 @@ SUMMARY_JSON = 'ink_windows_summary.json'
 GAP_BINS = (-3, -2, -1, 0, 1, 2, 3)  # overlap gap in px, clipped to [-3, 3]
 
 
-def _notice(title, lines):
-    text = '\n'.join(lines)
-    for i in range(0, len(text), 3000):
-        chunk = text[i:i + 3000].replace('%', '%25').replace('\r', '%0D')
-        chunk = chunk.replace('\n', '%0A')
-        print(f'::notice title={title}::{chunk}')
+def _notice(title, lines, limit=3000):
+    """Emit ::notice annotations. Splits only between whole lines and numbers
+    each part as [i/n], so a reader can reassemble them in order."""
+    parts, cur, size = [], [], 0
+    for line in lines:
+        if cur and size + len(line) + 1 > limit:
+            parts.append(cur)
+            cur, size = [], 0
+        cur.append(line)
+        size += len(line) + 1
+    if cur:
+        parts.append(cur)
+    for i, part in enumerate(parts, 1):
+        head = f'[{i}/{len(parts)}] ' if len(parts) > 1 else ''
+        text = (head + '\n'.join(part)).replace('%', '%25').replace('\r', '%0D')
+        print(f'::notice title={title}::{text.replace(chr(10), "%0A")}')
 
 
 def _job_summary(lines):
@@ -429,7 +440,34 @@ def group_summary(records):
                                                     - _arr(records, ('prev', 'edge'))))
     out['n_drawing_overlap'] = int(sum(bool(r.get('drawing_overlap')) for r in records))
     out['grid'] = shift_grid(records, line_idx, L, idx)
+    out['iou_by_shift'] = _iou_by_shift(records)
     return out
+
+
+def _iou_by_shift(records):
+    """Median IoU per PDF-side shift over the words valid at that shift."""
+    out = {}
+    for dx, dy in SHIFTS:
+        key = f'{dx},{dy}'
+        vals = [r['grid'][key]['iou'] for r in records
+                if r['grid'].get(key) is not None]
+        out[key] = float(np.median(vals)) if vals else None
+    return out
+
+
+def best_shift(iou_by_shift):
+    """(key, iou) with the highest median IoU. Ties prefer the smaller shift
+    so that no direction is favoured by list order."""
+    best = None
+    for dx, dy in SHIFTS:
+        key = f'{dx},{dy}'
+        v = iou_by_shift.get(key)
+        if v is None:
+            continue
+        rank = (v, -(abs(dx) + abs(dy)))
+        if best is None or rank > best[0]:
+            best = (rank, key, v)
+    return (best[1], best[2]) if best else (None, None)
 
 
 def shift_grid(records, line_idx, L, idx):
@@ -490,6 +528,13 @@ def verdict(g):
     if len(masses) < len(SHIFTS):
         return 'INCONCLUSIVE: some shifts fall outside the frame'
     span = max(masses) - min(masses)
+    if span <= UNCHANGED_TOL:
+        # Every window holds all of its ink (the ring check enforces this), so
+        # moving the window cannot change any coverage sum. The grid then
+        # cannot test stability, and must not be read as evidence of it.
+        return ('INCONCLUSIVE: 1px window shifts leave the mass ratio unchanged '
+                f'(span {span:.1e}); this grid cannot test stability. IoU and '
+                'centroid respond to shifts and are reported separately')
     if span > SHIFT_TOL:
         return (f'INCONCLUSIVE: mass ratio moves {span:.3f} over 1px shifts '
                 f'(> {SHIFT_TOL})')
@@ -558,14 +603,37 @@ def _group_block(name, g):
 
 
 def _line_stats_rows(lines):
+    """One tuple per line with at least one accepted word.
+
+    (line, words, R_mass, R_core, R_edge, IoU, cy, drawings, IoU@0,0,
+     best shift, IoU@best). Single line: no bootstrap CI."""
     rows = []
     for key, g in lines.items():
         if g.get('n_words', 0) == 0:
             continue
+        bk, bv = best_shift(g['iou_by_shift'])
         rows.append((key, g['n_words'], _f(g['R_mass']['est']), _f(g['R_core']['est']),
                      _f(g['R_edge']['est']), _f(g['median_iou']),
-                     f'{g["median_cy_px"]:+.2f}', g.get('n_drawing_overlap', 0)))
+                     f'{g["median_cy_px"]:+.2f}', g.get('n_drawing_overlap', 0),
+                     _f(g['iou_by_shift'].get('0,0')), bk or 'n/a', _f(bv)))
     return rows
+
+
+def _line_combined(grp):
+    """(line, accepted, excluded, reasons, stats-or-None) for every candidate line."""
+    stats = {row[0]: row for row in _line_stats_rows(grp['lines'])}
+    return [(key, a, e, why, stats.get(key))
+            for key, a, e, why in _line_table(grp['log'])]
+
+
+def _line_text(key, a, e, why, st):
+    head = f'{key}: accepted={a} excluded={e} reasons: {why}'
+    if st is None:
+        return head
+    _, n, rm, rc, re_, iou, cy, dr, iou0, bk, biou = st
+    return (f'{head} || words={n} R_mass={rm} R_core={rc} R_edge={re_} '
+            f'IoU={iou} IoU@0,0={iou0} best={bk} IoU_best={biou} '
+            f'cy={cy}px drawings={dr}')
 
 
 def _line_table(log):
@@ -615,11 +683,8 @@ def _group_report(gname, grp):
     for pg, a, e, why in _page_table(grp['log']):
         rows.append(f'  page {pg}: accepted={a} excluded={e} reasons: {why}')
     rows.append('  per line (single line: no CI; cy = PDF-Preview centroid, px):')
-    for key, n, rm, rc, re_, iou, cy, dr in _line_stats_rows(grp['lines']):
-        rows.append(f'    {key}: words={n} R_mass={rm} R_core={rc} R_edge={re_} '
-                    f'iou={iou} cy={cy} drawings={dr}')
-    for key, a, e, why in _line_table(grp['log']):
-        rows.append(f'  line {key}: accepted={a} excluded={e} reasons: {why}')
+    for key, a, e, why, st in _line_combined(grp):
+        rows.append('    ' + _line_text(key, a, e, why, st))
     return rows
 
 
@@ -657,15 +722,14 @@ def annotation_lines(summary):
                 f'edge={_fmt_ci(s["ctl_MuPDF_over_poppler_edge"])}')
             masses = ' '.join(f'({r["dx"]:+d},{r["dy"]:+d})={r["R_mass"]:.3f}'
                               for r in s['grid'] if r.get('R_mass') is not None)
-            lines.append(f'   shift mass: {masses}')
+            lines.append(f'   shift mass (unchanged by design, see verdict): {masses}')
+            ious = ' '.join(f'({k})={_f(v)}' for k, v in s['iou_by_shift'].items())
+            lines.append(f'   shift IoU (median over words): {ious}')
             lines.append(f'   verdict: {verdict(s)}; {pattern(s)}')
         for pg, acc_n, exc_n, why in _page_table(grp['log']):
             lines.append(f'   page {pg}: accepted={acc_n} excluded={exc_n} reasons={why}')
-        for key, acc_n, exc_n, why in _line_table(grp['log']):
-            lines.append(f'   line {key}: accepted={acc_n} excluded={exc_n} reasons={why}')
-        for key, n, rm, rc, re_, iou, cy, dr in _line_stats_rows(grp['lines']):
-            lines.append(f'   line {key} stats: words={n} R_mass={rm} R_core={rc} '
-                         f'R_edge={re_} iou={iou} cy={cy}px drawings={dr}')
+        for key, acc_n, exc_n, why, st in _line_combined(grp):
+            lines.append('   line ' + _line_text(key, acc_n, exc_n, why, st))
     return lines
 
 
@@ -692,15 +756,17 @@ def _markdown(summary):
         for pg, a, e, why in _page_table(grp['log']):
             out.append(f'| {pg} | {a} | {e} | {why} |')
         out.append('')
-        out.append('| line (page:baseline) | accepted | excluded | reasons |')
-        out.append('|---|---|---|---|')
-        for key, a, e, why in _line_table(grp['log']):
-            out.append(f'| {key} | {a} | {e} | {why} |')
-        out.append('')
-        out.append('| line | words | R_mass | R_core | R_edge | IoU | cy (px) | drawings |')
-        out.append('|---|---|---|---|---|---|---|---|')
-        for row in _line_stats_rows(grp['lines']):
-            out.append('| ' + ' | '.join(str(x) for x in row) + ' |')
+        out.append('| line (page:baseline) | accepted | excluded | words | R_mass | R_core '
+                   '| R_edge | IoU | IoU@0,0 | best shift | IoU@best | cy (px) | drawings '
+                   '| reasons |')
+        out.append('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|')
+        for key, a, e, why, st in _line_combined(grp):
+            if st is None:
+                out.append(f'| {key} | {a} | {e} | 0 | | | | | | | | | | {why} |')
+            else:
+                _, n, rm, rc, re_, iou, cy, dr, iou0, bk, biou = st
+                out.append(f'| {key} | {a} | {e} | {n} | {rm} | {rc} | {re_} | {iou} '
+                           f'| {iou0} | {bk} | {biou} | {cy} | {dr} | {why} |')
         out.append('')
         out.append('```')
         for key, g in grp['groups'].items():
