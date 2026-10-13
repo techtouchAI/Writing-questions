@@ -394,5 +394,142 @@ class WindowTypeTests(unittest.TestCase):
         self.assertFalse(math.isnan(res['rows'][0]['previewCentroid']))
         self.assertAlmostEqual(res['rows'][0]['previewCentroid'], centre, places=1)
 
+
+def _bar(dark, edge, x0=100, x1=160, height=10.0):
+    """SYNTHETIC flat-bottomed bar: ink above `edge`, partial bottom row."""
+    top = edge - height
+    for r in range(H):
+        cover = min(max(min(r + 1, edge) - max(r, top), 0.0), 1.0)
+        if cover > 0:
+            for x in range(x0, x1):
+                dark[r][x] = max(dark[r][x], cover)
+
+
+class BottomEdgeTests(unittest.TestCase):
+    def test_bottom_edge_recovers_subpixel_edge(self):
+        # SYNTHETIC: a bar whose bottom edge is at a known fractional position.
+        for edge in (200.0, 200.1, 200.37, 200.5, 200.93):
+            dark = [[0.0] * W for _ in range(H)]
+            _bar(dark, edge)
+            got, cols = d.bottom_edge(dark, 200.0, 90, 170)
+            self.assertAlmostEqual(got, edge, places=3, msg=f'edge {edge}')
+            self.assertEqual(cols, 60)
+
+    def test_no_ink_gives_nan_not_zero(self):
+        # SYNTHETIC: an empty window must not produce a number.
+        dark = [[0.0] * W for _ in range(H)]
+        got, cols = d.bottom_edge(dark, 200.0, 90, 170)
+        self.assertTrue(math.isnan(got))
+        self.assertEqual(cols, 0)
+
+
+class RoundingModelTests(unittest.TestCase):
+    def test_wrap_maps_into_half_open_unit_interval(self):
+        for x, want in ((0.0, 0.0), (0.4, 0.4), (0.6, -0.4), (-0.5, -0.5),
+                        (1.25, 0.25), (-1.75, 0.25)):
+            self.assertAlmostEqual(d.wrap(x), want, places=9, msg=str(x))
+
+    def test_fit_recovers_delta_of_a_rounding_model(self):
+        # SYNTHETIC: edge = round(B + delta) + 3 for several true deltas.
+        baselines = [60.0 + 50 * i + 0.025 + 0.05 * i for i in range(20)]
+        for true in (-0.3, 0.1, 0.35):
+            edges = [math.floor(b + true + 0.5) + 3.0 for b in baselines]
+            fit = d.fit_delta(edges, baselines)
+            # Resolution is half the fraction spacing (0.05 / 2 = 0.025 px).
+            self.assertLess(abs(d.wrap(fit['delta'] - true)), 0.026, msg=str(true))
+            self.assertLess(fit['std'], 1e-9)
+
+    def test_prediction_matches_rounded_paint_origin(self):
+        # SYNTHETIC: the preview model is edge = round(B - inner) + inner.
+        # The fitted delta must equal predict_delta(inner) (mod 1).
+        baselines = [60.0 + 50 * i + 0.025 + 0.05 * i for i in range(20)]
+        for inner in (0.2, 0.9, 13.37, 14.6):
+            edges = [round(b - inner) + inner for b in baselines]
+            fit = d.fit_delta(edges, baselines)
+            err = d.wrap(fit['delta'] - d.predict_delta(inner))
+            self.assertLess(abs(err), 0.026, msg=f'inner {inner} err {err}')
+
+    def test_step_is_located_between_rows(self):
+        # SYNTHETIC: offsets jump by 1 px between fractions 0.575 and 0.625.
+        fr = [0.025 + 0.05 * i for i in range(20)]
+        off = [-0.2 if f < 0.6 else -1.2 for f in fr]
+        steps = d.edge_steps(off, fr)
+        self.assertEqual(steps, ['0.575..0.625'])
+
+    def test_no_step_is_reported_as_no_step(self):
+        # SYNTHETIC: a constant offset has no step.
+        fr = [0.025 + 0.05 * i for i in range(20)]
+        self.assertEqual(d.edge_steps([-0.3] * 20, fr), [])
+
+
+class EdgeEndToEndTests(unittest.TestCase):
+    def _image(self, model, lines, inner):
+        dark = [[0.0] * W for _ in range(H)]
+        for ln in lines:
+            b = ln['baselinePx']
+            if model == 'rounded_origin':
+                edge = round(b - inner) + inner
+            elif model == 'unsnapped':
+                edge = b
+            else:  # 'floor': pdf-like, edge = floor(B) + 0.0
+                edge = math.floor(b)
+            _bar(dark, edge, 100 + 0 * 1, 160)
+        return dark
+
+    def _lines(self, inner_pt):
+        out = []
+        for i in range(20):
+            out.append({'index': i, 'group': 'T', 'fraction': 0.025 + 0.05 * i,
+                        'baselinePx': 60.0 + 50 * i + 0.025 + 0.05 * i,
+                        'winX0': 96, 'winX1': 166,
+                        'previewInnerBaselinePt': inner_pt})
+        return out
+
+    def test_rounded_origin_is_predicted_end_to_end(self):
+        # SYNTHETIC: a preview that rounds its paint origin, with an inner
+        # baseline of 0.7 px, must be predicted by edge_analysis.
+        inner = 0.7
+        lines = self._lines(inner)
+        prev = self._image('rounded_origin', lines, inner)
+        pdf = self._image('unsnapped', lines, inner)
+        res = {'T': {'edge': d.edge_analysis(lines, prev, pdf, 1.0)}}
+        e = res['T']['edge']
+        self.assertLess(e['prevFit']['std'], 0.01)
+        self.assertLess(abs(e['predictionError']), 0.026)
+        self.assertTrue(e['prevSteps'])
+        self.assertEqual(d.decide_rounding(res),
+                         'PREVIEW_ROUNDING_PREDICTED (probe only, not RMSE)')
+
+    def test_unsnapped_preview_is_not_rounding(self):
+        # SYNTHETIC: a preview with no whole-pixel snapping must not be
+        # called a rounding model. Its edge offset is constant (no step).
+        lines = self._lines(0.7)
+        prev = self._image('unsnapped', lines, 0.7)
+        pdf = self._image('unsnapped', lines, 0.7)
+        res = {'T': {'edge': d.edge_analysis(lines, prev, pdf, 1.0)}}
+        self.assertEqual(res['T']['edge']['prevSteps'], [])
+        self.assertTrue(d.decide_rounding(res).startswith(
+            'PREVIEW_NOT_ROUNDING'))
+
+    def test_wrong_inner_is_mispredicted(self):
+        # SYNTHETIC: the rounding is real but the reported inner baseline is
+        # wrong by 0.25 px: the prediction must be flagged, not accepted.
+        lines = self._lines(0.7)
+        prev = self._image('rounded_origin', lines, 0.7)
+        pdf = self._image('unsnapped', lines, 0.7)
+        wrong = self._lines(0.7 + 0.25)
+        res = {'T': {'edge': d.edge_analysis(wrong, prev, pdf, 1.0)}}
+        self.assertTrue(d.decide_rounding(res).startswith(
+            'PREVIEW_ROUNDING_MISPREDICTED'))
+
+    def test_missing_ink_is_inconclusive(self):
+        # SYNTHETIC: an empty preview cannot produce a verdict.
+        lines = self._lines(0.7)
+        empty = [[0.0] * W for _ in range(H)]
+        pdf = self._image('unsnapped', lines, 0.7)
+        res = {'T': {'edge': d.edge_analysis(lines, empty, pdf, 1.0)}}
+        self.assertTrue(d.decide_rounding(res).startswith('INCONCLUSIVE'))
+
+
 if __name__ == '__main__':
     unittest.main()

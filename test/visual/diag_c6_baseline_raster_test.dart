@@ -1,9 +1,12 @@
-// [C6-RASTER] TEMPORARY baseline sub-pixel probe v4 (non-gating). Not for merge.
+// [C6-RASTER] TEMPORARY baseline sub-pixel probe v5 (non-gating). Not for merge.
 //
 // Question: does the Preview (Flutter) vs vector PDF (poppler) difference in
 // the vertical ink position depend on the FONT, at fixed baseline fractions?
 //
 // v4 single factor: the font family (the four production families).
+//   v5 keeps every v4 factor and changes only the glyph set to a single flat-
+//   bottomed 'H', so the ink bottom edge equals the baseline and can be
+//   measured below one pixel (descenders g y p would contaminate it).
 //   Every column uses the same size (11 pt), the same production line-height
 //   factor on the preview side (LayoutConfiguration().lineHeightFactor), the
 //   same text, the same 20 baseline fractions 0.025 .. 0.975 device px, and
@@ -38,7 +41,7 @@ import 'package:writing_questions_app/pdf_engine/canonical_text.dart';
 import 'package:writing_questions_app/pdf_engine/pdf_text_metrics.dart';
 
 const String _outDir = 'build/visual_parity/c6diag/baseline_raster';
-const String _probeText = 'HAMDxgyp';
+const String _probeText = 'H';
 const double _fontSizePt = 11;
 const int _pageWidthPx = 794;
 const int _pageHeightPx = 1123;
@@ -76,7 +79,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    '[C6-RASTER] baseline sub-pixel probe v4 (non-gating)',
+    '[C6-RASTER] baseline sub-pixel probe v5 (non-gating)',
     (tester) async {
       await tester.runAsync(() async {
         final fontBytes = <String, ByteData>{};
@@ -215,7 +218,7 @@ void main() {
         File('$_outDir/baseline_probe.pdf').writeAsBytesSync(pdfBytes);
 
         final out = <String, Object?>{
-          'schema': 'c6-baseline-raster-v4',
+          'schema': 'c6-baseline-raster-v5',
           'synthetic': false,
           'text': _probeText,
           'fontSizePt': _fontSizePt,

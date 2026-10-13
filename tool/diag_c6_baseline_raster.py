@@ -16,6 +16,11 @@ What it does:
      The rule whose residual has the smallest standard deviation is that
      rasterizer's rule.
   4. Reports whether the two rasterizers follow the same rule.
+  5. (v5) Measures the sub-pixel bottom ink edge of the flat-bottomed glyph
+     'H' (edge = last inked row + its darkness), fits edge = round(B + delta)
+     + const per font and rasterizer, and compares the preview delta with the
+     prediction wrap(-inner_px) from Flutter's own inner baseline. Reports
+     whole-pixel steps by fraction. Probe only: no link to the RMSE gate.
 
 Every threshold below is PROVISIONAL and diagnostic only. They are not proven
 scientific criteria and do not change the official RMSE gate (0.02).
@@ -214,6 +219,157 @@ def analyse(preview_dark, pdf_dark, lines, emitted_pt=None):
     }
 
 
+# ---- v5: sub-pixel bottom edge of a flat-bottomed glyph ('H') ----
+EDGE_INK_MIN = 0.02  # PROVISIONAL: darkness that counts as ink on a bottom row
+DELTA_GRID = [i / 200.0 - 0.5 for i in range(200)]  # delta in [-0.5, 0.5)
+DELTA_TOL_PX = 0.05  # PROVISIONAL: fitted vs predicted delta agreement
+SNAP_STEP_PX = 0.5  # PROVISIONAL: a jump this large between rows is a step
+
+
+def _median(values):
+    vals = sorted(values)
+    n = len(vals)
+    if not n:
+        return float('nan')
+    mid = n // 2
+    return vals[mid] if n % 2 else (vals[mid - 1] + vals[mid]) / 2.0
+
+
+def wrap(x):
+    """Map x to [-0.5, 0.5)."""
+    return x - math.floor(x + 0.5)
+
+
+def bottom_edge(dark, baseline_px, x0, x1):
+    """Sub-pixel bottom ink edge (device px) of a flat-bottomed glyph.
+
+    For each column with ink in the window, the edge is the last inked row r
+    plus that row's darkness (partial coverage of the edge row). The result
+    is the median over columns. Returns (edge, columns_used); NaN if no ink.
+    Assumes linear coverage in the darkness value (approximation).
+    """
+    base = int(math.floor(baseline_px))
+    lo = max(base - WIN_UP, 0)
+    hi = min(base + WIN_DOWN, len(dark) - 1)
+    edges = []
+    for x in range(x0, x1):
+        last = None
+        for r in range(lo, hi + 1):
+            if dark[r][x] > EDGE_INK_MIN:
+                last = r
+        if last is None:
+            continue
+        edges.append(last + min(dark[last][x], 1.0))
+    return _median(edges), len(edges)
+
+
+def fit_delta(edges, baselines):
+    """Best (delta, const, std) for edge = round(B + delta) + const.
+
+    Searches DELTA_GRID. Every grid point with the minimal residual std is
+    feasible; delta is the circular midpoint of the feasible set. The
+    resolution is about half the spacing of the fractions (0.025 px for the
+    20 probe fractions). A NaN edge gives a NaN fit, never a fake result.
+    """
+    nan = float('nan')
+    if any(math.isnan(e) for e in edges):
+        return {'delta': nan, 'const': nan, 'std': nan, 'feasibleSpan': nan}
+    scored = []
+    for delta in DELTA_GRID:
+        resid = [e - math.floor(b + delta + 0.5)
+                 for e, b in zip(edges, baselines)]
+        scored.append((_std(resid), delta))
+    best_std = min(std for std, _ in scored)
+    feasible = [delta for std, delta in scored if std <= best_std + 1e-9]
+    sx = sum(math.cos(2 * math.pi * d_) for d_ in feasible)
+    sy = sum(math.sin(2 * math.pi * d_) for d_ in feasible)
+    centre = wrap(math.atan2(sy, sx) / (2 * math.pi))
+    resid = [e - math.floor(b + centre + 0.5) for e, b in zip(edges, baselines)]
+    return {'delta': centre, 'const': sum(resid) / len(resid),
+            'std': _std(resid), 'feasibleSpan': len(feasible) * 0.005}
+
+
+def predict_delta(inner_px):
+    """Preview model: the paint origin B - inner is rounded to whole px, so
+    the sub-pixel part of the rounding is wrap(-inner_px) (mod 1)."""
+    return wrap(-inner_px)
+
+
+def edge_steps(prev_offsets, fractions):
+    """Fraction intervals where the preview edge offset jumps by >= 0.5 px."""
+    out = []
+    for i in range(1, len(prev_offsets)):
+        if abs(prev_offsets[i] - prev_offsets[i - 1]) >= SNAP_STEP_PX:
+            out.append(f'{fractions[i - 1]:.3f}..{fractions[i]:.3f}')
+    return out
+
+
+def edge_analysis(sub, prev_list, pdf_list, scale):
+    """v5 per-group measurement: edges, rounding fits, prediction check."""
+    rows, baselines, inners = [], [], []
+    for ln in sub:
+        b = ln['baselinePx']
+        baselines.append(b)
+        x0 = int(round(ln.get('winX0', WIN_X0)))
+        x1 = int(round(ln.get('winX1', WIN_X1)))
+        ep, np_ = bottom_edge(prev_list, b, x0, x1)
+        eq, nq = bottom_edge(pdf_list, b, x0, x1)
+        inner_px = float(ln.get('previewInnerBaselinePt', float('nan'))) * scale
+        inners.append(inner_px)
+        rows.append({'fraction': ln['fraction'], 'baselinePx': b,
+                     'prevEdge': ep, 'pdfEdge': eq,
+                     'prevEdgeMinusB': ep - b, 'pdfEdgeMinusB': eq - b,
+                     'prevCols': np_, 'pdfCols': nq,
+                     'innerPx': inner_px})
+    prev_fit = fit_delta([r['prevEdge'] for r in rows], baselines)
+    pdf_fit = fit_delta([r['pdfEdge'] for r in rows], baselines)
+    finite_inner = [v for v in inners if not math.isnan(v)]
+    inner_mean = sum(finite_inner) / len(finite_inner) if finite_inner else float('nan')
+    inner_std = _std(finite_inner)
+    pred = predict_delta(inner_mean) if finite_inner else float('nan')
+    if math.isnan(pred) or math.isnan(prev_fit['delta']):
+        err = float('nan')
+    else:
+        err = wrap(prev_fit['delta'] - pred)
+    steps = edge_steps([r['prevEdgeMinusB'] for r in rows],
+                       [r['fraction'] for r in rows])
+    return {'rows': rows, 'prevFit': prev_fit, 'pdfFit': pdf_fit,
+            'innerPxMean': inner_mean, 'innerPxStd': inner_std,
+            'predictedDelta': pred, 'predictionError': err,
+            'prevSteps': steps}
+
+
+def decide_rounding(results):
+    """PRE-DECLARED decision for v5 (probe only, thresholds provisional).
+
+    PREVIEW_ROUNDING_PREDICTED: in every font the preview edge fits
+        round(B + delta) + const (std <= FIT_STD_PX), the fit has at least one
+        whole-pixel step, and the fitted delta matches wrap(-inner_px) within
+        DELTA_TOL_PX.
+    PREVIEW_NOT_ROUNDING: some font's preview edge does not fit the model.
+    PREVIEW_NO_STEP_UNCONFIRMED: the model fits but some font shows no step,
+        so the delta cannot be located.
+    PREVIEW_ROUNDING_MISPREDICTED: the model fits with steps but a predicted
+        delta differs by more than DELTA_TOL_PX.
+    INCONCLUSIVE: anything else (NaN, missing ink, too few lines).
+    Does not establish the RMSE cause.
+    """
+    edges = [res['edge'] for res in results.values() if 'edge' in res]
+    if len(edges) != len(results) or not edges:
+        return 'INCONCLUSIVE - edge measurement missing (probe only)'
+    for e in edges:
+        vals = [e['prevFit']['std'], e['pdfFit']['std'], e['predictionError']]
+        if any(math.isnan(v) for v in vals):
+            return 'INCONCLUSIVE - NaN edge or prediction (probe only)'
+    if any(e['prevFit']['std'] > FIT_STD_PX for e in edges):
+        return 'PREVIEW_NOT_ROUNDING (probe only)'
+    if any(not e['prevSteps'] for e in edges):
+        return 'PREVIEW_NO_STEP_UNCONFIRMED (probe only)'
+    if any(abs(e['predictionError']) > DELTA_TOL_PX for e in edges):
+        return 'PREVIEW_ROUNDING_MISPREDICTED (probe only)'
+    return 'PREVIEW_ROUNDING_PREDICTED (probe only, not RMSE)'
+
+
 def _load_darkness(path):
     import fitz  # pymupdf
     import numpy as np
@@ -276,6 +432,7 @@ def _main(argv):
         spans, emitted_pt = [], None
         print(f'::notice title=C6-RASTER::PDF span read failed: {exc!r}')
     prev_list, pdf_list = _to_list(prev_dark), _to_list(pdf_dark)
+    scale = float(probe.get('scalePxPerPt', 1.0))
     emitted_all = emitted_pt
     results = {}
     for name, idxs in split_groups(lines).items():
@@ -287,13 +444,14 @@ def _main(argv):
         res['pdfSpanCount'] = len(spans)
         res['sizes'] = {'preview': [pw_, ph_], 'pdf': [qw_, qh_]}
         res['synthetic'] = False
+        res['edge'] = edge_analysis(sub, prev_list, pdf_list, scale)
         results[name] = res
     if set(results) == {'A', 'B'}:
         control = pdf_control_max_diff(results)
         decision = decide_height(results, control)
     else:
         control = float('nan')
-        decision = decide_fonts(results)
+        decision = decide_rounding(results)
     with open(os.path.join(out_dir, 'raster_results.json'), 'w',
               encoding='utf-8') as fh:
         json.dump({'groups': results, 'pdfControlMaxDiffPx': control,
@@ -301,8 +459,8 @@ def _main(argv):
 
     out = [
         '## C6 baseline sub-pixel probe (non-gating, provisional thresholds)',
-        'Real measurement. Groups are the probe factor: font family (v4) or '
-        'preview TextStyle.height (v3, groups A and B).',
+        'Real measurement. Groups are the probe factor: font family (v5, glyph H) '
+        'or preview TextStyle.height (v3, groups A and B).',
         f'Sizes preview={pw_}x{ph_}, pdf={qw_}x{qh_}.',
     ]
     for name in sorted(results):
@@ -321,6 +479,13 @@ def _main(argv):
             f"Delta pdf-preview: mean {res['deltaMeanPx']:+.3f} px, "
             f"std {res['deltaStdPx']:.3f} px",
             f"Verdict: {res['verdict']} - {res['verdictDetail']}",
+            f"Edge (H bottom) preview: delta={res['edge']['prevFit']['delta']:+.3f} "
+            f"std={res['edge']['prevFit']['std']:.3f} steps={res['edge']['prevSteps']} "
+            f"inner={res['edge']['innerPxMean']:.3f}px "
+            f"predicted={res['edge']['predictedDelta']:+.3f} "
+            f"error={res['edge']['predictionError']:+.3f}",
+            f"Edge (H bottom) pdf: delta={res['edge']['pdfFit']['delta']:+.3f} "
+            f"std={res['edge']['pdfFit']['std']:.3f}",
         ]
     out += [
         '',
@@ -447,12 +612,15 @@ def decide_height(results, control_diff):
 def _data_lines(result, pw_, ph_, qw_, qh_):
     """Compact per-line data for annotations (REAL measurements)."""
     out = [f'sizes preview={pw_}x{ph_} pdf={qw_}x{qh_} spans={result["pdfSpanCount"]}',
-           'line|frac|baselinePx|prevCentroid|pdfCentroid|delta|emittedErrPt']
-    for r in result['rows']:
+           'line|frac|baselinePx|prevCentroid|pdfCentroid|delta|emittedErrPt|prevEdge-B|pdfEdge-B|innerPx']
+    edge_rows = result['edge']['rows']
+    for r, er in zip(result['rows'], edge_rows):
         e = r.get('emittedErrorPt', float('nan'))
         out.append(f"{r['index']}|{r['fraction']:.3f}|{r['baselinePx']:.2f}|"
                    f"{r['previewCentroid']:.3f}|{r['pdfCentroid']:.3f}|"
-                   f"{r['delta']:+.3f}|{e:+.4f}")
+                   f"{r['delta']:+.3f}|{e:+.4f}|"
+                   f"{er['prevEdgeMinusB']:+.3f}|{er['pdfEdgeMinusB']:+.3f}|"
+                   f"{er['innerPx']:.3f}")
     p, q = result['previewFit'], result['pdfFit']
     out.append('fit preview U={:.3f} R={:.3f} F={:.3f} best={}'.format(
         p['std']['U'], p['std']['R'], p['std']['F'], p['best']))
