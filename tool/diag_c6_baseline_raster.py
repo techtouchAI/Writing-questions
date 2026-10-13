@@ -164,8 +164,10 @@ def analyse(preview_dark, pdf_dark, lines, emitted_pt=None):
     baselines = [ln['baselinePx'] for ln in lines]
     prev_c, pdf_c, rows = [], [], []
     for ln in lines:
-        cp, ep = centroid_y(preview_dark, ln['baselinePx'])
-        cq, eq = centroid_y(pdf_dark, ln['baselinePx'])
+        x0 = ln.get('winX0', WIN_X0)
+        x1 = ln.get('winX1', WIN_X1)
+        cp, ep = centroid_y(preview_dark, ln['baselinePx'], x0, x1)
+        cq, eq = centroid_y(pdf_dark, ln['baselinePx'], x0, x1)
         prev_c.append(cp)
         pdf_c.append(cq)
         rows.append({
@@ -285,19 +287,21 @@ def main(argv):
         res['sizes'] = {'preview': [pw_, ph_], 'pdf': [qw_, qh_]}
         res['synthetic'] = False
         results[name] = res
-    control = pdf_control_max_diff(results) if set(results) == {'A', 'B'} \
-        else float('nan')
-    decision = decide_height(results, control) if set(results) == {'A', 'B'} \
-        else 'INCONCLUSIVE - the two groups A and B are not both present'
+    if set(results) == {'A', 'B'}:
+        control = pdf_control_max_diff(results)
+        decision = decide_height(results, control)
+    else:
+        control = float('nan')
+        decision = decide_fonts(results)
     with open(os.path.join(out_dir, 'raster_results.json'), 'w',
               encoding='utf-8') as fh:
         json.dump({'groups': results, 'pdfControlMaxDiffPx': control,
                    'decision': decision}, fh, indent=2)
 
     out = [
-        '## C6 baseline sub-pixel probe v3 (non-gating, provisional thresholds)',
-        'Real measurement. Single factor: preview TextStyle.height '
-        '(group A unset, group B = production lineHeightFactor).',
+        '## C6 baseline sub-pixel probe (non-gating, provisional thresholds)',
+        'Real measurement. Groups are the probe factor: font family (v4) or '
+        'preview TextStyle.height (v3, groups A and B).',
         f'Sizes preview={pw_}x{ph_}, pdf={qw_}x{qh_}.',
     ]
     for name in sorted(results):
@@ -319,8 +323,9 @@ def main(argv):
         ]
     out += [
         '',
-        f'PDF control (max |pdf - floor(B)| gap between groups, equal '
-        f'fractions): {control:.3f} px',
+        (f'PDF control (max |pdf - floor(B)| gap between groups, equal '
+         f'fractions): {control:.3f} px') if control == control else
+        'PDF control: not applicable (font groups)',
         f'DECISION (pre-declared rule): {decision}',
     ]
     _emit(out)
@@ -353,6 +358,33 @@ def pdf_control_max_diff(results):
     if not vals or any(math.isnan(v) for v in vals):
         return float('nan')
     return max(vals)
+
+
+def decide_fonts(results):
+    """PRE-DECLARED decision for the v4 single factor: the font family.
+
+    Thresholds unchanged. Each font has 20 rows at the same fractions.
+    NO_MISMATCH_IN_PROBE      every font's pdf-preview delta std <= FIT_STD_PX.
+    MISMATCH_FONT_INDEPENDENT every font's delta std >= SEPARATION_PX, and the
+                              spread of delta std and of delta mean across
+                              fonts is < SEPARATION_PX.
+    MISMATCH_FONT_DEPENDENT   the mismatch is present in every font, but its
+                              std or mean differs across fonts by >= SEPARATION_PX.
+    Otherwise INCONCLUSIVE. Probe only; does not establish the RMSE cause.
+    """
+    stds = [res['deltaStdPx'] for res in results.values()]
+    means = [res['deltaMeanPx'] for res in results.values()]
+    if any(math.isnan(v) for v in stds + means):
+        return 'INCONCLUSIVE - a font has a NaN delta (probe only)'
+    if all(v <= FIT_STD_PX for v in stds):
+        return 'NO_MISMATCH_IN_PROBE (all fonts constant, probe only)'
+    if all(v >= SEPARATION_PX for v in stds):
+        spread_std = max(stds) - min(stds)
+        spread_mean = max(means) - min(means)
+        if spread_std < SEPARATION_PX and spread_mean < SEPARATION_PX:
+            return 'MISMATCH_FONT_INDEPENDENT (probe only)'
+        return 'MISMATCH_FONT_DEPENDENT (probe only)'
+    return 'INCONCLUSIVE - mixed across fonts (probe only)'
 
 
 def decide_height(results, control_diff):

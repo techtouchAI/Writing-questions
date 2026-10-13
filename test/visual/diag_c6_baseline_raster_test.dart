@@ -1,17 +1,13 @@
-// [C6-RASTER] TEMPORARY baseline sub-pixel probe v3 (non-gating). Not for merge.
+// [C6-RASTER] TEMPORARY baseline sub-pixel probe v4 (non-gating). Not for merge.
 //
-// Question: do the Preview (Flutter) and the vector PDF (rendered by poppler)
-// place a text baseline the same way when the baseline falls at different
-// fractions of a device pixel?
+// Question: does the Preview (Flutter) vs vector PDF (poppler) difference in
+// the vertical ink position depend on the FONT, at fixed baseline fractions?
 //
-// v3 single factor: TextStyle.height on the PREVIEW side only.
-//   Group A: height unset (the v1/v2 setup, which did not match production).
-//   Group B: height = LayoutConfiguration().lineHeightFactor (1.45), the
-//            production default passed by CanonicalLayoutPreviewPage._paintText.
-// The PDF side is produced identically for both groups. Its equality across
-// groups is measured as a control in tool/diag_c6_baseline_raster.py.
-//
-// Every other input is held fixed (font, size, x, text, page scale).
+// v4 single factor: the font family (the four production families).
+//   Every column uses the same size (11 pt), the same production line-height
+//   factor on the preview side (LayoutConfiguration().lineHeightFactor), the
+//   same text, the same 20 baseline fractions 0.025 .. 0.975 device px, and
+//   the same integer row grid. Only the font changes, by column.
 //
 // The Preview side mirrors CanonicalLayoutPreviewPage._paintText: a canvas
 // scaled by LayoutUnits.ptToPx(1), a TextPainter with the same configuration,
@@ -24,7 +20,7 @@
 // Output (build/visual_parity/c6diag/baseline_raster/):
 //   preview_raster.png  Flutter raster of the probe page (794 x 1123 px)
 //   baseline_probe.pdf  the same lines as a vector PDF (A4)
-//   probe.json          intended baselines per line, group and height factor
+//   probe.json          intended baselines, font and column per line
 // The measurement and the rasterization by poppler happen in that tool.
 import 'dart:convert';
 import 'dart:io';
@@ -41,47 +37,57 @@ import 'package:writing_questions_app/pdf_engine/canonical_text.dart';
 import 'package:writing_questions_app/pdf_engine/pdf_text_metrics.dart';
 
 const String _outDir = 'build/visual_parity/c6diag/baseline_raster';
-const String _fontAsset = 'assets/fonts/Tajawal-Regular.ttf';
-const String _family = 'Tajawal';
 const String _probeText = 'HAMDxgyp';
 const double _fontSizePt = 11;
-const double _xPt = 56.7;
 const int _pageWidthPx = 794;
 const int _pageHeightPx = 1123;
 
-/// 40 rows in two groups of 20. Rows are 27 px apart, so each row's
-/// measurement window (16 px up, 10 px down) does not reach its neighbours.
-/// The fraction sweeps 0.025 .. 0.975 in both groups (same fractions, same
-/// PDF), and the integer part differs between the groups.
-const int _rowsPerGroup = 20;
-const int _lineCount = 2 * _rowsPerGroup;
-const double _rowPitchPx = 27;
-const double _firstBaselinePx = 40;
+/// One column per production font family (names as in pubspec.yaml).
+class _ProbeFont {
+  const _ProbeFont(this.family, this.asset);
+  final String family;
+  final String asset;
+}
 
-double _fractionOf(int index) => 0.025 + 0.05 * (index % _rowsPerGroup);
+const List<_ProbeFont> _fonts = <_ProbeFont>[
+  _ProbeFont('Tajawal', 'assets/fonts/Tajawal-Regular.ttf'),
+  _ProbeFont('Amiri', 'assets/fonts/Amiri-Regular.ttf'),
+  _ProbeFont('NotoNaskhArabic', 'assets/fonts/NotoNaskhArabic-Regular.ttf'),
+  _ProbeFont('Rakkas', 'assets/fonts/Rakkas-Regular.ttf'),
+];
 
-String _groupOf(int index) => index < _rowsPerGroup ? 'A' : 'B';
+/// 20 rows per font. Rows are 50 px apart; the same 20 fractions and the same
+/// integer row grid are used in every column.
+const int _rowsPerFont = 20;
+const double _rowPitchPx = 50;
+const double _firstBaselinePx = 60;
+const double _columnPitchPx = 195;
+const double _firstColumnPx = 20;
 
-/// Group A: unset (v1/v2). Group B: the production default line-height factor.
-double? _previewHeightOf(String group) =>
-    group == 'B' ? const LayoutConfiguration().lineHeightFactor : null;
+double _fractionOf(int row) => 0.025 + 0.05 * row;
 
-double _baselinePxOf(int index) =>
-    _firstBaselinePx + index * _rowPitchPx + _fractionOf(index);
+double _baselinePxOf(int row) =>
+    _firstBaselinePx + row * _rowPitchPx + _fractionOf(row);
+
+double _columnXPx(int column) => _firstColumnPx + column * _columnPitchPx;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    '[C6-RASTER] baseline sub-pixel probe v3 (non-gating)',
+    '[C6-RASTER] baseline sub-pixel probe v4 (non-gating)',
     (tester) async {
       await tester.runAsync(() async {
-        final loader = FontLoader(_family)
-          ..addFont(rootBundle.load(_fontAsset));
-        await loader.load();
-        final fontBytes = await rootBundle.load(_fontAsset);
+        final fontBytes = <String, ByteData>{};
+        for (final font in _fonts) {
+          final bytes = await rootBundle.load(font.asset);
+          final loader = FontLoader(font.family)..addFont(rootBundle.load(font.asset));
+          await loader.load();
+          fontBytes[font.family] = bytes;
+        }
 
         Directory(_outDir).createSync(recursive: true);
+        final height = const LayoutConfiguration().lineHeightFactor;
 
         // ---- Preview side (Flutter raster) ----
         final recorder = ui.PictureRecorder();
@@ -96,40 +102,46 @@ void main() {
         canvas.scale(LayoutUnits.ptToPx(1));
 
         final lines = <Map<String, Object?>>[];
-        for (var i = 0; i < _lineCount; i++) {
-          final group = _groupOf(i);
-          final height = _previewHeightOf(group);
-          final baselinePx = _baselinePxOf(i);
-          final baselinePt = LayoutUnits.pxToPt(baselinePx);
-          final painter = TextPainter(
-            text: TextSpan(
-              text: _probeText,
-              style: TextStyle(
-                fontFamily: _family,
-                fontSize: _fontSizePt,
-                fontWeight: FontWeight.w400,
-                color: const Color(0xFF000000),
-                height: height,
+        for (var c = 0; c < _fonts.length; c++) {
+          final font = _fonts[c];
+          final xPx = _columnXPx(c);
+          final xPt = LayoutUnits.pxToPt(xPx);
+          for (var r = 0; r < _rowsPerFont; r++) {
+            final baselinePx = _baselinePxOf(r);
+            final baselinePt = LayoutUnits.pxToPt(baselinePx);
+            final painter = TextPainter(
+              text: TextSpan(
+                text: _probeText,
+                style: TextStyle(
+                  fontFamily: font.family,
+                  fontSize: _fontSizePt,
+                  fontWeight: FontWeight.w400,
+                  color: const Color(0xFF000000),
+                  height: height,
+                ),
               ),
-            ),
-            textDirection: TextDirection.ltr,
-            textScaler: TextScaler.noScaling,
-            maxLines: 1,
-          )..layout(maxWidth: double.infinity);
-          final innerBaselinePt = painter.computeLineMetrics().first.baseline;
-          final paintTopPt = baselinePt - innerBaselinePt;
-          painter.paint(canvas, Offset(_xPt, paintTopPt));
-          painter.dispose();
-          lines.add(<String, Object?>{
-            'index': i,
-            'group': group,
-            'heightFactor': height,
-            'fraction': _fractionOf(i),
-            'baselinePx': baselinePx,
-            'baselinePt': baselinePt,
-            'previewInnerBaselinePt': innerBaselinePt,
-            'previewPaintTopPt': paintTopPt,
-          });
+              textDirection: TextDirection.ltr,
+              textScaler: TextScaler.noScaling,
+              maxLines: 1,
+            )..layout(maxWidth: double.infinity);
+            final innerBaselinePt = painter.computeLineMetrics().first.baseline;
+            final paintTopPt = baselinePt - innerBaselinePt;
+            painter.paint(canvas, Offset(xPt, paintTopPt));
+            painter.dispose();
+            lines.add(<String, Object?>{
+              'index': lines.length,
+              'group': font.family,
+              'column': c,
+              'xPx': xPx,
+              'heightFactor': height,
+              'fraction': _fractionOf(r),
+              'baselinePx': baselinePx,
+              'baselinePt': baselinePt,
+              'xPt': xPt,
+              'previewInnerBaselinePt': innerBaselinePt,
+              'previewPaintTopPt': paintTopPt,
+            });
+          }
         }
 
         final picture = recorder.endRecording();
@@ -142,16 +154,21 @@ void main() {
             .writeAsBytesSync(png!.buffer.asUint8List());
 
         // ---- PDF side (production chain: PdfTextMetrics + CanonicalText) ----
-        final pdfFont = pw.Font.ttf(fontBytes);
+        final pdfFonts = <String, pw.Font>{
+          for (final font in _fonts)
+            font.family: pw.Font.ttf(fontBytes[font.family]!),
+        };
         final doc = pw.Document();
         doc.addPage(
           pw.Page(
             pageFormat: PdfPageFormat.a4,
             margin: pw.EdgeInsets.zero,
             build: (context) {
-              final pdfFace = pdfFont.getFont(context);
               final children = <pw.Widget>[];
               for (final line in lines) {
+                final font = _fonts[line['column']! as int];
+                final pdfFont = pdfFonts[font.family]!;
+                final pdfFace = pdfFont.getFont(context);
                 final baselinePt = line['baselinePt']! as double;
                 final offsetPt = PdfTextMetrics.baselineOffsetFromTop(
                   font: pdfFace,
@@ -166,7 +183,7 @@ void main() {
                 line['pdfWidgetTopPt'] = top;
                 children.add(
                   pw.Positioned(
-                    left: _xPt,
+                    left: line['xPt']! as double,
                     top: top,
                     child: CanonicalText(
                       text: _probeText,
@@ -192,22 +209,20 @@ void main() {
         File('$_outDir/baseline_probe.pdf').writeAsBytesSync(pdfBytes);
 
         final out = <String, Object?>{
-          'schema': 'c6-baseline-raster-v3',
+          'schema': 'c6-baseline-raster-v4',
           'synthetic': false,
-          'family': _family,
-          'fontAsset': _fontAsset,
           'text': _probeText,
           'fontSizePt': _fontSizePt,
-          'xPt': _xPt,
           'pageWidthPx': _pageWidthPx,
           'pageHeightPx': _pageHeightPx,
           'scalePxPerPt': LayoutUnits.ptToPx(1),
-          'productionLineHeightFactor': const LayoutConfiguration().lineHeightFactor,
+          'productionLineHeightFactor': height,
+          'fonts': [for (final f in _fonts) f.family],
           'lines': lines,
         };
         File('$_outDir/probe.json')
             .writeAsStringSync(const JsonEncoder.withIndent('  ').convert(out));
-        expect(lines, hasLength(_lineCount));
+        expect(lines, hasLength(_fonts.length * _rowsPerFont));
       });
     },
     timeout: const Timeout(Duration(minutes: 5)),

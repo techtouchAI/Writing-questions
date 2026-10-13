@@ -267,5 +267,72 @@ class GroupingAndDecisionTests(unittest.TestCase):
         self.assertTrue(d.decide_height(res, float('nan')).startswith(
             'INCONCLUSIVE'))
 
+
+class FontDecisionTests(unittest.TestCase):
+    def _res(self, std, mean=0.0):
+        # SYNTHETIC: minimal result dict for decide_fonts.
+        return {'deltaStdPx': std, 'deltaMeanPx': mean, 'rows': []}
+
+    def test_all_constant_is_no_mismatch(self):
+        # SYNTHETIC
+        res = {f: self._res(0.01) for f in ('T', 'A', 'N', 'R')}
+        self.assertTrue(d.decide_fonts(res).startswith('NO_MISMATCH_IN_PROBE'))
+
+    def test_same_mismatch_in_all_fonts_is_independent(self):
+        # SYNTHETIC: std ~0.45 everywhere, means nearly equal
+        res = {f: self._res(0.45, -0.2) for f in ('T', 'A', 'N', 'R')}
+        self.assertTrue(d.decide_fonts(res).startswith(
+            'MISMATCH_FONT_INDEPENDENT'))
+
+    def test_std_differing_across_fonts_is_dependent(self):
+        # SYNTHETIC: all fonts mismatched, but std spread 0.3 px
+        res = {'T': self._res(0.45), 'A': self._res(0.15),
+               'N': self._res(0.40), 'R': self._res(0.45)}
+        self.assertTrue(d.decide_fonts(res).startswith(
+            'MISMATCH_FONT_DEPENDENT'))
+
+    def test_mean_offset_differing_across_fonts_is_dependent(self):
+        # SYNTHETIC: same std, but a 0.5 px constant offset in one font
+        res = {'T': self._res(0.45, -0.2), 'A': self._res(0.45, 0.3),
+               'N': self._res(0.45, -0.2), 'R': self._res(0.45, -0.2)}
+        self.assertTrue(d.decide_fonts(res).startswith(
+            'MISMATCH_FONT_DEPENDENT'))
+
+    def test_mixed_is_inconclusive(self):
+        # SYNTHETIC: one font constant, the others mismatched
+        res = {'T': self._res(0.01), 'A': self._res(0.45),
+               'N': self._res(0.45), 'R': self._res(0.45)}
+        self.assertTrue(d.decide_fonts(res).startswith('INCONCLUSIVE'))
+
+    def test_nan_is_not_reported_as_constant(self):
+        # SYNTHETIC: a NaN delta must never become NO_MISMATCH
+        res = {'T': self._res(float('nan')), 'A': self._res(0.01)}
+        self.assertTrue(d.decide_fonts(res).startswith('INCONCLUSIVE'))
+
+
+class PerLineWindowTests(unittest.TestCase):
+    def test_per_line_window_is_used(self):
+        # SYNTHETIC: ink only at columns 300..340. The default window (60..260)
+        # sees nothing; a per-line window that covers it recovers the centroid.
+        lines = []
+        dark = [[0.0] * W for _ in range(H)]
+        for k, b in enumerate([200.0, 260.3]):
+            centre = math.floor(b) + 0.37
+            for r in range(int(centre) - 12, int(centre) + 12):
+                for x in range(300, 340):
+                    dark[r][x] = max(dark[r][x], math.exp(
+                        -((r + 0.5 - centre) ** 2) / (2 * SIGMA * SIGMA)))
+            lines.append({'index': k, 'fraction': 0.3, 'baselinePx': b,
+                          'winX0': 290, 'winX1': 350})
+        res = d.analyse(dark, dark, lines)
+        for row in res['rows']:
+            self.assertFalse(math.isnan(row['previewCentroid']))
+        default = [dict(ln) for ln in lines]
+        for ln in default:
+            ln.pop('winX0'); ln.pop('winX1')
+        res_default = d.analyse(dark, dark, default)
+        self.assertTrue(all(math.isnan(r['previewCentroid'])
+                            for r in res_default['rows']))
+
 if __name__ == '__main__':
     unittest.main()
