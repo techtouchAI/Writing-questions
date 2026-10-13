@@ -377,5 +377,22 @@ class CrashNoticeTests(unittest.TestCase):
         self.assertIn('analyser crashed', buf.getvalue())
         self.assertIn('synthetic failure', buf.getvalue())
 
+
+class WindowTypeTests(unittest.TestCase):
+    def test_float_window_bounds_are_accepted(self):
+        # SYNTHETIC: Dart may write 16.0 / 166.0. The analyser must not crash
+        # on float slice bounds (CI run 38467535469 failed with TypeError).
+        dark = [[0.0] * W for _ in range(H)]
+        b = 200.0
+        centre = math.floor(b) + 0.37
+        for r in range(int(centre) - 12, int(centre) + 12):
+            for x in range(20, 80):
+                dark[r][x] = math.exp(-((r + 0.5 - centre) ** 2) / (2 * SIGMA * SIGMA))
+        lines = [{'index': 0, 'fraction': 0.37, 'baselinePx': b,
+                  'winX0': 16.0, 'winX1': 166.0}]
+        res = d.analyse(dark, dark, lines)
+        self.assertFalse(math.isnan(res['rows'][0]['previewCentroid']))
+        self.assertAlmostEqual(res['rows'][0]['previewCentroid'], centre, places=1)
+
 if __name__ == '__main__':
     unittest.main()

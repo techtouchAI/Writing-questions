@@ -164,8 +164,9 @@ def analyse(preview_dark, pdf_dark, lines, emitted_pt=None):
     baselines = [ln['baselinePx'] for ln in lines]
     prev_c, pdf_c, rows = [], [], []
     for ln in lines:
-        x0 = ln.get('winX0', WIN_X0)
-        x1 = ln.get('winX1', WIN_X1)
+        # Dart writes these as doubles (for example 16.0); slices need ints.
+        x0 = int(round(ln.get('winX0', WIN_X0)))
+        x1 = int(round(ln.get('winX1', WIN_X1)))
         cp, ep = centroid_y(preview_dark, ln['baselinePx'], x0, x1)
         cq, eq = centroid_y(pdf_dark, ln['baselinePx'], x0, x1)
         prev_c.append(cp)
