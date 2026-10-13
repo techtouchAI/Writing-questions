@@ -283,7 +283,7 @@ def main(argv):
 
     out = [
         '## C6 baseline sub-pixel probe (non-gating, provisional thresholds)',
-        f'Real measurement: poppler vs Flutter raster of the same probe page '
+        f'Real measurement (v2 fractions 0.025..0.975): poppler vs Flutter raster of the same probe page '
         f'(sizes preview={pw_}x{ph_}, pdf={qw_}x{qh_}).',
         '',
         '| line | frac px | baseline px | preview centroid | pdf centroid | delta |',
@@ -291,7 +291,7 @@ def main(argv):
     ]
     for r in result['rows']:
         out.append(
-            f"| {r['index']} | {r['fraction']:.1f} | {r['baselinePx']:.2f} | "
+            f"| {r['index']} | {r['fraction']:.3f} | {r['baselinePx']:.2f} | "
             f"{r['previewCentroid']:.3f} | {r['pdfCentroid']:.3f} | "
             f"{r['delta']:+.3f} |")
     out += [
@@ -323,7 +323,7 @@ def _data_lines(result, pw_, ph_, qw_, qh_):
            'line|frac|baselinePx|prevCentroid|pdfCentroid|delta|emittedErrPt']
     for r in result['rows']:
         e = r.get('emittedErrorPt', float('nan'))
-        out.append(f"{r['index']}|{r['fraction']:.1f}|{r['baselinePx']:.2f}|"
+        out.append(f"{r['index']}|{r['fraction']:.3f}|{r['baselinePx']:.2f}|"
                    f"{r['previewCentroid']:.3f}|{r['pdfCentroid']:.3f}|"
                    f"{r['delta']:+.3f}|{e:+.4f}")
     p, q = result['previewFit'], result['pdfFit']

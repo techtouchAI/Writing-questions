@@ -43,13 +43,15 @@ const double _xPt = 56.7;
 const int _pageWidthPx = 794;
 const int _pageHeightPx = 1123;
 
-/// Lines: 20 rows. The fractional part cycles through 0.0 .. 0.9 (device px),
-/// and each row starts 50 px lower, so the base integer varies too.
+/// Lines: 20 rows. The fractional part sweeps 0.025 .. 0.975 (device px), and
+/// each row starts 50 px lower, so the base integer varies too.
 const int _lineCount = 20;
 const double _rowPitchPx = 50;
 const double _firstBaselinePx = 60;
 
-double _fractionOf(int index) => (index % 10) / 10.0;
+// v2 (pre-declared after v1 CI results): 20 distinct fractions that avoid
+// exact whole pixels (v1 line 10 sat on 560.00 px exactly).
+double _fractionOf(int index) => 0.025 + 0.05 * index;
 
 double _baselinePxOf(int index) =>
     _firstBaselinePx + index * _rowPitchPx + _fractionOf(index);
