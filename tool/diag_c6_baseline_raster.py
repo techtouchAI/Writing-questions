@@ -116,8 +116,51 @@ def verdict(preview_fit, pdf_fit, n_lines):
         f'{p_on_q:.3f}px, pdf {q_best} on preview {q_on_p:.3f}px')
 
 
-def analyse(preview_dark, pdf_dark, lines):
-    """Measure every probe line and compare the two rasterizers."""
+EMITTED_TOL_PT = 0.01  # PROVISIONAL: emitted baseline error counted as zero
+
+
+def match_origins(intended_pt, spans, tol_pt=2.0):
+    """Signed error (pt) of the emitted baseline versus each intended baseline.
+
+    spans: [{'y': baseline_y_pt_topdown, ...}] read from the PDF content. Each
+    intended baseline takes the nearest span within tol_pt. Missing = NaN.
+    """
+    out = []
+    for b in intended_pt:
+        best = None
+        for sp in spans:
+            dist = abs(sp['y'] - b)
+            if dist <= tol_pt and (best is None or dist < abs(best - b)):
+                best = sp['y']
+        out.append(float('nan') if best is None else best - b)
+    return out
+
+
+def pdf_origin_spans(pdf_path):
+    """Text spans of page 1 with their baseline origin (pt, top-left origin).
+
+    Read from the PDF content (no rasterization), so this is the exact
+    position the PDF asks the viewer to draw.
+    """
+    import pymupdf
+    doc = pymupdf.open(pdf_path)
+    spans = []
+    for block in doc[0].get_text('dict')['blocks']:
+        for line in block.get('lines', []):
+            for span in line.get('spans', []):
+                if span.get('text', '').strip():
+                    spans.append({'text': span['text'],
+                                  'x': span['origin'][0],
+                                  'y': span['origin'][1],
+                                  'size': span['size']})
+    return spans
+
+
+def analyse(preview_dark, pdf_dark, lines, emitted_pt=None):
+    """Measure every probe line and compare the two rasterizers.
+
+    emitted_pt: optional signed errors (pt) of the PDF's emitted baselines.
+    """
     baselines = [ln['baselinePx'] for ln in lines]
     prev_c, pdf_c, rows = [], [], []
     for ln in lines:
@@ -148,8 +191,16 @@ def analyse(preview_dark, pdf_dark, lines):
         (r['previewEdgeFraction'] <= EDGE_MASS_MAX and
          r['pdfEdgeFraction'] <= EDGE_MASS_MAX)
         for r in rows if not math.isnan(r['previewEdgeFraction']))
+    if emitted_pt is not None:
+        for r, e in zip(rows, emitted_pt):
+            r['emittedErrorPt'] = e
+    emitted_ok = None
+    if emitted_pt:
+        finite = [abs(e) for e in emitted_pt if not math.isnan(e)]
+        emitted_ok = bool(finite) and max(finite) <= EMITTED_TOL_PT
     return {
         'rows': rows,
+        'emittedOk': emitted_ok,
         'previewFit': preview_fit,
         'pdfFit': pdf_fit,
         'deltaMeanPx': sum(deltas) / len(deltas) if deltas else float('nan'),
@@ -214,7 +265,16 @@ def main(argv):
     except Exception as exc:  # noqa: BLE001 - diagnostics must not fail CI
         print(f'::notice title=C6-RASTER::raster step failed: {exc!r} (non-gating)')
         return 0
-    result = analyse(_to_list(prev_dark), _to_list(pdf_dark), lines)
+    # Emitted baseline error: read from the PDF content, no rasterization.
+    try:
+        spans = pdf_origin_spans(os.path.join(out_dir, 'baseline_probe.pdf'))
+        emitted_pt = match_origins([ln['baselinePt'] for ln in lines], spans)
+    except Exception as exc:  # noqa: BLE001 - diagnostics must not fail CI
+        spans, emitted_pt = [], None
+        print(f'::notice title=C6-RASTER::PDF span read failed: {exc!r}')
+    result = analyse(_to_list(prev_dark), _to_list(pdf_dark), lines,
+                     emitted_pt=emitted_pt)
+    result['pdfSpanCount'] = len(spans)
     result['sizes'] = {'preview': [pw_, ph_], 'pdf': [qw_, qh_]}
     result['synthetic'] = False
     with open(os.path.join(out_dir, 'raster_results.json'), 'w',
@@ -253,7 +313,45 @@ def main(argv):
     _emit(out)
     print(f"::notice title=C6-RASTER verdict::{result['verdict']} - "
           f"{result['verdictDetail']}")
+    _annotate('C6-RASTER data', _data_lines(result, pw_, ph_, qw_, qh_))
     return 0
+
+
+def _data_lines(result, pw_, ph_, qw_, qh_):
+    """Compact per-line data for annotations (REAL measurements)."""
+    out = [f'sizes preview={pw_}x{ph_} pdf={qw_}x{qh_} spans={result["pdfSpanCount"]}',
+           'line|frac|baselinePx|prevCentroid|pdfCentroid|delta|emittedErrPt']
+    for r in result['rows']:
+        e = r.get('emittedErrorPt', float('nan'))
+        out.append(f"{r['index']}|{r['fraction']:.1f}|{r['baselinePx']:.2f}|"
+                   f"{r['previewCentroid']:.3f}|{r['pdfCentroid']:.3f}|"
+                   f"{r['delta']:+.3f}|{e:+.4f}")
+    p, q = result['previewFit'], result['pdfFit']
+    out.append('fit preview U={:.3f} R={:.3f} F={:.3f} best={}'.format(
+        p['std']['U'], p['std']['R'], p['std']['F'], p['best']))
+    out.append('fit pdf U={:.3f} R={:.3f} F={:.3f} best={}'.format(
+        q['std']['U'], q['std']['R'], q['std']['F'], q['best']))
+    out.append(f"delta pdf-preview mean={result['deltaMeanPx']:+.3f} "
+               f"std={result['deltaStdPx']:.3f}")
+    out.append(f"emittedOk(tol {EMITTED_TOL_PT}pt)={result['emittedOk']}")
+    return out
+
+
+def _annotate(title, lines, limit=2800):
+    """::notice annotations split between whole lines as [i/n] (see ink tool)."""
+    parts, cur, size = [], [], 0
+    for line in lines:
+        if cur and size + len(line) + 1 > limit:
+            parts.append(cur)
+            cur, size = [], 0
+        cur.append(line)
+        size += len(line) + 1
+    if cur:
+        parts.append(cur)
+    for i, part in enumerate(parts, 1):
+        head = f'[{i}/{len(parts)}] ' if len(parts) > 1 else ''
+        text = (head + '\n'.join(part)).replace('%', '%25').replace('\r', '%0D')
+        print(f"::notice title={title}::{text.replace(chr(10), '%0A')}")
 
 
 if __name__ == '__main__':

@@ -139,6 +139,38 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(label, 'NO_RULE_FITS')
 
 
+class EmittedBaselineTests(unittest.TestCase):
+    def test_exact_match_has_zero_error(self):
+        # SYNTHETIC: spans exactly at the intended baselines.
+        intended = [100.0, 150.25, 200.5]
+        spans = [{'y': y} for y in intended]
+        errs = d.match_origins(intended, spans)
+        self.assertEqual(errs, [0.0, 0.0, 0.0])
+
+    def test_offset_is_reported_with_sign(self):
+        # SYNTHETIC: a -0.2 pt error on one line only.
+        intended = [100.0, 150.0]
+        spans = [{'y': 99.8}, {'y': 150.0}]
+        errs = d.match_origins(intended, spans)
+        self.assertAlmostEqual(errs[0], -0.2, places=9)
+        self.assertEqual(errs[1], 0.0)
+
+    def test_missing_span_is_nan_not_zero(self):
+        # SYNTHETIC: no span near the intended baseline must not look like 0.
+        errs = d.match_origins([100.0], [{'y': 300.0}])
+        self.assertTrue(math.isnan(errs[0]))
+
+    def test_emitted_ok_flag(self):
+        # SYNTHETIC: analyse() reports emittedOk from the tolerance.
+        lines = _lines()
+        ok = d.analyse(_render('R', lines), _render('R', lines), lines,
+                       emitted_pt=[0.0] * len(lines))
+        bad = d.analyse(_render('R', lines), _render('R', lines), lines,
+                        emitted_pt=[0.05] * len(lines))
+        self.assertTrue(ok['emittedOk'])
+        self.assertFalse(bad['emittedOk'])
+
+
 class MainContractTests(unittest.TestCase):
     def test_missing_probe_is_non_fatal(self):
         # SYNTHETIC: the step must not fail the job when the probe is absent.
