@@ -614,6 +614,28 @@ jobs:
           "$RUNNER_TEMP/c6pos-venv/bin/pip" install -q pymupdf numpy
           "$RUNNER_TEMP/c6pos-venv/bin/python" tool/diag_c6_text_positions.py build/visual_parity
 
+      # [C6-RASTER] تشخيص غير ملزم: هل تُقرّب المعاينة (Flutter) وPoppler موضع
+      # خط الأساس بقاعدة واحدة عند كسور مختلفة من البكسل؟ لا يغيّر البوابة
+      # الرسمية أو عتبة RMSE أو الصور المرجعية أو نتيجة الوظيفة.
+      - name: Record baseline sub-pixel probe (non-gating)
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p build/visual_parity/c6diag/baseline_raster
+          set -o pipefail
+          flutter test test/visual/diag_c6_baseline_raster_test.dart 2>&1 \
+            | tee build/visual_parity/c6diag/baseline_raster/flutter.log
+
+      - name: Analyse baseline sub-pixel probe (non-gating)
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/c6raster-venv"
+          "$RUNNER_TEMP/c6raster-venv/bin/pip" install -q pymupdf numpy
+          "$RUNNER_TEMP/c6raster-venv/bin/python" tool/diag_c6_baseline_raster.py build/visual_parity/c6diag/baseline_raster
+
       - name: Build fixture digest
         if: always()
         shell: bash
