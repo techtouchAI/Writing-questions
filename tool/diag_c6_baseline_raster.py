@@ -272,49 +272,119 @@ def main(argv):
     except Exception as exc:  # noqa: BLE001 - diagnostics must not fail CI
         spans, emitted_pt = [], None
         print(f'::notice title=C6-RASTER::PDF span read failed: {exc!r}')
-    result = analyse(_to_list(prev_dark), _to_list(pdf_dark), lines,
-                     emitted_pt=emitted_pt)
-    result['pdfSpanCount'] = len(spans)
-    result['sizes'] = {'preview': [pw_, ph_], 'pdf': [qw_, qh_]}
-    result['synthetic'] = False
+    prev_list, pdf_list = _to_list(prev_dark), _to_list(pdf_dark)
+    emitted_all = emitted_pt
+    results = {}
+    for name, idxs in split_groups(lines).items():
+        sub = [lines[i] for i in idxs]
+        sub_emitted = [emitted_all[i] for i in idxs] if emitted_all else None
+        res = analyse(prev_list, pdf_list, sub, emitted_pt=sub_emitted)
+        res['group'] = name
+        res['heightFactor'] = sub[0].get('heightFactor')
+        res['pdfSpanCount'] = len(spans)
+        res['sizes'] = {'preview': [pw_, ph_], 'pdf': [qw_, qh_]}
+        res['synthetic'] = False
+        results[name] = res
+    control = pdf_control_max_diff(results) if set(results) == {'A', 'B'} \
+        else float('nan')
+    decision = decide_height(results, control) if set(results) == {'A', 'B'} \
+        else 'INCONCLUSIVE - the two groups A and B are not both present'
     with open(os.path.join(out_dir, 'raster_results.json'), 'w',
               encoding='utf-8') as fh:
-        json.dump(result, fh, indent=2)
+        json.dump({'groups': results, 'pdfControlMaxDiffPx': control,
+                   'decision': decision}, fh, indent=2)
 
     out = [
-        '## C6 baseline sub-pixel probe (non-gating, provisional thresholds)',
-        f'Real measurement (v2 fractions 0.025..0.975): poppler vs Flutter raster of the same probe page '
-        f'(sizes preview={pw_}x{ph_}, pdf={qw_}x{qh_}).',
-        '',
-        '| line | frac px | baseline px | preview centroid | pdf centroid | delta |',
-        '|---|---|---|---|---|---|',
+        '## C6 baseline sub-pixel probe v3 (non-gating, provisional thresholds)',
+        'Real measurement. Single factor: preview TextStyle.height '
+        '(group A unset, group B = production lineHeightFactor).',
+        f'Sizes preview={pw_}x{ph_}, pdf={qw_}x{qh_}.',
     ]
-    for r in result['rows']:
-        out.append(
-            f"| {r['index']} | {r['fraction']:.3f} | {r['baselinePx']:.2f} | "
-            f"{r['previewCentroid']:.3f} | {r['pdfCentroid']:.3f} | "
-            f"{r['delta']:+.3f} |")
+    for name in sorted(results):
+        res = results[name]
+        out += [
+            '',
+            f"### Group {name} (height={res['heightFactor']})",
+            f"Preview rule: {res['previewFit']['best']} "
+            f"(U={res['previewFit']['std']['U']:.3f} "
+            f"R={res['previewFit']['std']['R']:.3f} "
+            f"F={res['previewFit']['std']['F']:.3f})",
+            f"PDF rule: {res['pdfFit']['best']} "
+            f"(U={res['pdfFit']['std']['U']:.3f} "
+            f"R={res['pdfFit']['std']['R']:.3f} "
+            f"F={res['pdfFit']['std']['F']:.3f})",
+            f"Delta pdf-preview: mean {res['deltaMeanPx']:+.3f} px, "
+            f"std {res['deltaStdPx']:.3f} px",
+            f"Verdict: {res['verdict']} - {res['verdictDetail']}",
+        ]
     out += [
         '',
-        f"Preview rule: {result['previewFit']['best']} "
-        f"(std {result['previewFit']['std'][result['previewFit']['best']]:.3f} px); "
-        f"U={result['previewFit']['std']['U']:.3f} R={result['previewFit']['std']['R']:.3f} "
-        f"F={result['previewFit']['std']['F']:.3f}",
-        f"PDF rule: {result['pdfFit']['best']} "
-        f"(std {result['pdfFit']['std'][result['pdfFit']['best']]:.3f} px); "
-        f"U={result['pdfFit']['std']['U']:.3f} R={result['pdfFit']['std']['R']:.3f} "
-        f"F={result['pdfFit']['std']['F']:.3f}",
-        f"Delta pdf-preview: mean {result['deltaMeanPx']:+.3f} px, "
-        f"std {result['deltaStdPx']:.3f} px",
-        f"Window edge check ok: {result['windowEdgeOk']}",
-        f"VERDICT (baseline rounding differs between rasterizers): "
-        f"{result['verdict']} - {result['verdictDetail']}",
+        f'PDF control (max |pdf - floor(B)| gap between groups, equal '
+        f'fractions): {control:.3f} px',
+        f'DECISION (pre-declared rule): {decision}',
     ]
     _emit(out)
-    print(f"::notice title=C6-RASTER verdict::{result['verdict']} - "
-          f"{result['verdictDetail']}")
-    _annotate('C6-RASTER data', _data_lines(result, pw_, ph_, qw_, qh_))
+    print(f"::notice title=C6-RASTER verdict::{decision}")
+    for name in sorted(results):
+        _annotate(f'C6-RASTER data {name}',
+                  _data_lines(results[name], pw_, ph_, qw_, qh_))
     return 0
+
+
+def split_groups(lines):
+    """Map group name -> list of indices into lines (order preserved)."""
+    groups = {}
+    for i, ln in enumerate(lines):
+        groups.setdefault(ln.get('group', 'A'), []).append(i)
+    return groups
+
+
+def pdf_control_max_diff(results):
+    """Largest gap between groups in (pdf centroid - floor(B)) at equal
+    fractions. The PDF side is produced identically in both groups, so this
+    should be ~0. NaN if any row lacks ink or no fraction is shared."""
+    def rel(res):
+        return {round(r['fraction'], 3):
+                r['pdfCentroid'] - math.floor(r['baselinePx'])
+                for r in res['rows']}
+    ra, rb = rel(results['A']), rel(results['B'])
+    common = sorted(set(ra) & set(rb))
+    vals = [abs(ra[k] - rb[k]) for k in common]
+    if not vals or any(math.isnan(v) for v in vals):
+        return float('nan')
+    return max(vals)
+
+
+def decide_height(results, control_diff):
+    """PRE-DECLARED decision for the v3 single factor (thresholds unchanged).
+
+    HEIGHT_EXPLAINS_PROBE_MISMATCH: the PDF control holds, group B's
+        pdf-preview delta is constant (std <= FIT_STD_PX) and group A's
+        delta depends on the fraction (std >= SEPARATION_PX).
+    HEIGHT_DOES_NOT_EXPLAIN: the control holds and both groups still
+        depend on the fraction (std >= SEPARATION_PX).
+    NO_MISMATCH_IN_PROBE: the control holds and both groups are constant
+        (std <= FIT_STD_PX): there is no fraction-dependent mismatch to explain.
+    INVALID_CONTROL: the PDF side differed between groups, so the single
+        factor is not isolated.
+    Anything else is INCONCLUSIVE. This is a probe result only. It does not
+    show that the official RMSE gate is explained.
+    """
+    a = results['A']['deltaStdPx']
+    b = results['B']['deltaStdPx']
+    if math.isnan(control_diff):
+        return 'INCONCLUSIVE - PDF control not measurable (missing ink)'
+    if control_diff > FIT_STD_PX:
+        return 'INVALID_CONTROL - PDF side differs between groups'
+    if math.isnan(a) or math.isnan(b):
+        return 'INCONCLUSIVE - a delta is NaN'
+    if b <= FIT_STD_PX and a >= SEPARATION_PX:
+        return 'HEIGHT_EXPLAINS_PROBE_MISMATCH (probe only, not RMSE)'
+    if a >= SEPARATION_PX and b >= SEPARATION_PX:
+        return 'HEIGHT_DOES_NOT_EXPLAIN (probe only)'
+    if a <= FIT_STD_PX and b <= FIT_STD_PX:
+        return 'NO_MISMATCH_IN_PROBE (both groups constant, probe only)'
+    return 'INCONCLUSIVE - mixed result (probe only)'
 
 
 def _data_lines(result, pw_, ph_, qw_, qh_):

@@ -178,5 +178,94 @@ class MainContractTests(unittest.TestCase):
             self.assertEqual(d.main(['x', tmp]), 0)
 
 
+
+def _group_result(delta_std, rows=None):
+    # SYNTHETIC: minimal result dict for the decision and control functions.
+    return {'deltaStdPx': delta_std, 'rows': rows or []}
+
+
+def _rows(pdf_offsets, fractions=None):
+    # SYNTHETIC: rows with baselines on a 27 px grid and chosen pdf centroids.
+    out = []
+    for k, off in enumerate(pdf_offsets):
+        frac = round(0.025 + 0.05 * k, 3) if fractions is None else fractions[k]
+        base = 40 + 27 * k + frac
+        out.append({'fraction': frac, 'baselinePx': base,
+                    'pdfCentroid': math.floor(base) + off})
+    return out
+
+
+class GroupingAndDecisionTests(unittest.TestCase):
+    def test_split_groups_keeps_order_and_defaults_to_a(self):
+        # SYNTHETIC
+        lines = [{'group': 'B'}, {}, {'group': 'A'}, {'group': 'B'}]
+        self.assertEqual(d.split_groups(lines),
+                         {'B': [0, 3], 'A': [1, 2]})
+
+    def test_control_is_zero_when_pdf_sides_are_identical(self):
+        # SYNTHETIC: identical PDF centroid relative to floor(B) in both groups
+        rows = _rows([-3.7] * 20)
+        rows_b = _rows([-3.7] * 20)
+        for r in rows_b:
+            r['baselinePx'] += 540
+            r['pdfCentroid'] += 540
+        res = {'A': {'rows': rows}, 'B': {'rows': rows_b}}
+        self.assertAlmostEqual(d.pdf_control_max_diff(res), 0.0, places=9)
+
+    def test_control_detects_a_pdf_side_difference(self):
+        # SYNTHETIC: group B's PDF centroid is 0.2 px lower at one fraction
+        rows = _rows([-3.7] * 20)
+        rows_b = _rows([-3.7] * 20)
+        for r in rows_b:
+            r['baselinePx'] += 540
+            r['pdfCentroid'] += 540
+        rows_b[5]['pdfCentroid'] += 0.2
+        res = {'A': {'rows': rows}, 'B': {'rows': rows_b}}
+        self.assertAlmostEqual(d.pdf_control_max_diff(res), 0.2, places=9)
+
+    def test_control_is_nan_without_ink(self):
+        # SYNTHETIC: a missing centroid must not be reported as zero
+        rows = _rows([-3.7] * 20)
+        rows[3]['pdfCentroid'] = float('nan')
+        rows_b = _rows([-3.7] * 20)
+        res = {'A': {'rows': rows}, 'B': {'rows': rows_b}}
+        self.assertTrue(math.isnan(d.pdf_control_max_diff(res)))
+
+    def test_decision_height_explains(self):
+        # SYNTHETIC: B constant (<=0.05), A fraction-dependent (>=0.10)
+        res = {'A': _group_result(0.446), 'B': _group_result(0.02)}
+        self.assertTrue(d.decide_height(res, 0.0).startswith(
+            'HEIGHT_EXPLAINS_PROBE_MISMATCH'))
+
+    def test_decision_height_does_not_explain(self):
+        # SYNTHETIC: both groups fraction-dependent
+        res = {'A': _group_result(0.3), 'B': _group_result(0.25)}
+        self.assertTrue(d.decide_height(res, 0.0).startswith(
+            'HEIGHT_DOES_NOT_EXPLAIN'))
+
+    def test_decision_invalid_control_overrides(self):
+        # SYNTHETIC: a PDF difference means the factor is not isolated
+        res = {'A': _group_result(0.446), 'B': _group_result(0.02)}
+        self.assertTrue(d.decide_height(res, 0.3).startswith(
+            'INVALID_CONTROL'))
+
+    def test_decision_mixed_is_inconclusive(self):
+        # SYNTHETIC: B between the two limits
+        res = {'A': _group_result(0.446), 'B': _group_result(0.08)}
+        self.assertTrue(d.decide_height(res, 0.0).startswith(
+            'INCONCLUSIVE'))
+
+    def test_decision_no_mismatch_is_named(self):
+        # SYNTHETIC: both groups constant -> no mismatch, not "mixed"
+        res = {'A': _group_result(0.0), 'B': _group_result(0.01)}
+        self.assertTrue(d.decide_height(res, 0.0).startswith(
+            'NO_MISMATCH_IN_PROBE'))
+
+    def test_decision_nan_control_is_not_called_invalid(self):
+        # SYNTHETIC: missing ink in the control is inconclusive, not INVALID
+        res = {'A': _group_result(0.446), 'B': _group_result(0.02)}
+        self.assertTrue(d.decide_height(res, float('nan')).startswith(
+            'INCONCLUSIVE'))
+
 if __name__ == '__main__':
     unittest.main()

@@ -1,12 +1,17 @@
-// [C6-RASTER] TEMPORARY baseline sub-pixel probe (non-gating). Not for merge.
+// [C6-RASTER] TEMPORARY baseline sub-pixel probe v3 (non-gating). Not for merge.
 //
 // Question: do the Preview (Flutter) and the vector PDF (rendered by poppler)
 // place a text baseline the same way when the baseline falls at different
-// fractions of a device pixel? One hypothesis is that one of the two
-// rasterizers snaps the glyph baseline to whole pixels with a different rule.
+// fractions of a device pixel?
 //
-// Single factor: the fractional part of the baseline, in device pixels. Every
-// other input is held fixed (font, size, x, text, page scale).
+// v3 single factor: TextStyle.height on the PREVIEW side only.
+//   Group A: height unset (the v1/v2 setup, which did not match production).
+//   Group B: height = LayoutConfiguration().lineHeightFactor (1.45), the
+//            production default passed by CanonicalLayoutPreviewPage._paintText.
+// The PDF side is produced identically for both groups. Its equality across
+// groups is measured as a control in tool/diag_c6_baseline_raster.py.
+//
+// Every other input is held fixed (font, size, x, text, page scale).
 //
 // The Preview side mirrors CanonicalLayoutPreviewPage._paintText: a canvas
 // scaled by LayoutUnits.ptToPx(1), a TextPainter with the same configuration,
@@ -19,7 +24,7 @@
 // Output (build/visual_parity/c6diag/baseline_raster/):
 //   preview_raster.png  Flutter raster of the probe page (794 x 1123 px)
 //   baseline_probe.pdf  the same lines as a vector PDF (A4)
-//   probe.json          intended baselines per line, for tool/diag_c6_baseline_raster.py
+//   probe.json          intended baselines per line, group and height factor
 // The measurement and the rasterization by poppler happen in that tool.
 import 'dart:convert';
 import 'dart:io';
@@ -30,6 +35,7 @@ import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:writing_questions_app/layout/canonical/layout_configuration.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/pdf_engine/canonical_text.dart';
 import 'package:writing_questions_app/pdf_engine/pdf_text_metrics.dart';
@@ -43,15 +49,22 @@ const double _xPt = 56.7;
 const int _pageWidthPx = 794;
 const int _pageHeightPx = 1123;
 
-/// Lines: 20 rows. The fractional part sweeps 0.025 .. 0.975 (device px), and
-/// each row starts 50 px lower, so the base integer varies too.
-const int _lineCount = 20;
-const double _rowPitchPx = 50;
-const double _firstBaselinePx = 60;
+/// 40 rows in two groups of 20. Rows are 27 px apart, so each row's
+/// measurement window (16 px up, 10 px down) does not reach its neighbours.
+/// The fraction sweeps 0.025 .. 0.975 in both groups (same fractions, same
+/// PDF), and the integer part differs between the groups.
+const int _rowsPerGroup = 20;
+const int _lineCount = 2 * _rowsPerGroup;
+const double _rowPitchPx = 27;
+const double _firstBaselinePx = 40;
 
-// v2 (pre-declared after v1 CI results): 20 distinct fractions that avoid
-// exact whole pixels (v1 line 10 sat on 560.00 px exactly).
-double _fractionOf(int index) => 0.025 + 0.05 * index;
+double _fractionOf(int index) => 0.025 + 0.05 * (index % _rowsPerGroup);
+
+String _groupOf(int index) => index < _rowsPerGroup ? 'A' : 'B';
+
+/// Group A: unset (v1/v2). Group B: the production default line-height factor.
+double? _previewHeightOf(String group) =>
+    group == 'B' ? const LayoutConfiguration().lineHeightFactor : null;
 
 double _baselinePxOf(int index) =>
     _firstBaselinePx + index * _rowPitchPx + _fractionOf(index);
@@ -60,7 +73,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    '[C6-RASTER] baseline sub-pixel probe (non-gating)',
+    '[C6-RASTER] baseline sub-pixel probe v3 (non-gating)',
     (tester) async {
       await tester.runAsync(() async {
         final loader = FontLoader(_family)
@@ -84,16 +97,19 @@ void main() {
 
         final lines = <Map<String, Object?>>[];
         for (var i = 0; i < _lineCount; i++) {
+          final group = _groupOf(i);
+          final height = _previewHeightOf(group);
           final baselinePx = _baselinePxOf(i);
           final baselinePt = LayoutUnits.pxToPt(baselinePx);
           final painter = TextPainter(
-            text: const TextSpan(
+            text: TextSpan(
               text: _probeText,
               style: TextStyle(
                 fontFamily: _family,
                 fontSize: _fontSizePt,
                 fontWeight: FontWeight.w400,
-                color: Color(0xFF000000),
+                color: const Color(0xFF000000),
+                height: height,
               ),
             ),
             textDirection: TextDirection.ltr,
@@ -106,6 +122,8 @@ void main() {
           painter.dispose();
           lines.add(<String, Object?>{
             'index': i,
+            'group': group,
+            'heightFactor': height,
             'fraction': _fractionOf(i),
             'baselinePx': baselinePx,
             'baselinePt': baselinePt,
@@ -174,7 +192,7 @@ void main() {
         File('$_outDir/baseline_probe.pdf').writeAsBytesSync(pdfBytes);
 
         final out = <String, Object?>{
-          'schema': 'c6-baseline-raster-v1',
+          'schema': 'c6-baseline-raster-v3',
           'synthetic': false,
           'family': _family,
           'fontAsset': _fontAsset,
@@ -184,6 +202,7 @@ void main() {
           'pageWidthPx': _pageWidthPx,
           'pageHeightPx': _pageHeightPx,
           'scalePxPerPt': LayoutUnits.ptToPx(1),
+          'productionLineHeightFactor': const LayoutConfiguration().lineHeightFactor,
           'lines': lines,
         };
         File('$_outDir/probe.json')
