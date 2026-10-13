@@ -245,7 +245,7 @@ def _emit(lines_out):
             fh.write(text + '\n')
 
 
-def main(argv):
+def _main(argv):
     if len(argv) != 2:
         print('usage: diag_c6_baseline_raster.py <dir>')
         return 0
@@ -334,6 +334,21 @@ def main(argv):
         _annotate(f'C6-RASTER data {name}',
                   _data_lines(results[name], pw_, ph_, qw_, qh_))
     return 0
+
+
+
+def main(argv):
+    """Entry point. Any unexpected exception is published as a notice so that
+    a crash cannot disappear silently from the CI annotations. Never fails."""
+    print('::notice title=C6-RASTER::analyser started (non-gating)')
+    try:
+        return _main(argv)
+    except Exception:  # noqa: BLE001 - diagnostics must not fail CI
+        import traceback
+        last = traceback.format_exc().strip().splitlines()[-3:]
+        print('::notice title=C6-RASTER::analyser crashed (non-gating): '
+              + ' | '.join(last).replace('\n', ' '))
+        return 0
 
 
 def split_groups(lines):

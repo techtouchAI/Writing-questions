@@ -354,5 +354,28 @@ class MeasurementValidityTests(unittest.TestCase):
                'B': self._res([56.2 + 0.1 * i for i in range(20)])}
         self.assertFalse(d.decide_fonts(res).startswith('INVALID_MEASUREMENT'))
 
+
+class CrashNoticeTests(unittest.TestCase):
+    def test_unexpected_exception_is_published_not_silent(self):
+        # SYNTHETIC: a crash inside the analyser must become a notice and must
+        # not fail the step (exit 0), so it cannot vanish from the annotations.
+        import contextlib
+        import io
+        real = d._main
+
+        def boom(argv):
+            raise RuntimeError('synthetic failure')
+
+        d._main = boom
+        try:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = d.main(['x', '.'])
+        finally:
+            d._main = real
+        self.assertEqual(rc, 0)
+        self.assertIn('analyser crashed', buf.getvalue())
+        self.assertIn('synthetic failure', buf.getvalue())
+
 if __name__ == '__main__':
     unittest.main()
