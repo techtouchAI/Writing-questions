@@ -240,26 +240,35 @@ def wrap(x):
     return x - math.floor(x + 0.5)
 
 
-def bottom_edge(dark, baseline_px, x0, x1):
+def bottom_edge(dark, baseline_px, x0, x1, ref_rows=2):
     """Sub-pixel bottom ink edge (device px) of a flat-bottomed glyph.
 
-    For each column with ink in the window, the edge is the last inked row r
-    plus that row's darkness (partial coverage of the edge row). The result
-    is the median over columns. Returns (edge, columns_used); NaN if no ink.
-    Assumes linear coverage in the darkness value (approximation).
+    r_max is the lowest inked row in the window. Only columns inked on r_max
+    are used: a counter or crossbar column ends higher and would bias the
+    edge upwards (verified on a real Tajawal 'H': median 57.4 vs true 60).
+    A pixel's darkness is horizontal x vertical coverage, so the vertical
+    coverage of r_max is taken as dark[r_max] / dark[r_max - ref_rows] (the
+    same column, a fully covered row inside the stem). Returns
+    (edge, columns_used); NaN if the window has no ink.
     """
     base = int(math.floor(baseline_px))
     lo = max(base - WIN_UP, 0)
     hi = min(base + WIN_DOWN, len(dark) - 1)
+    r_max = None
+    for r in range(hi, lo - 1, -1):
+        if any(dark[r][x] > EDGE_INK_MIN for x in range(x0, x1)):
+            r_max = r
+            break
+    if r_max is None or r_max - ref_rows < lo:
+        return float('nan'), 0
     edges = []
     for x in range(x0, x1):
-        last = None
-        for r in range(lo, hi + 1):
-            if dark[r][x] > EDGE_INK_MIN:
-                last = r
-        if last is None:
+        bottom = dark[r_max][x]
+        ref = dark[r_max - ref_rows][x]
+        if bottom <= EDGE_INK_MIN or ref <= EDGE_INK_MIN:
             continue
-        edges.append(last + min(dark[last][x], 1.0))
+        cover = min(max(bottom / ref, 0.0), 1.0)
+        edges.append(r_max + cover)
     return _median(edges), len(edges)
 
 

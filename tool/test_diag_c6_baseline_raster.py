@@ -423,6 +423,46 @@ class BottomEdgeTests(unittest.TestCase):
         self.assertEqual(cols, 0)
 
 
+def _h_glyph(dark, edge):
+    """SYNTHETIC 'H': two stems with partial horizontal coverage, and a
+    crossbar that ends above the baseline. Columns of the crossbar have ink
+    only above the bottom edge and must not move the edge estimate."""
+    top = edge - 9.0
+    stems = {21: 0.69, 22: 0.40, 27: 0.89, 28: 0.18}
+    bar_cols = range(23, 27)
+    for r in range(H):
+        v = min(max(min(r + 1, edge) - max(r, top), 0.0), 1.0)
+        if v > 0:
+            for x, h in stems.items():
+                dark[r][x] = max(dark[r][x], h * v)
+        if int(edge) - 5 <= r <= int(edge) - 4:
+            for x in bar_cols:
+                dark[r][x] = max(dark[r][x], 0.6)
+
+
+class HGlyphEdgeTests(unittest.TestCase):
+    def test_crossbar_columns_do_not_pull_the_edge_up(self):
+        # SYNTHETIC: the bug measured on real 'H' (median 57.4 for a base of
+        # 60). Expected edge is the synthetic bottom, within 0.01 px.
+        for edge in (60.0, 60.3, 60.5, 60.9):
+            dark = [[0.0] * W for _ in range(H)]
+            _h_glyph(dark, edge)
+            got, cols = d.bottom_edge(dark, 60.0, 16, 40)
+            self.assertLess(abs(got - edge), 0.01, msg=f'edge {edge} got {got}')
+            self.assertEqual(cols, 4)
+
+    def test_partial_horizontal_coverage_is_divided_out(self):
+        # SYNTHETIC: a stem at 0.4 horizontal coverage must give the same
+        # vertical edge as a full stem (0.4 is not the vertical fraction).
+        dark = [[0.0] * W for _ in range(H)]
+        _bar(dark, 200.3, 100, 160)
+        for r in range(H):
+            for x in range(100, 160):
+                dark[r][x] *= 0.4
+        got, _ = d.bottom_edge(dark, 200.0, 90, 170)
+        self.assertLess(abs(got - 200.3), 0.01, msg=f'got {got}')
+
+
 class RoundingModelTests(unittest.TestCase):
     def test_wrap_maps_into_half_open_unit_interval(self):
         for x, want in ((0.0, 0.0), (0.4, 0.4), (0.6, -0.4), (-0.5, -0.5),
