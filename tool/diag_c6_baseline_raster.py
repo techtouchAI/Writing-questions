@@ -530,26 +530,26 @@ def step_location(rows):
 
 
 def h4_tables(groups):
-    """Markdown tables (one per font) for the Job Summary and annotations."""
+    """Markdown tables per font: each repeat shown separately (no averaging
+    hides a disagreement). Used for the Job Summary and the annotations."""
     tables = {}
     for name in sorted(k for k in groups if not k.endswith(SNAP_SUFFIX)):
         plain = groups[name]
         snap = groups.get(name + SNAP_SUFFIX, [])
         head = [
-            f'### H4 {name}: fraction, preview-floor(B), pdf-floor(B), '
-            f'window RMSE, window AE, snapped preview-floor(B), '
-            f'repeat spread (step at {step_location(plain)})',
-            '| frac | prev-floor | pdf-floor | win RMSE | win AE | snap prev-floor | spread |',
-            '|---|---|---|---|---|---|---|',
+            f'### H4 {name} (step at {step_location(plain)})',
+            '| frac | prev-floor r0 | r1 | pdf-floor r0 | r1 | win RMSE | win AE | snap prev-floor |',
+            '|---|---|---|---|---|---|---|---|',
         ]
         body = []
         for i, r in enumerate(plain):
             sn = snap[i] if i < len(snap) else None
-            body.append('| {:.1f} | {:+.3f} | {:+.3f} | {:.4f} | {:.1f} | {} | {:.3f} |'.format(
-                r['fraction'], r['prevMinusFloor'], r['pdfMinusFloor'],
+            pr = r['prevRaw'] + [float('nan')] * (2 - len(r['prevRaw']))
+            qr = r['pdfRaw'] + [float('nan')] * (2 - len(r['pdfRaw']))
+            body.append('| {:.1f} | {:+.2f} | {:+.2f} | {:+.2f} | {:+.2f} | {:.4f} | {:.1f} | {} |'.format(
+                r['fraction'], pr[0], pr[1], qr[0], qr[1],
                 r['winRmse'], r['winAe'],
-                '{:+.3f}'.format(sn['prevMinusFloor']) if sn else 'n/a',
-                r['repeatSpread']))
+                '{:+.2f}'.format(sn['prevMinusFloor']) if sn else 'n/a'))
         tables[name] = head + body
     return tables
 
@@ -734,8 +734,12 @@ def _main(argv):
         out += [''] + h4_tabs[name]
     _emit(out)
     print(f"::notice title=C6-RASTER H4 verdict::{h4_decision}")
-    for name in sorted(h4_tabs):
-        _annotate(f'C6-RASTER H4 {name}', h4_tabs[name])
+    # Annotations are capped per step (about 10 visible). Keep the count low:
+    # two H4 table annotations, then the verdicts. Full data goes to the summary.
+    names = sorted(h4_tabs)
+    for part in (names[:2], names[2:]):
+        if part:
+            _annotate('C6-RASTER H4 tables', [ln for n in part for ln in h4_tabs[n] + ['']])
     print(f"::notice title=C6-RASTER verdict::{decision}")
     print(f"::notice title=C6-RASTER snap verdict::{snap_decision}")
     snap_lines = []
@@ -747,9 +751,15 @@ def _main(argv):
             f"mean={sn['pdfMeanMinusFloor']:+.3f} std={sn['pdfStdMinusFloor']:.3f}")
     if snap_lines:
         _annotate('C6-RASTER snap summary', snap_lines)
+    summary_data = ['', '## Per-line data (Job Summary only, not annotations)']
     for name in sorted(results):
-        _annotate(f'C6-RASTER data {name}',
-                  _data_lines(results[name], pw_, ph_, qw_, qh_))
+        summary_data += ['', f'### {name}'] + _data_lines(results[name], pw_, ph_, qw_, qh_)
+    summary = os.environ.get('GITHUB_STEP_SUMMARY')
+    if summary:
+        with open(summary, 'a', encoding='utf-8') as fh:
+            fh.write('\n'.join(summary_data) + '\n')
+    else:
+        print('\n'.join(summary_data))
     return 0
 
 
