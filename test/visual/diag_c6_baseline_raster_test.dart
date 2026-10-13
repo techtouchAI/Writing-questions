@@ -26,7 +26,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/painting.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
