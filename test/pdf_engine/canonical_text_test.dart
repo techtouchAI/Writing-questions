@@ -394,7 +394,7 @@ void main() {
   });
 
   test('differential parity with pw.Text: viewer-composed ink, underline, '
-      'color, clip; only the TJ number differs', () async {
+      'color; only the TJ number and the widened clip differ', () async {
     for (final rtl in <bool>[true, false]) {
       for (final underline in <bool>[true, false]) {
         final word = rtl ? 'عِلْمًا' : 'STA1';
@@ -463,11 +463,22 @@ void main() {
               r'>>stream\r?\n(.*?)\r?\nendstream',
               dotAll: true,
             ).firstMatch(file)!.group(1)!;
-        final normalized = contentStream(canonical).replaceFirst(
+        // There are now two intended deltas, so both are normalised and the
+        // rest of the content stream must still match byte for byte: the
+        // trailing TJ number, and the clip rectangle (the legacy line box
+        // unioned with the word's ink extents). What the clip must contain is
+        // pinned by the parsed assertions above and by the dedicated clip
+        // tests; nothing else in the emission may drift.
+        String withoutClip(String stream) => stream.replaceFirst(
+              RegExp(r'-?[\d.]+ -?[\d.]+ -?[\d.]+ -?[\d.]+ re W n'),
+              'CLIP re W n',
+            );
+        final normalized = withoutClip(contentStream(canonical)).replaceFirst(
           RegExp(r'\[<[0-9A-Fa-f]+>\s*-?[\d.]+\]TJ'),
           '[<${canonicalOps.hex}>]TJ',
         );
-        expect(normalized, contentStream(legacy), reason: 'byte parity $label');
+        expect(normalized, withoutClip(contentStream(legacy)),
+            reason: 'byte parity $label');
       }
     }
   });
