@@ -1,0 +1,17 @@
+warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+==============================================================================
+C6 FORENSICS - gate reproduction and residual decomposition
+manifest: pages=2 794.0x1123.0
+==============================================================================
+page 1: missing preview_page_1.png or page-1.png
+page 2: missing preview_page_2.png or page-2.png
+
+--- vector.pdf structure ---
+  vector.pdf font instances:
+    page 1: Amiri-Regular<Type0>, NotoNaskhArabic-Bold<Type0>, NotoNaskhArabic-Regular<Type0>, Tajawal-Bold<Type0>, Tajawal-Regular<Type0>
+      spans=99 sizes={10.0: 23, 10.5: 45, 11.0: 23, 12.5: 3, 17.0: 4, 30.0: 1}
+    page 2: NotoNaskhArabic-Bold<Type0>, NotoNaskhArabic-Regular<Type0>
+      spans=356 sizes={10.0: 7, 10.5: 35, 11.0: 313, 12.5: 1}
+
+==============================================================================
+END C6 FORENSICS

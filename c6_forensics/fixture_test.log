@@ -1,0 +1,21 @@
+{"protocolVersion":"0.1.1","runnerVersion":null,"pid":3231,"type":"start","time":0}
+{"suite":{"id":0,"platform":"vm","path":"/home/runner/work/Writing-questions/Writing-questions/test/visual/visual_parity_fixture_test.dart"},"type":"suite","time":0}
+{"test":{"id":1,"name":"loading /home/runner/work/Writing-questions/Writing-questions/test/visual/visual_parity_fixture_test.dart","suiteID":0,"groupIDs":[],"metadata":{"skip":false,"skipReason":null},"line":null,"column":null,"url":null},"type":"testStart","time":1}
+{"count":1,"time":6,"type":"allSuites"}
+{"testID":1,"result":"success","skipped":false,"hidden":true,"type":"testDone","time":15582}
+{"group":{"id":2,"suiteID":0,"parentID":null,"name":"","metadata":{"skip":false,"skipReason":null},"testCount":1,"line":null,"column":null,"url":null},"type":"group","time":15584}
+{"test":{"id":3,"name":"تركيبة الانحدار البصري: لقطات المعاينة + ملفات Exact","suiteID":0,"groupIDs":[2],"metadata":{"skip":false,"skipReason":null},"line":165,"column":5,"url":"package:flutter_test/src/widget_tester.dart","root_line":248,"root_column":3,"root_url":"file:///home/runner/work/Writing-questions/Writing-questions/test/visual/visual_parity_fixture_test.dart"},"type":"testStart","time":15585}
+{"testID":3,"messageType":"print","message":"[fixture] +12ms الخطوط حُمّلت","type":"print","time":15775}
+{"testID":3,"messageType":"print","message":"[fixture] +724ms Canonical layout requested","type":"print","time":16485}
+{"testID":3,"messageType":"print","message":"[fixture] +919ms Canonical layout resolved: 2 pages","type":"print","time":16680}
+{"testID":3,"messageType":"print","message":"[fixture] +919ms Canonical preview assets requested","type":"print","time":16680}
+{"testID":3,"messageType":"print","message":"[fixture] +986ms Preview settled after 2 pumps","type":"print","time":16747}
+{"testID":3,"messageType":"print","message":"[fixture] +1163ms LayoutDocument pages: 2","type":"print","time":16924}
+{"testID":3,"messageType":"print","message":"[fixture] +1185ms جذور اللقط: 2 لعرض 2678.0px","type":"print","time":16946}
+{"testID":3,"messageType":"print","message":"[fixture] +1291ms اللقطات: 2","type":"print","time":17052}
+{"testID":3,"messageType":"print","message":"[fixture] +1843ms Vector PDF generated: 51698 bytes","type":"print","time":17604}
+{"testID":3,"messageType":"print","message":"[fixture] +2150ms Exact PDF/DOCX generated","type":"print","time":17911}
+{"testID":3,"messageType":"print","message":"[fixture] +2151ms exports finished after pumps: done=true","type":"print","time":17912}
+{"testID":3,"messageType":"print","message":"[fixture] +2156ms كُتبت القطع: /home/runner/work/Writing-questions/Writing-questions/build/visual_parity (2 صفحات)","type":"print","time":17917}
+{"testID":3,"result":"success","skipped":false,"hidden":false,"type":"testDone","time":17967}
+{"success":true,"type":"done","time":17998}
