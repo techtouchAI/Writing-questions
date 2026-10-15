@@ -1,4 +1,4 @@
-name: C6 probe (TEMP, not for merge)
+name: C6 probe (TEMP not for merge)
 
 on:
   workflow_dispatch:
