@@ -592,6 +592,50 @@ jobs:
           flutter test --reporter json test/visual/visual_parity_fixture_test.dart 2>&1 \
             | tee build/visual_parity/fixture_test.log
 
+      # [C6-POS] تشخيص غير ملزم: مواضع النص في المعاينة ثم في vector.pdf الذي
+      # كتبه الاختبار أعلاه مباشرة (بلا تنزيل artifact). لا يغيّر البوابة
+      # الرسمية أو عتبة RMSE أو نتيجة هذه الوظيفة؛ كل خطوة continue-on-error.
+      - name: Record Preview text positions (non-gating)
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p build/visual_parity/c6diag/text_positions
+          set -o pipefail
+          flutter test test/visual/diag_c6_text_positions_test.dart 2>&1 \
+            | tee build/visual_parity/c6diag/text_positions/flutter.log
+
+      - name: Compare PDF and Preview text positions (non-gating)
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/c6pos-venv"
+          "$RUNNER_TEMP/c6pos-venv/bin/pip" install -q pymupdf numpy
+          "$RUNNER_TEMP/c6pos-venv/bin/python" tool/diag_c6_text_positions.py build/visual_parity
+
+      # [C6-RASTER] تشخيص غير ملزم: هل تُقرّب المعاينة (Flutter) وPoppler موضع
+      # خط الأساس بقاعدة واحدة عند كسور مختلفة من البكسل؟ لا يغيّر البوابة
+      # الرسمية أو عتبة RMSE أو الصور المرجعية أو نتيجة الوظيفة.
+      - name: Record baseline sub-pixel probe (non-gating)
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p build/visual_parity/c6diag/baseline_raster
+          set -o pipefail
+          flutter test test/visual/diag_c6_baseline_raster_test.dart 2>&1 \
+            | tee build/visual_parity/c6diag/baseline_raster/flutter.log
+
+      - name: Analyse baseline sub-pixel probe (non-gating)
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/c6raster-venv"
+          "$RUNNER_TEMP/c6raster-venv/bin/pip" install -q pymupdf numpy
+          "$RUNNER_TEMP/c6raster-venv/bin/python" tool/diag_c6_baseline_raster.py build/visual_parity/c6diag/baseline_raster
+
       - name: Build fixture digest
         if: always()
         shell: bash
@@ -680,6 +724,69 @@ jobs:
           name: visual-parity
           path: build/visual_parity
           if-no-files-found: warn
+          retention-days: 14
+
+  # تحقيق C6 غير مُلزِم. يقرأ artifact الذي تنتجه وظيفة visual-parity نفسها،
+  # ولا يغيّر بوابة RMSE أو عتبتها (0.02) أو الصور المرجعية أو نتيجة الوظيفة.
+  # فشله لا يفشل التشغيل (continue-on-error). الأدوات في tool/diag_c6_*.py.
+  c6-diagnostics:
+    name: C6 diagnostics (non-gating)
+    needs: visual-parity
+    if: ${{ always() && needs.visual-parity.result != 'skipped' }}
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download visual parity artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: visual-parity
+          path: build/visual_parity
+
+      - name: Install rendering and diagnostic tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils imagemagick
+          python3 -m venv "$RUNNER_TEMP/diag-venv"
+          "$RUNNER_TEMP/diag-venv/bin/pip" install -q pymupdf numpy
+
+      - name: Unit tests of the C6 diagnostics (synthetic)
+        run: |
+          "$RUNNER_TEMP/diag-venv/bin/python" -m unittest discover -s tool -p 'test_diag_c6_*.py' -v
+
+      - name: C6 diagnostics on the rendered artifacts
+        shell: bash
+        run: |
+          mkdir -p build/visual_parity/c6diag
+          for tool in diag_c6_pdf_frame diag_c6_variants diag_c6_text_residual \
+                      diag_c6_text_geometry diag_c6_nontext_excess \
+                      diag_c6_coverage_profile diag_c6_rule_geometry; do
+            echo "::group::$tool"
+            "$RUNNER_TEMP/diag-venv/bin/python" "tool/$tool.py" build/visual_parity \
+              || echo "::warning title=$tool::diagnostic exited non-zero (non-gating)"
+            echo "::endgroup::"
+          done
+
+      # [C6-INK] تشخيص غير ملزم: كثافة الحبر داخل نوافذ الكلمات المتحقَّق منها
+      # فقط، مع ضابط PDF مقابل PDF. لا يغيّر البوابة أو العتبة أو الصور.
+      - name: C6 ink density inside verified word windows (non-gating)
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_ink_windows.py build/visual_parity
+
+      - name: Upload C6 ink-window diagnostics
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: c6-ink-windows
+          path: build/visual_parity/c6diag/ink_windows/*
+          if-no-files-found: ignore
           retention-days: 14
 
   release:
