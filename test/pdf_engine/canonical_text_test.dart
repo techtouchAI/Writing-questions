@@ -265,7 +265,7 @@ _WordEmission _parseWordEmission(String raw) {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('clip and rule L4 mirroring', _clipRegressionTests);
+  group('clip covers the shaped word ink', _clipRegressionTests);
 
   test('trailing TJ closes the font advance onto canonical (RTL+LTR)',
       () async {
@@ -584,52 +584,4 @@ void _clipRegressionTests() {
     }
   });
 
-  test('rule L4: brackets are mirrored only when the surrounding run is RTL',
-      () async {
-    // A token with Latin letters or European digits is an embedded
-    // left-to-right run, so its brackets keep their written form; every other
-    // token takes the paragraph's right-to-left level and is mirrored.
-    expect(CanonicalText.mirrorInRightToLeft('(a)/(b)'), '(a)/(b)');
-    expect(CanonicalText.mirrorInRightToLeft('√(x2)=|x|'), '√(x2)=|x|');
-    expect(CanonicalText.mirrorInRightToLeft('Choose the correct answer'),
-        'Choose the correct answer');
-    expect(CanonicalText.mirrorInRightToLeft('('), ')');
-    expect(CanonicalText.mirrorInRightToLeft(')'), '(');
-    expect(CanonicalText.mirrorInRightToLeft('(١٠'), ')١٠');
-    expect(CanonicalText.mirrorInRightToLeft('[أ]'), ']أ[');
-    expect(CanonicalText.mirrorInRightToLeft('  '), '  ');
-    expect(CanonicalText.mirrorInRightToLeft(''), '');
-  });
-
-  test('the mirroring reaches the emitted glyphs, not only the string',
-      () async {
-    Future<List<int>> glyphIds({required String word, required bool rtl}) async {
-      final emission = _parseWordEmission(
-        await _emit(
-          (font) => _canonicalWordText(
-            font,
-            word,
-            rtl: rtl,
-            underline: false,
-            canonicalAdvance: 8,
-          ),
-        ),
-      );
-      final hex = emission.hex;
-      return <int>[
-        for (var index = 0; index + 4 <= hex.length; index += 4)
-          int.parse(hex.substring(index, index + 4), radix: 16),
-      ];
-    }
-
-    final openGlyph = (await glyphIds(word: '(', rtl: false)).first;
-    final closeGlyph = (await glyphIds(word: ')', rtl: false)).first;
-    expect(openGlyph, isNot(closeGlyph),
-        reason: 'the font must distinguish the two brackets');
-    final rtlBracket = await glyphIds(word: '(', rtl: true);
-    expect(rtlBracket, contains(closeGlyph),
-        reason: 'an RTL "(" must emit the ")" glyph (rule L4)');
-    expect(rtlBracket, isNot(contains(openGlyph)),
-        reason: 'an RTL "(" must not keep the written glyph');
-  });
 }

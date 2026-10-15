@@ -79,91 +79,18 @@ class CanonicalText extends pw.Widget {
   final bool rtl;
   final bool underline;
 
-  /// Characters that swap glyph under a right-to-left level (UAX #9 rule L4).
-  static const Map<int, int> _mirroredCharacters = <int, int>{
-    0x0028: 0x0029, // ( )
-    0x0029: 0x0028,
-    0x003C: 0x003E, // < >
-    0x003E: 0x003C,
-    0x005B: 0x005D, // [ ]
-    0x005D: 0x005B,
-    0x007B: 0x007D, // { }
-    0x007D: 0x007B,
-    0x00AB: 0x00BB, // « »
-    0x00BB: 0x00AB,
-    0x2039: 0x203A, // ‹ ›
-    0x203A: 0x2039,
-  };
-
-  /// True for the characters that pin a token to a left-to-right run: Latin
-  /// letters and European digits. Arabic-Indic digits (U+0660–U+0669) are bidi
-  /// class AN and stay with the surrounding right-to-left direction.
-  static bool _isLeftToRightTokenRune(int rune) =>
-      (rune >= 0x0041 && rune <= 0x005A) ||
-      (rune >= 0x0061 && rune <= 0x007A) ||
-      (rune >= 0x0030 && rune <= 0x0039) ||
-      (rune >= 0x00C0 && rune <= 0x024F);
-
-  /// Applies rule L4 to [input] before it is reordered: a mirrored character
-  /// becomes its mirror image when it resolves to a right-to-left level.
+  /// Shaped emission text, mirroring package:pdf's default shaping dispatch.
   ///
-  /// The vendored shaper reorders (`logicalToVisual`) but carries no mirror
-  /// map, so the PDF printed "(" wherever the preview printed ")" — a wrong
-  /// character on the page, not a rendering nuance. Direction is decided per
-  /// whitespace-separated token rather than per emission, because each
-  /// canonical word is emitted on its own: a bracket arrives as a run of one
-  /// character, and the surrounding line — not the run — is what gives it its
-  /// level. A token that carries Latin letters or European digits is an
-  /// embedded left-to-right run, and its brackets are left exactly as written.
-  static String mirrorInRightToLeft(String input) {
-    if (input.isEmpty) {
-      return input;
-    }
-    // `split(' ')` followed by a single-space join is the exact inverse, so
-    // the original whitespace is rebuilt verbatim and only tokens change.
-    final tokens = input.split(' ');
-    final buffer = StringBuffer();
-    for (var index = 0; index < tokens.length; index++) {
-      if (index > 0) {
-        buffer.write(' ');
-      }
-      final token = tokens[index];
-      final leftToRight = token.runes.any(_isLeftToRightTokenRune);
-      buffer.write(
-        leftToRight
-            ? token
-            : String.fromCharCodes(
-                token.runes.map((rune) => _mirroredCharacters[rune] ?? rune),
-              ),
-      );
-    }
-    return buffer.toString();
-  }
-
-  /// Shaped emission text: rule L4 mirroring first (a character substitution,
-  /// independent of reordering), then package:pdf's default shaping dispatch.
-  String shapedText() {
-    final mirrored = mirrorInRightToLeft(text);
-    return rtl ? logicalToVisual(mirrored) : mirrored;
-  }
-
-  /// Trailing TJ adjustment in viewer-executed thousandths of an em, or null
-  /// when there is no correction: the executed word advance (font advance
-  /// plus the viewer-applied adjustment) lands exactly on
-  /// [canonicalAdvancePt].
-  double? trailingTjAdjustment(PdfFont pdfFont) {
-    if (text.isEmpty || fontSizePt <= 0 || canonicalAdvancePt <= 0) {
-      return null;
-    }
-    final pdfAdvancePt =
-        pdfFont.stringMetrics(shapedText()).advanceWidth * fontSizePt;
-    final correction =
-        (pdfAdvancePt - canonicalAdvancePt) * 1000 / fontSizePt;
-    if (correction == 0 || !correction.isFinite) {
-      return null;
-    }
-    return correction;
-  }
+  /// Rule L4 (mirroring) is deliberately NOT applied here. HarfBuzz mirrors a
+  /// lone "(" when it shapes with direction RTL, and one rendered comparison
+  /// against the preview suggested the PDF should follow. It must not: the
+  /// repository's own P0-GATE-03 pins the opposite contract for this path —
+  /// "the leftmost bracket in an RTL line must be the closing one" — and that
+  /// gate is green on the visual order the vendored shaper already produces.
+  /// Mirroring here flipped the emitted glyphs out of that contract, so the
+  /// change was withdrawn. Settling the two readings needs its own measurement
+  /// against the preview on the same construct, not a substitution here.
+  String shapedText() => rtl ? logicalToVisual(text) : text;
 
   @override
   void layout(
