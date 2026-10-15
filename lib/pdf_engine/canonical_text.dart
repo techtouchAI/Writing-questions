@@ -92,6 +92,24 @@ class CanonicalText extends pw.Widget {
   /// against the preview on the same construct, not a substitution here.
   String shapedText() => rtl ? logicalToVisual(text) : text;
 
+  /// Trailing TJ adjustment in viewer-executed thousandths of an em, or null
+  /// when there is no correction: the executed word advance (font advance
+  /// plus the viewer-applied adjustment) lands exactly on
+  /// [canonicalAdvancePt].
+  double? trailingTjAdjustment(PdfFont pdfFont) {
+    if (text.isEmpty || fontSizePt <= 0 || canonicalAdvancePt <= 0) {
+      return null;
+    }
+    final pdfAdvancePt =
+        pdfFont.stringMetrics(shapedText()).advanceWidth * fontSizePt;
+    final correction =
+        (pdfAdvancePt - canonicalAdvancePt) * 1000 / fontSizePt;
+    if (correction == 0 || !correction.isFinite) {
+      return null;
+    }
+    return correction;
+  }
+
   @override
   void layout(
     pw.Context context,

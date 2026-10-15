@@ -114,4 +114,15 @@ jobs:
           git config user.email "c6-forensics@users.noreply.github.com"
           git add -f c6_forensics
           git commit -m "TEMP c6 forensics export [skip ci]" || exit 0
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          # Other workflows push to this branch too, so retry on a moving ref.
+          for attempt in 1 2 3 4 5; do
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              echo "exported on attempt $attempt"
+              exit 0
+            fi
+            git fetch origin "${GITHUB_REF_NAME}"
+            git rebase "origin/${GITHUB_REF_NAME}" || { git rebase --abort || true; break; }
+            sleep 5
+          done
+          echo "export push did not succeed; artifacts remain in the workflow artifact"
+          exit 0
