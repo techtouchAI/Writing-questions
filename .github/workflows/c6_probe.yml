@@ -1,0 +1,51 @@
+name: C6 probe (TEMP, not for merge)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'arena/94a771d8-writing-questions'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.22.3'
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils imagemagick
+
+      - name: Produce artifacts
+        shell: bash
+        run: |
+          mkdir -p build/visual_parity
+          set -o pipefail
+          flutter test --reporter json test/visual/visual_parity_fixture_test.dart 2>&1 \
+            | tee build/visual_parity/fixture_test.log
+          ls -la build/visual_parity
+
+      - name: Probe the real vector.pdf
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          python3 -m venv /tmp/pv
+          /tmp/pv/bin/pip install -q pymupdf numpy fonttools
+          /tmp/pv/bin/python tool/c6_probe.py build/visual_parity
