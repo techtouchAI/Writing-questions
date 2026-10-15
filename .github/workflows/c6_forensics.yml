@@ -1,0 +1,104 @@
+name: C6 forensics (TEMPORARY - NOT FOR MERGE)
+
+# غرض هذا الملف مؤقّت ومحصور: تصدير قطع بوابة C6 الحقيقية (لقطات المعاينة،
+# تصيير poppler، vector.pdf) إلى المستودع لتحليلها خارج GitHub، لأن المرفقات
+# وواجهات تنزيل الحزم المصدّرة محجوبة في بيئة العمل. يُحذف الملف وكل مخرجات
+# `c6_forensics/` قبل أي دمج، ولا يغيّر البوابة الرسمية ولا عتبتها ولا مراجعها.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'arena/94a771d8-writing-questions'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: c6-forensics-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  forensics:
+    name: C6 forensics export (temporary)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.22.3'
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Install rendering tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils imagemagick
+
+      - name: Produce fixture artifacts (same command as the official job)
+        shell: bash
+        run: |
+          mkdir -p build/visual_parity
+          set -o pipefail
+          flutter test --reporter json test/visual/visual_parity_fixture_test.dart 2>&1 \
+            | tee build/visual_parity/fixture_test.log
+
+      - name: Run the official gate (same command as the official job)
+        if: always()
+        shell: bash
+        continue-on-error: true
+        run: bash tool/verify_visual_parity.sh build/visual_parity
+
+      - name: Forensic analysis
+        if: always()
+        shell: bash
+        continue-on-error: true
+        run: |
+          python3 -m venv "$RUNNER_TEMP/fx-venv"
+          "$RUNNER_TEMP/fx-venv/bin/pip" install -q numpy pillow pymupdf
+          "$RUNNER_TEMP/fx-venv/bin/python" tool/diag_c6_forensics.py build/visual_parity \
+            2>&1 | tee build/visual_parity/c6diag_forensics.txt
+
+      - name: Publish forensic annotations
+        if: always()
+        shell: bash
+        continue-on-error: true
+        run: |
+          f=build/visual_parity/c6diag_forensics.txt
+          [ -f "$f" ] || exit 0
+          python3 - "$f" <<'PY'
+          import sys, pathlib
+          text = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8', errors='replace')
+          escaped = text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          limit = 60000
+          parts = [escaped[i:i + limit] for i in range(0, max(len(escaped), 1), limit)]
+          for index, part in enumerate(parts, 1):
+              print(f'::notice title=C6-FORENSICS {index}/{len(parts)}::{part}')
+          PY
+
+      - name: Export artifacts into the branch (temporary)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf c6_forensics
+          mkdir -p c6_forensics/rendered_vector_pdf
+          for f in manifest.json report.txt vector.pdf exact.pdf; do
+            [ -f "build/visual_parity/$f" ] && cp "build/visual_parity/$f" "c6_forensics/$f" || true
+          done
+          cp build/visual_parity/preview_page_*.png c6_forensics/ 2>/dev/null || true
+          cp build/visual_parity/rendered/vector_pdf/*.png c6_forensics/rendered_vector_pdf/ 2>/dev/null || true
+          cp build/visual_parity/c6diag_forensics.txt c6_forensics/ 2>/dev/null || true
+          cp build/visual_parity/fixture_test.log c6_forensics/ 2>/dev/null || true
+          [ -n "$(ls -A c6_forensics)" ] || { echo "nothing to export"; exit 0; }
+          git config user.name "c6-forensics"
+          git config user.email "c6-forensics@users.noreply.github.com"
+          git add -f c6_forensics
+          git commit -m "TEMP c6 forensics export [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
