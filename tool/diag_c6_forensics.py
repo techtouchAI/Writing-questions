@@ -209,6 +209,115 @@ def pdf_text_report(pdf_path: Path) -> None:
     document.close()
 
 
+def dump_glyph_geometry(pdf_path: Path, out_path: Path) -> None:
+    """Per-character origins from the PDF, for shaping comparison offline.
+
+    PyMuPDF decodes the embedded Type0 CIDs back to Unicode through the
+    ToUnicode CMap, so this is the PDF's own idea of where each character sits.
+    """
+    if not pdf_path.exists():
+        return
+    document = fitz.open(pdf_path)
+    payload = {"pages": []}
+    for page_index in range(document.page_count):
+        page = document[page_index]
+        spans = []
+        for block in page.get_text("rawdict")["blocks"]:
+            for line in block.get("lines", []):
+                for span in line["spans"]:
+                    chars = [
+                        [
+                            char["c"],
+                            round(char["origin"][0], 4),
+                            round(char["origin"][1], 4),
+                            round(char["bbox"][0], 3),
+                            round(char["bbox"][2], 3),
+                        ]
+                        for char in span["chars"]
+                    ]
+                    spans.append(
+                        {
+                            "font": span["font"],
+                            "size": round(span["size"], 4),
+                            "chars": chars,
+                        }
+                    )
+        payload["pages"].append({"page": page_index + 1, "spans": spans})
+    document.close()
+    out_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    total = sum(len(span["chars"]) for page in payload["pages"] for span in page["spans"])
+    print(f"  glyph geometry dumped: {out_path.name} ({total} chars)")
+
+
+def to_u8(array: np.ndarray) -> np.ndarray:
+    return np.clip(array, 0, 255).astype(np.uint8)
+
+
+def write_hotspots(
+    pdf: np.ndarray,
+    preview: np.ndarray,
+    page: int,
+    directory: Path,
+    count: int = 12,
+    window: tuple[int, int] = (72, 44),
+    zoom: int = 5,
+) -> None:
+    """Magnified preview | PDF | overlay crops around the worst error peaks."""
+    height, width = pdf.shape
+    half_w, half_h = window[0] // 2, window[1] // 2
+    cell = 16
+    rows, cols = height // cell, width // cell
+    squared = ((pdf - preview) / 255.0) ** 2
+    grid = squared[: rows * cell, : cols * cell].reshape(rows, cell, cols, cell).sum(axis=(1, 3))
+    peaks: list[tuple[int, int, float]] = []
+    working = grid.copy()
+    for _ in range(count):
+        index = int(np.argmax(working))
+        r, c = divmod(index, cols)
+        value = float(working[r, c])
+        if value <= 0:
+            break
+        peaks.append((r * cell + cell // 2, c * cell + cell // 2, value))
+        working[max(0, r - 3) : r + 4, max(0, c - 3) : c + 4] = 0.0
+
+    directory.mkdir(parents=True, exist_ok=True)
+    lines = []
+    for order, (cy, cx, value) in enumerate(peaks, 1):
+        y0 = max(0, min(height - window[1], cy - half_h))
+        x0 = max(0, min(width - window[0], cx - half_w))
+        y1, x1 = y0 + window[1], x0 + window[0]
+        left = preview[y0:y1, x0:x1]
+        right = pdf[y0:y1, x0:x1]
+        overlay = np.stack([left, (left + right) / 2, right], axis=2)
+        left3 = np.stack([left] * 3, axis=2)
+        right3 = np.stack([right] * 3, axis=2)
+        gap = np.full((window[1], 3, 3), 255.0)
+        stack = np.concatenate([left3, gap, right3, gap, overlay], axis=1)
+        image = Image.fromarray(to_u8(stack))
+        image = image.resize((image.width * zoom, image.height * zoom), Image.NEAREST)
+        image.save(directory / f"p{page}_hot{order:02d}_x{x0}_y{y0}.png")
+        local = rmse(right, left)
+        lines.append(f"    hot {order:02d} at ({x0},{y0}) size {window[0]}x{window[1]} local RMSE {local:.5f}")
+    print(f"  hotspots written: {len(peaks)}")
+    for line in lines:
+        print(line)
+
+
+def write_overlay(pdf: np.ndarray, preview: np.ndarray, page: int, directory: Path) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    ink_pdf = 1.0 - pdf / 255.0
+    ink_pre = 1.0 - preview / 255.0
+    overlay = np.ones((*pdf.shape, 3), dtype=np.float64) * 255.0
+    overlay[:, :, 1] -= np.clip(ink_pdf * 255.0, 0, 255)          # PDF ink removes green+blue -> red
+    overlay[:, :, 1] += 0
+    overlay[:, :, 2] -= np.clip(ink_pre * 255.0, 0, 255)          # preview ink removes blue -> yellow
+    overlay[:, :, 0] -= np.clip(ink_pre * 255.0, 0, 255)
+    difference = np.abs(pdf - preview) * 3.0
+    right = np.stack([255.0 - difference] * 3, axis=2)
+    stacked = np.concatenate([overlay, np.full((pdf.shape[0], 6, 3), 255.0), right], axis=1)
+    Image.fromarray(to_u8(stacked)).save(directory / f"page{page}_overlay.png")
+
+
 def analyse(directory: Path) -> int:
     manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
     pages = int(manifest["pageCount"])
@@ -238,10 +347,13 @@ def analyse(directory: Path) -> int:
         linear_model(pdf, preview)
         grid_report(pdf, preview)
         row_profile(pdf, preview)
+        write_hotspots(pdf, preview, index, directory / "c6diag_hotspots")
+        write_overlay(pdf, preview, index, directory / "c6diag_hotspots")
 
     print()
     print("--- vector.pdf structure ---")
     pdf_text_report(directory / "vector.pdf")
+    dump_glyph_geometry(directory / "vector.pdf", directory / "c6_pdf_glyphs.json")
     print()
     print("=" * 78)
     print("END C6 FORENSICS")
