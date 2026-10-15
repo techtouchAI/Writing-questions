@@ -265,6 +265,8 @@ _WordEmission _parseWordEmission(String raw) {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  group('clip and rule L4 mirroring', _clipRegressionTests);
+
   test('trailing TJ closes the font advance onto canonical (RTL+LTR)',
       () async {
     for (final word in <String>['عِلْمًا', 'STA1']) {
@@ -419,9 +421,13 @@ void main() {
             reason: 'ink x $label');
         expect(canonicalOps.y, closeTo(legacyOps.y, _floatQuantum),
             reason: 'ink y $label');
-        // Same shaped bytes, same clip, same colors.
+        // Same shaped bytes, same colors. The clip is no longer identical:
+        // it is now the legacy line box unioned with the shaped word's real
+        // glyph ink, because that box truncated printed content (see the
+        // dedicated clip tests below).
         expect(canonicalOps.hex, legacyOps.hex, reason: 'hex $label');
-        expect(canonicalOps.clip, legacyOps.clip, reason: 'clip $label');
+        expect(_clipContains(canonicalOps.clip!, legacyOps.clip!), isTrue,
+            reason: 'clip still covers the legacy line box $label');
         expect(canonicalOps.fillColor, legacyOps.fillColor,
             reason: 'fill $label');
         expect(canonicalOps.strokeColor, legacyOps.strokeColor,
@@ -498,5 +504,132 @@ void main() {
       expect(PdfContentProbe.fromBytes(legacyBytes).words.single.advanceWidth,
           closeTo(pdfAdvance, _floatQuantum));
     }
+  });
+}
+
+/// True when the rectangle [outer] contains [inner] (both `x, y, w, h`).
+bool _clipContains(List<double> outer, List<double> inner) {
+  final outerLeft = outer[0];
+  final outerTop = outer[1];
+  final outerRight = outerLeft + outer[2];
+  final outerBottom = outerTop + outer[3];
+  final innerLeft = inner[0];
+  final innerTop = inner[1];
+  final innerRight = innerLeft + inner[2];
+  final innerBottom = innerTop + inner[3];
+  return outerLeft <= innerLeft + _floatQuantum &&
+      outerTop <= innerTop + _floatQuantum &&
+      outerRight >= innerRight - _floatQuantum &&
+      outerBottom >= innerBottom - _floatQuantum;
+}
+
+/// The clip must contain the shaped word's real ink, not just the `hhea` line
+/// box. This is the regression guard for the content the PDF used to truncate:
+/// `PdfFontMetrics.maxHeight` is `hhea` ascent-descent, and the fixture fonts
+/// reach past it (Noto Naskh ascent 1.069 em against glyphs at 1.405 em,
+/// Tajawal 0.643 em against glyphs at 0.803 em), so the legacy clip cut the top
+/// of hamzas, maddas, harakat and of letters such as ث — ink the preview
+/// paints and the printed page did not.
+void _clipRegressionTests() {
+  test('the clip contains the shaped word ink, not only the hhea line box',
+      () async {
+    final font = await _loadRegular();
+    final pdfFont = _pdfFontOf(font);
+    const fontSizePt = 12.0;
+    for (final word in <String>['عِلْمًا', 'ثَابِت', 'إِنَّا', 'STA1']) {
+      final relevantRtl = word != 'STA1';
+      final shaped = relevantRtl ? logicalToVisual(word) : word;
+      final metrics = pdfFont.stringMetrics(shaped) * fontSizePt;
+      final emission = _parseWordEmission(
+        await _emit(
+          (font) => _canonicalWordText(
+            font,
+            word,
+            rtl: relevantRtl,
+            underline: false,
+            canonicalAdvance: metrics.advanceWidth,
+          ),
+        ),
+      );
+      final clip = emission.clip!;
+      final clipLeft = clip[0];
+      final clipTop = clip[1];
+      final clipRight = clipLeft + clip[2];
+      final clipBottom = clipTop + clip[3];
+      // Glyph outlines are y-up from the baseline; the box measures y-down
+      // from its top, and the emitted baseline sits `maxHeight - ascent`
+      // below that top.
+      final baseline = metrics.maxHeight - metrics.ascent;
+      final inkTop = baseline - metrics.bottom;
+      final inkBottom = baseline - metrics.top;
+      final inkLeft = metrics.left;
+      final inkRight = metrics.right;
+      // Sanity: this word really does overflow the legacy line box, so the
+      // test would be vacuous otherwise.
+      expect(inkTop < 0 || inkRight > metrics.advanceWidth + _floatQuantum,
+          isTrue,
+          reason: 'fixture word "$word" must overflow the line box '
+              '(inkTop $inkTop, advance ${metrics.advanceWidth}, '
+              'inkRight $inkRight)');
+      expect(clipTop, lessThanOrEqualTo(inkTop + _floatQuantum),
+          reason: 'clip top covers the ink of "$word" ($clipTop vs $inkTop)');
+      expect(clipBottom, greaterThanOrEqualTo(inkBottom - _floatQuantum),
+          reason: 'clip bottom covers the ink of "$word" '
+              '($clipBottom vs $inkBottom)');
+      expect(clipLeft, lessThanOrEqualTo(inkLeft + _floatQuantum),
+          reason: 'clip left covers the ink of "$word" ($clipLeft vs $inkLeft)');
+      expect(clipRight, greaterThanOrEqualTo(inkRight - _floatQuantum),
+          reason: 'clip right covers the ink of "$word" '
+              '($clipRight vs $inkRight)');
+    }
+  });
+
+  test('rule L4: brackets are mirrored only when the surrounding run is RTL',
+      () async {
+    // A token with Latin letters or European digits is an embedded
+    // left-to-right run, so its brackets keep their written form; every other
+    // token takes the paragraph's right-to-left level and is mirrored.
+    expect(CanonicalText.mirrorInRightToLeft('(a)/(b)'), '(a)/(b)');
+    expect(CanonicalText.mirrorInRightToLeft('√(x2)=|x|'), '√(x2)=|x|');
+    expect(CanonicalText.mirrorInRightToLeft('Choose the correct answer'),
+        'Choose the correct answer');
+    expect(CanonicalText.mirrorInRightToLeft('('), ')');
+    expect(CanonicalText.mirrorInRightToLeft(')'), '(');
+    expect(CanonicalText.mirrorInRightToLeft('(١٠'), ')١٠');
+    expect(CanonicalText.mirrorInRightToLeft('[أ]'), ']أ[');
+    expect(CanonicalText.mirrorInRightToLeft('  '), '  ');
+    expect(CanonicalText.mirrorInRightToLeft(''), '');
+  });
+
+  test('the mirroring reaches the emitted glyphs, not only the string',
+      () async {
+    Future<List<int>> glyphIds({required String word, required bool rtl}) async {
+      final emission = _parseWordEmission(
+        await _emit(
+          (font) => _canonicalWordText(
+            font,
+            word,
+            rtl: rtl,
+            underline: false,
+            canonicalAdvance: 8,
+          ),
+        ),
+      );
+      final hex = emission.hex;
+      return <int>[
+        for (var index = 0; index + 4 <= hex.length; index += 4)
+          int.parse(hex.substring(index, index + 4), radix: 16),
+      ];
+    }
+
+    final openGlyph = (await glyphIds(word: '(', rtl: false)).first;
+    final closeGlyph = (await glyphIds(word: ')', rtl: false)).first;
+    expect(openGlyph, isNot(closeGlyph),
+        reason: 'the font must distinguish the two brackets');
+    final rtlBracket = await glyphIds(word: '(', rtl: true);
+    expect(rtlBracket, contains(closeGlyph),
+        reason: 'an RTL "(" must emit the ")" glyph (rule L4)');
+    expect(rtlBracket, isNot(contains(openGlyph)),
+        reason: 'an RTL "(" must not keep the written glyph');
   });
 }
