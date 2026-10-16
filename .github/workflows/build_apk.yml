@@ -738,8 +738,9 @@ jobs:
       # [C6-UNDERLINE] يقيس التسطير الذي ترسمه المعاينة (إزاحته تحت خط الأساس
       # وسماكته) وينشره رقماً: خرائط الحبر دلّت على فارق 4px بين السطرين،
       # والرقم الصحيح لا يُخمَّن من خريطة. لا يمسّ العتبة ولا الصور المرجعية.
-      - name: Measure the Preview underline geometry
+      - name: Measure the Preview underline geometry (measurement, not a gate)
         if: always()
+        continue-on-error: true
         shell: bash
         run: flutter test test/visual/underline_geometry_probe_test.dart
 

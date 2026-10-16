@@ -42,12 +42,14 @@ class _Raster {
     last = x;
     count++;
   }
-  if (first == null) return null;
+  if (first == null || last == null) return null;
+  final firstInk = first;
+  final lastInk = last;
   return (
-    top: first,
-    bottom: last!,
+    top: firstInk,
+    bottom: lastInk,
     count: count,
-    fill: count / (last - first + 1),
+    fill: count / (lastInk - firstInk + 1),
   );
 }
 
@@ -56,6 +58,7 @@ void main() {
 
   testWidgets('measures the Preview underline offset and thickness',
       (tester) async {
+    publish('C6 underline probe', <String>['start']);
     await loadAppFonts();
     const fontPx = 120.0;
     const text = 'nnnn';
@@ -64,17 +67,17 @@ void main() {
       MaterialApp(
         home: RepaintBoundary(
           key: key,
-          child: ColoredBox(
-            color: const Color(0xFFFFFFFF),
+          child: const ColoredBox(
+            color: Color(0xFFFFFFFF),
             child: Align(
               alignment: Alignment.topLeft,
               child: Text(
                 text,
                 textScaler: TextScaler.noScaling,
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: ExamFont.arabicFamily,
                   fontSize: fontPx,
-                  color: Color(0xFF000000),
+                  color: const Color(0xFF000000),
                   decoration: TextDecoration.underline,
                 ),
               ),
