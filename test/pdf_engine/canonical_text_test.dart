@@ -481,11 +481,15 @@ void main() {
           // reference the printed page has to match. Both rules are asserted
           // here so that neither can drift silently.
           final thickness = CanonicalText.underlineThicknessPt(12);
-          // The parsed y is the canvas's own coordinate: moving to
-          // `inkY - thickness` raises the stroke by the difference between the
-          // two rules' centres.
-          final legacyBase = -pdfFont.descent * 12 / 2;
-          final legacyY = boxHeight - pdfFont.ascent * 12 + legacyBase;
+          // The parsed y is the canvas's own coordinate. The package's rule,
+          // term for term as the replaced `pw.Text` path computes it: the
+          // line box's bottom plus the scaled descent, lowered by half the
+          // font's own descent (`foregroundPaint`'s
+          // `base = -descent * fontSize / 2`, in this package's y-up canvas).
+          final legacyY = boxHeight -
+              metrics.ascent +
+              metrics.descent -
+              pdfFont.descent * 12 / 2;
           expect(canonicalOps.underline![1],
               closeTo(inkY - thickness, _floatQuantum),
               reason: 'canonical underline y (engine rule) $label');
