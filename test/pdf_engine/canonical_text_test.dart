@@ -441,6 +441,12 @@ void main() {
         final label = 'rtl=$rtl underline=$underline';
         final legacyOps = _parseWordEmission(legacy);
         final canonicalOps = _parseWordEmission(canonical);
+        // The canonical widget's own metrics, for the underline assertions:
+        // the baseline sits `boxHeight - ascent` from the box's bottom edge
+        // (this package's canvas is y-up, see CanonicalText.paint).
+        final metrics = pdfFont.stringMetrics(shaped) * 12;
+        final boxHeight = metrics.maxHeight;
+        final inkY = boxHeight - metrics.ascent;
         // Viewer-composed ink position: identical.
         expect(canonicalOps.x, closeTo(legacyOps.x, _floatQuantum),
             reason: 'ink x $label');
@@ -462,10 +468,33 @@ void main() {
             closeTo(legacyOps.lineWidth!, _floatQuantum),
             reason: 'width $label');
         if (underline) {
-          for (var i = 0; i < 4; i++) {
-            expect(canonicalOps.underline![i],
-                closeTo(legacyOps.underline![i], _floatQuantum),
-                reason: 'underline[$i] $label');
+          // The underline is the one place the canonical emission must NOT
+          // copy the replaced path. The replaced path uses the package's own
+          // rule (fontDescent / 2 below the baseline, thickness 0.05 em); the
+          // Preview uses the engine's (`fontSize / 14`, positioned that far
+          // below the baseline — see
+          // [CanonicalText.underlineThicknessPt]), and the Preview is the
+          // reference the printed page has to match. Both rules are asserted
+          // here so that neither can drift silently.
+          final thickness = CanonicalText.underlineThicknessPt(12);
+          // The parsed y is the canvas's own coordinate: moving to
+          // `inkY - thickness` raises the stroke by the difference between the
+          // two rules' centres.
+          final legacyBase = -pdfFont.descent * 12 / 2;
+          final legacyY = boxHeight - pdfFont.ascent * 12 + legacyBase;
+          expect(canonicalOps.underline![1],
+              closeTo(inkY - thickness, _floatQuantum),
+              reason: 'canonical underline y (engine rule) $label');
+          expect(legacyOps.underline![1], closeTo(legacyY, _floatQuantum),
+              reason: 'legacy underline y (package rule) $label');
+          expect(legacyY - (inkY - thickness),
+              greaterThan(0.5 * thickness),
+              reason: 'the two rules must actually differ, or this test '
+                  'proves nothing $label');
+          for (final index in <int>[0, 2, 3]) {
+            expect(canonicalOps.underline![index],
+                closeTo(legacyOps.underline![index], _floatQuantum),
+                reason: 'underline[$index] $label');
           }
         } else {
           expect(canonicalOps.underline, isNull, reason: 'no line $label');
@@ -498,11 +527,22 @@ void main() {
               RegExp(r'-?[\d.]+ -?[\d.]+ -?[\d.]+ -?[\d.]+ re W n'),
               'CLIP re W n',
             );
-        final normalized = withoutClip(contentStream(canonical)).replaceFirst(
+        // Third intended delta: the underline's geometry, which follows the
+        // engine's rule rather than the package's (asserted numerically
+        // above). Its coordinates and stroke width are normalised here so the
+        // rest of the stream still has to match byte for byte.
+        String withoutUnderline(String stream) => stream
+            .replaceFirst(
+              RegExp(r'-?[\d.]+ -?[\d.]+ m -?[\d.]+ -?[\d.]+ l S'),
+              'UNDERLINE m l S',
+            )
+            .replaceFirst(RegExp(r'-?[\d.]+ w'), 'W w');
+        final normalized = withoutUnderline(withoutClip(contentStream(canonical)))
+            .replaceFirst(
           RegExp(r'\[<[0-9A-Fa-f]+>\s*-?[\d.]+\]TJ'),
           '[<${canonicalOps.hex}>]TJ',
         );
-        expect(normalized, withoutClip(contentStream(legacy)),
+        expect(normalized, withoutUnderline(withoutClip(contentStream(legacy))),
             reason: 'byte parity $label');
       }
     }

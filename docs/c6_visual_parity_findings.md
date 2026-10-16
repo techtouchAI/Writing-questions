@@ -355,3 +355,39 @@ the official gate runs.
 (التسطير المطبوع لا يقع حيث يقع على الشاشة) لكن الاتجاه الصحيح يحتاج قياس إزاحة
 المعاينة نفسها؛ مسبار `test/visual/underline_geometry_probe_test.dart` أُضيف لهذا،
 وهو اليوم **يقيس وينشر لكنه غير معايَر** (كاشف الخط لا يعتمد عليه بعد) ولهذا ليس بوابياً.
+
+### 12.4 التسطير: الجذر مُثبت من مصدر المحرّك، والإصلاح قياسي
+
+`tool/check_underline_parity.py` (بوابي، يعمل في وظيفة «Visual regression» بعد بوابة
+RMSE) قاس على البوابة الفعلية:
+
+| | الموضع تحت خط الأساس | السماكة |
+|---|---|---|
+| `vector.pdf` (قبل الإصلاح) | **3.487pt** | 0.55pt (0.05em) |
+| المعاينة | **0.750pt** (1px) | 1px |
+
+الفرق 2.737pt ≈ 3.65px — وهو ما أظهرته خرائط الحبر كإزاحة 4px.
+
+**الجذر ليس وحدة قياس ولا تحويل إحداثيات، بل صيغتان مختلفتان.** الحزمة (`third_party/pdf`
+`_TextDecoration.foregroundPaint`) ترسم الخط عند `-font.descent·size/2` بسماكة
+`0.05em`. أما المحرّك فيرسمه بقاعدته الخاصة، وهي منصوصة في `skparagraph`
+(`modules/skparagraph/src/Decorations.cpp` — والتعليق فيه حرفياً
+«This is how flutter calculates the thickness/positioning»):
+
+```
+calculateThickness:  fThickness = fontSize / 14                 // عند غياب مقاييس الخط
+calculatePosition :  fPosition  = fThickness                    // لا underline_position
+                     fPosition -= ascent                        // أي y = baseline + fThickness
+solid drawing     :  draw_line_as_rect(y) -> rect[y - t/2, y + t/2]  , t = decorate stroke width
+```
+
+أي أن الشريط على الشاشة يشغل `baseline + t/2 .. baseline + 1.5t` بـ`t = size/14`
+(الحقول كلها غير صحيحة لهذه الخطوط لأن جداول `post` فيها إصدار 2/3 بلا مقاييس تسطير).
+عند 11pt: `t = 0.786pt` → الشريط `[0.39pt, 1.18pt]` = بكسل واحد تحت خط الأساس — وهو
+بالضبط ما قاسته الأداة (0.750pt، 1px). فالإصلاح ليس معايرة: هو نقل صيغة المحرّك نفسها
+إلى `CanonicalText` (`underlineThicknessPt = fontSize/14`، والسكتة `y = inkY - t` بسماكة
+`t`، وهي في هذا اللوحة y-للأعلى فتُغطي `inkY - 1.5t .. inkY - t/2` كما في المعاينة).
+
+الحارسان: اختبار `test/pdf_engine/underline_rule_test.dart` يثبّت الهندسة عند أربعة
+أحجام ويؤكد الشرط المسبق على كل خطوط الحزمة (لا مقاييس تسطير في `post`)، وبوابة
+`check_underline_parity.py` تقارن الموضع في المعاينة والـPDF وتفشل عند تجاوز 1pt.
