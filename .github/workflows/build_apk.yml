@@ -744,6 +744,22 @@ jobs:
         shell: bash
         run: flutter test test/visual/underline_geometry_probe_test.dart
 
+      # [C6-UNDERLINE] بوابة على خاصية يملكها المشروع: موضع التسطير بالنسبة
+      # لنصّه هو نفسه في المعاينة وفي vector.pdf. تُقاس الهندسة من الملف نفسه
+      # (لا رَستَرة)، ويُقاس الحبر في اللقطة، فتُقارن إزاحتان بمرجع واحد بدل
+      # مقارنة مصيِّرين. مستقلّة عن عتبة RMSE: لا تمسّها ولا تُخفِ فشلها.
+      - name: Verify underline placement matches the Preview (gating)
+        if: always()
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/c6raster-venv/bin/python" tool/check_underline_parity.py \
+            build/visual_parity 2>/dev/null || {
+              python3 -m venv "$RUNNER_TEMP/underline-venv"
+              "$RUNNER_TEMP/underline-venv/bin/pip" install -q pymupdf
+              "$RUNNER_TEMP/underline-venv/bin/python" \
+                tool/check_underline_parity.py build/visual_parity
+            }
+
   # تحقيق C6 غير مُلزِم. يقرأ artifact الذي تنتجه وظيفة visual-parity نفسها،
   # ولا يغيّر بوابة RMSE أو عتبتها (0.02) أو الصور المرجعية أو نتيجة الوظيفة.
   # فشله لا يفشل التشغيل (continue-on-error). الأدوات في tool/diag_c6_*.py.
@@ -782,6 +798,7 @@ jobs:
       - name: Unit tests of the C6 diagnostics (synthetic)
         run: |
           "$RUNNER_TEMP/diag-venv/bin/python" -m unittest discover -s tool -p 'test_diag_c6_*.py' -v
+          "$RUNNER_TEMP/diag-venv/bin/python" -m unittest discover -s tool -p 'test_diag_c6_underline_parity.py' -v
 
       - name: C6 diagnostics on the rendered artifacts
         shell: bash
