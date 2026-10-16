@@ -726,6 +726,15 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      # [C6-ITALIC] اختبار انحدار بوابي: يقيس ميلان النص المائل في المعاينة من
+      # البكسل نفسه ويقارنه بالعامل الذي يصدّره `CanonicalText`. الثابت وحده لا
+      # يُثبت شيئاً؛ القياس هو الدليل. الخطوة أخيراً عمداً: لا تحجب تقرير بوابة
+      # RMSE ولا ملخّص المقاييس، وهي لا تمسّ العتبة ولا الصور المرجعية.
+      - name: Verify the Preview italic oblique against the emitted shear
+        if: always()
+        shell: bash
+        run: flutter test test/visual/italic_oblique_probe_test.dart
+
   # تحقيق C6 غير مُلزِم. يقرأ artifact الذي تنتجه وظيفة visual-parity نفسها،
   # ولا يغيّر بوابة RMSE أو عتبتها (0.02) أو الصور المرجعية أو نتيجة الوظيفة.
   # فشله لا يفشل التشغيل (continue-on-error). الأدوات في tool/diag_c6_*.py.
@@ -750,6 +759,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends poppler-utils imagemagick
+          # [C6-ATTR] مصيِّر ثانٍ مستقل لضابط أرضية المصيِّر: يقيس، في كل تشغيل
+          # وعلى نفس بايتات vector.pdf، ما لا يستطيع أي تغيير في التخطيط أو
+          # التنسيق إزالته (فرق الرَّستَرة نفسه). غير ملزم ولا يمسّ البوابة.
+          # فشل التثبيت لا يُسقط الوظيفة؛ الأداة تعلن غياب الضابط صراحةً.
+          sudo apt-get install -y --no-install-recommends mupdf-tools \
+            || echo "::warning title=C6 renderer floor::mupdf-tools unavailable"
+          sudo apt-get install -y --no-install-recommends ghostscript \
+            || echo "::warning title=C6 renderer floor::ghostscript unavailable"
           python3 -m venv "$RUNNER_TEMP/diag-venv"
           "$RUNNER_TEMP/diag-venv/bin/pip" install -q pymupdf numpy
 

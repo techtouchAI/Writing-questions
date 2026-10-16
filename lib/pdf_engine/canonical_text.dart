@@ -51,12 +51,19 @@
 //   historical TJ bytes, so words without a correction are byte-identical
 //   to the uncorrected emission.
 //
-// Italic is accepted and ignored exactly as today: package:pdf never reads
-// TextStyle.fontStyle during PDF emission. Letter spacing has no producer
-// anywhere (no data key, no code setter) and is asserted zero at the call
-// site; CanonicalText takes none.
+// * italic replicates the Preview's synthetic oblique (see
+//   [CanonicalText.syntheticObliqueShear]): package:pdf never reads
+//   TextStyle.fontStyle, and no italic face is bundled, so the Preview's
+//   slanted run must be reproduced by shearing the emitted glyphs. The shear
+//   is applied around the ink origin inside the existing save/restore, so
+//   every other operator — box, clip, Td, TJ number, underline — is
+//   byte-identical to the upright emission.
+//
+// Letter spacing has no producer anywhere (no data key, no code setter) and
+// is asserted zero at the call site; CanonicalText takes none.
 import 'dart:math' as math;
 
+import 'package:flutter/widgets.dart' show Matrix4;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -69,6 +76,7 @@ class CanonicalText extends pw.Widget {
     required this.canonicalAdvancePt,
     required this.rtl,
     required this.underline,
+    this.italic = false,
   });
 
   final String text;
@@ -78,6 +86,23 @@ class CanonicalText extends pw.Widget {
   final double canonicalAdvancePt;
   final bool rtl;
   final bool underline;
+
+  /// Whether the run is italic, i.e. whether the emitted glyphs are sheared by
+  /// [syntheticObliqueShear] to reproduce the Preview's rendering.
+  final bool italic;
+
+  /// Skia's synthetic oblique factor: the Preview slants an italic run even
+  /// though no italic face is bundled, and package:pdf never reads
+  /// `TextStyle.fontStyle`, so the printed page used to stay upright while the
+  /// screen slanted. The value is tan(14°) — the shear Skia applies for
+  /// `FontStyle.italic` on a family without an italic face.
+  ///
+  /// It is not a constant the code merely believes in: the emitted factor is
+  /// checked against the slant measured from Preview pixels in
+  /// `test/visual/italic_oblique_probe_test.dart`, so a drift in either the
+  /// constant or Skia's own behaviour fails that test instead of silently
+  /// desynchronising the two renderings.
+  static const double syntheticObliqueShear = 0.25;
 
   /// Shaped emission text, mirroring package:pdf's default shaping dispatch.
   ///
@@ -173,18 +198,36 @@ class CanonicalText extends pw.Widget {
         clipBottom - clipTop,
       )
       ..clipPath()
-      ..setFillColor(color)
-      ..drawString(
-        pdfFont,
-        fontSizePt,
-        shaped,
-        0,
-        inkY,
-        // The replaced path always passes its (zero) letter spacing, so the
-        // same explicit `0 Tc` is emitted.
-        charSpace: 0,
-        trailingTj: correction,
-      );
+      ..setFillColor(color);
+    // Italic: the Preview shears the glyphs about the ink origin, so this
+    // emits the same shear for the printed page. The text origin (0, inkY)
+    // is a fixed point of the matrix — the glyphs above the baseline move
+    // right — so the ink position is unchanged and an upright run emits no
+    // extra operator at all.
+    final shear = italic ? syntheticObliqueShear : 0.0;
+    if (shear != 0) {
+      canvas
+        ..saveContext()
+        ..setTransform(
+          Matrix4.identity()
+            ..setEntry(0, 1, shear)
+            ..setEntry(0, 3, -shear * inkY),
+        );
+    }
+    canvas.drawString(
+      pdfFont,
+      fontSizePt,
+      shaped,
+      0,
+      inkY,
+      // The replaced path always passes its (zero) letter spacing, so the
+      // same explicit `0 Tc` is emitted.
+      charSpace: 0,
+      trailingTj: correction,
+    );
+    if (shear != 0) {
+      canvas.restoreContext();
+    }
     // The replaced foreground decoration always sets the stroke color and
     // width, then draws (and strokes) the line only for underlined text.
     canvas

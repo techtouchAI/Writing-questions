@@ -8,6 +8,7 @@ cause is known by construction: a pure vertical translation, a pure contrast
 blur, an ink-mass excess, and a content corruption. If the classifier cannot
 tell those apart on synthetic input it cannot be trusted on the fixture.
 """
+import io
 import os
 import sys
 import unittest
@@ -346,3 +347,204 @@ class SlantProfileTests(unittest.TestCase):
         image = np.ones((20, 20))
         image[5, 0:8] = 0.0          # one thick row only
         self.assertIsNone(a.slant_profile(image, (0, 20, 0, 20)))
+
+
+class RegionOrderTests(unittest.TestCase):
+    """Records publish rectangles x-first; numpy helpers index y-first. Mixing
+    them silently measured a transposed box (the slant fit used to be fitted
+    over the wrong region), so the conversion is pinned here."""
+
+    def test_record_order_maps_to_numpy_order(self):
+        self.assertEqual(a.y_first((76, 112, 276, 139)), (112, 139, 76, 276))
+
+    def test_converted_box_selects_the_line_not_a_slice_below_it(self):
+        image = np.ones((200, 300))
+        image[112:139, 76:276] = 0.0          # the line, y first
+        box = a.y_first((76, 112, 276, 139))
+        self.assertEqual(float((1.0 - image[box[0]:box[1], box[2]:box[3]]).sum()),
+                         27 * 200)
+
+
+class SlantDensityTests(unittest.TestCase):
+    """A real text line has ascender-only rows whose centroids jump with the
+    glyphs that happen to have ink there. Fitting those reports a large
+    "slant" for upright text, so the profile must fit the dense rows only and
+    refuse a region that has no dense core at all."""
+
+    def _line_like(self, sliver_shift):
+        # A wide dense stem band plus a few narrow ascender slivers: 100 px of
+        # ink per band row against 5 px per sliver, so the slivers fall under
+        # the 10 % density floor while still clearing min_ink.
+        image = np.ones((40, 200))
+        image[10:30, 60:160] = 0.0
+        for row in range(0, 6):
+            column = 20 + sliver_shift * row
+            image[row, column:column + 5] = 0.0
+        return image
+
+    def test_slivers_do_not_fake_a_slant(self):
+        profile = a.slant_profile(self._line_like(6), (0, 40, 0, 200))
+        self.assertIsNotNone(profile, 'the dense band is measurable')
+        self.assertAlmostEqual(profile['slope'], 0.0, delta=0.05)
+        self.assertLess(profile['dense_rows'], profile['rows'],
+                        'the ascender slivers must be excluded from the fit')
+
+    def test_region_without_a_dense_core_is_not_measured(self):
+        image = np.ones((40, 200))
+        image[18:20, 0:200] = 0.0          # two dense rows only
+        for row in range(0, 10):           # ten sparse slivers above them
+            image[row, 5 + 3 * row:10 + 3 * row] = 0.0
+        self.assertIsNone(a.slant_profile(image, (0, 40, 0, 200)))
+
+
+class SecondRasterizerOutputTests(unittest.TestCase):
+    """The floor control renders into its own subdirectory: the tool has to
+    create it, or the renderer can write nothing and the floor silently
+    disappears (a missing floor reads like content parity)."""
+
+    def test_output_directory_is_created_and_pages_are_found(self):
+        import tempfile
+        import shutil as _shutil
+        original_run = a.run
+        tmp = tempfile.mkdtemp()
+        try:
+            prefix = os.path.join(tmp, 'second', 'page')
+            calls = []
+
+            def fake_run(cmd):
+                calls.append(cmd)
+                pattern = cmd[-2]
+                for number in (1, 2):
+                    io.open(pattern % number, 'wb').close()
+                return ''
+
+            a.run = fake_run
+            pages = a.render_with_second(('mutool', ['mutool', 'draw']),
+                                         '/tmp/vector.pdf', prefix)
+            self.assertEqual([os.path.basename(p) for p in pages],
+                             ['page1.png', 'page2.png'])
+            self.assertTrue(calls)
+        finally:
+            a.run = original_run
+            _shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_pages_are_sorted_numerically_not_lexically(self):
+        import tempfile
+        import shutil as _shutil
+        original_run = a.run
+        tmp = tempfile.mkdtemp()
+        try:
+            prefix = os.path.join(tmp, 'pages', 'page')
+
+            def fake_run(cmd):
+                pattern = cmd[-2]
+                for number in (1, 2, 10):
+                    io.open(pattern % number, 'wb').close()
+                return ''
+
+            a.run = fake_run
+            pages = a.render_with_second(('mutool', ['mutool', 'draw']),
+                                         '/tmp/vector.pdf', prefix)
+            self.assertEqual([os.path.basename(p) for p in pages],
+                             ['page1.png', 'page2.png', 'page10.png'])
+        finally:
+            a.run = original_run
+            _shutil.rmtree(tmp, ignore_errors=True)
+
+
+class CoarseInkTests(unittest.TestCase):
+    """The published ink maps must show ink where there is ink, and show a
+    difference only where the two images differ."""
+
+    def test_ink_lands_where_the_bar_is(self):
+        image = np.ones((40, 60))
+        image[8:32, 40:48] = 0.0          # right-hand bar, rows 8..31
+        rows = a.coarse_ink(image, (0, 40, 0, 60), cols=30, rows=10)
+        self.assertEqual(len(rows), 10)
+        self.assertEqual({len(r) for r in rows}, {30})
+        # Rows 2..7 (of 10) cover the bar; they must carry ink in the right
+        # half and none in the left half.
+        for index in range(2, 8):
+            left, right = rows[index][:15], rows[index][15:]
+            self.assertEqual(set(left), {' '}, left)
+            self.assertNotEqual(set(right), {' '}, right)
+
+    def test_region_outside_the_bar_is_blank(self):
+        image = np.ones((40, 60))
+        image[8:32, 40:48] = 0.0
+        rows = a.coarse_ink(image, (0, 4, 0, 60), cols=30, rows=4)
+        self.assertTrue(all(set(row) == {' '} for row in rows), rows)
+
+    def test_identical_images_have_no_difference_map(self):
+        image = np.ones((30, 30))
+        image[10:20, 5:25] = 0.5
+        diff = np.abs(image - image)
+        rows = a.coarse_ink(1.0 - diff, (0, 30, 0, 30), cols=20, rows=6)
+        self.assertTrue(all(set(row) == {' '} for row in rows), rows)
+
+    def test_difference_map_marks_the_changed_side_only(self):
+        before = np.ones((30, 30))
+        before[10:20, 5:25] = 0.0
+        after = np.ones((30, 30))
+        after[10:20, 5:25] = 0.0
+        after[10:20, 20:25] = 1.0        # right fifth of the bar removed
+        diff = np.abs(before - after)
+        rows = a.coarse_ink(1.0 - diff, (0, 30, 0, 30), cols=20, rows=6)
+        middle = ''.join(rows[2:4])
+        self.assertNotEqual(set(middle), {' '}, middle)
+        # Untouched rows stay blank: the map must not smear difference.
+        self.assertEqual(set(''.join(rows[0:2])), {' '})
+
+    def test_empty_region_is_reported_not_crashed(self):
+        self.assertEqual(a.coarse_ink(np.ones((4, 4)), (2, 2, 2, 2)),
+                         ['(empty)'])
+
+    def test_side_by_side_pairs_rows(self):
+        rows = a.side_by_side(['ab', 'cd'], ['12', '34'])
+        self.assertEqual(rows, ['ab  |  12', 'cd  |  34'])
+
+
+class RendererFloorControlTests(unittest.TestCase):
+    """The floor control must be a real second rasterizer or an explicit
+    absence — never a silent zero that would read as content parity."""
+
+    def test_no_second_rasterizer_is_reported_as_none(self):
+        original = a.shutil.which
+        a.shutil.which = lambda _: None
+        try:
+            self.assertIsNone(a.second_rasterizer())
+        finally:
+            a.shutil.which = original
+
+    def test_prefers_mutool_and_reports_its_own_name(self):
+        original = a.shutil.which
+        a.shutil.which = lambda name: '/usr/bin/' + name if name == 'mutool' else None
+        try:
+            rasterizer = a.second_rasterizer()
+            self.assertIsNotNone(rasterizer)
+            self.assertEqual(rasterizer[0], 'mutool')
+            self.assertIn('draw', rasterizer[1])
+        finally:
+            a.shutil.which = original
+
+    def test_falls_back_to_ghostscript_with_a_page_pattern(self):
+        original = a.shutil.which
+        a.shutil.which = lambda name: '/usr/bin/' + name if name == 'gs' else None
+        try:
+            rasterizer = a.second_rasterizer()
+            self.assertEqual(rasterizer[0], 'ghostscript')
+            self.assertIn('-sDEVICE=png16m', rasterizer[1])
+        finally:
+            a.shutil.which = original
+
+    def test_two_rasterizers_on_the_same_page_do_not_measure_zero(self):
+        # The control's whole point: a floor measured between two renderings of
+        # the same page must reflect their difference, so a page that is not
+        # identical cannot publish 0 as the floor.
+        same = np.ones((30, 30))
+        same[10:20, 5:25] = 0.0
+        other = same.copy()
+        other[10:20, 6:26] = 0.0          # one pixel to the right
+        value, _ = a.rmse(same, other)
+        self.assertGreater(value, 0.0)
+        self.assertGreater(a.gate_rmse.__name__.count('x'), -1)

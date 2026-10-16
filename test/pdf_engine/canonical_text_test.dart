@@ -87,6 +87,7 @@ pw.Widget _canonicalWordText(
   required bool rtl,
   required bool underline,
   required double canonicalAdvance,
+  bool italic = false,
 }) =>
     _positioned(
       CanonicalText(
@@ -97,8 +98,32 @@ pw.Widget _canonicalWordText(
         canonicalAdvancePt: canonicalAdvance,
         rtl: rtl,
         underline: underline,
+        italic: italic,
       ),
     );
+
+/// Every applied shear in one emission: `cm` operands whose linear part is a
+/// pure horizontal shear (`a = d = 1`, `b = f = 0`, `c != 0`). Widget
+/// translations share the operator but have `c == 0`, so they never appear.
+List<List<double>> _shearMatrices(String raw) {
+  final pattern = RegExp(
+    r'(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+'
+    r'(-?[\d.]+)\s+(-?[\d.]+)\s+cm',
+  );
+  return <List<double>>[
+    for (final match in pattern.allMatches(raw))
+      if ((double.parse(match.group(2)!) - 0).abs() < 1e-9 &&
+          (double.parse(match.group(3)!) - 0).abs() > 1e-9)
+        <double>[
+          double.parse(match.group(1)!),
+          double.parse(match.group(2)!),
+          double.parse(match.group(3)!),
+          double.parse(match.group(4)!),
+          double.parse(match.group(5)!),
+          double.parse(match.group(6)!),
+        ],
+  ];
+}
 
 /// One parsed word emission: viewer-composed ink position, TJ bytes,
 /// underline stroke, colors, and clip box.
@@ -515,6 +540,85 @@ void main() {
       expect(PdfContentProbe.fromBytes(legacyBytes).words.single.advanceWidth,
           closeTo(pdfAdvance, _floatQuantum));
     }
+  });
+
+  test('italic shears the emitted glyphs by Skia\'s synthetic oblique, '
+      'about the ink origin, and upright text emits none', () async {
+    final font = await _loadRegular();
+    final pdfFont = _pdfFontOf(font);
+    const word = 'STA1';
+    const canonicalAdvance = 10.0;
+    // Same quantities the emitter uses: the widget box height and the ink
+    // origin are the shaped word's own metrics, so the shear must pivot on
+    // exactly this y.
+    final metrics = pdfFont.stringMetrics(word) * 12;
+    final inkY = metrics.maxHeight - metrics.ascent;
+
+    Future<_WordEmission> emit({required bool italic}) async =>
+        _parseWordEmission(
+          await _emit(
+            (font) => _canonicalWordText(
+              font,
+              word,
+              rtl: false,
+              underline: false,
+              canonicalAdvance: canonicalAdvance,
+              italic: italic,
+            ),
+          ),
+        );
+
+    final uprightOps = await emit(italic: false);
+    final italicOps = await emit(italic: true);
+    final uprightRaw = await _emit(
+      (font) => _canonicalWordText(font, word,
+          rtl: false, underline: false, canonicalAdvance: canonicalAdvance),
+    );
+    final italicRaw = await _emit(
+      (font) => _canonicalWordText(font, word,
+          rtl: false,
+          underline: false,
+          canonicalAdvance: canonicalAdvance,
+          italic: true),
+    );
+
+    // Upright runs are untouched: no shear operator at all.
+    expect(_shearMatrices(uprightRaw), isEmpty,
+        reason: 'upright emission must not shear');
+
+    // Italic runs carry exactly one shear, with the synthetic oblique factor
+    // and the compensating translation that keeps the ink origin fixed.
+    final shears = _shearMatrices(italicRaw);
+    expect(shears, hasLength(1), reason: 'exactly one shear per italic run');
+    final shear = shears.single;
+    const factor = CanonicalText.syntheticObliqueShear;
+    expect(shear[0], closeTo(1, _floatQuantum), reason: 'a');
+    expect(shear[1], closeTo(0, _floatQuantum), reason: 'b');
+    expect(shear[2], closeTo(factor, _floatQuantum), reason: 'c');
+    expect(shear[3], closeTo(1, _floatQuantum), reason: 'd');
+    expect(shear[4], closeTo(-factor * inkY, _floatQuantum), reason: 'e');
+    expect(shear[5], closeTo(0, _floatQuantum), reason: 'f');
+
+    // Geometry as a viewer executes it: the ink origin is a fixed point, and a
+    // point one point above the baseline moves right by the factor — the
+    // direction the Preview slants (its ascenders lean towards the end of the
+    // line). Everything that is not the shear is unchanged.
+    double mapX(double x, double y) => shear[0] * x + shear[2] * y + shear[4];
+    expect(mapX(0, inkY), closeTo(0, _floatQuantum),
+        reason: 'the text origin must not move');
+    expect(mapX(0, inkY + 1), closeTo(factor, _floatQuantum),
+        reason: 'ascenders lean right by the oblique factor');
+    expect(italicOps.x, closeTo(uprightOps.x, _floatQuantum),
+        reason: 'viewer-composed ink x is the canonical origin');
+    expect(italicOps.y, closeTo(uprightOps.y, _floatQuantum),
+        reason: 'viewer-composed ink y is the canonical baseline');
+    expect(italicOps.hex, uprightOps.hex, reason: 'same shaped glyphs');
+    expect(italicOps.tjNumber, uprightOps.tjNumber, reason: 'same TJ number');
+    expect(italicOps.clip, uprightOps.clip, reason: 'same clip box');
+    expect(italicOps.underline, uprightOps.underline, reason: 'same underline');
+    expect(italicOps.fillColor, uprightOps.fillColor, reason: 'same fill');
+    expect(italicOps.strokeColor, uprightOps.strokeColor, reason: 'same stroke');
+    expect(italicOps.lineWidth, uprightOps.lineWidth, reason: 'same width');
   });
 }
 

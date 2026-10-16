@@ -33,6 +33,7 @@ tests live in tool/test_diag_c6_element_attribution.py and use no real fixture.
 Usage: diag_c6_element_attribution.py <artifacts_dir> [--top N] [--pad PX]
 """
 import argparse
+import glob
 import json
 import os
 import shutil
@@ -133,6 +134,44 @@ def gate_rmse(norm, ref):
     return float(raw.split()[0]) / 65535.0
 
 
+def second_rasterizer():
+    """An independent PDF rasterizer, or None when the image lacks one.
+
+    The gate compares a Preview raster (Skia) against poppler's rasterization of
+    the Vector PDF, so its floor is not zero even for a pixel-perfect document.
+    Rendering the *same* PDF with a second, independent rasterizer measures that
+    floor on the document under test, in the same run and on the same bytes --
+    which is the only way to say whether a residual belongs to the content or
+    to the pair of rasterizers being compared.
+    """
+    for name, command in (
+        ('mutool', ['mutool', 'draw', '-r', '96', '-o']),
+        ('ghostscript', ['gs', '-q', '-dNOPAUSE', '-dBATCH', '-sDEVICE=png16m',
+                         '-r96', '-sOutputFile=']),
+    ):
+        if shutil.which(command[0]) is None:
+            continue
+        return (name, command)
+    return None
+
+
+def render_with_second(rasterizer, pdf_path, out_prefix):
+    name, command = rasterizer
+    # Both tools take a `%d` page pattern; sorting is numeric so page 10 does
+    # not land between 1 and 2. The caller passes a prefix inside the
+    # temporary directory, whose subdirectory has to exist before the tool
+    # writes its first page.
+    os.makedirs(os.path.dirname(out_prefix) or '.', exist_ok=True)
+    pattern = out_prefix + '%d.png'
+    if name == 'mutool':
+        run(command + [pattern, pdf_path])
+    else:
+        run(command[:-1] + [command[-1] + pattern, pdf_path])
+    files = glob.glob(out_prefix + '*.png')
+    return sorted(files, key=lambda path: int(
+        ''.join(ch for ch in os.path.basename(path) if ch.isdigit()) or 0))
+
+
 def read_gray(path):
     """8-bit luma float array in [0,1]; alpha is composited over white."""
     pix = pymupdf.Pixmap(path)
@@ -224,11 +263,21 @@ def slant_profile(image, region, min_ink=4.0, min_rows=5):
         total = float(weights.sum())
         if total < min_ink:
             continue
-        rows.append((float(i), float((weights * xs).sum() / total)))
+        rows.append((float(i), float((weights * xs).sum() / total), total))
     if len(rows) < min_rows:
         return None
-    ys = np.array([r[0] for r in rows])
-    cs = np.array([r[1] for r in rows])
+    # Rows that carry much less ink than the densest one are ascender-only
+    # slivers (or descender tails): their centroids jump with the glyphs that
+    # happen to have ink there, and a fit that keeps them reports a large
+    # "slope" for text that is perfectly upright. Measure only where the ink is
+    # dense enough for a centroid to mean a position, and say how many rows that
+    # was, so a reader can tell a real measurement from an unusable region.
+    peak = max(row[2] for row in rows)
+    dense = [row for row in rows if row[2] >= 0.1 * peak]
+    if len(dense) < min_rows or len(dense) < 0.6 * len(rows):
+        return None
+    ys = np.array([r[0] for r in dense])
+    cs = np.array([r[1] for r in dense])
     design = np.vstack([ys, np.ones_like(ys)]).T
     slope, intercept = np.linalg.lstsq(design, cs, rcond=None)[0]
     predicted = design @ np.array([slope, intercept])
@@ -238,8 +287,43 @@ def slant_profile(image, region, min_ink=4.0, min_rows=5):
     # nothing to explain, so r2 is reported as 1 (a perfect fit of a constant)
     # rather than as the undefined ratio it would otherwise be.
     return {'slope': float(slope), 'rows': len(rows),
+            'dense_rows': len(dense),
             'r2': float(1 - residual / spread) if spread > 1e-9 else 1.0,
-            'span': (int(y0 + rows[0][0]), int(y0 + rows[-1][0]))}
+            'span': (int(y0 + dense[0][0]), int(y0 + dense[-1][0]))}
+
+
+_RAMP = ' .:-=+*#%@'
+
+
+def coarse_ink(image, region, cols=54, rows=13):
+    """Box-average ink of a region as ASCII, for eyeballing in the annotation.
+
+    The RMSE number cannot say whether one side is heavier, offset, or simply
+    rasterised differently; a coarse picture can. Each character is one
+    averaged cell, so a shifted stem or a weight difference is visible as an
+    asymmetry between the two maps printed side by side.
+    """
+    y0, y1, x0, x1 = region
+    block = 1.0 - np.clip(image[y0:y1, x0:x1], 0.0, 1.0)
+    h, w = block.shape
+    if h == 0 or w == 0:
+        return ['(empty)']
+    yy = np.linspace(0, h, rows + 1).astype(int)
+    xx = np.linspace(0, w, cols + 1).astype(int)
+    out = []
+    for r in range(rows):
+        row = []
+        for c in range(cols):
+            cell = block[yy[r]:max(yy[r] + 1, yy[r + 1]),
+                         xx[c]:max(xx[c] + 1, xx[c + 1])]
+            value = float(cell.mean()) if cell.size else 0.0
+            row.append(_RAMP[min(len(_RAMP) - 1, int(value * len(_RAMP) * 2.2))])
+        out.append(''.join(row))
+    return out
+
+
+def side_by_side(left, right, gap='  |  '):
+    return [a + gap + b for a, b in zip(left, right)]
 
 
 def ink_mass(image, region, strict=0.5, loose=0.05):
@@ -303,7 +387,8 @@ def mask_of(shape, rects):
 
 # --------------------------------------------------------------------- main
 
-def analyse_page(index, args, page, norm_path, ref_path, scale, offx, offy):
+def analyse_page(index, args, page, norm_path, ref_path, scale, offx, offy,
+                 floor=None):
     rendered = read_gray(norm_path)
     preview = read_gray(ref_path)
     if rendered.shape != preview.shape:
@@ -350,7 +435,7 @@ def analyse_page(index, args, page, norm_path, ref_path, scale, offx, offy):
 
     rows.sort(key=lambda r: r['sse_share'], reverse=True)
     top = rows[:args.top]
-    notice(f'ATTR p{index} totals+histogram', [
+    totals_lines = [
         f'gate-shaped RMSE (numpy luma) {total_rmse:.6f} | after 0.5px blur '
         f'{blur_rmse:.6f}',
         f'SSE share: text {100 * text_sse / max(total_sse, 1e-12):.2f}%  '
@@ -359,29 +444,52 @@ def analyse_page(index, args, page, norm_path, ref_path, scale, offx, offy):
         f'RMSE inside text {text_rmse:.6f}  outside text {rest_rmse:.6f}',
         f'scale {scale:.4f} px/pt  crop offset ({offx},{offy})  '
         f'lines {len(lines)}  verdicts {counts}',
-    ])
+    ]
+    if floor:
+        # Same document, same page, two independent conforming rasterizers. The
+        # first number holds no content difference at all, so a ceiling below it
+        # cannot be met by any layout or formatting change.
+        totals_lines.append(
+            f'renderer floor: {floor["renderer"]} vs poppler on the SAME '
+            f'vector.pdf = {floor["vs_poppler"]:.6f} | '
+            f'{floor["renderer"]} vs preview = {floor["vs_preview"]:.6f} | '
+            f'gate (poppler vs preview) = {floor["vs_gate"]:.6f}')
+    notice(f'ATTR p{index} totals+histogram', totals_lines)
     slants = []
     for r in top[:6]:
-        px0, py0, px1, py1 = r['region']
-        region = (py0, px0, py1, px1)
+        region = y_first(r['region'])
         s_preview = slant_profile(preview, region)
         s_rendered = slant_profile(rendered, region)
         if s_preview is None or s_rendered is None:
             continue
         slants.append(
             f'{r["verdict"][:6]} preview k={s_preview["slope"]:+.3f} '
-            f'(r2 {s_preview["r2"]:.2f}) vs pdf k={s_rendered["slope"]:+.3f} '
-            f'(r2 {s_rendered["r2"]:.2f})  {r["text"][:44]}')
-    if slants:
-        notice(f'ATTR p{index} ink slant (shear) per top line', slants)
+            f'(r2 {s_preview["r2"]:.2f}, rows {s_preview["dense_rows"]}/'
+            f'{s_preview["rows"]}) vs pdf k={s_rendered["slope"]:+.3f} '
+            f'(r2 {s_rendered["r2"]:.2f}, rows {s_rendered["dense_rows"]}/'
+            f'{s_rendered["rows"]})  {r["text"][:44]}')
+    for rank, r in enumerate(top[:1], start=1):
+        region = y_first(r['region'])
+        preview_map = coarse_ink(preview, region)
+        rendered_map = coarse_ink(rendered, region)
+        # Difference map: white where the two agree, ink where they differ.
+        # Built full-page and then sliced, because coarse_ink slices too.
+        diff_map = coarse_ink(1.0 - np.abs(preview - rendered), region)
+        notice(
+            f'ATTR p{index} offender {rank} ink map  (left = preview, '
+            f'right = pdf, then |difference|)  {r["text"][:60]}',
+            [f'{r["sse_share"]:.2f}% of SSE   rmse {r["rmse"]:.4f}   '
+             f'shift {r["best_shift"]}'] +
+            side_by_side(preview_map, rendered_map) + [''] + diff_map,
+        )
 
-    notice(f'ATTR p{index} top lines by SSE share', [
+    notice(f'ATTR p{index} top lines by SSE share + ink slant', [
         f'{r["sse_share"]:6.2f}%  rmse {r["rmse"]:.4f} blur {r["blurred"]:.4f} '
         f'shift {r["best_shift"]}->{r["shift_rmse"]:.4f} '
         f'inkS {r["ink_ratio_strict"]} inkL {r["ink_ratio_loose"]} '
         f'[{r["verdict"]} {r["why"]}]  {r["text"]}'
         for r in top
-    ])
+    ] + slants)
 
     return {'page': index, 'totals': {
         'rmse': round(total_rmse, 6), 'blur_rmse': round(blur_rmse, 6),
@@ -389,6 +497,19 @@ def analyse_page(index, args, page, norm_path, ref_path, scale, offx, offy):
         'nontext_sse_share': round(100 * rest_sse / max(total_sse, 1e-12), 3),
         'text_rmse': round(text_rmse, 6), 'nontext_rmse': round(rest_rmse, 6),
     }, 'histogram': counts, 'lines': top}
+
+
+def y_first(region):
+    """Record order `(px0, py0, px1, py1)` -> numpy order `(y0, y1, x0, x1)`.
+
+    The published line records keep rectangles x-first because that is how a
+    reader expects to see a rectangle; every numpy helper here indexes y first
+    (`image[y0:y1, x0:x1]`). Mixing the two silently measured the wrong box:
+    the slant profile was fitted over a transposed region, which is why its r2
+    looked like noise instead of a slant.
+    """
+    px0, py0, px1, py1 = region
+    return (py0, py1, px0, px1)
 
 
 def _only(region, shape):
@@ -420,10 +541,23 @@ def main():
     if doc.page_count != pages:
         warn('ATTR page count', [f'pdf {doc.page_count} vs manifest {pages}'])
 
+    rasterizer = second_rasterizer()
     results = []
+    floors = {}
     with tempfile.TemporaryDirectory() as tmp:
-        rendered = render_pdf(os.path.join(art, 'vector.pdf'),
-                              os.path.join(tmp, 'page'))
+        vector_path = os.path.join(art, 'vector.pdf')
+        rendered = render_pdf(vector_path, os.path.join(tmp, 'page'))
+        control_pages = []
+        if rasterizer is None:
+            warn('ATTR renderer floor', [
+                'no independent second rasterizer found (mutool/gs); the '
+                'renderer floor cannot be measured in this run'])
+        else:
+            try:
+                control_pages = render_with_second(
+                    rasterizer, vector_path, os.path.join(tmp, 'second/page'))
+            except Exception:
+                warn('ATTR renderer floor', traceback.format_exc().splitlines()[-4:])
         if len(rendered) != pages:
             warn('ATTR render', [f'rendered {len(rendered)} pages, manifest {pages}'])
         for i in range(min(len(rendered), doc.page_count)):
@@ -434,6 +568,22 @@ def main():
                 preview_png = os.path.join(art, f'preview_page_{index}.png')
                 normalize(rendered[i], preview_png, width, height, dest)
                 gate_value = gate_rmse(dest['norm'], dest['ref'])
+                floor = None
+                if rasterizer is not None and index <= len(control_pages):
+                    control = {'norm': os.path.join(tmp, f'second_{index}.png'),
+                               'ref': os.path.join(tmp, f'ref2_{index}.png')}
+                    normalize(control_pages[index - 1], preview_png,
+                              width, height, control)
+                    floor = {'renderer': rasterizer[0],
+                             'vs_poppler': gate_rmse(control['norm'],
+                                                     dest['norm']),
+                             'vs_preview': gate_rmse(control['norm'],
+                                                     control['ref']),
+                             'vs_gate': gate_value}
+                    floors[index] = {key: (round(value, 6)
+                                           if isinstance(value, float)
+                                           else value)
+                                     for key, value in floor.items()}
                 page = doc[i]
                 # Scale from the FULL-page render, never from the cropped copy:
                 # the crop removes 4 px of width, which would understate the
@@ -442,7 +592,8 @@ def main():
                 scale = full.width / page.rect.width
                 offx = offy = FRAME_PX
                 record = analyse_page(index, args, page, dest['norm'],
-                                      dest['ref'], scale, offx, offy)
+                                      dest['ref'], scale, offx, offy,
+                                      floor=floor)
                 record['totals']['gate_rmse'] = round(gate_value, 6)
                 notice(f'ATTR page{index} gate cross-check', [
                     f'`compare -metric RMSE` on the gate-shaped pair = '
@@ -454,9 +605,11 @@ def main():
                      traceback.format_exc().splitlines()[-6:])
 
     with open(os.path.join(out_dir, JSON_NAME), 'w', encoding='utf-8') as fh:
-        json.dump({'schema': 'c6-element-attribution-v1', 'pages': results},
+        json.dump({'schema': 'c6-element-attribution-v1', 'pages': results,
+                   'renderer_floor': floors},
                   fh, ensure_ascii=False, indent=1)
     with open(os.path.join(out_dir, TXT_NAME), 'w', encoding='utf-8') as fh:
+        fh.write(f'renderer floor: {floors}\n')
         for record in results:
             fh.write(f"page {record['page']}: {record['totals']}\n")
             fh.write(f"  histogram {record['histogram']}\n")
