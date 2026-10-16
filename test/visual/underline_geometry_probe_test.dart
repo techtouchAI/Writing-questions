@@ -77,7 +77,7 @@ void main() {
                 style: TextStyle(
                   fontFamily: ExamFont.arabicFamily,
                   fontSize: fontPx,
-                  color: const Color(0xFF000000),
+                  color: Color(0xFF000000),
                   decoration: TextDecoration.underline,
                 ),
               ),
