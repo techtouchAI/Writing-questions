@@ -463,10 +463,14 @@ void main() {
             reason: 'fill $label');
         expect(canonicalOps.strokeColor, legacyOps.strokeColor,
             reason: 'stroke $label');
-        // The replaced path sets the stroke width even without a line.
+        // The stroke width is the rule's thickness and follows the same
+        // decision as the rule's position: the engine's `fontSize / 14`, not
+        // the package's `0.05 em`. Both are asserted so neither can drift.
+        expect(legacyOps.lineWidth, closeTo(12 * 0.05, _floatQuantum),
+            reason: 'legacy width (package rule) $label');
         expect(canonicalOps.lineWidth,
-            closeTo(legacyOps.lineWidth!, _floatQuantum),
-            reason: 'width $label');
+            closeTo(CanonicalText.underlineThicknessPt(12), _floatQuantum),
+            reason: 'canonical width (engine rule) $label');
         if (underline) {
           // The underline is the one place the canonical emission must NOT
           // copy the replaced path. The replaced path uses the package's own
@@ -487,7 +491,7 @@ void main() {
               reason: 'canonical underline y (engine rule) $label');
           expect(legacyOps.underline![1], closeTo(legacyY, _floatQuantum),
               reason: 'legacy underline y (package rule) $label');
-          expect(legacyY - (inkY - thickness),
+          expect((legacyY - (inkY - thickness)).abs(),
               greaterThan(0.5 * thickness),
               reason: 'the two rules must actually differ, or this test '
                   'proves nothing $label');

@@ -120,14 +120,16 @@ void main() {
 
       // The stroke's width *is* the rule's thickness and its path is the
       // centre of the band, so the band spans y ± thickness/2.
-      expect(rule.lineWidth, closeTo(thickness, 1e-6),
+      // The emission rounds every number to five decimals, so the tolerance
+      // is the file's own quantum, not machine epsilon.
+      expect(rule.lineWidth, closeTo(thickness, 1e-4),
           reason: 'thickness at $size pt');
       expect(rule.span, greaterThan(0), reason: 'the rule must span ink');
 
       final pdfFont = PdfTtfFont(PdfDocument(), bytes);
       final metrics = pdfFont.stringMetrics('STA1') * size;
       final baseline = metrics.maxHeight - metrics.ascent;   // y-up canvas
-      expect(rule.y, closeTo(baseline - thickness, 1e-6),
+      expect(rule.y, closeTo(baseline - thickness, 1e-4),
           reason: 'the stroke must be centred one thickness below the '
               'baseline at $size pt');
 
