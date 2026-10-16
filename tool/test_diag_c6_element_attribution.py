@@ -278,10 +278,15 @@ class EndToEndSmokeTests(unittest.TestCase):
             original = (a.render_pdf, a.normalize, a.gate_rmse)
             a.render_pdf, a.normalize = fake_render, fake_normalize
             a.gate_rmse = lambda norm, ref: 0.0
+            import contextlib
+            import io as _io
             argv = sys.argv[:]
             sys.argv = ['diag', art, '--top', '3']
             try:
-                a.main()
+                # Swallow stdout: the tool speaks in ::notice lines, which must
+                # not be injected into this step's small annotation budget.
+                with contextlib.redirect_stdout(_io.StringIO()):
+                    a.main()
             finally:
                 a.render_pdf, a.normalize, a.gate_rmse = original
                 sys.argv = argv
@@ -304,3 +309,40 @@ class EndToEndSmokeTests(unittest.TestCase):
         self.assertEqual(value, 0.0)
         verdict, _ = a.classify(value, value, value, (0, 0), 1.0)
         self.assertEqual(verdict, 'CLEAN')
+
+
+class SlantProfileTests(unittest.TestCase):
+    """The shear measurement must recover a known shear and invent none."""
+
+    @staticmethod
+    def _bar(k, rows=40, cols=60, width=6, top=8, bottom=34):
+        """A white page with one `width`-px vertical bar, sheared by k."""
+        image = np.ones((rows, cols))
+        for y in range(top, bottom):
+            centre = 30 + k * (y - (top + bottom) // 2)
+            x0 = int(round(centre - width / 2))
+            for x in range(x0, x0 + width):
+                if 0 <= x < cols:
+                    image[y, x] = 0.0
+        return image
+
+    def test_upright_bar_has_no_shear(self):
+        profile = a.slant_profile(self._bar(0.0), (0, 40, 0, 60))
+        self.assertIsNotNone(profile)
+        self.assertAlmostEqual(profile['slope'], 0.0, places=6)
+        self.assertGreater(profile['r2'], 0.9)
+
+    def test_recovers_a_known_shear_in_both_directions(self):
+        for k in (0.25, -0.25):
+            profile = a.slant_profile(self._bar(k), (0, 40, 0, 60))
+            self.assertIsNotNone(profile, f'shear {k} was not measurable')
+            self.assertAlmostEqual(profile['slope'], k, delta=0.05)
+            self.assertGreater(profile['r2'], 0.9)
+
+    def test_blank_region_is_not_measured(self):
+        self.assertIsNone(a.slant_profile(np.ones((20, 20)), (0, 20, 0, 20)))
+
+    def test_too_few_rows_is_not_measured(self):
+        image = np.ones((20, 20))
+        image[5, 0:8] = 0.0          # one thick row only
+        self.assertIsNone(a.slant_profile(image, (0, 20, 0, 20)))

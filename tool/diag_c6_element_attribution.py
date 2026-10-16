@@ -206,6 +206,42 @@ def best_shift(a, b, region, max_shift=MAX_SHIFT):
     return best
 
 
+def slant_profile(image, region, min_ink=4.0, min_rows=5):
+    """Least-squares slope of the per-row ink centroid across a text region.
+
+    A synthetic oblique shears glyph outlines so every row's ink centroid moves
+    with y: the fitted slope equals the shear factor. Upright text has no such
+    trend. Comparing the same region between the preview and the PDF therefore
+    answers, with no rendering assumptions, whether one side is slanted and the
+    other is not -- and, if it is, by how much.
+    """
+    y0, y1, x0, x1 = region
+    block = 1.0 - image[y0:y1, x0:x1]
+    xs = np.arange(block.shape[1], dtype=np.float64)
+    rows = []
+    for i in range(block.shape[0]):
+        weights = block[i]
+        total = float(weights.sum())
+        if total < min_ink:
+            continue
+        rows.append((float(i), float((weights * xs).sum() / total)))
+    if len(rows) < min_rows:
+        return None
+    ys = np.array([r[0] for r in rows])
+    cs = np.array([r[1] for r in rows])
+    design = np.vstack([ys, np.ones_like(ys)]).T
+    slope, intercept = np.linalg.lstsq(design, cs, rcond=None)[0]
+    predicted = design @ np.array([slope, intercept])
+    residual = float(((cs - predicted) ** 2).sum())
+    spread = float(((cs - cs.mean()) ** 2).sum())
+    # Zero centroid variance means a perfectly constant centroid: there is
+    # nothing to explain, so r2 is reported as 1 (a perfect fit of a constant)
+    # rather than as the undefined ratio it would otherwise be.
+    return {'slope': float(slope), 'rows': len(rows),
+            'r2': float(1 - residual / spread) if spread > 1e-9 else 1.0,
+            'span': (int(y0 + rows[0][0]), int(y0 + rows[-1][0]))}
+
+
 def ink_mass(image, region, strict=0.5, loose=0.05):
     """Ink above two thresholds: `strict` counts solid glyph cores, `loose`
     also counts antialiased fringes."""
@@ -324,6 +360,21 @@ def analyse_page(index, args, page, norm_path, ref_path, scale, offx, offy):
         f'scale {scale:.4f} px/pt  crop offset ({offx},{offy})  '
         f'lines {len(lines)}  verdicts {counts}',
     ])
+    slants = []
+    for r in top[:6]:
+        px0, py0, px1, py1 = r['region']
+        region = (py0, px0, py1, px1)
+        s_preview = slant_profile(preview, region)
+        s_rendered = slant_profile(rendered, region)
+        if s_preview is None or s_rendered is None:
+            continue
+        slants.append(
+            f'{r["verdict"][:6]} preview k={s_preview["slope"]:+.3f} '
+            f'(r2 {s_preview["r2"]:.2f}) vs pdf k={s_rendered["slope"]:+.3f} '
+            f'(r2 {s_rendered["r2"]:.2f})  {r["text"][:44]}')
+    if slants:
+        notice(f'ATTR p{index} ink slant (shear) per top line', slants)
+
     notice(f'ATTR p{index} top lines by SSE share', [
         f'{r["sse_share"]:6.2f}%  rmse {r["rmse"]:.4f} blur {r["blurred"]:.4f} '
         f'shift {r["best_shift"]}->{r["shift_rmse"]:.4f} '
