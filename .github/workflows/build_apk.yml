@@ -735,6 +735,14 @@ jobs:
         shell: bash
         run: flutter test test/visual/italic_oblique_probe_test.dart
 
+      # [C6-UNDERLINE] يقيس التسطير الذي ترسمه المعاينة (إزاحته تحت خط الأساس
+      # وسماكته) وينشره رقماً: خرائط الحبر دلّت على فارق 4px بين السطرين،
+      # والرقم الصحيح لا يُخمَّن من خريطة. لا يمسّ العتبة ولا الصور المرجعية.
+      - name: Measure the Preview underline geometry
+        if: always()
+        shell: bash
+        run: flutter test test/visual/underline_geometry_probe_test.dart
+
   # تحقيق C6 غير مُلزِم. يقرأ artifact الذي تنتجه وظيفة visual-parity نفسها،
   # ولا يغيّر بوابة RMSE أو عتبتها (0.02) أو الصور المرجعية أو نتيجة الوظيفة.
   # فشله لا يفشل التشغيل (continue-on-error). الأدوات في tool/diag_c6_*.py.
