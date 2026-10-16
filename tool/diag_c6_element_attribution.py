@@ -295,6 +295,37 @@ def slant_profile(image, region, min_ink=4.0, min_rows=5):
 _RAMP = ' .:-=+*#%@'
 
 
+def row_profile(image, region, floor_fraction=0.5):
+    """Describe the heaviest horizontal ink band of a region.
+
+    A line that carries a rule -- an underline, a fraction bar, a divider --
+    differs between two renderings mostly by where that rule sits and how far
+    it reaches, and a coarse map shows the two rules as two bands without
+    saying which is which. This returns the numbers instead: the row with the
+    most ink, its ink mass, the columns that row reaches at half its peak, and
+    how many rows stay above that half-peak (a thick rule vs a thin one).
+    """
+    y0, y1, x0, x1 = region
+    block = 1.0 - np.clip(image[y0:y1, x0:x1], 0.0, 1.0)
+    if block.size == 0:
+        return None
+    mass = block.sum(axis=1)
+    peak_row = int(np.argmax(mass))
+    peak = float(mass[peak_row])
+    if peak <= 0:
+        return None
+    row = block[peak_row]
+    columns = np.nonzero(row >= floor_fraction * row.max())[0]
+    return {
+        'row': int(y0 + peak_row),
+        'ink': round(peak / 255.0, 1),
+        'span': (int(x0 + columns[0]), int(x0 + columns[-1])) if columns.size
+                else None,
+        'width_px': int(columns[-1] - columns[0] + 1) if columns.size else 0,
+        'band_rows': int((mass >= floor_fraction * peak).sum()),
+    }
+
+
 def coarse_ink(image, region, cols=54, rows=13):
     """Box-average ink of a region as ASCII, for eyeballing in the annotation.
 
@@ -387,6 +418,27 @@ def mask_of(shape, rects):
 
 # --------------------------------------------------------------------- main
 
+def band_lines(preview, rendered, worst):
+    """Heaviest horizontal band of the worst offender, both renderings.
+
+    Printed as two short lines next to the slant fits: it is what tells an
+    underline, a fraction bar or a divider apart from a glyph-shape difference
+    without the reader having to guess which band in the map belongs to whom.
+    """
+    region = y_first(worst['region'])
+    lines = []
+    for label, image in (('preview', preview), ('pdf', rendered)):
+        profile = row_profile(image, region)
+        if profile is None:
+            lines.append(f'{label}: no ink band')
+            continue
+        lines.append(
+            f'{label}: heaviest row y={profile["row"]} ink={profile["ink"]} '
+            f'span={profile["span"]} width={profile["width_px"]}px '
+            f'band_rows={profile["band_rows"]}')
+    return lines
+
+
 def analyse_page(index, args, page, norm_path, ref_path, scale, offx, offy,
                  floor=None):
     rendered = read_gray(norm_path)
@@ -454,9 +506,9 @@ def analyse_page(index, args, page, norm_path, ref_path, scale, offx, offy,
             f'vector.pdf = {floor["vs_poppler"]:.6f} | '
             f'{floor["renderer"]} vs preview = {floor["vs_preview"]:.6f} | '
             f'gate (poppler vs preview) = {floor["vs_gate"]:.6f}')
-    notice(f'ATTR p{index} totals+histogram', totals_lines)
+    notice(f'ATTR p{index} totals, floor, top offenders', totals_lines)
     slants = []
-    for r in top[:6]:
+    for r in top[:4]:
         region = y_first(r['region'])
         s_preview = slant_profile(preview, region)
         s_rendered = slant_profile(rendered, region)
@@ -468,28 +520,31 @@ def analyse_page(index, args, page, norm_path, ref_path, scale, offx, offy,
             f'{s_preview["rows"]}) vs pdf k={s_rendered["slope"]:+.3f} '
             f'(r2 {s_rendered["r2"]:.2f}, rows {s_rendered["dense_rows"]}/'
             f'{s_rendered["rows"]})  {r["text"][:44]}')
-    for rank, r in enumerate(top[:1], start=1):
-        region = y_first(r['region'])
-        preview_map = coarse_ink(preview, region)
-        rendered_map = coarse_ink(rendered, region)
-        # Difference map: white where the two agree, ink where they differ.
-        # Built full-page and then sliced, because coarse_ink slices too.
-        diff_map = coarse_ink(1.0 - np.abs(preview - rendered), region)
-        notice(
-            f'ATTR p{index} offender {rank} ink map  (left = preview, '
-            f'right = pdf, then |difference|)  {r["text"][:60]}',
-            [f'{r["sse_share"]:.2f}% of SSE   rmse {r["rmse"]:.4f}   '
-             f'shift {r["best_shift"]}'] +
-            side_by_side(preview_map, rendered_map) + [''] + diff_map,
-        )
+    worst = top[0]
+    region = y_first(worst['region'])
+    # Maps are 40 columns wide with an 8-row difference strip: the annotation
+    # budget is small, and a wider map would push the numbers out of it.
+    preview_map = coarse_ink(preview, region, cols=40, rows=13)
+    rendered_map = coarse_ink(rendered, region, cols=40, rows=13)
+    diff_map = coarse_ink(1.0 - np.abs(preview - rendered), region,
+                          cols=40, rows=8)
+    notice(
+        f'ATTR p{index} worst offender ink map (left preview | right pdf | '
+        f'|difference|) {worst["text"][:50]}',
+        [f'{worst["sse_share"]:.2f}% of SSE  rmse {worst["rmse"]:.4f}  '
+         f'shift {worst["best_shift"]}'] +
+        side_by_side(preview_map, rendered_map) + [''] + diff_map,
+    )
 
+    # One notice per page for the numbers: the step's annotation budget is
+    # small and GitHub drops the surplus silently, so nothing here is
+    # duplicated elsewhere in the page's output.
     notice(f'ATTR p{index} top lines by SSE share + ink slant', [
-        f'{r["sse_share"]:6.2f}%  rmse {r["rmse"]:.4f} blur {r["blurred"]:.4f} '
-        f'shift {r["best_shift"]}->{r["shift_rmse"]:.4f} '
-        f'inkS {r["ink_ratio_strict"]} inkL {r["ink_ratio_loose"]} '
-        f'[{r["verdict"]} {r["why"]}]  {r["text"]}'
-        for r in top
-    ] + slants)
+        f'{r["sse_share"]:6.2f}% rmse {r["rmse"]:.4f} blur {r["blurred"]:.4f} '
+        f'shift {r["best_shift"]} inkS {r["ink_ratio_strict"]} '
+        f'[{r["verdict"]}] {r["text"][:70]}'
+        for r in top[:6]
+    ] + slants + band_lines(preview, rendered, top[0]))
 
     return {'page': index, 'totals': {
         'rmse': round(total_rmse, 6), 'blur_rmse': round(blur_rmse, 6),
@@ -532,7 +587,6 @@ def main():
     width = int(manifest['widthPx'])
     height = int(manifest['heightPx'])
     pages = int(manifest['pageCount'])
-    notice('ATTR manifest', [f'{manifest}'])
 
     out_dir = os.path.join(art, REL_DIR)
     os.makedirs(out_dir, exist_ok=True)
@@ -595,10 +649,6 @@ def main():
                                       dest['ref'], scale, offx, offy,
                                       floor=floor)
                 record['totals']['gate_rmse'] = round(gate_value, 6)
-                notice(f'ATTR page{index} gate cross-check', [
-                    f'`compare -metric RMSE` on the gate-shaped pair = '
-                    f'{gate_value:.6f} (the gate prints its own number; a gap '
-                    f'here would mean this tool is not measuring the same thing)'])
                 results.append(record)
             except Exception:
                 warn(f'ATTR page{index} failed',

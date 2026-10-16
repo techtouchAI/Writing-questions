@@ -548,3 +548,56 @@ class RendererFloorControlTests(unittest.TestCase):
         value, _ = a.rmse(same, other)
         self.assertGreater(value, 0.0)
         self.assertGreater(a.gate_rmse.__name__.count('x'), -1)
+
+
+class RowProfileTests(unittest.TestCase):
+    """The band measurement has to find the rule, say where it is, how far it
+    reaches and how thick it is -- that is what separates an underline or a
+    fraction bar from a glyph-shape difference."""
+
+    def _line_with_rule(self, rule_row, rule_thickness, rule_x0, rule_x1):
+        image = np.ones((40, 200))
+        image[6:20, 30:60] = 0.0            # a glyph block, far from the rule
+        image[rule_row:rule_row + rule_thickness, rule_x0:rule_x1] = 0.0
+        return image
+
+    def test_rule_is_the_heaviest_row_and_its_span_is_reported(self):
+        image = self._line_with_rule(30, 2, 10, 190)
+        profile = a.row_profile(image, (0, 40, 0, 200))
+        self.assertIn(profile['row'], (30, 31))
+        self.assertEqual(profile['span'], (10, 189))
+        self.assertEqual(profile['width_px'], 180)
+        self.assertEqual(profile['band_rows'], 2)
+
+    def test_a_two_pixel_shift_moves_the_reported_row_by_two(self):
+        low = a.row_profile(self._line_with_rule(28, 2, 10, 190),
+                            (0, 40, 0, 200))
+        high = a.row_profile(self._line_with_rule(26, 2, 10, 190),
+                             (0, 40, 0, 200))
+        self.assertEqual(low['row'] - high['row'], 2)
+
+    def test_a_wider_rule_reports_a_wider_span(self):
+        narrow = a.row_profile(self._line_with_rule(30, 2, 40, 120),
+                               (0, 40, 0, 200))
+        wide = a.row_profile(self._line_with_rule(30, 2, 10, 190),
+                             (0, 40, 0, 200))
+        self.assertLess(narrow['width_px'], wide['width_px'])
+        self.assertEqual(wide['width_px'] - narrow['width_px'], 100)
+
+    def test_blank_region_is_not_measured(self):
+        self.assertIsNone(a.row_profile(np.ones((20, 20)), (0, 20, 0, 20)))
+
+    def test_band_lines_labels_both_sides(self):
+        # region is published x-first: (px0, py0, px1, py1)
+        worst = {'region': (0, 0, 200, 40), 'text': 'x', 'rmse': 0.1,
+                 'blurred': 0.1, 'best_shift': [0, 0], 'shift_rmse': 0.1,
+                 'ink_ratio_strict': 1.0, 'ink_ratio_loose': 1.0,
+                 'sse_share': 1.0, 'verdict': 'CLEAN', 'why': ''}
+        preview = self._line_with_rule(28, 2, 10, 190)
+        rendered = self._line_with_rule(30, 2, 10, 190)
+        lines = a.band_lines(preview, rendered, worst)
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(lines[0].startswith('preview:'), lines)
+        self.assertTrue(lines[1].startswith('pdf:'), lines)
+        self.assertIn('y=28', lines[0])
+        self.assertIn('y=30', lines[1])
