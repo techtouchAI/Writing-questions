@@ -763,8 +763,7 @@ jobs:
           mkdir -p build/visual_parity/c6diag
           for tool in diag_c6_pdf_frame diag_c6_variants diag_c6_text_residual \
                       diag_c6_text_geometry diag_c6_nontext_excess \
-                      diag_c6_coverage_profile diag_c6_rule_geometry \
-                      diag_c6_element_attribution; do
+                      diag_c6_coverage_profile diag_c6_rule_geometry; do
             echo "::group::$tool"
             "$RUNNER_TEMP/diag-venv/bin/python" "tool/$tool.py" build/visual_parity \
               || echo "::warning title=$tool::diagnostic exited non-zero (non-gating)"
@@ -779,6 +778,18 @@ jobs:
         shell: bash
         run: |
           "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_ink_windows.py build/visual_parity
+
+      # [C6-ATTR] إسناد RMSE إلى العناصر (non-gating). خطوة مستقلة عمداً:
+      # GitHub يحتفظ بنحو 10 تعليقات لكل خطوة، فلو شارك هذه الأداة الخطوة
+      # المجمّعة أعلاه لابتلع رصيدها أدواتٌ تعمل قبله ولما قُرئ ناتجها أصلاً.
+      - name: C6 element attribution of the Vector RMSE (non-gating)
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p build/visual_parity/c6diag
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_element_attribution.py \
+            build/visual_parity
 
       # [C6-ATTR] مخرجات الإسناد العنصري (non-gating): تُرفع مع بقية تشخيص C6.
       - name: Upload C6 element-attribution diagnostics

@@ -284,15 +284,6 @@ def analyse_page(index, args, page, norm_path, ref_path, scale, offx, offy):
     blurred_r, blurred_p = blur05(rendered), blur05(preview)
     blur_rmse, _ = rmse(blurred_r, blurred_p)
 
-    notice(f'ATTR page{index} totals', [
-        f'gate-shaped RMSE (numpy, luma) {total_rmse:.6f}',
-        f'RMSE after 0.5px blur {blur_rmse:.6f}',
-        f'text pixels {float(text_mask.mean()) * 100:.2f}% of page',
-        f'SSE share: text {100 * text_sse / max(total_sse, 1e-12):.2f}%  '
-        f'non-text {100 * rest_sse / max(total_sse, 1e-12):.2f}%',
-        f'RMSE inside text {text_rmse:.6f}  outside text {rest_rmse:.6f}',
-        f'scale px/pt {scale:.4f} off=({offx},{offy}) lines={len(lines)}',
-    ])
 
     rows = []
     for item in lines:
@@ -319,7 +310,17 @@ def analyse_page(index, args, page, norm_path, ref_path, scale, offx, offy):
 
     rows.sort(key=lambda r: r['sse_share'], reverse=True)
     top = rows[:args.top]
-    notice(f'ATTR page{index} top lines by SSE share', [
+    notice(f'ATTR p{index} totals+histogram', [
+        f'gate-shaped RMSE (numpy luma) {total_rmse:.6f} | after 0.5px blur '
+        f'{blur_rmse:.6f}',
+        f'SSE share: text {100 * text_sse / max(total_sse, 1e-12):.2f}%  '
+        f'non-text {100 * rest_sse / max(total_sse, 1e-12):.2f}%  '
+        f'(text = {float(text_mask.mean()) * 100:.2f}% of the page)',
+        f'RMSE inside text {text_rmse:.6f}  outside text {rest_rmse:.6f}',
+        f'scale {scale:.4f} px/pt  crop offset ({offx},{offy})  '
+        f'lines {len(lines)}  verdicts {counts}',
+    ])
+    notice(f'ATTR p{index} top lines by SSE share', [
         f'{r["sse_share"]:6.2f}%  rmse {r["rmse"]:.4f} blur {r["blurred"]:.4f} '
         f'shift {r["best_shift"]}->{r["shift_rmse"]:.4f} '
         f'inkS {r["ink_ratio_strict"]} inkL {r["ink_ratio_loose"]} '
@@ -330,7 +331,6 @@ def analyse_page(index, args, page, norm_path, ref_path, scale, offx, offy):
     counts = {}
     for r in rows:
         counts[r['verdict']] = counts.get(r['verdict'], 0) + 1
-    notice(f'ATTR page{index} verdict histogram', [str(counts)])
     return {'page': index, 'totals': {
         'rmse': round(total_rmse, 6), 'blur_rmse': round(blur_rmse, 6),
         'text_sse_share': round(100 * text_sse / max(total_sse, 1e-12), 3),
@@ -353,6 +353,7 @@ def main():
     args = parser.parse_args()
 
     art = args.artifacts
+    print(f'[C6-ATTR] start on {art}')
     with open(os.path.join(art, 'manifest.json'), encoding='utf-8') as fh:
         manifest = json.load(fh)
     width = int(manifest['widthPx'])
@@ -382,8 +383,11 @@ def main():
                 normalize(rendered[i], preview_png, width, height, dest)
                 gate_value = gate_rmse(dest['norm'], dest['ref'])
                 page = doc[i]
-                pix = pymupdf.Pixmap(dest['norm'])
-                scale = pix.width / page.rect.width
+                # Scale from the FULL-page render, never from the cropped copy:
+                # the crop removes 4 px of width, which would understate the
+                # px/pt factor and misplace every region box.
+                full = pymupdf.Pixmap(rendered[i])
+                scale = full.width / page.rect.width
                 offx = offy = FRAME_PX
                 record = analyse_page(index, args, page, dest['norm'],
                                       dest['ref'], scale, offx, offy)
