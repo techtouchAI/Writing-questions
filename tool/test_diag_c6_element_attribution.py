@@ -232,3 +232,75 @@ class LineRectTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class EndToEndSmokeTests(unittest.TestCase):
+    """Run main() against a synthetic fixture, with the shell-outs stubbed.
+
+    This is the test that protects the tool's own wiring: the arithmetic below
+    it can be perfect while a variable in the reporting path is undefined, and
+    CI would report only "diagnostic exited non-zero". Rendering is stubbed with
+    PyMuPDF so the smoke test needs no poppler and no ImageMagick.
+    """
+
+    def test_main_completes_and_writes_its_report(self):
+        import json
+        import shutil
+        import tempfile
+
+        import pymupdf
+
+        with tempfile.TemporaryDirectory() as art:
+            doc = pymupdf.open()
+            page = doc.new_page(width=200, height=200)
+            page.insert_text((20, 100), 'hello', fontsize=12)
+            pdf_path = os.path.join(art, 'vector.pdf')
+            doc.save(pdf_path)
+            doc.close()
+
+            pix = pymupdf.open(pdf_path)[0].get_pixmap(dpi=96)
+            preview = os.path.join(art, 'preview_page_1.png')
+            pix.save(preview)
+            with open(os.path.join(art, 'manifest.json'), 'w',
+                      encoding='utf-8') as fh:
+                json.dump({'pageCount': 1, 'widthPx': pix.width,
+                           'heightPx': pix.height, 'dpi': 96}, fh)
+
+            def fake_render(pdf, prefix):
+                out = f'{prefix}-1.png'
+                pymupdf.open(pdf)[0].get_pixmap(dpi=96).save(out)
+                return [out]
+
+            def fake_normalize(rendered, preview_png, width, height, dest):
+                shutil.copyfile(rendered, dest['norm'])
+                shutil.copyfile(preview_png, dest['ref'])
+
+            original = (a.render_pdf, a.normalize, a.gate_rmse)
+            a.render_pdf, a.normalize = fake_render, fake_normalize
+            a.gate_rmse = lambda norm, ref: 0.0
+            argv = sys.argv[:]
+            sys.argv = ['diag', art, '--top', '3']
+            try:
+                a.main()
+            finally:
+                a.render_pdf, a.normalize, a.gate_rmse = original
+                sys.argv = argv
+
+            report = os.path.join(art, a.REL_DIR, a.JSON_NAME)
+            self.assertTrue(os.path.exists(report),
+                            'the tool must always write its report')
+            with open(report, encoding='utf-8') as fh:
+                data = json.load(fh)
+            self.assertEqual(data['schema'], 'c6-element-attribution-v1')
+            self.assertEqual(len(data['pages']), 1)
+            self.assertIn('histogram', data['pages'][0])
+            self.assertTrue(os.path.exists(
+                os.path.join(art, a.REL_DIR, a.TXT_NAME)))
+
+    def test_identical_images_report_no_error(self):
+        """A page compared with itself must not invent a residual."""
+        image = _stripes()
+        value, _ = a.rmse(image, image.copy())
+        self.assertEqual(value, 0.0)
+        verdict, _ = a.classify(value, value, value, (0, 0), 1.0)
+        self.assertEqual(verdict, 'CLEAN')

@@ -308,6 +308,10 @@ def analyse_page(index, args, page, norm_path, ref_path, scale, offx, offy):
             'verdict': verdict, 'why': why,
         })
 
+    counts = {}
+    for r in rows:
+        counts[r['verdict']] = counts.get(r['verdict'], 0) + 1
+
     rows.sort(key=lambda r: r['sse_share'], reverse=True)
     top = rows[:args.top]
     notice(f'ATTR p{index} totals+histogram', [
@@ -328,9 +332,6 @@ def analyse_page(index, args, page, norm_path, ref_path, scale, offx, offy):
         for r in top
     ])
 
-    counts = {}
-    for r in rows:
-        counts[r['verdict']] = counts.get(r['verdict'], 0) + 1
     return {'page': index, 'totals': {
         'rmse': round(total_rmse, 6), 'blur_rmse': round(blur_rmse, 6),
         'text_sse_share': round(100 * text_sse / max(total_sse, 1e-12), 3),
