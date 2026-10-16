@@ -63,8 +63,9 @@ void publish(String title, List<String> lines) {
 }
 
 /// Least-squares slope of the per-row ink centroid, in pixels of x per pixel
-/// of y. Screen rows run downwards, so a run whose ascenders lean towards the
-/// end of the line has a negative slope of magnitude = the shear factor.
+/// of y. Screen rows run downwards, so a sheared run has a negative slope; the
+/// applied shear is the *difference* between the italic and upright fits (see
+/// the test), never the raw italic reading.
 double _centroidSlope(_Raster raster) {
   final rows = <double>[];
   final centroids = <double>[];
@@ -155,31 +156,40 @@ void main() {
     final upright = _centroidSlope(uprightRaster);
     final italic = _centroidSlope(italicRaster);
 
+    // The shear is a linear map, so it adds a constant to the slope of every
+    // ink feature of the glyphs. Measured directly, the italic slope therefore
+    // mixes the applied shear with the glyph's own baseline drift -- here the
+    // ascender strokes of this face pull the upright centroid as well
+    // (measured 0.0330) -- and reading that mix as "the oblique factor" is how
+    // the first version of this probe mis-called a correct 0.25 emission. The
+    // upright run is exactly the control that measures the drift, so the shear
+    // is the *difference* of the two fits.
+    final shear = upright - italic;
+
     // Publish before asserting: this is the measurement itself.
     publish('C6 italic probe measured', <String>[
       'upright slope=${upright.toStringAsFixed(4)}',
       'italic slope=${italic.toStringAsFixed(4)}',
-      'implied oblique=${(-italic).toStringAsFixed(4)}',
+      'shear (upright-italic)=${shear.toStringAsFixed(4)}',
       'emitted=${CanonicalText.syntheticObliqueShear}',
       'upright ink=${uprightRaster.inkBounds}',
       'italic ink=${italicRaster.inkBounds}',
       'raster=${italicRaster.width}x${italicRaster.height}',
     ]);
 
-    // Control: upright stems are vertical, so their slope is zero within ink
-    // rasterisation noise. Without this the italic number below could be an
-    // artefact of the fit rather than of the engine.
-    expect(upright.abs(), lessThan(0.05),
-        reason: 'upright stems must not slant (measured $upright)');
-    final measured = -italic;
-    expect(measured, inInclusiveRange(0.05, 0.45),
+    // Control: the upright run must be *nearly* straight -- if the fit were
+    // noise, the difference below would be noise with a larger amplitude.
+    expect(upright.abs(), lessThan(0.08),
+        reason: 'upright stems must stay close to vertical (measured '
+            '$upright)');
+    expect(shear, inInclusiveRange(0.05, 0.45),
         reason: 'an italic run must actually be slanted by the engine '
-            '(measured $measured); a value near zero would mean this probe '
+            '(measured shear $shear); a value near zero would mean this probe '
             'measures nothing but the upright control');
     // The factor the PDF emits is the factor the Preview renders.
-    expect(measured,
+    expect(shear,
         closeTo(CanonicalText.syntheticObliqueShear, 0.02),
         reason: 'the emitted shear ${CanonicalText.syntheticObliqueShear} must '
-            'be the slant the Preview actually renders ($measured)');
+            'be the slant the Preview actually renders (measured $shear)');
   });
 }

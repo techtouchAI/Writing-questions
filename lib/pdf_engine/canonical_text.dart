@@ -99,9 +99,14 @@ class CanonicalText extends pw.Widget {
   ///
   /// It is not a constant the code merely believes in: the emitted factor is
   /// checked against the slant measured from Preview pixels in
-  /// `test/visual/italic_oblique_probe_test.dart`, so a drift in either the
-  /// constant or Skia's own behaviour fails that test instead of silently
-  /// desynchronising the two renderings.
+  /// `test/visual/italic_oblique_probe_test.dart`, which fits the per-row ink
+  /// centroid of a stem column upright and italic and takes the difference of
+  /// the two fits (the shear adds a constant to any ink feature's slope, while
+  /// the glyph's own baseline drift is identical in both runs). Its first CI
+  /// run measured upright 0.0330, italic -0.2195, difference 0.2525 against
+  /// this 0.25, so a drift in either the constant or the engine's own
+  /// behaviour fails that test instead of silently desynchronising the two
+  /// renderings.
   static const double syntheticObliqueShear = 0.25;
 
   /// Shaped emission text, mirroring package:pdf's default shaping dispatch.
