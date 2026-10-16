@@ -499,7 +499,15 @@ void main() {
               greaterThan(0.5 * thickness),
               reason: 'the two rules must actually differ, or this test '
                   'proves nothing $label');
-          for (final index in <int>[0, 2, 3]) {
+          // Each rule must be horizontal (its end y equals its start y), and
+          // the two must span the same width: only the height differs.
+          expect(canonicalOps.underline![3],
+              closeTo(canonicalOps.underline![1], _floatQuantum),
+              reason: 'canonical rule is horizontal $label');
+          expect(legacyOps.underline![3],
+              closeTo(legacyOps.underline![1], _floatQuantum),
+              reason: 'legacy rule is horizontal $label');
+          for (final index in <int>[0, 2]) {
             expect(canonicalOps.underline![index],
                 closeTo(legacyOps.underline![index], _floatQuantum),
                 reason: 'underline[$index] $label');
