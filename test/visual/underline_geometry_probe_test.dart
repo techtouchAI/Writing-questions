@@ -109,6 +109,18 @@ void main() {
       final row = _row(raster, y);
       if (row != null) rows[y] = row;
     }
+    // Publish the anatomy before any assertion: a probe that fails silently
+    // says nothing about the thing it was built to measure.
+    final anatomy = <String>[
+      'raster ${raster.width}x${raster.height}',
+      'ink rows ${rows.isEmpty ? 0 : '${rows.keys.first}..${rows.keys.last}'}',
+    ];
+    for (final entry in rows.entries.where((e) => e.value.count >= 20).take(24)) {
+      anatomy.add('  y=${entry.key} count=${entry.value.count} '
+          'span=${entry.value.top}..${entry.value.bottom} '
+          'fill=${entry.value.fill.toStringAsFixed(3)}');
+    }
+    publish('C6 underline probe anatomy', anatomy);
     expect(rows, isNotEmpty, reason: 'the probe drew nothing');
     final ruleRows = <int>[
       for (final entry in rows.entries)
