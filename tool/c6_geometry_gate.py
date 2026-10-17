@@ -370,12 +370,15 @@ def _letters(text):
 
 
 def _assign(preview_words, chars, tol):
-    """Pair each PDF character with the Preview word box that owns it.
+    """Pair each PDF character with the Preview word box nearest to it.
 
-    Containment by the character's centre, expanded by `tol` for the ink inset
-    of the first and last glyph. A character that fits no box is *outside* the
-    layout's words -- which is what a moved or an extra glyph looks like from
-    here -- and is reported, never dropped.
+    Nearest, not first-containing: word boxes are adjacent, so a glyph a few
+    points off (the shapers disagree by up to 6 pt at p99) can sit inside its
+    neighbour's box, and a narrow box such as '/' would otherwise absorb the
+    glyphs of the word after it. Ties go to the narrower box, which is the more
+    specific claim. A character farther than `tol` from every box is *outside*
+    the layout's words -- what a moved or an extra glyph looks like from here --
+    and is reported, never dropped.
     """
     owned = [[] for _ in preview_words]
     outside = []
@@ -383,14 +386,17 @@ def _assign(preview_words, chars, tol):
         centre = (char.x0 + char.x1) / 2
         best = None
         for index, word in enumerate(preview_words):
-            if word.x0 - tol <= centre <= word.x1 + tol:
+            if word.x0 <= centre <= word.x1:
+                distance = 0.0
+            else:
                 distance = min(abs(centre - word.x0), abs(centre - word.x1))
-                if best is None or distance < best[1]:
-                    best = (index, distance)
-        if best is None:
+            key = (distance, word.x1 - word.x0)
+            if best is None or key < best[0]:
+                best = (key, index)
+        if best is None or best[0][0] > tol:
             outside.append(char)
         else:
-            owned[best[0]].append(char)
+            owned[best[1]].append(char)
     return owned, outside
 
 
