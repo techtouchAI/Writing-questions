@@ -93,17 +93,20 @@ class Core(unittest.TestCase):
         self.assertEqual(violations, [])
         self.assertEqual(coverage['words'], 1)
 
-    def test_bound_is_inclusive_and_not_wider(self):
+    def test_line_edge_bound_is_inclusive_and_not_wider(self):
         preview, page = arabic_line()
-        # Move only the rightmost glyph: its left edge stays inside the word,
-        # so the word is still owned by its box and the defect is positional.
-        edge = [c for c in page.chars if c.x0 >= 300.0][-1]
-        edge.x1 += 1.5                 # exactly the bound: passes
+        edge = max(page.chars, key=lambda c: c.x1)
+        moved = edge.x1 + 2.0 - max(c.x1 for c in page.chars)
+        # Exactly the line-edge bound: passes (the per-word bound is wider).
+        for char in page.chars:
+            if char is edge:
+                char.x1 += 2.0
         violations, _, _ = gate.compare(preview, [page])
         self.assertEqual(violations, [])
-        edge.x1 += 0.01                # past the bound: rejected
+        edge.x1 += 0.02                # past the bound: rejected
         violations, _, _ = gate.compare(preview, [page])
-        self.assertEqual({v.category for v in violations}, {'WORD-POSITION'})
+        self.assertIn('LINE-SHIFT', {v.category for v in violations})
+        self.assertTrue(moved > 0)
 
 
 class Injections(unittest.TestCase):
@@ -129,8 +132,8 @@ class Injections(unittest.TestCase):
         for char in page.chars:
             char.x0 += 3.0
             char.x1 += 3.0
-        self.assert_rejects(preview, page, 'WORD-POSITION', 'WORD-MISSING',
-                            'WORD-CONTENT')
+        self.assert_rejects(preview, page, 'LINE-SHIFT', 'WORD-POSITION',
+                            'WORD-MISSING', 'WORD-CONTENT')
 
     def test_line_shift(self):
         preview, page = arabic_line()
@@ -160,7 +163,7 @@ class Injections(unittest.TestCase):
                 char.x0 += 30.0
                 char.x1 += 30.0
         self.assert_rejects(preview, page, 'WORD-CONTENT', 'WORD-MISSING',
-                            'WORD-EXTRA')
+                            'WORD-EXTRA', 'LINE-SHIFT')
 
     def test_deleted_line(self):
         preview, page = arabic_line()
