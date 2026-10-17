@@ -268,6 +268,29 @@ class Modes(unittest.TestCase):
                 self.assertEqual(gate.main([tmp, '--mode', 'enforce']), 2)
 
 
+class LayoutIntervals(unittest.TestCase):
+    def test_layout_words_are_the_comparison_boxes(self):
+        data = {'pages': [{'page': 1, 'widthPt': 595.0, 'heightPt': 842.0,
+                           'lines': [{'baselinePt': 40.0, 'source': 'block',
+                                      'runs': [{
+                                          'measured': True, 'rtl': False,
+                                          'fontSizePt': 12.0, 'xPt': 10.0,
+                                          'widthPt': 40.0,
+                                          'previewWords': [{
+                                              'text': 'Pick', 'leftPt': 14.0,
+                                              'rightPt': 22.0, 'rtl': False}],
+                                          'layoutWords': [{
+                                              'text': 'Pick', 'xPt': 10.0,
+                                              'textAdvancePt': 22.0,
+                                              'advancePt': 26.0, 'rtl': False}],
+                                      }]}]}]}
+        lines = gate.preview_lines(data, boxes='caret')
+        self.assertEqual(lines[0].box_source, 'caret')
+        self.assertAlmostEqual(lines[0].words[0].width, 22.0)
+        tight = gate.preview_lines(data, boxes='tight')
+        self.assertAlmostEqual(tight[0].words[0].width, 8.0)
+
+
 class FalseAlarms(unittest.TestCase):
     """Findings that the tight-ink comparison raised and the caret contract must not.
 
@@ -353,9 +376,10 @@ class RealArtifacts(unittest.TestCase):
         # ones that must name it. That is the designed split, and this test is
         # what proved it: the first version demanded WORD-POSITION and failed.
         preview, pages = self._load()
-        pages[0].chars = [gate.PdfChar(c.text, c.x0 + 4.0, c.x1 + 4.0,
-                                       c.baseline, c.size, c.font)
-                          for c in pages[0].chars]
+        pages[0].chars = [gate.PdfChar(
+            c.text, c.x0 + 4.0, c.x1 + 4.0, c.baseline, c.size, c.font,
+            None if c.origin_x is None else c.origin_x + 4.0)
+            for c in pages[0].chars]
         violations, _, _ = gate.compare(preview, pages)
         self.assertIn('LINE-SHIFT', {v.category for v in violations})
 
@@ -368,7 +392,7 @@ class RealArtifacts(unittest.TestCase):
                       None)
         self.assertIsNotNone(target, 'fixture has no measurable word')
         pages[0].chars = [c for c in pages[0].chars
-                          if not (target.x0 <= (c.x0 + c.x1) / 2 <= target.x1)]
+                          if not (target.x0 - 0.5 <= gate._anchor(c) <= target.x1 + 0.5)]
         violations, _, _ = gate.compare(preview, pages)
         self.assertIn('WORD-MISSING', {v.category for v in violations})
 

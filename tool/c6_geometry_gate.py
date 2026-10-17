@@ -353,7 +353,7 @@ def preview_lines(data, boxes='caret'):
                     chosen = _caret_words(run, baseline)
                     # A zero-width interval cannot hold an origin. An artifact
                     # that predates textAdvancePt must not be judged against it.
-                    if not chosen or any(word.width <= 0 for word in chosen):
+                    if not chosen or any(word.x1 <= word.x0 for word in chosen):
                         chosen = _tight_words(run, baseline)
                         if chosen:
                             source = 'tight-fallback'
@@ -382,6 +382,10 @@ class PreviewWord:
     baseline: float
     size: float
     rtl: bool
+
+    @property
+    def width(self):
+        return self.x1 - self.x0
 
 
 @dataclass

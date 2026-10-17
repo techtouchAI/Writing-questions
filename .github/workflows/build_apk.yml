@@ -658,7 +658,9 @@ jobs:
             --out build/visual_parity/digest
           cat build/visual_parity/digest/counts.txt || true
 
+      # always: a geometry measurement error must not skip the required gate.
       - name: Compare rendered files against the preview (RMSE)
+        if: always()
         run: bash tool/verify_visual_parity.sh build/visual_parity
 
       # سبب الفشل يُنشر كتعليق على التشغيل: سجلات CI قد لا تكون مقروءة من كل
