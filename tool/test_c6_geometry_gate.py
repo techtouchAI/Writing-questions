@@ -311,12 +311,15 @@ class RealArtifacts(unittest.TestCase):
         self.assertIn('WORD-MISSING', {v.category for v in violations})
 
     def test_real_underline_removal_is_rejected(self):
+        # The underlined run is on whichever page the fixture put it; clear the
+        # rules of *that* page. (The first version cleared page 1 while the
+        # fixture's only underlined run is on page 2, and CI said so.)
         preview, pages = self._load()
-        underlined = any(run.get('underline') for line in preview
-                         for run in line.runs)
-        if not underlined:
-            self.skipTest('fixture has no underlined run on page 1')
-        pages[0].rules = []
+        page = next((line.page for line in preview
+                     for run in line.runs if run.get('underline')), None)
+        if page is None:
+            self.skipTest('fixture has no underlined run')
+        pages[page - 1].rules = []
         violations, _, _ = gate.compare(preview, pages)
         self.assertIn('UNDERLINE-MISSING', [v.category for v in violations])
 
