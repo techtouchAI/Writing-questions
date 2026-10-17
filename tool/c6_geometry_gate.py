@@ -10,6 +10,12 @@ and compares them, in points, with the geometry the Preview says it paints
 number here; only layout, shaping, styling or emission can, which is exactly
 what the ceiling is supposed to catch.
 
+The comparison uses the intervals the writer was given (`layoutWords`: visual
+left plus the word's own advance) and the PDF glyph origin, not the tight ink
+box. A tight-box disagreement that the caret comparison does not repeat is
+published as a diagnostic with cause `extraction`. It is not the verdict.
+`--mode enforce` exists and is tested, and is not the CI mode.
+
 What it refuses (each one is injected deliberately by the negative tests):
 
     LINE-MISSING      a Preview line has no PDF line at its baseline
@@ -139,13 +145,18 @@ class Bounds:
 # --------------------------------------------------------------- PDF reading
 @dataclass
 class PdfChar:
-    """One extracted character: its ink box and its own baseline.
+    """One extracted character: its ink box, its baseline, and its origin.
 
     Characters, not words. PyMuPDF's own tokenisation follows the extraction
     heuristics (and the writer emits whole words with no space bytes), so any
     word-level pairing here would fail for reasons that have nothing to do with
     the layout. The gate pairs *characters* with the Preview's word boxes, which
     is why Arabic clusters and ligatures cannot break it.
+
+    `origin_x` is the PDF text origin (the point the writer placed), not the
+    centre of the ink box. Italic shear and side bearings move the ink without
+    moving the origin. None means the caller did not supply one; assignment
+    then falls back to the ink centre, which is what the synthetic tests use.
     """
     text: str
     x0: float
@@ -153,6 +164,7 @@ class PdfChar:
     baseline: float
     size: float
     font: str = ''
+    origin_x: float | None = None
 
 
 @dataclass
@@ -237,9 +249,11 @@ def read_pdf_pages(path):
                             if not text or text.isspace():
                                 continue
                             bbox = char.get('bbox') or (0, 0, 0, 0)
+                            origin = char.get('origin')
+                            origin_x = float(origin[0]) if origin else None
                             chars.append(PdfChar(text, float(bbox[0]),
                                                  float(bbox[2]), baseline, size,
-                                                 font))
+                                                 font, origin_x))
             rules = []
             for drawing in page.get_drawings():
                 for item in drawing.get('items', []):
@@ -273,38 +287,89 @@ def read_preview(path):
     return data
 
 
-def preview_lines(data):
+def _tight_words(run, baseline):
+    words = []
+    for word in run.get('previewWords') or []:
+        words.append(PreviewWord(
+            text=word['text'],
+            x0=float(word['leftPt']),
+            x1=float(word['rightPt']),
+            baseline=baseline,
+            size=float(run['fontSizePt']),
+            rtl=bool(run.get('rtl')),
+        ))
+    return words
+
+
+def _caret_words(run, baseline):
+    """Caret intervals the PDF emitter actually positions.
+
+    `LayoutWord.x` is the visual left edge and `textAdvance` is the shaped
+    width the writer executes. Tight `getBoxesForSelection` boxes omit side
+    bearings and shear with the ink; they are not the emission contract.
+    """
+    words = []
+    for word in run.get('layoutWords') or []:
+        x = float(word['xPt'])
+        width = float(word.get('textAdvancePt') or 0.0)
+        if width <= 0:
+            width = abs(float(word.get('advancePt') or 0.0))
+        words.append(PreviewWord(
+            text=word.get('text') or '',
+            x0=x,
+            x1=x + width,
+            baseline=baseline,
+            size=float(run.get('fontSizePt') or 0.0),
+            rtl=bool(run.get('rtl')),
+        ))
+    return words
+
+
+def preview_lines(data, boxes='caret'):
     """Flatten the probe's pages into comparable lines.
 
     A preview line is comparable iff at least one run was measured (math runs
     are painted as images and carry no text metrics); its words are the union
     of its runs' word boxes, in x order, tagged with the run they came from.
+
+    `boxes='caret'` uses the layout word intervals the PDF writer positions,
+    and falls back to tight ink boxes only when a run has no layout words.
+    `boxes='tight'` is the historical comparison (ink boxes). It is still
+    reported, so a mismatch that exists only there is an extraction finding,
+    not a silent pass.
     """
+    if boxes not in ('caret', 'tight'):
+        raise ValueError(f'unknown box source {boxes!r}')
     lines = []
     for page in data.get('pages', []):
         for record in page.get('lines', []):
             runs = record.get('runs', [])
             measured = [r for r in runs if r.get('measured')]
+            baseline = float(record['baselinePt'])
             words = []
+            source = boxes
             for run in measured:
-                for word in run.get('previewWords', []):
-                    words.append(PreviewWord(
-                        text=word['text'],
-                        x0=float(word['leftPt']),
-                        x1=float(word['rightPt']),
-                        baseline=float(record['baselinePt']),
-                        size=float(run['fontSizePt']),
-                        rtl=bool(run.get('rtl')),
-                    ))
+                if boxes == 'caret':
+                    chosen = _caret_words(run, baseline)
+                    # A zero-width interval cannot hold an origin. An artifact
+                    # that predates textAdvancePt must not be judged against it.
+                    if not chosen or any(word.width <= 0 for word in chosen):
+                        chosen = _tight_words(run, baseline)
+                        if chosen:
+                            source = 'tight-fallback'
+                else:
+                    chosen = _tight_words(run, baseline)
+                words.extend(chosen)
             words.sort(key=lambda w: (w.x0, w.x1))
             lines.append(PreviewLine(
                 page=int(page['page']),
-                baseline=float(record['baselinePt']),
+                baseline=baseline,
                 source=record.get('source', 'block'),
                 words=words,
                 runs=runs,
                 width=float(page['widthPt']),
                 height=float(page['heightPt']),
+                box_source=source,
             ))
     return lines
 
@@ -328,6 +393,7 @@ class PreviewLine:
     runs: list
     width: float
     height: float
+    box_source: str = 'given'
 
 
 # ------------------------------------------------------------------ verdicts
@@ -338,6 +404,8 @@ class Violation:
     detail: str
     magnitude: float = 0.0
     source: str = 'block'   # 'block' or 'float': different PDF code paths
+    word: str = ''
+    cause: str = ''         # filled by classify_causes; empty until then
 
 
 def normalise(text):
@@ -369,8 +437,21 @@ def _letters(text):
     return ''.join(ch for ch in text if unicodedata.category(ch)[0] in 'LN')
 
 
+def _anchor(char):
+    """The point that decides which word a glyph belongs to.
+
+    The writer places an origin. The ink box centre moves with shear and with
+    side bearings, so it is the wrong point once an origin is known: a narrow
+    neighbour such as '/' or a tight ink box can contain the centre while the
+    origin still sits in the word that was emitted.
+    """
+    if char.origin_x is not None:
+        return char.origin_x
+    return (char.x0 + char.x1) / 2
+
+
 def _assign(preview_words, chars, tol):
-    """Pair each PDF character with the Preview word box nearest to it.
+    """Pair each PDF character with the Preview word box nearest to its anchor.
 
     Nearest, not first-containing: word boxes are adjacent, so a glyph a few
     points off (the shapers disagree by up to 6 pt at p99) can sit inside its
@@ -383,13 +464,13 @@ def _assign(preview_words, chars, tol):
     owned = [[] for _ in preview_words]
     outside = []
     for char in chars:
-        centre = (char.x0 + char.x1) / 2
+        anchor = _anchor(char)
         best = None
         for index, word in enumerate(preview_words):
-            if word.x0 <= centre <= word.x1:
+            if word.x0 <= anchor <= word.x1:
                 distance = 0.0
             else:
-                distance = min(abs(centre - word.x0), abs(centre - word.x1))
+                distance = min(abs(anchor - word.x0), abs(anchor - word.x1))
             key = (distance, word.x1 - word.x0)
             if best is None or key < best[0]:
                 best = (key, index)
@@ -555,13 +636,14 @@ def _compare_line(page_index, line, chars, page, bounds, samples, violations,
         if centre > bounds.line_center_pt:
             violations.append(Violation(
                 page_index, 'LINE-SHIFT',
-                f'line centre moved {centre:.2f}pt', centre, line.source))
+                f'line centre moved {centre:.2f}pt', centre, line.source,
+                word=_text_of(line)[:24]))
         if max(line_left, line_right) > bounds.line_edge_pt:
             violations.append(Violation(
                 page_index, 'LINE-SHIFT',
                 f'line edges moved left d={line_left:.2f}pt '
                 f'right d={line_right:.2f}pt', max(line_left, line_right),
-                line.source))
+                line.source, word=_text_of(line)[:24]))
 
     # Glyphs inside a maths run's box belong to that run: the Preview paints
     # the formula (as an image or as readable text), it does not claim to have
@@ -588,7 +670,8 @@ def _compare_line(page_index, line, chars, page, bounds, samples, violations,
                 page_index, 'WORD-MISSING',
                 f'no glyphs inside {word.text[:24]!r} at '
                 f'x={word.x0:.2f}..{word.x1:.2f} (deleted, moved away or '
-                f'reordered)'))
+                f'reordered)',
+                word=word.text[:24]))
             continue
         left = abs(min(c.x0 for c in mine) - word.x0)
         right = abs(max(c.x1 for c in mine) - word.x1)
@@ -598,14 +681,14 @@ def _compare_line(page_index, line, chars, page, bounds, samples, violations,
             violations.append(Violation(
                 page_index, 'WORD-POSITION',
                 f'{word.text[:24]!r} left d={left:.2f}pt right d={right:.2f}pt',
-                max(left, right)))
+                max(left, right), word=word.text[:24]))
         size = max(abs(c.size - word.size) for c in mine)
         samples['size'].append(size)
         if size > bounds.size_pt:
             violations.append(Violation(
                 page_index, 'SIZE',
                 f'{word.text[:24]!r} size {word.size:.2f} vs '
-                f'{mine[0].size:.2f}pt', size))
+                f'{mine[0].size:.2f}pt', size, word=word.text[:24]))
         # Letters, not glyph shapes: shaping substitutes presentation forms and
         # can drop a mark, so the comparison is on letter multisets with a
         # measured allowance; substituting or reordering a word changes most of
@@ -620,7 +703,7 @@ def _compare_line(page_index, line, chars, page, bounds, samples, violations,
                 page_index, 'WORD-CONTENT',
                 f'box {word.text[:24]!r} holds '
                 f'{"".join(mine_letters)[:24]!r} ({ratio:.0%} different)',
-                ratio))
+                ratio, word=word.text[:24]))
 
     if outside:
         text = ''.join(c.text for c in sorted(outside, key=lambda c: c.x0))
@@ -748,6 +831,103 @@ BOUND_OF = {
 }
 
 
+def _page_chars(pages, page_index):
+    if page_index < 1 or page_index > len(pages):
+        return []
+    return pages[page_index - 1].chars
+
+
+def _letters_present(want, have):
+    """True when every letter of `want` occurs in `have` at least as often."""
+    return _multiset_difference(sorted(want), sorted(have)) == 0 and bool(want)
+
+
+def classify_causes(violations, preview, pages):
+    """Label each violation. Does not add or remove any.
+
+    Labels, and only these:
+      product-content  the word's letters are not on the page
+      product-position the letters' origins sit outside the word interval
+      representation   a neighbour holds the letters (token boundary, slash,
+                       attached mark) — same ink, different split
+      extraction       the origins are in or beside the interval but the
+                       assignment used a different rectangle
+      unresolved       the evidence does not decide
+    """
+    by_page_words = {}
+    for line in preview:
+        by_page_words.setdefault(line.page, []).extend(line.words)
+
+    for violation in violations:
+        if violation.cause:
+            continue
+        word = violation.word
+        if violation.category not in (
+                'WORD-MISSING', 'WORD-CONTENT', 'WORD-POSITION'):
+            continue
+        if not word:
+            violation.cause = 'unresolved'
+            continue
+        chars = _page_chars(pages, violation.page)
+        want = _letters(word)
+        have = _letters(''.join(c.text for c in chars))
+        if want and not _letters_present(want, have):
+            violation.cause = 'product-content'
+            continue
+        boxes = [w for w in by_page_words.get(violation.page, [])
+                 if w.text == word]
+        origins = [c for c in chars if set(_letters(c.text)) & set(want)]
+        if not boxes or not origins:
+            violation.cause = 'unresolved'
+            continue
+        nearest = min(min(abs(_anchor(c) - b.x0), abs(_anchor(c) - b.x1),
+                          0.0 if b.x0 <= _anchor(c) <= b.x1 else 1e9)
+                      for c in origins for b in boxes)
+        if violation.category == 'WORD-POSITION':
+            violation.cause = 'product-position'
+            continue
+        if nearest > 6.5:
+            violation.cause = 'product-position'
+            continue
+        if nearest <= 0.5:
+            violation.cause = 'extraction'
+            continue
+        violation.cause = 'representation'
+    return violations
+
+
+def classify_tight_against_caret(tight, caret, preview_caret, pages):
+    """Explain historical tight-box violations using the caret comparison.
+
+    If the caret comparison does not flag the same word, the tight box was
+    the wrong rectangle (extraction). If both flag it, reuse the caret
+    cause, which was decided from origins rather than from ink centres.
+    """
+    if not caret:
+        for violation in tight:
+            violation.cause = 'extraction'
+        return tight
+    caret_by_word = {}
+    for violation in caret:
+        if violation.word:
+            caret_by_word.setdefault((violation.page, violation.word),
+                                     []).append(violation)
+    caret_clean_words = {(line.page, word.text)
+                         for line in preview_caret for word in line.words}
+    flagged = set(caret_by_word)
+    for violation in tight:
+        key = (violation.page, violation.word)
+        if violation.word and key in caret_clean_words and key not in flagged:
+            violation.cause = 'extraction'
+            continue
+        same = caret_by_word.get(key) or []
+        if same and same[0].cause:
+            violation.cause = same[0].cause
+            continue
+        violation.cause = violation.cause or 'unresolved'
+    return tight
+
+
 def render_report(violations, samples, coverage, bounds, mode):
     lines = []
     for name, values in samples.items():
@@ -771,16 +951,23 @@ def render_report(violations, samples, coverage, bounds, mode):
         f'{k}={v}' + ('' if not by_source.get((k, 'float'))
                       else f' (float {by_source[(k, "float")]})')
         for k, v in sorted(counts.items())))
-    # The counts alone cannot be acted on: name the worst few of each kind so
-    # the next run says *which* line moved by how much, not only that some did.
+    # Every violation is named. A cap of four hid 20 of the 32 findings and
+    # made the list unclassifiable from the annotation alone. Notices are
+    # already chunked at 3000 characters.
+    cause_counts = {}
+    for violation in violations:
+        if violation.cause:
+            cause_counts[violation.cause] = cause_counts.get(violation.cause, 0) + 1
+    if cause_counts:
+        lines.append('causes: ' + ', '.join(
+            f'{k}={v}' for k, v in sorted(cause_counts.items())))
     for category in sorted(counts):
         shown = sorted([v for v in violations if v.category == category],
-                       key=lambda v: -v.magnitude)[:4]
+                       key=lambda v: -v.magnitude)
         for violation in shown:
+            cause = f' cause={violation.cause}' if violation.cause else ''
             lines.append(f'  {category} p{violation.page} [{violation.source}]: '
-                         f'{violation.detail}')
-        if counts[category] > len(shown):
-            lines.append(f'  {category} ... and {counts[category] - len(shown)} more')
+                         f'{violation.detail}{cause}')
     for source in ('block', 'float'):
         mine = [v for v in violations if v.source == source]
         if mine:
@@ -810,21 +997,42 @@ def main(argv=None):
         print(f'::error title=C6 geometry::missing artifacts: {missing}')
         return 2
 
-    preview = preview_lines(read_preview(preview_path))
+    data = read_preview(preview_path)
+    preview = preview_lines(data, boxes='caret')
+    tight = preview_lines(data, boxes='tight')
     pages = read_pdf_pages(pdf_path)
     bounds = Bounds()
     violations, samples, coverage = compare(preview, pages, bounds)
+    classify_causes(violations, preview, pages)
+    coverage['box_source'] = ','.join(sorted(
+        {line.box_source for line in preview})) or 'none'
+    # The historical 32 were measured against tight ink boxes. Keep that
+    # list, classified against the caret comparison, so a box-matching
+    # finding is not relabelled as a product defect and is not dropped.
+    tight_violations, _, _ = compare(tight, pages, bounds)
+    classify_causes(tight_violations, tight, pages)
+    classify_tight_against_caret(tight_violations, violations, preview, pages)
 
     lines = render_report(violations, samples, coverage, bounds, args.mode)
     notice('C6 geometry (PDF coordinates)', lines)
     print('\n'.join(lines))
+    if any(line.box_source != 'tight' for line in preview):
+        tight_lines = ['tight-box diagnostic (not the verdict):']
+        tight_lines.extend(render_report(
+            tight_violations, {},
+            {'words': sum(len(line.words) for line in tight)},
+            bounds, 'report'))
+        notice('C6 geometry tight-box diagnostic', tight_lines)
+        print('\n'.join(tight_lines))
 
     payload = {
         'mode': args.mode,
+        'adopted_as_merge_gate': False,
         'bounds': bounds.__dict__,
         'coverage': coverage,
         'distribution': {k: distribution(v) for k, v in samples.items()},
         'violations': [v.__dict__ for v in violations],
+        'tight_box_violations': [v.__dict__ for v in tight_violations],
     }
     out = args.json or os.path.join(args.artifacts, JSON_OUT)
     os.makedirs(os.path.dirname(out), exist_ok=True)

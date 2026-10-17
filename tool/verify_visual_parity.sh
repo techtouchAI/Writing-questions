@@ -125,19 +125,37 @@ convert_docx() { # <exact>
   local track="$1"
   local outdir="$RENDERED/${track}_docx_pdf"
   local output="$outdir/$track.pdf"
-  local profile="file:///tmp/lo-visual-parity-$track"
-  local soffice_output
+  local profile="file:///tmp/lo-visual-parity-$track-$$"
+  local soffice_output status=0 started produced
+  # The output directory was just created empty. Delete again so a file that
+  # survived a partial run cannot be treated as this conversion's result.
+  rm -f "$output"
+  started="$(date +%s)"
   soffice_output="$("$SOFFICE" --headless --norestore --nolockcheck \
     -env:UserInstallation="$profile" \
     --convert-to "$LO_EXPORT_OPTIONS" --outdir "$outdir" \
-    "$ARTIFACTS/$track.docx" 2>&1)" || true
+    "$ARTIFACTS/$track.docx" 2>&1)" || status=$?
   {
-    echo "[تحويل $track.docx (LibreOffice)]"
+    echo "[تحويل $track.docx (LibreOffice)] exit=$status"
     printf '%s\n' "$soffice_output"
   } >>"$REPORT"
-  if [ ! -f "$output" ]; then
-    echo "::error title=تحويل Word $track::تعذّر إنتاج $output: $(printf '%s' "$soffice_output" | head -c 600 | tr '\n' ' ')"
+  # javaldx makes LibreOffice exit non-zero after a successful write. The
+  # exit code alone is therefore not the success test. A missing, empty, or
+  # older file is: that is a failed conversion, and it must not fall through
+  # to a PDF left by an earlier run.
+  if [ ! -s "$output" ]; then
+    echo "::error title=تحويل Word $track::تعذّر إنتاج ملف غير فارغ $output (exit $status): $(printf '%s' "$soffice_output" | head -c 600 | tr '\n' ' ')"
+    echo "تعذّر إنتاج ملف غير فارغ $output (exit $status)" >>"$REPORT"
     return 1
+  fi
+  produced="$(stat -c %Y "$output")"
+  if [ "$produced" -lt "$started" ]; then
+    echo "::error title=تحويل Word $track::الملف $output أقدم من بدء التحويل (exit $status) — لن يُستخدم ملف قديم."
+    echo "الملف $output أقدم من بدء التحويل — لن يُستخدم ملف قديم." >>"$REPORT"
+    return 1
+  fi
+  if [ "$status" -ne 0 ]; then
+    echo "::warning title=تحويل Word $track::LibreOffice خرج بـ $status بعد كتابة ملف جديد غير فارغ. التحذير ليس نجاح المسار: التصيير والمقارنة ما زالا يعملان على هذا الملف فقط."
   fi
   if ! render_pdf "$output" "$RENDERED/${track}_docx/page" \
       "تصيير Word $track"; then
