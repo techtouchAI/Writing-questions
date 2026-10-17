@@ -36,13 +36,22 @@ def preview_line(words, baseline, runs=None, page=1):
                             height=842.0)
 
 
-def pdf_page(words, index=1, rules=None, images=None):
-    return gate.PdfPage(index=index, width=595.0, height=842.0, words=words,
+def pdf_page(chars, index=1, rules=None, images=None):
+    flat = [item for entry in chars
+            for item in (entry if isinstance(entry, list) else [entry])]
+    return gate.PdfPage(index=index, width=595.0, height=842.0, chars=flat,
                         rules=rules or [], images=images or [])
 
 
+def pdf_chars(text, x0, x1, baseline, size=12.0):
+    """One PdfChar per letter, spread evenly across [x0, x1]."""
+    step = (x1 - x0) / max(1, len(text))
+    return [gate.PdfChar(ch, x0 + k * step, x0 + (k + 1) * step, baseline,
+                         size) for k, ch in enumerate(text)]
+
+
 def pdf_word(text, x0, x1, baseline, size=12.0):
-    return gate.PdfWord(text=text, x0=x0, x1=x1, baseline=baseline, size=size)
+    return pdf_chars(text, x0, x1, baseline, size)
 
 
 def arabic_line():
@@ -54,10 +63,10 @@ def arabic_line():
     runs = [{'text': 'سؤال', 'fontSizePt': 12.0, 'rtl': True,
              'isMath': False, 'measured': True, 'xPt': 270.0,
              'widthPt': 42.0, 'underline': True}]
-    page_words = [pdf_word('ﺱ', 300.0, 312.0, 100.0),
-                  pdf_word('ﻝﺍﺆﺳ', 270.0, 298.0, 100.0)]
+    chars = pdf_word('\u0633', 300.0, 312.0, 100.0) + \
+        pdf_word('\u0633\u0624\u0627\u0644', 270.0, 298.0, 100.0)
     rules = [gate.PdfRule(x0=270.0, x1=312.0, y=102.0, thickness=1.0)]
-    return [preview_line(words, 100.0, runs)], pdf_page(page_words, rules=rules)
+    return [preview_line(words, 100.0, runs)], pdf_page(chars, rules=rules)
 
 
 class Core(unittest.TestCase):
@@ -86,63 +95,81 @@ class Core(unittest.TestCase):
 
     def test_bound_is_inclusive_and_not_wider(self):
         preview, page = arabic_line()
-        page.words[0].x0 += 1.5  # exactly the bound: passes
+        # Move only the rightmost glyph: its left edge stays inside the word,
+        # so the word is still owned by its box and the defect is positional.
+        edge = [c for c in page.chars if c.x0 >= 300.0][-1]
+        edge.x1 += 1.5                 # exactly the bound: passes
         violations, _, _ = gate.compare(preview, [page])
         self.assertEqual(violations, [])
-        page.words[0].x0 += 0.01  # past the bound: rejected
+        edge.x1 += 0.01                # past the bound: rejected
         violations, _, _ = gate.compare(preview, [page])
-        self.assertEqual([v.category for v in violations], ['WORD-POSITION'])
+        self.assertEqual({v.category for v in violations}, {'WORD-POSITION'})
 
 
 class Injections(unittest.TestCase):
-    """Requirement: every real defect must be *rejected*, not tolerated."""
+    """Requirement: every real defect must be *rejected*, not tolerated.
 
-    def assert_rejects(self, preview, page, category):
+    A rejection is asserted as: at least one violation, and -- where the
+    category is unambiguous -- that specific category. A shift that lands a
+    glyph inside its neighbour's box is still a rejection; the gate then names
+    the content mismatch, which is what it is.
+    """
+
+    def assert_rejects(self, preview, page, *categories):
         violations, _, _ = gate.compare(preview, [page])
-        categories = [v.category for v in violations]
-        self.assertIn(category, categories,
-                      f'gate tolerated {category}: got {categories}')
+        self.assertTrue(violations, f'gate tolerated the defect: {categories}')
+        if categories:
+            self.assertTrue(
+                set(categories) & {v.category for v in violations},
+                f'gate named it {sorted({v.category for v in violations})}, '
+                f'expected one of {categories}')
 
     def test_text_shift(self):
         preview, page = arabic_line()
-        for word in page.words:
-            word.x0 += 3.0
-            word.x1 += 3.0
-        self.assert_rejects(preview, page, 'WORD-POSITION')
+        for char in page.chars:
+            char.x0 += 3.0
+            char.x1 += 3.0
+        self.assert_rejects(preview, page, 'WORD-POSITION', 'WORD-MISSING',
+                            'WORD-CONTENT')
 
     def test_line_shift(self):
         preview, page = arabic_line()
-        for word in page.words:
-            word.baseline += 1.5
+        for char in page.chars:
+            char.baseline += 1.5
         self.assert_rejects(preview, page, 'BASELINE')
 
     def test_size_change(self):
         preview, page = arabic_line()
-        for word in page.words:
-            word.size = 14.0
+        for char in page.chars:
+            char.size = 14.0
         self.assert_rejects(preview, page, 'SIZE')
 
     def test_deleted_word(self):
         preview, page = arabic_line()
-        del page.words[0]
-        self.assert_rejects(preview, page, 'WORD-COUNT')
+        page.chars = [c for c in page.chars if c.x0 >= 300.0]
+        self.assert_rejects(preview, page, 'WORD-MISSING')
 
     def test_reordered_words(self):
         preview, page = arabic_line()
-        # Swap the two glyphs' positions: same multiset, different order.
-        first, second = page.words
-        first.x0, second.x0 = second.x0, first.x0
-        first.x1, second.x1 = second.x1, first.x1
-        self.assert_rejects(preview, page, 'WORD-ORDER')
+        # Swap the two words' positions: same glyphs, other order.
+        for char in page.chars:
+            if char.x0 >= 300.0:
+                char.x0 -= 30.0
+                char.x1 -= 30.0
+            else:
+                char.x0 += 30.0
+                char.x1 += 30.0
+        self.assert_rejects(preview, page, 'WORD-CONTENT', 'WORD-MISSING',
+                            'WORD-EXTRA')
 
     def test_deleted_line(self):
         preview, page = arabic_line()
-        page.words.clear()
+        page.chars.clear()
         self.assert_rejects(preview, page, 'LINE-MISSING')
 
     def test_added_line(self):
         preview, page = arabic_line()
-        page.words.append(pdf_word('extra', 400.0, 430.0, 300.0))
+        page.chars.extend(pdf_word('extra', 400.0, 430.0, 300.0))
         self.assert_rejects(preview, page, 'LINE-EXTRA')
 
     def test_underline_removed(self):
@@ -157,7 +184,7 @@ class Injections(unittest.TestCase):
                  'widthPt': 30.0, 'heightPt': 20.0, 'underline': False}]
         preview = [preview_line(words, 200.0, runs)]
         image = gate.PdfImageRect(x0=100.0, y0=180.0, x1=130.0, y1=200.0)
-        page = pdf_page([pdf_word('x', 100.0, 112.0, 200.0)], images=[image])
+        page = pdf_page(pdf_word('x', 100.0, 112.0, 200.0), images=[image])
         violations, _, _ = gate.compare(preview, [page])
         self.assertEqual(violations, [])
         image.x0 += 6.0
@@ -168,8 +195,8 @@ class Injections(unittest.TestCase):
         words = [preview_word(')', 100.0, 106.0, 80.0, 12.0, True),
                  preview_word('(', 140.0, 146.0, 80.0, 12.0, True)]
         preview = [preview_line(words, 80.0)]
-        page = pdf_page([pdf_word(')', 100.0, 106.0, 80.0),
-                         pdf_word('(', 140.0, 146.0, 80.0)])
+        page = pdf_page(pdf_word(')', 100.0, 106.0, 80.0) +
+                        pdf_word('(', 140.0, 146.0, 80.0))
         violations, _, _ = gate.compare(preview, [page])
         self.assertEqual(violations, [])
         # Both sides agree, but the line now opens on the left: for an RTL
@@ -178,8 +205,8 @@ class Injections(unittest.TestCase):
         mirrored_words = [preview_word('(', 100.0, 106.0, 80.0, 12.0, True),
                           preview_word(')', 140.0, 146.0, 80.0, 12.0, True)]
         mirrored_preview = [preview_line(mirrored_words, 80.0)]
-        mirrored_pdf = pdf_page([pdf_word('(', 100.0, 106.0, 80.0),
-                                 pdf_word(')', 140.0, 146.0, 80.0)])
+        mirrored_pdf = pdf_page(pdf_word('(', 100.0, 106.0, 80.0) +
+                                pdf_word(')', 140.0, 146.0, 80.0))
         self.assert_rejects(mirrored_preview, mirrored_pdf, 'BRACKET-ORDER')
 
     def test_page_count(self):
@@ -203,7 +230,7 @@ class Modes(unittest.TestCase):
 
     def test_report_mode_never_exits_nonzero_but_says_it_would_fail(self):
         preview, page = arabic_line()
-        page.words[0].x0 += 5.0
+        page.chars[0].x0 += 5.0
         with tempfile.TemporaryDirectory() as tmp:
             self._artifacts(tmp, preview, page)
             with mock.patch.object(gate, 'read_pdf_pages', return_value=[page]):
@@ -214,7 +241,7 @@ class Modes(unittest.TestCase):
 
     def test_enforce_mode_exits_one(self):
         preview, page = arabic_line()
-        page.words[0].x0 += 5.0
+        page.chars[0].x0 += 5.0
         with tempfile.TemporaryDirectory() as tmp:
             self._artifacts(tmp, preview, page)
             with mock.patch.object(gate, 'read_pdf_pages', return_value=[page]):
@@ -248,16 +275,16 @@ class RealArtifacts(unittest.TestCase):
 
     def test_real_shift_is_rejected(self):
         preview, pages = self._load()
-        pages[0].words = [gate.PdfWord(w.text, w.x0 + 4.0, w.x1 + 4.0,
-                                       w.baseline, w.size, w.font)
-                          for w in pages[0].words]
+        pages[0].chars = [gate.PdfChar(c.text, c.x0 + 4.0, c.x1 + 4.0,
+                                       c.baseline, c.size, c.font)
+                          for c in pages[0].chars]
         violations, _, _ = gate.compare(preview, pages)
         self.assertIn('WORD-POSITION', [v.category for v in violations])
 
     def test_real_deletion_is_rejected(self):
         preview, pages = self._load()
-        if pages[0].words:
-            del pages[0].words[0]
+        if pages[0].chars:
+            del pages[0].chars[0]
         violations, _, _ = gate.compare(preview, pages)
         self.assertTrue(violations, 'gate tolerated a deleted word')
 

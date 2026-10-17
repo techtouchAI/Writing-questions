@@ -92,10 +92,23 @@ class Bounds:
     math_rect_pt: float = 2.0
     underline_span_pt: float = 2.0
 
+    #: How far outside a word box a glyph's centre may still belong to it.
+    #: First and last glyphs are inset by their side bearing on the ink side,
+    #: so a strict containment would call every word missing its edge glyph.
+    assign_tol: float = 3.0
+
 
 # --------------------------------------------------------------- PDF reading
 @dataclass
-class PdfWord:
+class PdfChar:
+    """One extracted character: its ink box and its own baseline.
+
+    Characters, not words. PyMuPDF's own tokenisation follows the extraction
+    heuristics (and the writer emits whole words with no space bytes), so any
+    word-level pairing here would fail for reasons that have nothing to do with
+    the layout. The gate pairs *characters* with the Preview's word boxes, which
+    is why Arabic clusters and ligatures cannot break it.
+    """
     text: str
     x0: float
     x1: float
@@ -126,22 +139,22 @@ class PdfPage:
     index: int
     width: float
     height: float
-    words: list = field(default_factory=list)
+    chars: list = field(default_factory=list)
     rules: list = field(default_factory=list)
     images: list = field(default_factory=list)
 
 
-def _cluster_lines(words, tol=0.5):
-    """Group PDF words into lines by baseline (y down, so no sign flip)."""
+def _cluster_lines(chars, tol=0.5):
+    """Group PDF characters into lines by baseline (y down, no sign flip)."""
     lines = []
-    for word in sorted(words, key=lambda w: (w.baseline, w.x0)):
-        if lines and abs(word.baseline - lines[-1][0]) <= tol:
-            lines[-1][1].append(word)
+    for char in sorted(chars, key=lambda c: (c.baseline, c.x0)):
+        if lines and abs(char.baseline - lines[-1][0]) <= tol:
+            lines[-1][1].append(char)
             lines[-1][0] = (lines[-1][0] * (len(lines[-1][1]) - 1) +
-                            word.baseline) / len(lines[-1][1])
+                            char.baseline) / len(lines[-1][1])
         else:
-            lines.append([word.baseline, [word]])
-    return [(baseline, sorted(group, key=lambda w: w.x0))
+            lines.append([char.baseline, [char]])
+    return [(baseline, sorted(group, key=lambda c: c.x0))
             for baseline, group in lines]
 
 
@@ -152,27 +165,22 @@ def read_pdf_pages(path):
     pages = []
     with pymupdf.open(path) as doc:
         for index, page in enumerate(doc):
-            words = []
+            chars = []
             raw = page.get_text('rawdict')
             for block in raw.get('blocks', []):
                 for line in block.get('lines', []):
                     for span in line.get('spans', []):
-                        chars = span.get('chars', [])
                         size = float(span.get('size', 0.0))
                         font = span.get('font', '')
                         baseline = float(span.get('origin', (0, 0))[1])
-                        current = []
-                        for char in chars:
-                            if char.get('c', '').isspace():
-                                if current:
-                                    words.append(_char_word(current, baseline,
-                                                            size, font))
-                                    current = []
+                        for char in span.get('chars', []):
+                            text = char.get('c', '')
+                            if not text or text.isspace():
                                 continue
-                            current.append(char)
-                        if current:
-                            words.append(_char_word(current, baseline, size,
-                                                    font))
+                            bbox = char.get('bbox') or (0, 0, 0, 0)
+                            chars.append(PdfChar(text, float(bbox[0]),
+                                                 float(bbox[2]), baseline, size,
+                                                 font))
             rules = []
             for drawing in page.get_drawings():
                 for item in drawing.get('items', []):
@@ -193,15 +201,8 @@ def read_pdf_pages(path):
                 for rect in page.get_image_rects(xref):
                     images.append(PdfImageRect(rect.x0, rect.y0, rect.x1, rect.y1))
             pages.append(PdfPage(index, page.rect.width, page.rect.height,
-                                 words, rules, images))
+                                 chars, rules, images))
     return pages
-
-
-def _char_word(chars, baseline, size, font):
-    text = ''.join(c.get('c', '') for c in chars)
-    x0 = min(float(c['bbox'][0]) for c in chars)
-    x1 = max(float(c['bbox'][2]) for c in chars)
-    return PdfWord(text, x0, x1, baseline, size, font)
 
 
 # ------------------------------------------------------------- preview model
@@ -285,13 +286,52 @@ def normalise(text):
     return ''.join(text.split())
 
 
-def _bracket_sequence(words):
-    return ''.join(w.text for w in words
-                   if w.text in '()' or w.text in '\uff08\uff09')
+BRACKETS = '()\uff08\uff09'
+
+
+def _bracket_sequence(chars):
+    """Bracket characters in visual order (left to right)."""
+    return ''.join(c.text for c in sorted(chars, key=lambda c: c.x0)
+                   if c.text in BRACKETS)
+
+
+def _bracket_text(text):
+    return ''.join(ch for ch in text if ch in BRACKETS)
 
 
 def _is_closer(text):
     return text in (')', '\uff09')
+
+
+def _letters(text):
+    """Letter identity, shaped-agnostic: NFKC, no marks, no spaces."""
+    text = unicodedata.normalize('NFKC', text)
+    return ''.join(ch for ch in text if unicodedata.category(ch)[0] in 'LN')
+
+
+def _assign(preview_words, chars, tol):
+    """Pair each PDF character with the Preview word box that owns it.
+
+    Containment by the character's centre, expanded by `tol` for the ink inset
+    of the first and last glyph. A character that fits no box is *outside* the
+    layout's words -- which is what a moved or an extra glyph looks like from
+    here -- and is reported, never dropped.
+    """
+    owned = [[] for _ in preview_words]
+    outside = []
+    for char in chars:
+        centre = (char.x0 + char.x1) / 2
+        best = None
+        for index, word in enumerate(preview_words):
+            if word.x0 - tol <= centre <= word.x1 + tol:
+                distance = min(abs(centre - word.x0), abs(centre - word.x1))
+                if best is None or distance < best[1]:
+                    best = (index, distance)
+        if best is None:
+            outside.append(char)
+        else:
+            owned[best[0]].append(char)
+    return owned, outside
 
 
 def compare(preview, pages, bounds=None, max_report=40):
@@ -300,9 +340,9 @@ def compare(preview, pages, bounds=None, max_report=40):
     samples = {name: [] for name in ('baseline', 'word_left', 'word_right',
                                      'size', 'math_rect')}
     violations = []
-    coverage = {'pages': 0, 'lines': 0, 'words': 0, 'rtl_lines': 0,
-                'bracket_lines': 0, 'math_runs': 0, 'underlines': 0,
-                'skipped_math_only': 0}
+    coverage = {'pages': 0, 'lines': 0, 'words': 0, 'chars': 0,
+                'rtl_lines': 0, 'bracket_lines': 0, 'math_runs': 0,
+                'underlines': 0, 'skipped_math_only': 0}
 
     by_page = {}
     for line in preview:
@@ -324,11 +364,16 @@ def compare(preview, pages, bounds=None, max_report=40):
                                         f'preview {first.width:.2f}x'
                                         f'{first.height:.2f}pt, pdf '
                                         f'{page.width:.2f}x{page.height:.2f}pt'))
-        pdf_lines = _cluster_lines(page.words)
+        pdf_lines = _cluster_lines(page.chars)
         used = set()
         for line in sorted(lines, key=lambda l: l.baseline):
             if not line.words:
+                # Maths-only line: no text metrics, but its image is still
+                # placed on the page and must be where the layout put it.
                 coverage['skipped_math_only'] += 1
+                _check_math(page_index, line, page, bounds, samples,
+                            violations, coverage)
+                _check_underline(page_index, line, page, violations, coverage)
                 continue
             best = None
             for position, (baseline, group) in enumerate(pdf_lines):
@@ -353,15 +398,21 @@ def compare(preview, pages, bounds=None, max_report=40):
                     page_index, 'BASELINE',
                     f'baseline moved {delta:.2f}pt: {_text_of(line)[:40]!r}',
                     delta))
-            _compare_line(page_index, line, group, bounds, samples,
-                          violations, coverage, page)
+            _compare_line(page_index, line, group, page, bounds, samples,
+                          violations, coverage)
         for position, (baseline, group) in enumerate(pdf_lines):
             if position in used:
                 continue
             violations.append(Violation(
                 page_index, 'LINE-EXTRA',
                 f'PDF line with no Preview line at baseline {baseline:.2f}: '
-                f'{"".join(w.text for w in group)[:40]!r}'))
+                f'{"".join(c.text for c in group)[:40]!r}'))
+    # A vacuous run must never read as a pass: no paired line means the tool
+    # measured nothing, whatever it printed above.
+    if coverage['lines'] == 0:
+        violations.append(Violation(
+            0, 'NO-LINES', 'no Preview line was paired with a PDF line; '
+                           'the artifacts are empty or unreadable'))
     return violations, samples, coverage
 
 
@@ -369,90 +420,93 @@ def _text_of(line):
     return ''.join(word.text for word in line.words)
 
 
-def _compare_line(page_index, line, group, bounds, samples, violations,
-                  coverage, page):
-    # Visual order on both sides: the order a reader sees, independent of the
-    # line's direction. The Preview probe records runs in logical order, so
-    # sorting here is what makes the two sequences comparable at all.
+def _compare_line(page_index, line, chars, page, bounds, samples, violations,
+                  coverage):
     preview_words = sorted(line.words, key=lambda w: (w.x0, w.x1))
-    pdf_words = sorted(group, key=lambda w: (w.x0, w.x1))
+    owned, outside = _assign(preview_words, chars, bounds.assign_tol)
     coverage['words'] += len(preview_words)
+    coverage['chars'] += len(chars)
     if line.words and line.words[0].rtl:
         coverage['rtl_lines'] += 1
 
-    # The two sides are compared in visual order (by x), which is the order a
-    # reader sees regardless of the line's direction.
-    preview_seq = [normalise(w.text) for w in preview_words]
-    pdf_seq = [normalise(w.text) for w in pdf_words]
-    if preview_seq != pdf_seq:
-        # Equal lengths with different sequences is a reordering, and a
-        # reordering must be named as one: reconciling by text would happily
-        # pair the moved tokens and hide it.
-        paired = (_reconcile(preview_words, pdf_words)
-                  if len(preview_seq) != len(pdf_seq) else None)
-        if paired is None:
-            category = 'WORD-COUNT' if len(preview_seq) != len(pdf_seq) \
-                else 'WORD-ORDER'
+    for word, mine in zip(preview_words, owned):
+        if not mine:
             violations.append(Violation(
-                page_index, category,
-                f'line {_text_of(line)[:36]!r}: preview '
-                f'{[w.text for w in preview_words][:8]} vs pdf '
-                f'{[w.text for w in pdf_words][:8]}'))
-            return
-        preview_words, pdf_words = paired
-
-    for preview_word, pdf_word in zip(preview_words, pdf_words):
-        samples['word_left'].append(abs(pdf_word.x0 - preview_word.x0))
-        samples['word_right'].append(abs(pdf_word.x1 - preview_word.x1))
-        left = abs(pdf_word.x0 - preview_word.x0)
-        right = abs(pdf_word.x1 - preview_word.x1)
+                page_index, 'WORD-MISSING',
+                f'no glyphs inside {word.text[:24]!r} at '
+                f'x={word.x0:.2f}..{word.x1:.2f} (deleted, moved away or '
+                f'reordered)'))
+            continue
+        left = abs(min(c.x0 for c in mine) - word.x0)
+        right = abs(max(c.x1 for c in mine) - word.x1)
+        samples['word_left'].append(left)
+        samples['word_right'].append(right)
         if left > bounds.word_edge_pt or right > bounds.word_edge_pt:
             violations.append(Violation(
                 page_index, 'WORD-POSITION',
-                f'{preview_word.text[:24]!r} left d={left:.2f}pt '
-                f'right d={right:.2f}pt', max(left, right)))
-        size = abs(pdf_word.size - preview_word.size)
+                f'{word.text[:24]!r} left d={left:.2f}pt right d={right:.2f}pt',
+                max(left, right)))
+        size = max(abs(c.size - word.size) for c in mine)
         samples['size'].append(size)
         if size > bounds.size_pt:
             violations.append(Violation(
                 page_index, 'SIZE',
-                f'{preview_word.text[:24]!r} size {preview_word.size:.2f} vs '
-                f'{pdf_word.size:.2f}pt', size))
+                f'{word.text[:24]!r} size {word.size:.2f} vs '
+                f'{mine[0].size:.2f}pt', size))
+        # Letters, not glyph shapes: a reordered word puts the *other* word's
+        # letters in this box, and that must be named as a content difference.
+        mine_letters = _letters(''.join(c.text for c in mine))
+        want_letters = _letters(word.text)
+        if sorted(mine_letters) != sorted(want_letters):
+            violations.append(Violation(
+                page_index, 'WORD-CONTENT',
+                f'box {word.text[:24]!r} holds {mine_letters[:24]!r}'))
 
-    # Brackets: identical subsequence by x on both sides, and -- on RTL lines
-    # -- the leftmost bracket is a closer. The second half is the mirroring
-    # property; it is observed here, never "fixed" here.
-    preview_brackets = _bracket_sequence(preview_words)
-    pdf_brackets = _bracket_sequence(pdf_words)
-    if preview_brackets or pdf_brackets:
+    if outside:
+        text = ''.join(c.text for c in sorted(outside, key=lambda c: c.x0))
+        violations.append(Violation(
+            page_index, 'WORD-EXTRA',
+            f'{len(outside)} glyph(s) outside every Preview word box: '
+            f'{text[:40]!r}'))
+
+    # Brackets: same count on both sides by visual position, and -- on an RTL
+    # line -- the leftmost bracket is a closer. The second half is the
+    # mirroring property; this gate observes it, it never edits the text.
+    pdf_brackets = _bracket_sequence(chars)
+    preview_brackets = _bracket_text(''.join(w.text for w in preview_words))
+    if pdf_brackets or preview_brackets:
         coverage['bracket_lines'] += 1
-        if preview_brackets != pdf_brackets:
+        if len(pdf_brackets) != len(preview_brackets):
+            violations.append(Violation(
+                page_index, 'BRACKET-COUNT',
+                f'preview {preview_brackets!r} vs pdf {pdf_brackets!r}'))
+        elif line.words[0].rtl and not _is_closer(pdf_brackets[0]):
             violations.append(Violation(
                 page_index, 'BRACKET-ORDER',
-                f'preview {preview_brackets!r} vs pdf {pdf_brackets!r}'))
-        elif line.words and line.words[0].rtl and pdf_brackets:
-            if not _is_closer(pdf_brackets[0]):
-                violations.append(Violation(
-                    page_index, 'BRACKET-ORDER',
-                    f'leftmost bracket of an RTL line is not a closer: '
-                    f'{pdf_brackets!r}'))
+                f'leftmost bracket of an RTL line is not a closer: '
+                f'{pdf_brackets!r}'))
 
-    # Underline: a rule must exist under an underlined run (position is the
-    # parity gate's job; here only presence).
+    _check_underline(page_index, line, page, violations, coverage)
+    _check_math(page_index, line, page, bounds, samples, violations, coverage)
+
+
+def _check_underline(page_index, line, page, violations, coverage):
+    if page is None:
+        return
     for run in line.runs:
         if not run.get('underline'):
             continue
         coverage['underlines'] += 1
-        rules = [r for r in page.rules
-                 if abs(r.y - line.baseline) <= 6.0]
-        if not rules:
+        if not [r for r in page.rules if abs(r.y - line.baseline) <= 6.0]:
             violations.append(Violation(
                 page_index, 'UNDERLINE-MISSING',
                 f'no rule near baseline {line.baseline:.2f} for '
                 f'{run.get("text", "")[:24]!r}'))
 
-    # Maths: every maths run is an image on the PDF side; its rectangle must
-    # be where the layout put it, within the bound.
+
+def _check_math(page_index, line, page, bounds, samples, violations, coverage):
+    if page is None:
+        return
     for run in line.runs:
         if not run.get('isMath'):
             continue
@@ -475,63 +529,6 @@ def _compare_line(page_index, line, group, bounds, samples, violations,
                 page_index, 'MATH-IMAGE',
                 f'maths run {run.get("text", "")[:20]!r} left d={left:.2f}pt '
                 f'width d={span:.2f}pt', max(left, span)))
-
-
-def _reconcile(preview_words, pdf_words):
-    """Pair sequences that differ only by tokenisation (e.g. attached ':').
-
-    Returns (preview pairs, pdf merged words) or None when the sequences
-    really differ -- which is the case the gate must reject.
-    """
-    out_preview, out_pdf = [], []
-    i = j = 0
-    while i < len(preview_words) and j < len(pdf_words):
-        p_text = normalise(preview_words[i].text)
-        matched = False
-        for take in (1, 2, 3):
-            if j + take > len(pdf_words):
-                break
-            merged_text = ''.join(normalise(w.text)
-                                  for w in pdf_words[j:j + take])
-            if merged_text == p_text:
-                merged = PdfWord(
-                    text=''.join(w.text for w in pdf_words[j:j + take]),
-                    x0=min(w.x0 for w in pdf_words[j:j + take]),
-                    x1=max(w.x1 for w in pdf_words[j:j + take]),
-                    baseline=pdf_words[j].baseline,
-                    size=pdf_words[j].size, font=pdf_words[j].font)
-                out_preview.append(preview_words[i])
-                out_pdf.append(merged)
-                i += 1
-                j += take
-                matched = True
-                break
-        if matched:
-            continue
-        # Or the PDF has one word where the Preview has several.
-        for take in (2, 3):
-            if i + take > len(preview_words):
-                break
-            merged_text = ''.join(normalise(w.text)
-                                  for w in preview_words[i:i + take])
-            if merged_text == normalise(pdf_words[j].text):
-                for offset in range(take):
-                    out_preview.append(preview_words[i + offset])
-                    out_pdf.append(PdfWord(
-                        text=preview_words[i + offset].text,
-                        x0=pdf_words[j].x0, x1=pdf_words[j].x1,
-                        baseline=pdf_words[j].baseline,
-                        size=pdf_words[j].size, font=pdf_words[j].font))
-                i += take
-                j += 1
-                matched = True
-                break
-        if matched:
-            continue
-        return None
-    if i != len(preview_words) or j != len(pdf_words):
-        return None
-    return out_preview, out_pdf
 
 
 def distribution(values):
@@ -579,6 +576,14 @@ def render_report(violations, samples, coverage, bounds, mode):
         counts[violation.category] = counts.get(violation.category, 0) + 1
     lines.append('violations: ' + ', '.join(f'{k}={v}'
                                             for k, v in sorted(counts.items())))
+    # The counts alone cannot be acted on: name the first few of each kind so
+    # the next run says *which* line moved, not only that something did.
+    for category in sorted(counts):
+        shown = [v for v in violations if v.category == category][:4]
+        for violation in shown:
+            lines.append(f'  {category} p{violation.page}: {violation.detail}')
+        if counts[category] > len(shown):
+            lines.append(f'  {category} ... and {counts[category] - len(shown)} more')
     lines.append(f'verdict: FAIL ({mode} mode)' if mode == 'enforce'
                  else 'verdict: WOULD FAIL (report mode; enforce would exit 1)')
     return lines
