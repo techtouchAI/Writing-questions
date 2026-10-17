@@ -154,6 +154,7 @@ class CanonicalLayoutPdfPainter {
       canonicalAdvancePt: canonicalAdvancePt,
       rtl: run.direction == DocumentDirection.rtl,
       underline: run.style.underline,
+      italic: run.style.italic,
     );
   }
 

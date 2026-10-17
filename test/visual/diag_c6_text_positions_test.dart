@@ -117,6 +117,11 @@ Map<String, Object?> _runRecord(LayoutLine line, LayoutRun run) {
     'italic': style.italic,
     'rtl': run.direction == DocumentDirection.rtl,
     'isMath': run.isMath,
+    // The geometry gate needs to know which runs carry a rule; the rule's
+    // position is measured by tool/check_underline_parity.py, its presence by
+    // tool/c6_geometry_gate.py.
+    'underline': style.underline,
+    'heightPt': run.height,
     'measured': false,
   };
   // Math is painted as an image when available, so it is not a text position.

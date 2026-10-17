@@ -614,6 +614,21 @@ jobs:
           "$RUNNER_TEMP/c6pos-venv/bin/pip" install -q pymupdf numpy
           "$RUNNER_TEMP/c6pos-venv/bin/python" tool/diag_c6_text_positions.py build/visual_parity
 
+      # [C6-GEOMETRY] الطبقة الأولى من العقد ذي الطبقتين: تُقارن هندسة
+      # المعاينة بهندسة vector.pdf نفسه (إحداثيات نص وصور وقواعد) بالـpoint،
+      # بلا رَستَرة إطلاقاً. عتبة RMSE الحالية تبقى كما هي: هذا العقد **يُعرض
+      # للمراجعة** قبل أن يصبح شرط دمج، ولهذا يعمل الآن بأسلوب report (ينشر
+      # حكمه و"WOULD FAIL" صراحةً ولا يُسقط الوظيفة). تفعيله لاحقاً سطر واحد:
+      # --mode enforce. لا يمسّ السقف ولا الصور المرجعية.
+      - name: Verify PDF geometry against the Preview (report, not adopted)
+        if: always()
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/c6geom-venv"
+          "$RUNNER_TEMP/c6geom-venv/bin/pip" install -q pymupdf
+          "$RUNNER_TEMP/c6geom-venv/bin/python" tool/c6_geometry_gate.py \
+            build/visual_parity --mode report
+
       # [C6-RASTER] تشخيص غير ملزم: هل تُقرّب المعاينة (Flutter) وPoppler موضع
       # خط الأساس بقاعدة واحدة عند كسور مختلفة من البكسل؟ لا يغيّر البوابة
       # الرسمية أو عتبة RMSE أو الصور المرجعية أو نتيجة الوظيفة.
@@ -726,6 +741,40 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      # [C6-ITALIC] اختبار انحدار بوابي: يقيس ميلان النص المائل في المعاينة من
+      # البكسل نفسه ويقارنه بالعامل الذي يصدّره `CanonicalText`. الثابت وحده لا
+      # يُثبت شيئاً؛ القياس هو الدليل. الخطوة أخيراً عمداً: لا تحجب تقرير بوابة
+      # RMSE ولا ملخّص المقاييس، وهي لا تمسّ العتبة ولا الصور المرجعية.
+      - name: Verify the Preview italic oblique against the emitted shear
+        if: always()
+        shell: bash
+        run: flutter test test/visual/italic_oblique_probe_test.dart
+
+      # [C6-UNDERLINE] يقيس التسطير الذي ترسمه المعاينة (إزاحته تحت خط الأساس
+      # وسماكته) وينشره رقماً: خرائط الحبر دلّت على فارق 4px بين السطرين،
+      # والرقم الصحيح لا يُخمَّن من خريطة. لا يمسّ العتبة ولا الصور المرجعية.
+      - name: Measure the Preview underline geometry (measurement, not a gate)
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: flutter test test/visual/underline_geometry_probe_test.dart
+
+      # [C6-UNDERLINE] بوابة على خاصية يملكها المشروع: موضع التسطير بالنسبة
+      # لنصّه هو نفسه في المعاينة وفي vector.pdf. تُقاس الهندسة من الملف نفسه
+      # (لا رَستَرة)، ويُقاس الحبر في اللقطة، فتُقارن إزاحتان بمرجع واحد بدل
+      # مقارنة مصيِّرين. مستقلّة عن عتبة RMSE: لا تمسّها ولا تُخفِ فشلها.
+      - name: Verify underline placement matches the Preview (gating)
+        if: always()
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/c6raster-venv/bin/python" tool/check_underline_parity.py \
+            build/visual_parity 2>/dev/null || {
+              python3 -m venv "$RUNNER_TEMP/underline-venv"
+              "$RUNNER_TEMP/underline-venv/bin/pip" install -q pymupdf
+              "$RUNNER_TEMP/underline-venv/bin/python" \
+                tool/check_underline_parity.py build/visual_parity
+            }
+
   # تحقيق C6 غير مُلزِم. يقرأ artifact الذي تنتجه وظيفة visual-parity نفسها،
   # ولا يغيّر بوابة RMSE أو عتبتها (0.02) أو الصور المرجعية أو نتيجة الوظيفة.
   # فشله لا يفشل التشغيل (continue-on-error). الأدوات في tool/diag_c6_*.py.
@@ -750,12 +799,74 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends poppler-utils imagemagick
+          # [C6-ATTR] مصيِّر ثانٍ مستقل لضابط أرضية المصيِّر: يقيس، في كل تشغيل
+          # وعلى نفس بايتات vector.pdf، ما لا يستطيع أي تغيير في التخطيط أو
+          # التنسيق إزالته (فرق الرَّستَرة نفسه). غير ملزم ولا يمسّ البوابة.
+          # فشل التثبيت لا يُسقط الوظيفة؛ الأداة تعلن غياب الضابط صراحةً.
+          sudo apt-get install -y --no-install-recommends mupdf-tools \
+            || echo "::warning title=C6 renderer floor::mupdf-tools unavailable"
+          sudo apt-get install -y --no-install-recommends ghostscript \
+            || echo "::warning title=C6 renderer floor::ghostscript unavailable"
           python3 -m venv "$RUNNER_TEMP/diag-venv"
           "$RUNNER_TEMP/diag-venv/bin/pip" install -q pymupdf numpy
 
       - name: Unit tests of the C6 diagnostics (synthetic)
+        shell: bash
         run: |
-          "$RUNNER_TEMP/diag-venv/bin/python" -m unittest discover -s tool -p 'test_diag_c6_*.py' -v
+          # A failing unittest prints to the step log, which the checks API does
+          # not expose. Re-emit the tail as an annotation so a failure is
+          # actionable from the run's annotations alone.
+          run_suite () {
+            "$RUNNER_TEMP/diag-venv/bin/python" "$@" 2>&1 | tee /tmp/c6-suite.log || {
+              tail -n 12 /tmp/c6-suite.log | while IFS= read -r line; do
+                echo "::error title=C6 unit tests::$line"
+              done
+              return 1
+            }
+          }
+          run_suite -m unittest discover -s tool -p 'test_diag_c6_*.py' -v
+          run_suite -m unittest discover -s tool -p 'test_diag_c6_underline_parity.py' -v
+          run_suite -m unittest tool/test_c6_geometry_gate.py -v
+          run_suite -m unittest tool/test_c6_visual_calibration.py -v
+
+      # [C6-GEOMETRY] الاختبارات السلبية على **المخرجات الحقيقية**: تُحقن
+      # إزاحة وحذف وإزالة تسطير في هندسة البوابة نفسها ويجب أن تُرفض. اختبار
+      # بوابة لا يُثبت أنها ترفض إلا إذا رفضت على صورتها الحقيقية لا على نموذج.
+      - name: Negative tests of the geometry gate on the real artifacts
+        if: always()
+        shell: bash
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          C6_ARTIFACTS=build/visual_parity \
+            "$RUNNER_TEMP/diag-venv/bin/python" -m unittest \
+            tool.test_c6_geometry_gate.RealArtifacts -v 2>&1 | tee /tmp/c6-real.log \
+            || {
+              tail -n 12 /tmp/c6-real.log | while IFS= read -r line; do
+                echo "::error title=C6 real-artifact tests::$line"
+              done
+              exit 1
+            }
+
+      # [C6-CALIBRATION] الطبقة الثانية: تقيس أرضية المصيّرين على نفس PDF
+      # بإعدادات موثّقة، وتقيس انحدارات متعمدة (إزاحة 1/2/4 بكسل، تكبير 2%،
+      # حذف شريط نص، تحريك قاعدة التسطير 4 بكسل) بالمقياس نفسه الذي تقيس به
+      # البوابة. تقترح عتبة فقط إن وُجد فصل حقيقي، وتعلنها PROPOSED غير
+      # معتمدة. لا تغيّر أي عتبة ولا صورة. هنا لأن هذه الوظيفة تملك المصيِّرين
+      # (poppler + mupdf) والأدوات، بخلاف وظيفة البوابة.
+      - name: Calibrate the pixel tier against the renderer floor (proposal only)
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/c6_visual_calibration.py \
+            build/visual_parity 2>&1 | tail -60 || true
+
+      - name: C6 geometry gate on the real artifacts (report)
+        if: always()
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/c6_geometry_gate.py \
+            build/visual_parity --mode report
 
       - name: C6 diagnostics on the rendered artifacts
         shell: bash
@@ -778,6 +889,29 @@ jobs:
         shell: bash
         run: |
           "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_ink_windows.py build/visual_parity
+
+      # [C6-ATTR] إسناد RMSE إلى العناصر (non-gating). خطوة مستقلة عمداً:
+      # GitHub يحتفظ بنحو 10 تعليقات لكل خطوة، فلو شارك هذه الأداة الخطوة
+      # المجمّعة أعلاه لابتلع رصيدها أدواتٌ تعمل قبله ولما قُرئ ناتجها أصلاً.
+      - name: C6 element attribution of the Vector RMSE (non-gating)
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p build/visual_parity/c6diag
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_element_attribution.py \
+            build/visual_parity
+
+      # [C6-ATTR] مخرجات الإسناد العنصري (non-gating): تُرفع مع بقية تشخيص C6.
+      - name: Upload C6 element-attribution diagnostics
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: c6-element-attribution
+          path: build/visual_parity/c6diag/element_attribution/*
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload C6 ink-window diagnostics
         if: always()
