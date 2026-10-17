@@ -811,11 +811,23 @@ jobs:
           "$RUNNER_TEMP/diag-venv/bin/pip" install -q pymupdf numpy
 
       - name: Unit tests of the C6 diagnostics (synthetic)
+        shell: bash
         run: |
-          "$RUNNER_TEMP/diag-venv/bin/python" -m unittest discover -s tool -p 'test_diag_c6_*.py' -v
-          "$RUNNER_TEMP/diag-venv/bin/python" -m unittest discover -s tool -p 'test_diag_c6_underline_parity.py' -v
-          "$RUNNER_TEMP/diag-venv/bin/python" -m unittest tool/test_c6_geometry_gate.py -v
-          "$RUNNER_TEMP/diag-venv/bin/python" -m unittest tool/test_c6_visual_calibration.py -v
+          # A failing unittest prints to the step log, which the checks API does
+          # not expose. Re-emit the tail as an annotation so a failure is
+          # actionable from the run's annotations alone.
+          run_suite () {
+            "$RUNNER_TEMP/diag-venv/bin/python" "$@" 2>&1 | tee /tmp/c6-suite.log || {
+              tail -n 12 /tmp/c6-suite.log | while IFS= read -r line; do
+                echo "::error title=C6 unit tests::$line"
+              done
+              return 1
+            }
+          }
+          run_suite -m unittest discover -s tool -p 'test_diag_c6_*.py' -v
+          run_suite -m unittest discover -s tool -p 'test_diag_c6_underline_parity.py' -v
+          run_suite -m unittest tool/test_c6_geometry_gate.py -v
+          run_suite -m unittest tool/test_c6_visual_calibration.py -v
 
       # [C6-GEOMETRY] الاختبارات السلبية على **المخرجات الحقيقية**: تُحقن
       # إزاحة وحذف وإزالة تسطير في هندسة البوابة نفسها ويجب أن تُرفض. اختبار
@@ -827,7 +839,13 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           C6_ARTIFACTS=build/visual_parity \
             "$RUNNER_TEMP/diag-venv/bin/python" -m unittest \
-            tool.test_c6_geometry_gate.RealArtifacts -v
+            tool.test_c6_geometry_gate.RealArtifacts -v 2>&1 | tee /tmp/c6-real.log \
+            || {
+              tail -n 12 /tmp/c6-real.log | while IFS= read -r line; do
+                echo "::error title=C6 real-artifact tests::$line"
+              done
+              exit 1
+            }
 
       # [C6-CALIBRATION] الطبقة الثانية: تقيس أرضية المصيّرين على نفس PDF
       # بإعدادات موثّقة، وتقيس انحدارات متعمدة (إزاحة 1/2/4 بكسل، تكبير 2%،
