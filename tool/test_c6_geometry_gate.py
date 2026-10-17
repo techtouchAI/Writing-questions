@@ -269,6 +269,22 @@ class Modes(unittest.TestCase):
 
 
 class LayoutIntervals(unittest.TestCase):
+    def test_ink_inset_inside_the_caret_interval_is_not_a_position_violation(self):
+        # The 7.06 pt cluster: ink sits inside the advance interval, origin
+        # at the interval's left. That is side bearing / TJ, not a moved word.
+        words = [preview_word('التدفق', 100.0, 140.0, 70.0, 12.0, True)]
+        chars = []
+        x = 107.06
+        for ch in 'التدفق':
+            chars.append(gate.PdfChar(ch, x, x + 4.0, 70.0, 12.0, origin_x=x))
+            x += 4.5
+        violations, samples, _ = gate.compare(
+            [preview_line(words, 70.0)], [pdf_page(chars)], edges='origin')
+        self.assertNotIn('WORD-POSITION', {v.category for v in violations})
+        self.assertGreater(max(samples['word_left']), 6.5)
+
+
+class LayoutWordBoxes(unittest.TestCase):
     def test_layout_words_are_the_comparison_boxes(self):
         data = {'pages': [{'page': 1, 'widthPt': 595.0, 'heightPt': 842.0,
                            'lines': [{'baselinePt': 40.0, 'source': 'block',
@@ -340,7 +356,8 @@ class FalseAlarms(unittest.TestCase):
         gate.classify_causes(violations, preview, [page])
         missing = [v for v in violations if v.category == 'WORD-MISSING']
         self.assertTrue(missing)
-        self.assertEqual(missing[0].cause, 'product-content')
+        self.assertEqual(missing[0].cause, 'letters-absent-from-extract')
+        self.assertNotEqual(missing[0].cause, 'extraction')
 
     def test_shifted_origins_are_product_position(self):
         words = [preview_word('في', 100.0, 112.0, 70.0, 12.0, True)]
@@ -348,9 +365,10 @@ class FalseAlarms(unittest.TestCase):
         chars = [gate.PdfChar(ch, 130.0 + i, 131.0 + i, 70.0, 12.0,
                               origin_x=130.5 + i) for i, ch in enumerate('في')]
         page = pdf_page(chars)
-        violations, _, _ = gate.compare(preview, [page])
+        violations, _, _ = gate.compare(preview, [page], edges='origin')
         gate.classify_causes(violations, preview, [page])
-        self.assertTrue(any(v.cause == 'product-position' for v in violations))
+        self.assertTrue(any(v.cause == 'origin-outside-interval'
+                           for v in violations))
 
 
 class RealArtifacts(unittest.TestCase):

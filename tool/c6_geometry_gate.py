@@ -441,20 +441,21 @@ def _letters(text):
     return ''.join(ch for ch in text if unicodedata.category(ch)[0] in 'LN')
 
 
-def _anchor(char):
+def _anchor(char, kind='origin'):
     """The point that decides which word a glyph belongs to.
 
     The writer places an origin. The ink box centre moves with shear and with
     side bearings, so it is the wrong point once an origin is known: a narrow
     neighbour such as '/' or a tight ink box can contain the centre while the
-    origin still sits in the word that was emitted.
+    origin still sits in the word that was emitted. `kind='centre'` is the
+    historical comparison only, kept so that list can still be named.
     """
-    if char.origin_x is not None:
-        return char.origin_x
-    return (char.x0 + char.x1) / 2
+    if kind == 'centre' or char.origin_x is None:
+        return (char.x0 + char.x1) / 2
+    return char.origin_x
 
 
-def _assign(preview_words, chars, tol):
+def _assign(preview_words, chars, tol, anchor_kind='origin'):
     """Pair each PDF character with the Preview word box nearest to its anchor.
 
     Nearest, not first-containing: word boxes are adjacent, so a glyph a few
@@ -468,7 +469,7 @@ def _assign(preview_words, chars, tol):
     owned = [[] for _ in preview_words]
     outside = []
     for char in chars:
-        anchor = _anchor(char)
+        anchor = _anchor(char, anchor_kind)
         best = None
         for index, word in enumerate(preview_words):
             if word.x0 <= anchor <= word.x1:
@@ -485,7 +486,8 @@ def _assign(preview_words, chars, tol):
     return owned, outside
 
 
-def compare(preview, pages, bounds=None, max_report=40):
+def compare(preview, pages, bounds=None, max_report=40, edges='ink',
+            anchor='origin'):
     """Return (violations, samples, coverage) for the whole document."""
     bounds = bounds or Bounds()
     samples = {name: [] for name in ('baseline', 'word_left', 'word_right',
@@ -530,7 +532,7 @@ def compare(preview, pages, bounds=None, max_report=40):
                         f'baseline moved {delta:.2f}pt: '
                         f'{_text_of(line)[:40]!r}', delta, line.source))
                 _compare_line(page_index, line, group, page, bounds, samples,
-                              violations, coverage)
+                              violations, coverage, edges=edges, anchor=anchor)
             else:
                 coverage['skipped_math_only'] += 1
                 _check_math(page_index, line, group, page, bounds, samples,
@@ -623,7 +625,7 @@ def _multiset_difference(left, right):
 
 
 def _compare_line(page_index, line, chars, page, bounds, samples, violations,
-                  coverage):
+                  coverage, edges='ink', anchor='origin'):
     source = line.source
     preview_words = sorted(line.words, key=lambda w: (w.x0, w.x1))
     first = len(violations)
@@ -661,7 +663,7 @@ def _compare_line(page_index, line, chars, page, bounds, samples, violations,
         centre = (char.x0 + char.x1) / 2
         return any(start - 1 <= centre <= end + 1 for start, end in math_regions)
 
-    owned, outside = _assign(preview_words, chars, bounds.assign_tol)
+    owned, outside = _assign(preview_words, chars, bounds.assign_tol, anchor)
     outside = [c for c in outside if not in_math(c)]
     coverage['words'] += len(preview_words)
     coverage['chars'] += len(chars)
@@ -681,7 +683,28 @@ def _compare_line(page_index, line, chars, page, bounds, samples, violations,
         right = abs(max(c.x1 for c in mine) - word.x1)
         samples['word_left'].append(left)
         samples['word_right'].append(right)
-        if left > bounds.word_edge_pt or right > bounds.word_edge_pt:
+        # Ink edges are not the emission contract. The writer places an origin
+        # inside [x, x + textAdvance]; the ink box is inset by side bearings
+        # and the trailing TJ correction closes the cursor, not the ink. An
+        # inset of ~7 pt with the origin still inside the interval is a
+        # representation difference. A position finding is an origin outside
+        # that interval. The ink deltas stay in the distribution either way.
+        if edges == 'origin':
+            outside_pt = 0.0
+            for char in mine:
+                point = _anchor(char, 'origin')
+                if point < word.x0:
+                    outside_pt = max(outside_pt, word.x0 - point)
+                elif point > word.x1:
+                    outside_pt = max(outside_pt, point - word.x1)
+            if outside_pt > bounds.word_edge_pt:
+                violations.append(Violation(
+                    page_index, 'WORD-POSITION',
+                    f'{word.text[:24]!r} origin outside the interval by '
+                    f'{outside_pt:.2f}pt (ink left d={left:.2f}pt '
+                    f'right d={right:.2f}pt)',
+                    outside_pt, word=word.text[:24]))
+        elif left > bounds.word_edge_pt or right > bounds.word_edge_pt:
             violations.append(Violation(
                 page_index, 'WORD-POSITION',
                 f'{word.text[:24]!r} left d={left:.2f}pt right d={right:.2f}pt',
@@ -850,12 +873,17 @@ def classify_causes(violations, preview, pages):
     """Label each violation. Does not add or remove any.
 
     Labels, and only these:
-      product-content  the word's letters are not on the page
-      product-position the letters' origins sit outside the word interval
-      representation   a neighbour holds the letters (token boundary, slash,
-                       attached mark) — same ink, different split
-      extraction       the origins are in or beside the interval but the
-                       assignment used a different rectangle
+      letters-absent-from-extract
+                       the extracted text does not contain the word. This is
+                       not proof the ink is absent: a font can draw a glyph
+                       whose ToUnicode is empty. It is also what a real
+                       deletion looks like, so the category stays WORD-MISSING.
+      origin-outside-interval
+                       an extracted origin is outside the caret interval by
+                       more than the bound. Not yet a proven paint bug.
+      representation   same letters, different split or ink-versus-advance
+      extraction       the letters were extracted, and a different rectangle
+                       is what disagreed
       unresolved       the evidence does not decide
     """
     by_page_words = {}
@@ -875,8 +903,15 @@ def classify_causes(violations, preview, pages):
         chars = _page_chars(pages, violation.page)
         want = _letters(word)
         have = _letters(''.join(c.text for c in chars))
+        if violation.category == 'WORD-POSITION':
+            # Glyphs were assigned, so something was emitted. Missing letters
+            # in the extract do not make that a content defect.
+            violation.cause = ('origin-outside-interval'
+                               if 'origin outside' in violation.detail
+                               else 'representation')
+            continue
         if want and not _letters_present(want, have):
-            violation.cause = 'product-content'
+            violation.cause = 'letters-absent-from-extract'
             continue
         boxes = [w for w in by_page_words.get(violation.page, [])
                  if w.text == word]
@@ -887,11 +922,8 @@ def classify_causes(violations, preview, pages):
         nearest = min(min(abs(_anchor(c) - b.x0), abs(_anchor(c) - b.x1),
                           0.0 if b.x0 <= _anchor(c) <= b.x1 else 1e9)
                       for c in origins for b in boxes)
-        if violation.category == 'WORD-POSITION':
-            violation.cause = 'product-position'
-            continue
         if nearest > 6.5:
-            violation.cause = 'product-position'
+            violation.cause = 'origin-outside-interval'
             continue
         if nearest <= 0.5:
             violation.cause = 'extraction'
@@ -1006,28 +1038,40 @@ def main(argv=None):
     tight = preview_lines(data, boxes='tight')
     pages = read_pdf_pages(pdf_path)
     bounds = Bounds()
-    violations, samples, coverage = compare(preview, pages, bounds)
+    # Verdict: the intervals the writer executed, judged by glyph origin.
+    # Ink-edge disagreement with the origin still inside is published in the
+    # distribution and is not a violation.
+    violations, samples, coverage = compare(
+        preview, pages, bounds, edges='origin', anchor='origin')
     classify_causes(violations, preview, pages)
     coverage['box_source'] = ','.join(sorted(
         {line.box_source for line in preview})) or 'none'
-    # The historical 32 were measured against tight ink boxes. Keep that
-    # list, classified against the caret comparison, so a box-matching
-    # finding is not relabelled as a product defect and is not dropped.
-    tight_violations, _, _ = compare(tight, pages, bounds)
-    classify_causes(tight_violations, tight, pages)
-    classify_tight_against_caret(tight_violations, violations, preview, pages)
+    coverage['edges'] = 'origin'
+    # The historical 32 used tight ink boxes and glyph centres. Keep that
+    # comparison, named and classified, so those rows are not dropped and
+    # are not silently re-measured with a different anchor.
+    historical, _, _ = compare(tight, pages, bounds, edges='ink', anchor='centre')
+    classify_causes(historical, tight, pages)
+    classify_tight_against_caret(historical, violations, preview, pages)
 
     lines = render_report(violations, samples, coverage, bounds, args.mode)
     notice('C6 geometry (PDF coordinates)', lines)
     print('\n'.join(lines))
     if any(line.box_source != 'tight' for line in preview):
-        tight_lines = ['tight-box diagnostic (not the verdict):']
-        tight_lines.extend(render_report(
-            tight_violations, {},
+        historical_lines = [
+            'historical tight-box + glyph-centre diagnostic (not the verdict):']
+        historical_lines.extend(render_report(
+            historical, {},
             {'words': sum(len(line.words) for line in tight)},
             bounds, 'report'))
-        notice('C6 geometry tight-box diagnostic', tight_lines)
-        print('\n'.join(tight_lines))
+        notice('C6 geometry historical tight-box diagnostic', historical_lines)
+        print('\n'.join(historical_lines))
+        hist_counts = {}
+        for violation in historical:
+            hist_counts[violation.category] = hist_counts.get(violation.category, 0) + 1
+        print('::notice title=C6 geometry historical count::'
+              f'{len(historical)} tight-centre violation(s): '
+              + ', '.join(f'{k}={v}' for k, v in sorted(hist_counts.items())))
 
     payload = {
         'mode': args.mode,
@@ -1036,7 +1080,7 @@ def main(argv=None):
         'coverage': coverage,
         'distribution': {k: distribution(v) for k, v in samples.items()},
         'violations': [v.__dict__ for v in violations],
-        'tight_box_violations': [v.__dict__ for v in tight_violations],
+        'historical_tight_centre_violations': [v.__dict__ for v in historical],
     }
     out = args.json or os.path.join(args.artifacts, JSON_OUT)
     os.makedirs(os.path.dirname(out), exist_ok=True)
@@ -1047,8 +1091,13 @@ def main(argv=None):
         return 1
     if violations:
         # Report mode must never look like a pass.
+        counts = {}
+        for violation in violations:
+            counts[violation.category] = counts.get(violation.category, 0) + 1
         print(f'::warning title=C6 geometry::WOULD FAIL: '
-              f'{len(violations)} violation(s) -- enforce mode would exit 1')
+              f'{len(violations)} caret/origin violation(s) '
+              f'({", ".join(f"{k}={v}" for k, v in sorted(counts.items()))}) '
+              f'-- enforce mode is not enabled')
     return 0
 
 
