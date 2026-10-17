@@ -614,6 +614,21 @@ jobs:
           "$RUNNER_TEMP/c6pos-venv/bin/pip" install -q pymupdf numpy
           "$RUNNER_TEMP/c6pos-venv/bin/python" tool/diag_c6_text_positions.py build/visual_parity
 
+      # [C6-GEOMETRY] الطبقة الأولى من العقد ذي الطبقتين: تُقارن هندسة
+      # المعاينة بهندسة vector.pdf نفسه (إحداثيات نص وصور وقواعد) بالـpoint،
+      # بلا رَستَرة إطلاقاً. عتبة RMSE الحالية تبقى كما هي: هذا العقد **يُعرض
+      # للمراجعة** قبل أن يصبح شرط دمج، ولهذا يعمل الآن بأسلوب report (ينشر
+      # حكمه و"WOULD FAIL" صراحةً ولا يُسقط الوظيفة). تفعيله لاحقاً سطر واحد:
+      # --mode enforce. لا يمسّ السقف ولا الصور المرجعية.
+      - name: Verify PDF geometry against the Preview (report, not adopted)
+        if: always()
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/c6geom-venv"
+          "$RUNNER_TEMP/c6geom-venv/bin/pip" install -q pymupdf
+          "$RUNNER_TEMP/c6geom-venv/bin/python" tool/c6_geometry_gate.py \
+            build/visual_parity --mode report
+
       # [C6-RASTER] تشخيص غير ملزم: هل تُقرّب المعاينة (Flutter) وPoppler موضع
       # خط الأساس بقاعدة واحدة عند كسور مختلفة من البكسل؟ لا يغيّر البوابة
       # الرسمية أو عتبة RMSE أو الصور المرجعية أو نتيجة الوظيفة.
@@ -717,6 +732,18 @@ jobs:
           summary="${summary//$'\n'/%0A}"
           echo "::notice title=مقاييس التحقق البصري::$summary"
 
+      # [C6-CALIBRATION] الطبقة الثانية: تقيس أرضية المصيّرين على نفس PDF
+      # بإعدادات موثّقة، وتقيس انحدارات متعمدة (إزاحة 1/2/4 بكسل، تكبير 2%،
+      # حذف شريط نص، تحريك قاعدة التسطير 4 بكسل) بالمقياس نفسه الذي تقيس به
+      # البوابة. تقترح عتبة فقط إن وُجد فصل حقيقي، وتعلنها PROPOSED غير
+      # معتمدة. لا تغيّر أي عتبة ولا صورة.
+      - name: Calibrate the pixel tier against the renderer floor (proposal only)
+        if: always()
+        shell: bash
+        run: |
+          python3 tool/c6_visual_calibration.py build/visual_parity \
+            || echo "::warning title=C6 calibration::could not calibrate (see log)"
+
       - name: Upload visual parity artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -799,6 +826,20 @@ jobs:
         run: |
           "$RUNNER_TEMP/diag-venv/bin/python" -m unittest discover -s tool -p 'test_diag_c6_*.py' -v
           "$RUNNER_TEMP/diag-venv/bin/python" -m unittest discover -s tool -p 'test_diag_c6_underline_parity.py' -v
+          "$RUNNER_TEMP/diag-venv/bin/python" -m unittest tool/test_c6_geometry_gate.py -v
+          "$RUNNER_TEMP/diag-venv/bin/python" -m unittest tool/test_c6_visual_calibration.py -v
+
+      # [C6-GEOMETRY] الاختبارات السلبية على **المخرجات الحقيقية**: تُحقن
+      # إزاحة وحذف وإزالة تسطير في هندسة البوابة نفسها ويجب أن تُرفض. اختبار
+      # بوابة لا يُثبت أنها ترفض إلا إذا رفضت على صورتها الحقيقية لا على نموذج.
+      - name: Negative tests of the geometry gate on the real artifacts
+        if: always()
+        shell: bash
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          C6_ARTIFACTS=build/visual_parity \
+            "$RUNNER_TEMP/diag-venv/bin/python" -m unittest \
+            tool.test_c6_geometry_gate.RealArtifacts -v
 
       - name: C6 diagnostics on the rendered artifacts
         shell: bash
