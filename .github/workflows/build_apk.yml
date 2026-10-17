@@ -741,8 +741,9 @@ jobs:
         if: always()
         shell: bash
         run: |
-          python3 tool/c6_visual_calibration.py build/visual_parity \
-            || echo "::warning title=C6 calibration::could not calibrate (see log)"
+          set -o pipefail
+          python3 tool/c6_visual_calibration.py build/visual_parity 2>&1 \
+            | tail -60 || true
 
       - name: Upload visual parity artifacts
         if: always()

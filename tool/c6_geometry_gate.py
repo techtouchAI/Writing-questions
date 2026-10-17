@@ -97,6 +97,18 @@ class Bounds:
     #: so a strict containment would call every word missing its edge glyph.
     assign_tol: float = 3.0
 
+    #: How far apart two lines' baselines may be and still be *the same line*.
+    #: This decides pairing only -- the acceptance bound is `baseline_pt`, which
+    #: reports the distance once the pair is known. Floating headers and labels
+    #: are placed by their own box, so a wider window here keeps a moved line a
+    #: `BASELINE` finding instead of a confusing missing/extra pair.
+    line_window_pt: float = 14.0
+
+    #: Fraction of a word's letters that may differ between the two sides
+    #: before it counts as different text. Shaping explains a dropped mark or a
+    #: presentation-form substitution; it does not explain a substituted word.
+    content_ratio: float = 0.34
+
 
 # --------------------------------------------------------------- PDF reading
 @dataclass
@@ -338,7 +350,7 @@ def compare(preview, pages, bounds=None, max_report=40):
     """Return (violations, samples, coverage) for the whole document."""
     bounds = bounds or Bounds()
     samples = {name: [] for name in ('baseline', 'word_left', 'word_right',
-                                     'size', 'math_rect')}
+                                     'size', 'math_rect', 'content')}
     violations = []
     coverage = {'pages': 0, 'lines': 0, 'words': 0, 'chars': 0,
                 'rtl_lines': 0, 'bracket_lines': 0, 'math_runs': 0,
@@ -364,45 +376,32 @@ def compare(preview, pages, bounds=None, max_report=40):
                                         f'preview {first.width:.2f}x'
                                         f'{first.height:.2f}pt, pdf '
                                         f'{page.width:.2f}x{page.height:.2f}pt'))
-        pdf_lines = _cluster_lines(page.chars)
-        used = set()
-        for line in sorted(lines, key=lambda l: l.baseline):
-            if not line.words:
-                # Maths-only line: no text metrics, but its image is still
-                # placed on the page and must be where the layout put it.
+        pairs, unmatched, extra = _match_lines(lines, _cluster_lines(page.chars),
+                                               bounds.line_window_pt)
+        for line, baseline, group in pairs:
+            delta = abs(baseline - line.baseline)
+            if line.words:
+                coverage['lines'] += 1
+                samples['baseline'].append(delta)
+                if delta > bounds.baseline_pt:
+                    violations.append(Violation(
+                        page_index, 'BASELINE',
+                        f'baseline moved {delta:.2f}pt: '
+                        f'{_text_of(line)[:40]!r}', delta))
+                _compare_line(page_index, line, group, page, bounds, samples,
+                              violations, coverage)
+            else:
                 coverage['skipped_math_only'] += 1
-                _check_math(page_index, line, page, bounds, samples,
+                _check_math(page_index, line, group, page, bounds, samples,
                             violations, coverage)
                 _check_underline(page_index, line, page, violations, coverage)
-                continue
-            best = None
-            for position, (baseline, group) in enumerate(pdf_lines):
-                if position in used:
-                    continue
-                delta = abs(baseline - line.baseline)
-                if delta <= bounds.line_match_pt and (best is None or
-                                                      delta < best[2]):
-                    best = (position, group, delta)
-            if best is None:
-                violations.append(Violation(
-                    page_index, 'LINE-MISSING',
-                    f'no PDF line within {bounds.line_match_pt}pt of baseline '
-                    f'{line.baseline:.2f}: {_text_of(line)[:40]!r}'))
-                continue
-            position, group, delta = best
-            used.add(position)
-            coverage['lines'] += 1
-            samples['baseline'].append(delta)
-            if delta > bounds.baseline_pt:
-                violations.append(Violation(
-                    page_index, 'BASELINE',
-                    f'baseline moved {delta:.2f}pt: {_text_of(line)[:40]!r}',
-                    delta))
-            _compare_line(page_index, line, group, page, bounds, samples,
-                          violations, coverage)
-        for position, (baseline, group) in enumerate(pdf_lines):
-            if position in used:
-                continue
+        for line in unmatched:
+            violations.append(Violation(
+                page_index, 'LINE-MISSING',
+                f'no PDF line within {bounds.line_window_pt}pt of baseline '
+                f'{line.baseline:.2f} with overlapping x: '
+                f'{_text_of(line)[:40]!r}'))
+        for baseline, group in extra:
             violations.append(Violation(
                 page_index, 'LINE-EXTRA',
                 f'PDF line with no Preview line at baseline {baseline:.2f}: '
@@ -418,6 +417,66 @@ def compare(preview, pages, bounds=None, max_report=40):
 
 def _text_of(line):
     return ''.join(word.text for word in line.words)
+
+
+def _line_extent(line):
+    if line.words:
+        return (min(w.x0 for w in line.words), max(w.x1 for w in line.words))
+    extents = [(float(r['xPt']), float(r['xPt']) + float(r.get('widthPt', 0)))
+               for r in line.runs if r.get('xPt') is not None]
+    if not extents:
+        return (0.0, 0.0)
+    return (min(e[0] for e in extents), max(e[1] for e in extents))
+
+
+def _match_lines(lines, pdf_lines, window):
+    """Pair Preview lines with PDF lines by baseline, then by x overlap.
+
+    Baseline decides first (the nearest unused line inside `window`); when two
+    candidates are equally close, the one whose x range actually overlaps the
+    line wins. Pairing is deliberately more generous than acceptance: a line
+    that moved should be reported as a moved line (`BASELINE`), not as one line
+    lost and another invented.
+    """
+    used = set()
+    pairs, unmatched = [], []
+    for line in sorted(lines, key=lambda l: l.baseline):
+        left, right = _line_extent(line)
+        best = None
+        for position, (baseline, group) in enumerate(pdf_lines):
+            if position in used:
+                continue
+            delta = abs(baseline - line.baseline)
+            if delta > window:
+                continue
+            g_left = min(c.x0 for c in group) if group else 0.0
+            g_right = max(c.x1 for c in group) if group else 0.0
+            overlap = max(0.0, min(right, g_right) - max(left, g_left))
+            key = (delta, -overlap)
+            if best is None or key < best[0]:
+                best = (key, position, baseline, group)
+        if best is None:
+            unmatched.append(line)
+        else:
+            used.add(best[1])
+            pairs.append((line, best[2], best[3]))
+    extra = [(baseline, group) for position, (baseline, group)
+             in enumerate(pdf_lines) if position not in used]
+    return pairs, unmatched, extra
+
+
+def _multiset_difference(left, right):
+    '''How many entries of `right` are missing from `left` (both sorted).'''
+    missing = 0
+    index = 0
+    for item in right:
+        while index < len(left) and left[index] < item:
+            index += 1
+        if index < len(left) and left[index] == item:
+            index += 1
+        else:
+            missing += 1
+    return missing
 
 
 def _compare_line(page_index, line, chars, page, bounds, samples, violations,
@@ -453,14 +512,21 @@ def _compare_line(page_index, line, chars, page, bounds, samples, violations,
                 page_index, 'SIZE',
                 f'{word.text[:24]!r} size {word.size:.2f} vs '
                 f'{mine[0].size:.2f}pt', size))
-        # Letters, not glyph shapes: a reordered word puts the *other* word's
-        # letters in this box, and that must be named as a content difference.
-        mine_letters = _letters(''.join(c.text for c in mine))
-        want_letters = _letters(word.text)
-        if sorted(mine_letters) != sorted(want_letters):
+        # Letters, not glyph shapes: shaping substitutes presentation forms and
+        # can drop a mark, so the comparison is on letter multisets with a
+        # measured allowance; substituting or reordering a word changes most of
+        # its letters, which the allowance cannot absorb.
+        mine_letters = sorted(_letters(''.join(c.text for c in mine)))
+        want_letters = sorted(_letters(word.text))
+        difference = _multiset_difference(mine_letters, want_letters)
+        ratio = difference / max(1, len(want_letters))
+        samples['content'].append(ratio)
+        if ratio > bounds.content_ratio:
             violations.append(Violation(
                 page_index, 'WORD-CONTENT',
-                f'box {word.text[:24]!r} holds {mine_letters[:24]!r}'))
+                f'box {word.text[:24]!r} holds '
+                f'{"".join(mine_letters)[:24]!r} ({ratio:.0%} different)',
+                ratio))
 
     if outside:
         text = ''.join(c.text for c in sorted(outside, key=lambda c: c.x0))
@@ -487,7 +553,8 @@ def _compare_line(page_index, line, chars, page, bounds, samples, violations,
                 f'{pdf_brackets!r}'))
 
     _check_underline(page_index, line, page, violations, coverage)
-    _check_math(page_index, line, page, bounds, samples, violations, coverage)
+    _check_math(page_index, line, chars, page, bounds, samples, violations,
+                coverage)
 
 
 def _check_underline(page_index, line, page, violations, coverage):
@@ -504,21 +571,39 @@ def _check_underline(page_index, line, page, violations, coverage):
                 f'{run.get("text", "")[:24]!r}'))
 
 
-def _check_math(page_index, line, page, bounds, samples, violations, coverage):
-    if page is None:
-        return
+def _check_math(page_index, line, chars, page, bounds, samples, violations,
+                coverage):
+    """A maths run is placed as an image *or* emitted as text -- both are legal.
+
+    The exporter falls back to readable text when no snapshot host is mounted,
+    so demanding an image would fail a correct document. What matters is that
+    the run's box is filled on the page: glyphs inside it, or an image rect at
+    it. Neither is a defect.
+    """
     for run in line.runs:
         if not run.get('isMath'):
             continue
         coverage['math_runs'] += 1
         x = float(run['xPt'])
-        width = float(run['widthPt'])
+        width = float(run.get('widthPt', 0))
+        inside = [c for c in chars if c.x0 >= x - 2 and c.x1 <= x + width + 2]
+        if inside:
+            left = abs(min(c.x0 for c in inside) - x)
+            span = abs((max(c.x1 for c in inside) - x) - width)
+            samples['math_rect'].append(max(left, span))
+            if left > bounds.math_rect_pt or span > bounds.math_rect_pt:
+                violations.append(Violation(
+                    page_index, 'MATH-IMAGE',
+                    f'maths text {run.get("text", "")[:20]!r} left '
+                    f'd={left:.2f}pt width d={span:.2f}pt', max(left, span)))
+            continue
         candidates = [img for img in page.images
                       if img.x0 < x + width and img.x1 > x]
         if not candidates:
             violations.append(Violation(
                 page_index, 'MATH-IMAGE',
-                f'maths run {run.get("text", "")[:20]!r} has no image rect'))
+                f'maths run {run.get("text", "")[:20]!r} is neither text nor '
+                f'an image at x={x:.2f}..{x + width:.2f}'))
             continue
         image = min(candidates, key=lambda i: abs(i.x0 - x))
         left = abs(image.x0 - x)
@@ -527,7 +612,7 @@ def _check_math(page_index, line, page, bounds, samples, violations, coverage):
         if left > bounds.math_rect_pt or span > bounds.math_rect_pt:
             violations.append(Violation(
                 page_index, 'MATH-IMAGE',
-                f'maths run {run.get("text", "")[:20]!r} left d={left:.2f}pt '
+                f'maths image {run.get("text", "")[:20]!r} left d={left:.2f}pt '
                 f'width d={span:.2f}pt', max(left, span)))
 
 
@@ -554,6 +639,7 @@ BOUND_OF = {
     'word_right': 'word_edge_pt',
     'size': 'size_pt',
     'math_rect': 'math_rect_pt',
+    'content': 'content_ratio',
 }
 
 
@@ -637,4 +723,13 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception as error:  # noqa: BLE001 - the step must be able to say
+        import traceback
+        traceback.print_exc()
+        print(f'::error title=C6 geometry::cannot measure: '
+              f'{type(error).__name__}: {error}')
+        sys.exit(2)

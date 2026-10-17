@@ -180,16 +180,29 @@ class Injections(unittest.TestCase):
     def test_maths_image_moved(self):
         words = [preview_word('x', 100.0, 112.0, 200.0, 12.0, False)]
         runs = [{'text': 'x^2', 'fontSizePt': 12.0, 'rtl': False,
-                 'isMath': True, 'measured': False, 'xPt': 100.0,
+                 'isMath': True, 'measured': False, 'xPt': 150.0,
                  'widthPt': 30.0, 'heightPt': 20.0, 'underline': False}]
         preview = [preview_line(words, 200.0, runs)]
-        image = gate.PdfImageRect(x0=100.0, y0=180.0, x1=130.0, y1=200.0)
+        image = gate.PdfImageRect(x0=150.0, y0=180.0, x1=180.0, y1=200.0)
         page = pdf_page(pdf_word('x', 100.0, 112.0, 200.0), images=[image])
         violations, _, _ = gate.compare(preview, [page])
         self.assertEqual(violations, [])
         image.x0 += 6.0
         image.x1 += 6.0
         self.assert_rejects(preview, page, 'MATH-IMAGE')
+
+    def test_maths_emitted_as_text_is_legal(self):
+        # When no snapshot host is mounted the exporter falls back to readable
+        # text; demanding an image there would fail a correct document.
+        words = [preview_word('x', 100.0, 112.0, 200.0, 12.0, False)]
+        runs = [{'text': 'x^2', 'fontSizePt': 12.0, 'rtl': False,
+                 'isMath': True, 'measured': False, 'xPt': 100.0,
+                 'widthPt': 12.0, 'heightPt': 20.0, 'underline': False}]
+        preview = [preview_line(words, 200.0, runs)]
+        page = pdf_page(pdf_word('x', 100.0, 112.0, 200.0))
+        violations, _, coverage = gate.compare(preview, [page])
+        self.assertEqual(violations, [])
+        self.assertEqual(coverage['math_runs'], 1)
 
     def test_bracket_mirroring(self):
         words = [preview_word(')', 100.0, 106.0, 80.0, 12.0, True),

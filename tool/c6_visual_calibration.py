@@ -397,4 +397,13 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception as error:  # noqa: BLE001 - a failed measurement must show
+        import traceback
+        traceback.print_exc()
+        print(f'::warning title=C6 calibration::failed: '
+              f'{type(error).__name__}: {error}')
+        sys.exit(2)
