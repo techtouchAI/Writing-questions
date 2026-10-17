@@ -732,19 +732,6 @@ jobs:
           summary="${summary//$'\n'/%0A}"
           echo "::notice title=مقاييس التحقق البصري::$summary"
 
-      # [C6-CALIBRATION] الطبقة الثانية: تقيس أرضية المصيّرين على نفس PDF
-      # بإعدادات موثّقة، وتقيس انحدارات متعمدة (إزاحة 1/2/4 بكسل، تكبير 2%،
-      # حذف شريط نص، تحريك قاعدة التسطير 4 بكسل) بالمقياس نفسه الذي تقيس به
-      # البوابة. تقترح عتبة فقط إن وُجد فصل حقيقي، وتعلنها PROPOSED غير
-      # معتمدة. لا تغيّر أي عتبة ولا صورة.
-      - name: Calibrate the pixel tier against the renderer floor (proposal only)
-        if: always()
-        shell: bash
-        run: |
-          set -o pipefail
-          python3 tool/c6_visual_calibration.py build/visual_parity 2>&1 \
-            | tail -60 || true
-
       - name: Upload visual parity artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -841,6 +828,27 @@ jobs:
           C6_ARTIFACTS=build/visual_parity \
             "$RUNNER_TEMP/diag-venv/bin/python" -m unittest \
             tool.test_c6_geometry_gate.RealArtifacts -v
+
+      # [C6-CALIBRATION] الطبقة الثانية: تقيس أرضية المصيّرين على نفس PDF
+      # بإعدادات موثّقة، وتقيس انحدارات متعمدة (إزاحة 1/2/4 بكسل، تكبير 2%،
+      # حذف شريط نص، تحريك قاعدة التسطير 4 بكسل) بالمقياس نفسه الذي تقيس به
+      # البوابة. تقترح عتبة فقط إن وُجد فصل حقيقي، وتعلنها PROPOSED غير
+      # معتمدة. لا تغيّر أي عتبة ولا صورة. هنا لأن هذه الوظيفة تملك المصيِّرين
+      # (poppler + mupdf) والأدوات، بخلاف وظيفة البوابة.
+      - name: Calibrate the pixel tier against the renderer floor (proposal only)
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/c6_visual_calibration.py \
+            build/visual_parity 2>&1 | tail -60 || true
+
+      - name: C6 geometry gate on the real artifacts (report)
+        if: always()
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/c6_geometry_gate.py \
+            build/visual_parity --mode report
 
       - name: C6 diagnostics on the rendered artifacts
         shell: bash

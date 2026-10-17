@@ -290,6 +290,7 @@ class Violation:
     category: str
     detail: str
     magnitude: float = 0.0
+    source: str = 'block'   # 'block' or 'float': different PDF code paths
 
 
 def normalise(text):
@@ -387,7 +388,7 @@ def compare(preview, pages, bounds=None, max_report=40):
                     violations.append(Violation(
                         page_index, 'BASELINE',
                         f'baseline moved {delta:.2f}pt: '
-                        f'{_text_of(line)[:40]!r}', delta))
+                        f'{_text_of(line)[:40]!r}', delta, line.source))
                 _compare_line(page_index, line, group, page, bounds, samples,
                               violations, coverage)
             else:
@@ -400,7 +401,7 @@ def compare(preview, pages, bounds=None, max_report=40):
                 page_index, 'LINE-MISSING',
                 f'no PDF line within {bounds.line_window_pt}pt of baseline '
                 f'{line.baseline:.2f} with overlapping x: '
-                f'{_text_of(line)[:40]!r}'))
+                f'{_text_of(line)[:40]!r}', 0.0, line.source))
         for baseline, group in extra:
             violations.append(Violation(
                 page_index, 'LINE-EXTRA',
@@ -481,7 +482,9 @@ def _multiset_difference(left, right):
 
 def _compare_line(page_index, line, chars, page, bounds, samples, violations,
                   coverage):
+    source = line.source
     preview_words = sorted(line.words, key=lambda w: (w.x0, w.x1))
+    first = len(violations)
     owned, outside = _assign(preview_words, chars, bounds.assign_tol)
     coverage['words'] += len(preview_words)
     coverage['chars'] += len(chars)
@@ -555,6 +558,13 @@ def _compare_line(page_index, line, chars, page, bounds, samples, violations,
     _check_underline(page_index, line, page, violations, coverage)
     _check_math(page_index, line, chars, page, bounds, samples, violations,
                 coverage)
+    _tag(violations, source, first)
+
+
+def _tag(violations, source, start):
+    for violation in violations[start:]:
+        if not violation.source or violation.source == 'block':
+            violation.source = source
 
 
 def _check_underline(page_index, line, page, violations, coverage):
@@ -588,14 +598,16 @@ def _check_math(page_index, line, chars, page, bounds, samples, violations,
         width = float(run.get('widthPt', 0))
         inside = [c for c in chars if c.x0 >= x - 2 and c.x1 <= x + width + 2]
         if inside:
+            # Text fallback: the emitted string is a readable rendering of the
+            # formula, so its natural width is not the layout box's width. Only
+            # the placement is comparable; the image path checks both.
             left = abs(min(c.x0 for c in inside) - x)
-            span = abs((max(c.x1 for c in inside) - x) - width)
-            samples['math_rect'].append(max(left, span))
-            if left > bounds.math_rect_pt or span > bounds.math_rect_pt:
+            samples['math_rect'].append(left)
+            if left > bounds.math_rect_pt:
                 violations.append(Violation(
                     page_index, 'MATH-IMAGE',
                     f'maths text {run.get("text", "")[:20]!r} left '
-                    f'd={left:.2f}pt width d={span:.2f}pt', max(left, span)))
+                    f'd={left:.2f}pt', left))
             continue
         candidates = [img for img in page.images
                       if img.x0 < x + width and img.x1 > x]
@@ -657,11 +669,15 @@ def render_report(violations, samples, coverage, bounds, mode):
     if not violations:
         lines.append(f'verdict: PASS ({mode} mode)')
         return lines
-    counts = {}
+    counts, by_source = {}, {}
     for violation in violations:
         counts[violation.category] = counts.get(violation.category, 0) + 1
-    lines.append('violations: ' + ', '.join(f'{k}={v}'
-                                            for k, v in sorted(counts.items())))
+        key = (violation.category, violation.source)
+        by_source[key] = by_source.get(key, 0) + 1
+    lines.append('violations: ' + ', '.join(
+        f'{k}={v}' + ('' if not by_source.get((k, 'float'))
+                      else f' (float {by_source[(k, "float")]})')
+        for k, v in sorted(counts.items())))
     # The counts alone cannot be acted on: name the first few of each kind so
     # the next run says *which* line moved, not only that something did.
     for category in sorted(counts):
