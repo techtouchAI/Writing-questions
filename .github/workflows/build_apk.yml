@@ -868,6 +868,17 @@ jobs:
           "$RUNNER_TEMP/diag-venv/bin/python" tool/c6_visual_calibration.py \
             build/visual_parity 2>&1 | tail -60 || true
 
+      # [C6-FAIR] يبحث على بايتات vector.pdf نفسها عن تطبيع يبقى تحت 0.02
+      # للمحتوى المتطابق بين مصيّرين، ويرفض الإزاحة والحذف وتحريك التسطير.
+      # لا يغيّر البوابة ولا العتبة ولا الصور. الناتج اقتراح أو رفض صريح.
+      - name: Search a fair comparison on the actual files (non-gating)
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          "$RUNNER_TEMP/diag-venv/bin/python" tool/diag_c6_fair_compare.py \
+            build/visual_parity
+
       - name: C6 geometry gate on the real artifacts (report)
         if: always()
         shell: bash
