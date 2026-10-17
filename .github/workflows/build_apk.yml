@@ -614,12 +614,10 @@ jobs:
           "$RUNNER_TEMP/c6pos-venv/bin/pip" install -q pymupdf numpy
           "$RUNNER_TEMP/c6pos-venv/bin/python" tool/diag_c6_text_positions.py build/visual_parity
 
-      # [C6-GEOMETRY] الطبقة الأولى من العقد ذي الطبقتين: تُقارن هندسة
-      # المعاينة بهندسة vector.pdf نفسه (إحداثيات نص وصور وقواعد) بالـpoint،
-      # بلا رَستَرة إطلاقاً. عتبة RMSE الحالية تبقى كما هي: هذا العقد **يُعرض
-      # للمراجعة** قبل أن يصبح شرط دمج، ولهذا يعمل الآن بأسلوب report (ينشر
-      # حكمه و"WOULD FAIL" صراحةً ولا يُسقط الوظيفة). تفعيله لاحقاً سطر واحد:
-      # --mode enforce. لا يمسّ السقف ولا الصور المرجعية.
+      # [C6-GEOMETRY] الطبقة الأولى من العقد ذي الطبقتين. الحكم على فترات
+      # الكتابة (layoutWords) وأصل الحرف، لا على مربع الحبر الضيّق. مربعات
+      # الحبر تُنشر تشخيصاً مصنَّفاً ولا تُسقط الوظيفة. الأسلوب ما زال report:
+      # --mode enforce غير موصول، وسقف RMSE 0.02 والصور المرجعية لم تُمس.
       - name: Verify PDF geometry against the Preview (report, not adopted)
         if: always()
         shell: bash
@@ -660,7 +658,9 @@ jobs:
             --out build/visual_parity/digest
           cat build/visual_parity/digest/counts.txt || true
 
+      # always: a geometry measurement error must not skip the required gate.
       - name: Compare rendered files against the preview (RMSE)
+        if: always()
         run: bash tool/verify_visual_parity.sh build/visual_parity
 
       # سبب الفشل يُنشر كتعليق على التشغيل: سجلات CI قد لا تكون مقروءة من كل
@@ -758,6 +758,13 @@ jobs:
         continue-on-error: true
         shell: bash
         run: flutter test test/visual/underline_geometry_probe_test.dart
+
+      # يفشل التحويل الناقص أو الملف القديم أو الفارغ. لا يغيّر سقف RMSE،
+      # ويُشغَّل بعد المقارنة حتى لا يحجب تقريرها.
+      - name: Check visual-parity conversion error handling
+        if: always()
+        shell: bash
+        run: bash tool/test_verify_visual_parity.sh
 
       # [C6-UNDERLINE] بوابة على خاصية يملكها المشروع: موضع التسطير بالنسبة
       # لنصّه هو نفسه في المعاينة وفي vector.pdf. تُقاس الهندسة من الملف نفسه
