@@ -178,18 +178,39 @@ class PdfPage:
     images: list = field(default_factory=list)
 
 
-def _cluster_lines(chars, tol=0.5):
-    """Group PDF characters into lines by baseline (y down, no sign flip)."""
+def _cluster_lines(chars, tol=0.5, gap=40.0):
+    """Group PDF characters into lines by baseline *and* horizontal reach.
+
+    Baseline alone is not enough: a header, a page number and a table cell can
+    share a baseline while sitting hundreds of points apart, and merging them
+    into one "line" makes every word of it look missing (measured: a single
+    cluster spanning 352 pt beyond its Preview line). `gap` is the largest gap
+    inside one line -- wider than a word space, narrower than any two
+    independent pieces of page furniture.
+    """
+    def by_baseline():
+        rows = []
+        for char in sorted(chars, key=lambda c: (c.baseline, c.x0)):
+            if rows and abs(char.baseline - rows[-1][0]) <= tol:
+                rows[-1][1].append(char)
+                rows[-1][0] = (rows[-1][0] * (len(rows[-1][1]) - 1) +
+                               char.baseline) / len(rows[-1][1])
+            else:
+                rows.append([char.baseline, [char]])
+        return rows
+
     lines = []
-    for char in sorted(chars, key=lambda c: (c.baseline, c.x0)):
-        if lines and abs(char.baseline - lines[-1][0]) <= tol:
-            lines[-1][1].append(char)
-            lines[-1][0] = (lines[-1][0] * (len(lines[-1][1]) - 1) +
-                            char.baseline) / len(lines[-1][1])
-        else:
-            lines.append([char.baseline, [char]])
-    return [(baseline, sorted(group, key=lambda c: c.x0))
-            for baseline, group in lines]
+    for baseline, group in by_baseline():
+        group.sort(key=lambda c: c.x0)
+        run = [group[0]]
+        for char in group[1:]:
+            if char.x0 - run[-1].x1 > gap:
+                lines.append((baseline, run))
+                run = [char]
+            else:
+                run.append(char)
+        lines.append((baseline, run))
+    return lines
 
 
 def read_pdf_pages(path):
