@@ -95,18 +95,14 @@ class Core(unittest.TestCase):
 
     def test_line_edge_bound_is_inclusive_and_not_wider(self):
         preview, page = arabic_line()
+        bound = gate.Bounds().line_edge_pt
         edge = max(page.chars, key=lambda c: c.x1)
-        moved = edge.x1 + 2.0 - max(c.x1 for c in page.chars)
-        # Exactly the line-edge bound: passes (the per-word bound is wider).
-        for char in page.chars:
-            if char is edge:
-                char.x1 += 2.0
+        edge.x1 += bound             # exactly the bound: passes
         violations, _, _ = gate.compare(preview, [page])
         self.assertEqual(violations, [])
-        edge.x1 += 0.02                # past the bound: rejected
+        edge.x1 += 0.02              # past the bound: rejected
         violations, _, _ = gate.compare(preview, [page])
         self.assertIn('LINE-SHIFT', {v.category for v in violations})
-        self.assertTrue(moved > 0)
 
 
 class Injections(unittest.TestCase):

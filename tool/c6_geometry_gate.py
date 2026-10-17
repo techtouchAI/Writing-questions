@@ -99,10 +99,12 @@ class Bounds:
     math_rect_pt: float = 2.0
     underline_span_pt: float = 2.0
 
-    #: How far outside a word box a glyph's centre may still belong to it.
-    #: First and last glyphs are inset by their side bearing on the ink side,
-    #: so a strict containment would call every word missing its edge glyph.
-    assign_tol: float = 3.0
+    #: How far outside a word box a glyph's centre may still belong to it. It
+    #: must be at least the measured edge disagreement (`word_edge_pt`), or a
+    #: two-point-wide word such as ':' is orphaned by the same shaper drift
+    #: that wide words absorb -- which is exactly what happened: 92 words
+    #: "missing" were punctuation boxes a few points away from their glyphs.
+    assign_tol: float = 6.5
 
     #: How far apart two lines' baselines may be and still be *the same line*.
     #: This decides pairing only -- the acceptance bound is `baseline_pt`, which
@@ -120,9 +122,11 @@ class Bounds:
     #: How far a line's outer ink edges may sit from the Preview's line extent.
     #: Per-word edges carry each glyph's side bearing, so they need the wide
     #: bound above; the *line's* two outer edges are what a whole-line shift
-    #: moves, and they are compared here so a displacement cannot hide behind
-    #: the per-word tolerance.
-    line_edge_pt: float = 2.0
+    #: moves. Measured on the fixture: p95 = 2.81, p99 = 3.49, max = 3.49 pt --
+    #: the bearing of the line's first and last glyph -- so 4.0 sits just above
+    #: the measurement and still catches a displacement of half a line.
+    line_center_pt: float = 2.0
+    line_edge_pt: float = 4.0
 
     #: Fraction of a word's letters that may differ between the two sides
     #: before it counts as different text, from the measured distribution
@@ -395,7 +399,7 @@ def compare(preview, pages, bounds=None, max_report=40):
     bounds = bounds or Bounds()
     samples = {name: [] for name in ('baseline', 'word_left', 'word_right',
                                      'size', 'math_rect', 'content',
-                                     'line_edge')}
+                                     'line_edge', 'line_center')}
     violations = []
     coverage = {'pages': 0, 'lines': 0, 'words': 0, 'chars': 0,
                 'rtl_lines': 0, 'bracket_lines': 0, 'math_runs': 0,
@@ -539,6 +543,13 @@ def _compare_line(page_index, line, chars, page, bounds, samples, violations,
         line_left = abs(min(c.x0 for c in chars) - preview_words[0].x0)
         line_right = abs(max(c.x1 for c in chars) - preview_words[-1].x1)
         samples['line_edge'].append(max(line_left, line_right))
+        centre = abs((min(c.x0 for c in chars) + max(c.x1 for c in chars)) / 2
+                     - (preview_words[0].x0 + preview_words[-1].x1) / 2)
+        samples['line_center'].append(centre)
+        if centre > bounds.line_center_pt:
+            violations.append(Violation(
+                page_index, 'LINE-SHIFT',
+                f'line centre moved {centre:.2f}pt', centre, line.source))
         if max(line_left, line_right) > bounds.line_edge_pt:
             violations.append(Violation(
                 page_index, 'LINE-SHIFT',
@@ -546,7 +557,20 @@ def _compare_line(page_index, line, chars, page, bounds, samples, violations,
                 f'right d={line_right:.2f}pt', max(line_left, line_right),
                 line.source))
 
+    # Glyphs inside a maths run's box belong to that run: the Preview paints
+    # the formula (as an image or as readable text), it does not claim to have
+    # those characters as words, so they are neither missing nor extra here --
+    # the maths check measures that box on its own.
+    math_regions = [(float(run['xPt']),
+                     float(run['xPt']) + float(run.get('widthPt', 0)))
+                    for run in line.runs if run.get('isMath')]
+
+    def in_math(char):
+        centre = (char.x0 + char.x1) / 2
+        return any(start - 1 <= centre <= end + 1 for start, end in math_regions)
+
     owned, outside = _assign(preview_words, chars, bounds.assign_tol)
+    outside = [c for c in outside if not in_math(c)]
     coverage['words'] += len(preview_words)
     coverage['chars'] += len(chars)
     if line.words and line.words[0].rtl:
@@ -602,7 +626,7 @@ def _compare_line(page_index, line, chars, page, bounds, samples, violations,
     # Brackets: same count on both sides by visual position, and -- on an RTL
     # line -- the leftmost bracket is a closer. The second half is the
     # mirroring property; this gate observes it, it never edits the text.
-    pdf_brackets = _bracket_sequence(chars)
+    pdf_brackets = _bracket_sequence([c for c in chars if not in_math(c)])
     preview_brackets = _bracket_text(''.join(w.text for w in preview_words))
     if pdf_brackets or preview_brackets:
         coverage['bracket_lines'] += 1
@@ -714,6 +738,7 @@ BOUND_OF = {
     'math_rect': 'math_rect_pt',
     'content': 'content_ratio',
     'line_edge': 'line_edge_pt',
+    'line_center': 'line_center_pt',
 }
 
 
