@@ -41,13 +41,27 @@ class Separation(unittest.TestCase):
                                 {'shift': 0.20, 'scale': 0.30})
         self.assertTrue(result['separated'])
         self.assertGreater(result['proposed'], result['floor_max'])
-        self.assertLess(result['proposed'], result['regression_min'])
+        self.assertLess(result['proposed'], min(result['detectable'].values()))
         self.assertAlmostEqual(result['proposed'], (0.06 * 0.20) ** 0.5)
 
-    def test_no_separation_when_defect_hides_in_the_floor(self):
+    def test_small_defects_are_named_not_averaged_away(self):
+        # The real shape of this fixture: big shifts separate, a deleted band
+        # and a 4 px underline move do not. The result must say both.
+        result = cal.separation({'vector': 0.0558},
+                                {'shift_1px': 0.1128, 'delete_band': 0.0167,
+                                 'underline_4px': 0.0383})
+        self.assertTrue(result['separated'])
+        self.assertEqual(set(result['invisible']),
+                         {'delete_band', 'underline_4px'})
+        self.assertEqual(set(result['detectable']), {'shift_1px'})
+        self.assertGreater(result['proposed'], 0.0558)
+        self.assertGreater(result['margin'], 1.0)
+
+    def test_no_separation_when_every_defect_hides_in_the_floor(self):
         result = cal.separation({'a': 0.05}, {'tiny': 0.01})
         self.assertFalse(result['separated'])
         self.assertNotIn('proposed', result)
+        self.assertEqual(set(result['invisible']), {'tiny'})
 
     def test_empty_inputs_propose_nothing(self):
         self.assertIsNone(cal.separation({}, {'x': 1.0}))

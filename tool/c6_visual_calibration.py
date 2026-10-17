@@ -240,17 +240,28 @@ def _darkest_row(convert, source, start, stop):
 
 # ------------------------------------------------------------------ calibration
 def separation(floor, regressions):
-    """Floor max against the smallest deliberate regression."""
+    """Which deliberate defects this metric can see above the renderer floor.
+
+    A single global number cannot be asked to do both jobs: it must tolerate
+    two renderers disagreeing on the same PDF (the floor), and it must catch a
+    defect. Any defect whose own value is at or below the floor is invisible to
+    it at this calibration, and that is a property of the metric, not of the
+    threshold. So the result names them instead of averaging them away.
+    """
     if not floor or not regressions:
         return None
     floor_max = max(floor.values())
-    regression_min = min(regressions.values())
-    if regression_min <= floor_max:
-        return {'floor_max': floor_max, 'regression_min': regression_min,
-                'separated': False}
-    proposed = (floor_max * regression_min) ** 0.5
-    return {'floor_max': floor_max, 'regression_min': regression_min,
-            'separated': True, 'proposed': proposed}
+    detectable = {k: v for k, v in regressions.items() if v > floor_max}
+    invisible = {k: v for k, v in regressions.items() if v <= floor_max}
+    result = {'floor_max': floor_max,
+              'detectable': detectable,
+              'invisible': invisible,
+              'separated': bool(detectable)}
+    if detectable:
+        result['proposed'] = (floor_max * min(detectable.values())) ** 0.5
+        result['margin'] = (min(detectable.values()) / floor_max
+                            if floor_max else float('inf'))
+    return result
 
 
 def notice(title, lines):
@@ -357,17 +368,25 @@ def main(argv=None):
               for key, value in sorted(regressions.items())]
     if result is None:
         lines.append('verdict: not enough data to separate floor from defects')
-    elif not result['separated']:
-        lines.append(f"verdict: NO SEPARATION -- the smallest deliberate defect "
-                     f"({result['regression_min']:.6f}) is not above the floor "
-                     f"({result['floor_max']:.6f}); this calibration cannot "
-                     f"gate on a single pixel number, and no threshold is "
-                     f"proposed")
     else:
-        lines.append(f"floor max {result['floor_max']:.6f} | smallest defect "
-                     f"{result['regression_min']:.6f} | PROPOSED threshold "
-                     f"{result['proposed']:.6f} (geometric mean) -- PROPOSED, "
-                     f"NOT ADOPTED")
+        lines.append(f"renderer floor max {result['floor_max']:.6f}")
+        if not result['separated']:
+            lines.append('verdict: NO SEPARATION -- no deliberate defect is '
+                         'above the floor; a global pixel number cannot gate '
+                         'this fixture, and no threshold is proposed')
+        else:
+            lines.append(
+                f"detectable at this calibration ({len(result['detectable'])})"
+                f": {', '.join(f'{k}={v:.4f}' for k, v in sorted(result['detectable'].items()))}")
+            lines.append(
+                f"INVISIBLE at this calibration ({len(result['invisible'])})"
+                f": {', '.join(f'{k}={v:.4f}' for k, v in sorted(result['invisible'].items()))}"
+                f" -- each is at or below the floor, so no threshold can catch "
+                f"it without failing on two renderers of the same file")
+            lines.append(f"PROPOSED threshold {result['proposed']:.6f} "
+                         f"(geometric mean of the floor and the smallest "
+                         f"detectable defect, margin "
+                         f"{result['margin']:.2f}x) -- PROPOSED, NOT ADOPTED")
     notice('C6 visual calibration', lines)
     print('\n'.join(lines))
 
