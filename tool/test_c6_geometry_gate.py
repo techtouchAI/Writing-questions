@@ -286,19 +286,29 @@ class RealArtifacts(unittest.TestCase):
                 gate.read_pdf_pages(pdf_path))
 
     def test_real_shift_is_rejected(self):
+        # A uniform 4 pt move is a *line* displacement: the per-word bound is
+        # wide enough for the shapers' drift, so the line-level checks are the
+        # ones that must name it. That is the designed split, and this test is
+        # what proved it: the first version demanded WORD-POSITION and failed.
         preview, pages = self._load()
         pages[0].chars = [gate.PdfChar(c.text, c.x0 + 4.0, c.x1 + 4.0,
                                        c.baseline, c.size, c.font)
                           for c in pages[0].chars]
         violations, _, _ = gate.compare(preview, pages)
-        self.assertIn('WORD-POSITION', [v.category for v in violations])
+        self.assertIn('LINE-SHIFT', {v.category for v in violations})
 
     def test_real_deletion_is_rejected(self):
+        # Delete every glyph of one word, chosen from the Preview's own boxes,
+        # so the word's box is empty whatever the assignment tolerance is.
         preview, pages = self._load()
-        if pages[0].chars:
-            del pages[0].chars[0]
+        target = next((word for line in preview if line.page == 1
+                       for word in line.words if word.x1 - word.x0 > 1),
+                      None)
+        self.assertIsNotNone(target, 'fixture has no measurable word')
+        pages[0].chars = [c for c in pages[0].chars
+                          if not (target.x0 <= (c.x0 + c.x1) / 2 <= target.x1)]
         violations, _, _ = gate.compare(preview, pages)
-        self.assertTrue(violations, 'gate tolerated a deleted word')
+        self.assertIn('WORD-MISSING', {v.category for v in violations})
 
     def test_real_underline_removal_is_rejected(self):
         preview, pages = self._load()
