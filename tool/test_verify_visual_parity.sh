@@ -44,21 +44,35 @@ cat >"$TMP/bin/compare" <<'EOF'
 echo "0 (0)"
 exit 0
 EOF
-cat >"$TMP/bin/convert" <<'EOF'
+# A real blank PNG. The vector content gate reads pixels; the text "png" is
+# not a page, and a decode error must not look like a conversion failure.
+BLANK_PNG="$(python3 - <<'PY'
+import base64, struct, zlib
+def chunk(tag, payload):
+    return (struct.pack('>I', len(payload)) + tag + payload
+            + struct.pack('>I', zlib.crc32(tag + payload) & 0xffffffff))
+raw = b''.join(b'\x00' + b'\xff' * 8 for _ in range(8))
+ihdr = struct.pack('>IIBBBBB', 8, 8, 8, 0, 0, 0, 0)
+png = (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', ihdr)
+       + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b''))
+print(base64.b64encode(png).decode())
+PY
+)"
+cat >"$TMP/bin/convert" <<EOF
 #!/bin/sh
 fmt=""
 prev=""
 out=""
-for arg in "$@"; do
-  if [ "$prev" = "-format" ]; then fmt=1; fi
-  prev="$arg"
-  out="$arg"
+for arg in "\$@"; do
+  if [ "\$prev" = "-format" ]; then fmt=1; fi
+  prev="\$arg"
+  out="\$arg"
 done
-if [ "$fmt" = 1 ]; then
+if [ "\$fmt" = 1 ]; then
   echo "794 1123"
   exit 0
 fi
-printf 'png' >"$out"
+printf '%s' '$BLANK_PNG' | base64 -d >"\$out"
 exit 0
 EOF
 cat >"$TMP/bin/unzip" <<'EOF'
