@@ -371,7 +371,10 @@ void main() {
     expect(_buttonEnabled(tester, _deleteButton), isTrue);
 
     // التراجع اليدوي بعد «تحديد الكل»: إسقاط سؤال واحد يعيد الزر إلى
-    // «تحديد الكل» ويحدّث العدّاد.
+    // «تحديد الكل» ويحدّث العدّاد. الرقاقة الأخيرة قد تخرج عن حافة الشريط
+    // الأفقي فتُسحب إلى الظهور أولاً كما يفعل المستخدم.
+    await tester.ensureVisible(_chip('q6'));
+    await tester.pumpAndSettle();
     await tester.tap(_chip('q6'));
     await tester.pumpAndSettle();
     expect(find.text(_countText(document, 5, 6)), findsOneWidget);
