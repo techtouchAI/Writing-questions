@@ -3,12 +3,28 @@
 The metric must accept matching ink, including a heavier copy of the same
 shapes, and reject a 1 px shift, a deleted band, and a 4 px rule move.
 It must not treat page-level RMSE as the verdict.
+
+Two families live here and are kept separate on purpose:
+
+* SYNTHETIC scenes (this file's default) prove the metric's sensitivity on
+  inputs whose cause is known by construction: a deleted text line, and a
+  deleted small-but-meaningful equation (the class of ink a 19 px speck floor
+  must never swallow).
+* REAL-ARTIFACT injections (`RealArtifacts`, skipped without `C6_ARTIFACTS`)
+  repeat the deletions on the actual fixture raster: proof that the gate
+  rejects text and small-equation deletions on the real page imagery, not
+  only on this model.
 """
+import json
+import os
 import struct
+import sys
 import unittest
 import zlib
 
-import visual_content_gate as gate
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import visual_content_gate as gate  # noqa: E402
 
 
 def write_png(path, width, height, gray):
@@ -127,6 +143,260 @@ class ContentGate(unittest.TestCase):
         status, line = gate.score_files(path, path)
         self.assertEqual(status, 0, line)
         self.assertIn('no ink', line)
+
+
+# --------------------------------------------------------------------------
+# SYNTHETIC — حذف النصوص والمعادلات الصغيرة ذات الدلالة.
+# --------------------------------------------------------------------------
+
+def text_line_scene(with_equation=True):
+    """Three text-like lines (broken stems, as words are) plus one small
+    meaningful equation: a compact fraction glyph isolated between lines.
+
+    The equation is deliberately small (~110 ink px in a 20x19 px box) but
+    well above the speck floor (STRIP_MISS_PIXELS=80): the deletion of meaning
+    must not be dismissed as rasteriser noise.
+    """
+    width, height = 240, 160
+    gray = [255] * (width * height)
+
+    def box(x0, y0, x1, y1, value=0):
+        for y in range(y0, y1):
+            for x in range(x0, x1):
+                gray[y * width + x] = value
+
+    # Rule row (kept from the standard scene: a page proves its underline).
+    for x in range(30, 180):
+        gray[12 * width + x] = 0
+    # Text lines: stems 4x8 with 6 px gaps -- rows of broken ink like words.
+    for y in (20, 64, 108):
+        for n in range(12):
+            box(30 + n * 10, y, 34 + n * 10, y + 8)
+    # The small meaningful equation: a fraction (numerator, bar, denominator).
+    if with_equation:
+        box(150, 40, 154, 46)   # numerator stem
+        box(157, 40, 161, 46)   # numerator stem
+        box(149, 48, 167, 49)   # fraction bar
+        box(150, 52, 154, 58)   # denominator stem
+        box(157, 52, 161, 58)   # denominator stem
+    return width, height, gray
+
+
+class TextAndEquationDeletionTests(unittest.TestCase):
+    """حذف نص كامل وحذف معادلة صغيرة ذات دلالة يُرفضان كليهما."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write(self, name, gray, width=240, height=160):
+        path = f'{self.tmp}/{name}.png'
+        write_png(path, width, height, gray)
+        return path
+
+    def test_deleting_a_text_line_is_rejected(self):
+        width, height, full = text_line_scene()
+        deleted = list(full)
+        # The middle text line (y=64..71) erased entirely.
+        for y in range(60, 76):
+            for x in range(width):
+                deleted[y * width + x] = 255
+        status, line = gate.score_files(
+            self._write('full', full), self._write('del', deleted))
+        self.assertEqual(status, 1, 'حذف سطر نص كامل يجب أن يُرفض: ' + line)
+        self.assertTrue('strip' in line or 'shift' in line, line)
+
+    def test_deleting_a_small_meaningful_equation_is_rejected(self):
+        width, height, full = text_line_scene()
+        deleted = list(full)
+        # Only the equation's ink removed: numerator, bar, denominator.
+        for y in range(38, 60):
+            for x in range(147, 169):
+                deleted[y * width + x] = 255
+        # The deletion itself is small: the speck floor must not swallow it.
+        removed_ink = sum(
+            1 for a, b in zip(full, deleted) if a < gate.INK_MAX <= b)
+        self.assertGreaterEqual(
+            removed_ink, gate.STRIP_MISS_PIXELS,
+            'الحذف أقل من أرضية النقطة — المعادلة يجب أن تبقى صغيرة ولكن فوق الأرضية.')
+        self.assertLessEqual(removed_ink, 220, 'المعادلة المفترضة صغيرة.')
+
+        status, line = gate.score_files(
+            self._write('eq-full', full), self._write('eq-del', deleted))
+        self.assertEqual(
+            status, 1,
+            'حذف معادلة صغيرة ذات دلالة يجب ألا يُعامل كضجيج: ' + line)
+        self.assertIn('strip', line)
+
+    def test_the_speck_floor_still_ignores_noise(self):
+        # الوجه الآخر للحد نفسه: نقطة ضجيج تحت الأرضية لا تُسقط صفحة.
+        width, height, full = text_line_scene()
+        noisy = list(full)
+        for n in range(19):
+            noisy[88 * width + (210 + n)] = 0
+        status, line = gate.score_files(
+            self._write('clean', full), self._write('noise', noisy), prove=False)
+        self.assertEqual(status, 0, line)
+
+
+def _text_line_band(gray, width, height):
+    """(y0, y1) of the topmost dense text-like band of rows, or None."""
+    rows = [
+        sum(1 for x in range(width) if gray[y * width + x] < gate.INK_MAX)
+        for y in range(height)
+    ]
+    band_start = None
+    for y, ink in enumerate(rows):
+        dense = ink >= max(24, width // 40)
+        if dense and band_start is None:
+            band_start = y
+        elif not dense and band_start is not None:
+            if 6 <= y - band_start <= 40:
+                total = sum(rows[band_start:y])
+                if total >= 300:
+                    return band_start, y
+            band_start = None
+    return None
+
+
+class RealArtifacts(unittest.TestCase):
+    """Deletion injections on the fixture's own preview raster.
+
+    Skipped locally without `C6_ARTIFACTS`; in CI these erase a real text
+    line and a real small equation from the produced page imagery, so the
+    gate's rejection is proven on the real form, not only on a model.
+
+    Candidate eligibility matches the gate's known sensitivity law exactly:
+    the strip check fails a pair only when the wiped ink inside a 24px
+    measurement strip is >= 80px AND is > 20% of that strip's ink. A small
+    equation drowned in a sibling line's ink stays under the failure
+    fraction — that is the gate's intended relative (not absolute)
+    resolution, and the isolated synthetic tests
+    (TextAndEquationDeletionTests) cover it. Here we assert what the law
+    can actually see on real fixture pixels — without weakening the gate
+    and without claiming more than it does.
+    """
+
+    def _root(self):
+        root = os.environ.get('C6_ARTIFACTS', 'build/visual_parity')
+        if not os.path.exists(os.path.join(root, 'preview_page_1.png')):
+            self.skipTest('real artifacts not available')
+        return root
+
+    def _score(self, gray, deleted, width, height):
+        mask_a = gate.ink_mask(gray, width, height)
+        mask_b = gate.ink_mask(deleted, width, height)
+        return gate.score_masks(mask_a, mask_b, width, height)
+
+    def _strip_sees(self, row_ink, band_rows, height):
+        """Eligibility: some 24px measurement strip (worst_strip's own grid)
+        holds the candidate's ink >= 90px and > 25% of the strip's ink —
+        with a small margin over the 80px/20% law to absorb the 2px dilation
+        rim, so the strip check can genuinely reject this deletion.
+
+        `row_ink[y]` = ink of the whole row; `band_rows[y]` = ink of the
+        candidate band in that row (0 outside the band)."""
+        step = max(1, gate.STRIP // 2)
+        for top in range(0, max(1, height - gate.STRIP + 1), step):
+            s0, s1 = top, min(height, top + gate.STRIP)
+            total = sum(row_ink[s0:s1])
+            band = sum(band_rows[s0:s1])
+            if band >= 90 and band > 0.25 * total:
+                return True
+        return False
+
+    def test_real_text_line_deletion_is_rejected(self):
+        root = self._root()
+        width, height, gray = gate.read_png(
+            os.path.join(root, 'preview_page_1.png'))
+        band = _text_line_band(gray, width, height)
+        self.assertIsNotNone(band, 'fixture page 1 has no measurable text band')
+        y0, y1 = band
+        deleted = list(gray)
+        for y in range(max(0, y0 - 1), min(height, y1 + 1)):
+            for x in range(width):
+                deleted[y * width + x] = 255
+        result = self._score(gray, deleted, width, height)
+        self.assertFalse(
+            result['ok'],
+            'حذف سطر نص حقيقي من صفحة التركيبة يجب أن يُرفض: '
+            + '; '.join(result['reasons']))
+
+    def test_real_small_equation_deletion_is_rejected(self):
+        root = self._root()
+        positions = os.path.join(
+            root, 'c6diag', 'text_positions', 'preview_positions.json')
+        if not os.path.exists(positions):
+            self.skipTest('positions probe not available')
+        with open(positions, encoding='utf-8') as handle:
+            data = json.load(handle)
+        checked = 0
+        for page in data.get('pages', []):
+            page_no = int(page['page'])
+            preview = os.path.join(root, f'preview_page_{page_no}.png')
+            if not os.path.exists(preview):
+                continue
+            width, height, gray = gate.read_png(preview)
+            sx = width / float(page['widthPt'])
+            sy = height / float(page['heightPt'])
+            row_ink = [
+                sum(1 for x in range(width)
+                    if gray[y * width + x] < gate.INK_MAX)
+                for y in range(height)
+            ]
+            for record in page.get('lines', []):
+                baseline = float(record['baselinePt']) * sy
+                for run in record.get('runs', []):
+                    if not run.get('isMath'):
+                        continue
+                    run_width = max(2.0, float(run['widthPt']) * sx)
+                    height_pt = float(run.get('heightPt') or 0) or (
+                        float(run.get('fontSizePt') or 12) * 1.2)
+                    run_height = height_pt * sy
+                    if run_width > 140 or run_height > 60:
+                        continue  # ليست معادلة صغيرة
+                    x0 = int(float(run['xPt']) * sx) - 2
+                    x1 = int(float(run['xPt']) * sx + run_width) + 2
+                    y0 = int(baseline - run_height * 1.1) - 2
+                    y1 = int(baseline + run_height * 0.5) + 2
+                    x0, y0 = max(0, x0), max(0, y0)
+                    x1, y1 = min(width, x1), min(height, y1)
+                    if x1 - x0 < 3 or y1 - y0 < 3:
+                        continue
+                    band_rows = [0] * height
+                    for y in range(y0, y1):
+                        band_rows[y] = sum(
+                            1 for x in range(x0, x1)
+                            if gray[y * width + x] < gate.INK_MAX)
+                    ink_here = sum(band_rows)
+                    if not 80 <= ink_here <= 800:
+                        continue  # تحت أرضية الحساسية أو ليست «صغيرة»
+                    # أهلية قانون الشريط: مرشح يراه القانون فعلاً (انظر
+                    # docstring الصنف) — دون ذلك يبقى الحذف تحت نسبة الفشل
+                    # الحاكمة (0.20 من حبر الشريط) وهذا حدّ الدقة المقصود.
+                    if not self._strip_sees(row_ink, band_rows, height):
+                        continue
+                    deleted = list(gray)
+                    for y in range(y0, y1):
+                        for x in range(x0, x1):
+                            deleted[y * width + x] = 255
+                    result = self._score(gray, deleted, width, height)
+                    self.assertFalse(
+                        result['ok'],
+                        f'حذف معادلة صغيرة حقيقية (صفحة {page_no}، '
+                        f'حبر {ink_here} بكسل) يجب أن يُرفض: '
+                        + '; '.join(result['reasons']))
+                    checked += 1
+                    if checked >= 3:
+                        return
+        if checked == 0:
+            self.skipTest(
+                'fixture has no small equation inside the strip law '
+                'sensitivity band (>=80px ink and >25% of its strip)')
 
 
 if __name__ == '__main__':

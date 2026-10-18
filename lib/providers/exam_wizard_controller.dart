@@ -331,6 +331,52 @@ class ExamWizardController extends ChangeNotifier {
     _clampCurrentQuestion();
   }
 
+  /// يحذف أسئلة محددة فعلياً (المحددة وحدها) في عملية واحدة، ويبقى سؤال
+  /// واحد على الأقل: لو شمل التحديد كل الأسئلة أُبقي الأول وأُبلغ العدد
+  /// المُحذوف فعلاً حتى لا يوهم العدّادُ المستخدمَ بحذف ما بقي.
+  ///
+  /// يُعاد الترقيم بعدها، والسؤال المفتوح يتبع هويته؛ وإن حُذف نفسه يُقفل
+  /// المؤشر على السؤال الباقي.
+  int removeQuestions(List<int> indexes) {
+    if (indexes.isEmpty || questions.length <= 1) {
+      return 0;
+    }
+    final sorted = indexes.toSet().toList()..sort();
+    for (final index in sorted) {
+      RangeError.checkValidIndex(index, questions, 'index');
+    }
+    // الحد الأدنى: سؤال واحد لا يُحذف أبداً — يبقى الأول عند شمول التحديد
+    // للجميع، ويبقى الأسئلة غير المحددة كما هي عند التحديد الجزئي.
+    var toRemove = sorted;
+    if (sorted.length >= questions.length) {
+      toRemove = sorted.where((index) => index != 0).toList();
+    }
+    if (toRemove.isEmpty) {
+      return 0;
+    }
+    final currentId = currentQuestion.id;
+    var next = _document;
+    final removedIds = <String>[];
+    for (final index in toRemove.reversed) {
+      removedIds.add(next.questions[index].id);
+      next = next.withQuestionRemoved(index);
+    }
+    for (final id in removedIds) {
+      _blockHeights.remove(id);
+    }
+    // يُضبط الفهرس قبل الالتزام حتى لا يعيد بناء الواجهة على فهرس قديم.
+    final keptIndex =
+        next.questions.indexWhere((question) => question.id == currentId);
+    _currentQuestionIndex = keptIndex >= 0
+        ? keptIndex
+        : math.min(_currentQuestionIndex, next.questions.length - 1);
+    if (_currentQuestionIndex < 0) {
+      _currentQuestionIndex = 0;
+    }
+    _commit(next);
+    return removedIds.length;
+  }
+
   /// ينقل سؤالاً كاملاً (وحدة لا تتجزأ) من [from] إلى [to].
   void moveQuestion(int from, int to) {
     if (from == to) {
@@ -345,6 +391,36 @@ class ExamWizardController extends ChangeNotifier {
   void duplicateQuestion(int index) {
     RangeError.checkValidIndex(index, questions, 'index');
     _commit(_document.withQuestionDuplicated(index));
+  }
+
+  /// ينسخ أسئلة محددة فعلياً في عملية واحدة: كل نسخة تُدرج بعد أصلها مباشرة
+  /// (آليّة [ExamDocument.withQuestionDuplicated] نفسها — هويات جديدة لكل
+  /// نسخة وفروعها ونقاطها، والمحتوى والإعدادات كما هي)، فيبقى ترتيب النسخ
+  /// كترتيب الأصول. السؤال المفتوح يتبع هويته فلا يقفز إلى نسخة أُدرجت قبله.
+  void duplicateQuestions(List<int> indexes) {
+    if (indexes.isEmpty) {
+      return;
+    }
+    final sorted = indexes.toSet().toList()..sort();
+    for (final index in sorted) {
+      RangeError.checkValidIndex(index, questions, 'index');
+    }
+    final currentId = currentQuestion.id;
+    var next = _document;
+    var shift = 0;
+    for (final index in sorted) {
+      next = next.withQuestionDuplicated(index + shift);
+      shift += 1;
+    }
+    // يُضبط الفهرس قبل الالتزام: النسخة قبل السؤال المفتوح تزيحه بمقدار واحد
+    // فيبقى المفتوح هو الأصل نفسه لا نسخته.
+    final keptIndex =
+        next.questions.indexWhere((question) => question.id == currentId);
+    if (keptIndex >= 0) {
+      _currentQuestionIndex = keptIndex;
+    }
+    _commit(next);
+    _clampCurrentQuestion();
   }
 
   void updateQuestionCategory(int index, String category) {
