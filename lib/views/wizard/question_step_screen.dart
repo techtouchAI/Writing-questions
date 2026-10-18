@@ -95,9 +95,13 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
         ids.isNotEmpty && _selectedIdsInScope(questions).containsAll(ids);
     setState(() {
       _selectionMode = true;
-      _selectedQuestionIds
-        ..removeWhere((id) => !ids.contains(id))
-        ..addAll(allSelected ? const <String>{} : ids);
+      if (allSelected) {
+        _selectedQuestionIds.clear();
+      } else {
+        _selectedQuestionIds
+          ..removeWhere((id) => !ids.contains(id))
+          ..addAll(ids);
+      }
     });
   }
 

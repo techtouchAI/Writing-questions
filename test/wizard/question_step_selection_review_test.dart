@@ -358,8 +358,9 @@ void main() {
     expect(copy.marksOverride, source.marksOverride);
     expect(copy.items.single.id, isNot(source.items.single.id));
     expect(copy.branches.single.id, isNot(source.branches.single.id));
-    // السؤال المفتوح (الثالث) بقي هو نفسه.
-    expect(controller.currentQuestionIndex, 2);
+    // السؤال المفتوح (الثالث) بقي هو نفسه، وأزاحته النسخة المُدرجة قبله
+    // بمقدار واحد (من 2 إلى 3) بدل أن يقفز إلى النسخة.
+    expect(controller.currentQuestionIndex, 3);
     expect(controller.currentQuestion.statement, 'منطوق 3');
     // التحديد بقي على الأصل، والعدّاد يتبع الإجمالي الجديد.
     expect(find.text(_countText(controller.document, 1, 4)), findsOneWidget);
