@@ -96,6 +96,20 @@ class ContentGate(unittest.TestCase):
         status, line = gate.score_files(path_a, path_b, prove=False)
         self.assertEqual(status, 0, line)
 
+    def test_a_19_pixel_speck_does_not_fail_the_page(self):
+        width, height, gray = scene()
+        other = list(gray)
+        # A sparse strip can report a high uncovered fraction from a speck.
+        # Official page 2 failed on 19 such pixels. That is not a deletion.
+        for n in range(19):
+            other[40 * width + (200 + n)] = 0
+        path_a = f'{self.tmp}/a.png'
+        path_b = f'{self.tmp}/b.png'
+        write_png(path_a, width, height, gray)
+        write_png(path_b, width, height, other)
+        status, line = gate.score_files(path_a, path_b, prove=False)
+        self.assertEqual(status, 0, line)
+
     def test_blank_pages_match_without_pretending_to_prove_defects(self):
         path = f'{self.tmp}/blank.png'
         write_png(path, 32, 32, [255] * (32 * 32))

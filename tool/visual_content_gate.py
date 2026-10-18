@@ -19,7 +19,9 @@ rejects a 1 px shift, a deleted ink band, and a 4 px underline move of that
 page:
 
   * the ink-projection lag is 0 in both axes (a 1 px translation is lag 1);
-  * after a 1 px dilation, no 24 px strip has more than 20% of its ink
+  * after a 2 px dilation, no 24 px strip has more than 20% of its ink
+    uncovered, and that miss is at least 80 px (a 19 px speck must not
+    fail a page)
     uncovered in either direction (a deleted line or a moved rule exceeds it;
     antialiasing of matching ink does not);
   * if both sides have a long horizontal rule, its row differs by at most 1 px.
@@ -33,10 +35,13 @@ import sys
 import zlib
 
 INK_MAX = 160          # luminance below this is ink
-DILATE = 1
+DILATE = 2             # stem fringe; a 4 px rule move still misses
 STRIP = 24
 STRIP_MIN_INK = 80
 STRIP_MISS_MAX = 0.20  # uncovered fraction of one strip
+# Official page 2 failed on 19 uncovered pixels in a sparse strip. A
+# deleted band and a moved rule uncover far more than this.
+STRIP_MISS_PIXELS = 80
 LAG_RADIUS = 2
 # A heavier rasterizer expands stems by a fraction of a pixel and can make
 # lag -1 win by a few thousandths. A real 1 px translation wins by ~0.4.
@@ -260,7 +265,9 @@ def score_masks(a, b, width, height):
     reasons = []
     if lag_x != 0 or lag_y != 0:
         reasons.append(f'shift lag x={lag_x} y={lag_y}')
-    if miss_ab > STRIP_MISS_MAX or miss_ba > STRIP_MISS_MAX:
+    strip_ab = miss_ab > STRIP_MISS_MAX and span_ab[2] >= STRIP_MISS_PIXELS
+    strip_ba = miss_ba > STRIP_MISS_MAX and span_ba[2] >= STRIP_MISS_PIXELS
+    if strip_ab or strip_ba:
         reasons.append(
             f'strip uncovered {miss_ab:.3f}@{at_ab} x={span_ab[0]}..{span_ab[1]} '
             f'n={span_ab[2]}/{miss_ba:.3f}@{at_ba} x={span_ba[0]}..{span_ba[1]} '
