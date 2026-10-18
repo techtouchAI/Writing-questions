@@ -332,11 +332,35 @@ def _move_rule(mask, width, height, distance=4):
     return out, row
 
 
+def _plant_rule(mask, width, height):
+    """A page with no continuous rule still has to prove it can see one.
+
+    The planted run is long enough to be the rule the metric tracks, on a
+    quiet row so it is not hidden inside existing text.
+    """
+    length = min(width - 2, max(int(width * RULE_MIN_FRAC) + 8, int(width * 0.45)))
+    best_row, best_ink = min(8, height - 1), width + 1
+    for y in range(4, max(5, height - 8)):
+        ink = sum(mask[y * width:(y + 1) * width])
+        if ink < best_ink:
+            best_ink, best_row = ink, y
+            if ink == 0:
+                break
+    out = bytearray(mask)
+    x0 = max(0, (width - length) // 2)
+    start = best_row * width
+    for x in range(x0, x0 + length):
+        out[start + x] = 1
+    return out
+
+
 def proves_defects(mask, width, height):
     """The metric must reject shift, deletion, and underline movement.
 
     Returns a list of defects it failed to reject. Empty means it can see them.
     A page with almost no ink cannot host the proof; the caller decides.
+    A page with no natural rule gets one planted, then moved: absence of a
+    rule is not a pass, and it is not a reason to reject a matching page.
     """
     blind = []
     shifted = _shift(mask, width, height, 1, 0)
@@ -345,10 +369,12 @@ def proves_defects(mask, width, height):
     deleted, _y = _delete_band(mask, width, height)
     if score_masks(mask, deleted, width, height)['ok']:
         blind.append('delete_band')
+    base = mask
     moved, row = _move_rule(mask, width, height)
     if row is None:
-        blind.append('underline_absent')
-    elif score_masks(mask, moved, width, height)['ok']:
+        base = _plant_rule(mask, width, height)
+        moved, row = _move_rule(base, width, height)
+    if row is None or score_masks(base, moved, width, height)['ok']:
         blind.append('underline_4px')
     return blind
 

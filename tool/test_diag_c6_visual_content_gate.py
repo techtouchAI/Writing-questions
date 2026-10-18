@@ -96,6 +96,17 @@ class ContentGate(unittest.TestCase):
         status, line = gate.score_files(path_a, path_b, prove=False)
         self.assertEqual(status, 0, line)
 
+    def test_a_page_without_a_rule_still_proves_an_underline(self):
+        width, height, gray = scene()
+        for x in range(width):
+            gray[18 * width + x] = 255
+        path = f'{self.tmp}/norule.png'
+        write_png(path, width, height, gray)
+        status, line = gate.score_files(path, path)
+        self.assertEqual(status, 0, line)
+        self.assertIn('defects rejected', line)
+        self.assertNotIn('underline_absent', line)
+
     def test_a_19_pixel_speck_does_not_fail_the_page(self):
         width, height, gray = scene()
         other = list(gray)
