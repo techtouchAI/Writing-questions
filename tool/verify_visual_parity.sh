@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 # التحقق البصري الخارجي: يصيّر Vector PDF وExact (PDF/DOCX)
-# بمحركات مستقلة، ثم يقارن كل صفحة بلقطة المعاينة المقابلة بمقياس RMSE.
+# بمحركات مستقلة، ثم يقارن كل صفحة بلقطة المعاينة.
 # الفحص على ملفات الإخراج الفعلية (لا callbacks أو صور screenshots بديلة).
+#
+# مسار Vector لا يُحكم بـ RMSE ≤ 0.02. قيس على بايتات vector.pdf نفسها أن
+# poppler مقابل mutool = 0.0558/0.0502، وأن حذف شريط من الصفحة 1 = 0.0167
+# (تحت السقف) وتحريك التسطير في الصفحة 2 = 0.0198 (لا يتجاوز السقف). السقف
+# يرفض المحتوى المتطابق ويُخطئ العيب. الحكم هنا بوابة محتوى: تأخر الإسقاط
+# صفر، وشريط الحبر غير المغطى بعد تمديد 1px لا يتجاوز 0.20، وقاعدة التسطير
+# لا تتحرك أكثر من 1px، مع رفض إزاحة 1px وحذف شريط وتحريك التسطير 4px على
+# الصفحة نفسها. RMSE يُطبع تشخيصاً ولا يُخفى. Exact يبقى على RMSE.
 #
 # (حُذف في C5 مسار Editable DOCX مع مولّده؛ Word الوحيد اليوم هو Exact.)
 #
@@ -11,6 +19,7 @@
 # الاستعمال: tool/verify_visual_parity.sh [مجلد القطع] [سقف PDF] [سقف Word]
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ARTIFACTS="${1:-build/visual_parity}"
 PDF_THRESHOLD="${2:-0.02}"
 # سقف مسار تصيير LibreOffice (خارجي): النطاق المقيس 0.06–0.09 وهو إعادة
@@ -125,19 +134,37 @@ convert_docx() { # <exact>
   local track="$1"
   local outdir="$RENDERED/${track}_docx_pdf"
   local output="$outdir/$track.pdf"
-  local profile="file:///tmp/lo-visual-parity-$track"
-  local soffice_output
+  local profile="file:///tmp/lo-visual-parity-$track-$$"
+  local soffice_output status=0 started produced
+  # The output directory was just created empty. Delete again so a file that
+  # survived a partial run cannot be treated as this conversion's result.
+  rm -f "$output"
+  started="$(date +%s)"
   soffice_output="$("$SOFFICE" --headless --norestore --nolockcheck \
     -env:UserInstallation="$profile" \
     --convert-to "$LO_EXPORT_OPTIONS" --outdir "$outdir" \
-    "$ARTIFACTS/$track.docx" 2>&1)" || true
+    "$ARTIFACTS/$track.docx" 2>&1)" || status=$?
   {
-    echo "[تحويل $track.docx (LibreOffice)]"
+    echo "[تحويل $track.docx (LibreOffice)] exit=$status"
     printf '%s\n' "$soffice_output"
   } >>"$REPORT"
-  if [ ! -f "$output" ]; then
-    echo "::error title=تحويل Word $track::تعذّر إنتاج $output: $(printf '%s' "$soffice_output" | head -c 600 | tr '\n' ' ')"
+  # javaldx makes LibreOffice exit non-zero after a successful write. The
+  # exit code alone is therefore not the success test. A missing, empty, or
+  # older file is: that is a failed conversion, and it must not fall through
+  # to a PDF left by an earlier run.
+  if [ ! -s "$output" ]; then
+    echo "::error title=تحويل Word $track::تعذّر إنتاج ملف غير فارغ $output (exit $status): $(printf '%s' "$soffice_output" | head -c 600 | tr '\n' ' ')"
+    echo "تعذّر إنتاج ملف غير فارغ $output (exit $status)" >>"$REPORT"
     return 1
+  fi
+  produced="$(stat -c %Y "$output")"
+  if [ "$produced" -lt "$started" ]; then
+    echo "::error title=تحويل Word $track::الملف $output أقدم من بدء التحويل (exit $status) — لن يُستخدم ملف قديم."
+    echo "الملف $output أقدم من بدء التحويل — لن يُستخدم ملف قديم." >>"$REPORT"
+    return 1
+  fi
+  if [ "$status" -ne 0 ]; then
+    echo "::warning title=تحويل Word $track::LibreOffice خرج بـ $status بعد كتابة ملف جديد غير فارغ. التحذير ليس نجاح المسار: التصيير والمقارنة ما زالا يعملان على هذا الملف فقط."
   fi
   if ! render_pdf "$output" "$RENDERED/${track}_docx/page" \
       "تصيير Word $track"; then
@@ -230,18 +257,33 @@ check_track() { # <وسم> <مجلد التصيير> <سقف>
     local crop="${CROP_WIDTH}x${CROP_HEIGHT}+2+2"
     $CONVERT "$rendered" -resize "${WIDTH}x${HEIGHT}!" -crop "$crop" +repage "$norm"
     $CONVERT "$preview" -crop "$crop" +repage "$reference"
-    local value verdict="OK"
+    local value verdict="OK" content_line=""
     value="$(rmse_between "$norm" "$reference")"
-    if awk -v v="$value" -v t="$threshold" 'BEGIN { exit !(v > t) }'; then
+    if [ "$label" = "Vector-PDF" ]; then
+      # RMSE stays visible. It is not the verdict: see the header.
+      local content_status=0
+      content_line="$(python3 "$SCRIPT_DIR/visual_content_gate.py" score "$norm" "$reference")" || content_status=$?
+      if [ "$content_status" -ne 0 ]; then
+        verdict="FAIL"
+        status=1
+        echo "::error title=بوابة المحتوى المتجهي::$content_line"
+      fi
+      printf '%-4s صفحة %-2s  المقاس %sx%s (%s)  RMSE %s (تشخيص؛ السقف %s ليس حكم هذا المسار)  %s\n' \
+        "$label" "$index" "$rw" "$rh" "$size_status" "$value" "$threshold" "$verdict"
+      printf '     ↳ بوابة المحتوى: %s\n' "$content_line"
+    elif awk -v v="$value" -v t="$threshold" 'BEGIN { exit !(v > t) }'; then
       verdict="FAIL"
       status=1
+      printf '%-4s صفحة %-2s  المقاس %sx%s (%s)  RMSE %s  (السقف %s)  %s\n' \
+        "$label" "$index" "$rw" "$rh" "$size_status" "$value" "$threshold" "$verdict"
+    else
+      printf '%-4s صفحة %-2s  المقاس %sx%s (%s)  RMSE %s  (السقف %s)  %s\n' \
+        "$label" "$index" "$rw" "$rh" "$size_status" "$value" "$threshold" "$verdict"
     fi
-    printf '%-4s صفحة %-2s  المقاس %sx%s (%s)  RMSE %s  (السقف %s)  %s\n' \
-      "$label" "$index" "$rw" "$rh" "$size_status" "$value" "$threshold" "$verdict"
     # تشخيص (لا حكم): كم بكسل اختلف فعلاً بسماح 2%؟ وهل ينهار الفرق بتنعيم
     # نصف بكسل؟ فرق واسع ينهار بالتنعيم = ضجيج ضغط/إعادة تحجيم تحت البكسل،
     # وفرق محصور لا ينهار = انزياح أو اختلاف محتوى حقيقي.
-    if [ "$verdict" = "FAIL" ]; then
+    if [ "$verdict" = "FAIL" ] || awk -v v="$value" -v t="$threshold" 'BEGIN { exit !(v > t) }'; then
       local differing blurred blurred_ref
       differing="$($COMPARE -metric AE -fuzz 2% "$norm" "$reference" null: 2>&1 || true)"
       blurred="$RENDERED/norm/${label}_${index}_blur.png"
@@ -256,8 +298,8 @@ check_track() { # <وسم> <مجلد التصيير> <سقف>
 }
 
 {
-  echo "Vector PDF: RMSE ≤ $PDF_THRESHOLD مقابل لقطة الصفحة نفسها."
-  echo "Exact DOCX: RMSE ≤ $DOCX_THRESHOLD."
+  echo "Vector PDF: بوابة محتوى (وجود الحبر ومحاذاته). RMSE ≤ $PDF_THRESHOLD يُطبع تشخيصاً ولا يحكم هذا المسار."
+  echo "Exact PDF: RMSE ≤ $PDF_THRESHOLD. Exact DOCX: RMSE ≤ $DOCX_THRESHOLD."
   echo "Exact DOCX يحتفظ أيضاً بفحص بايتات الصور المضمّنة (تطابق تام)."
   echo
 } >>"$REPORT"
@@ -269,7 +311,7 @@ check_embedded_media 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
 {
   echo
   if [ "$failures" -eq 0 ]; then
-    echo "النتيجة: الطابقة البصرية مقبولة (RMSE داخل السقوف)."
+    echo "النتيجة: الطابقة البصرية مقبولة (المسار المتجهي ببوابة المحتوى، وRMSE الصوري داخل السقوف)."
   else
     echo "النتيجة: فشل في $failures مسار تصيير."
   fi

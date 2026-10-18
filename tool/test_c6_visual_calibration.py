@@ -87,6 +87,18 @@ class Images(unittest.TestCase):
         b = make_png(os.path.join(self.tmp, 'b.png'), 64, 48)
         self.assertEqual(cal.rmse(self.compare, a, b), 0.0)
 
+    def test_half_pixel_blur_of_identical_images_is_zero(self):
+        a = make_png(os.path.join(self.tmp, 'a.png'), 64, 48)
+        blurred = cal.blur_half_pixel(
+            self.convert, a, os.path.join(self.tmp, 'blur.png'))
+        again = cal.blur_half_pixel(
+            self.convert, a, os.path.join(self.tmp, 'blur2.png'))
+        self.assertEqual(cal.rmse(self.compare, blurred, again), 0.0)
+
+    def test_blur_excess_is_gate_minus_floor_and_not_a_ceiling(self):
+        self.assertAlmostEqual(cal.blur_excess(0.0487676, 0.0165), 0.0322676)
+        self.assertAlmostEqual(cal.blur_excess(0.0165, 0.0165), 0.0)
+
     def test_a_shift_is_detected_and_scales_with_distance(self):
         a = make_png(os.path.join(self.tmp, 'a.png'), 64, 48)
         one = cal.perturb(self.convert, a, os.path.join(self.tmp, 's1.png'),

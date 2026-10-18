@@ -45,17 +45,40 @@ import 'package:writing_questions_app/models/point_kind.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/pdf_engine/exam_fonts.dart';
+import 'package:writing_questions_app/pdf_engine/pdf_math_rasters.dart';
 import 'package:writing_questions_app/layout/canonical/canonical_layout_preview.dart';
 import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
+import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/services/exact_export_service.dart';
+import 'package:writing_questions_app/services/math_snapshot_renderer.dart';
 import 'package:writing_questions_app/services/page_snapshot_service.dart';
 import 'package:writing_questions_app/services/pdf_export_service.dart';
+import 'package:writing_questions_app/views/widgets/math_snapshot_host.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 
 /// مجلد القطع الذي يقرؤه سكربت التحقق البصري في CI.
 const String _artifactDir = 'build/visual_parity';
+
+/// The preview already captured these snapshots. Embedding the same bytes
+/// keeps the vector page on the printed formula instead of a second render
+/// or the readable-text fallback.
+PdfMathRasters _sharedMathRasters(
+  LayoutDocument layout,
+  CanonicalLayoutPreviewAssets assets,
+) {
+  final cache = <String, MathRaster>{};
+  for (final line in layout.allLines) {
+    for (final run in line.runs) {
+      final raster = assets.mathRasters[run.id];
+      if (raster == null) continue;
+      cache[PdfMathRasters.key(run.text, run.style.fontSizePt)] = raster;
+    }
+  }
+  debugPrint('[fixture] shared math rasters=${cache.length}');
+  return PdfMathRasters.serving(cache);
+}
 
 /// PNG 1×1 (عنصر صورة حرة).
 final Uint8List _tinyPng = base64Decode(
@@ -266,6 +289,11 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
+        // Production installs this in main.dart. Without it the fixture's
+        // preview and vector PDF both fall back to readable math text, so
+        // the comparison is two font engines drawing "(a)/(b)" instead of
+        // the same flutter_math snapshot the app actually prints.
+        builder: (_, child) => MathSnapshotHost(child: child),
         home: ChangeNotifierProvider<ExamWizardController>.value(
           value: controller,
           child: ExamPreviewScreen(
@@ -314,6 +342,7 @@ void main() {
       ),
     );
     await tester.pump(const Duration(milliseconds: 100));
+    _stage('math host available=${MathSnapshotRenderer.isAvailable}');
     // The preview settles through the fake clock (debounce timer, resolver,
     // loader microtasks): waiting for its signal must PUMP, or the signal
     // parks behind an undelivered microtask and any wall-clock timeout fires
@@ -445,13 +474,18 @@ void main() {
     var exportsDone = false;
     Object? exportError;
     StackTrace? exportStack;
+    final sharedMath = _sharedMathRasters(canonicalLayout, firstPreview.assets);
+    _stage('shared math rasters for vector PDF');
     unawaited(
       Future(() async {
         try {
           // Vector PDF يستهلك كائن LayoutDocument الحي نفسه — لا يحسب تدفقاً ثانياً.
+          // لقطات الرياضيات هي بايتات المعاينة نفسها، لا التقاط ثانٍ أثناء
+          // التصدير (ذلك كان يعلق shape-1 داخل runAsync).
           exportVector = await PdfExportService.buildDocumentPdfBytes(
             document: controller.document,
             layoutDocument: canonicalLayout,
+            mathRasters: sharedMath,
           );
           _stage('Vector PDF generated: ${exportVector!.length} bytes');
 

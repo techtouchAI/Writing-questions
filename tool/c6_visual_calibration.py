@@ -115,6 +115,79 @@ def rmse(compare, left, right):
     return float(match.group(1))
 
 
+def blur_half_pixel(convert, source, target):
+    """The gate's own diagnostic blur (`convert -blur 0x0.5`). Not a verdict."""
+    run([convert, source, '-blur', '0x0.5', target])
+    return target
+
+
+def blur_excess(gate_blur, floor_blur):
+    """How far the preview-vs-poppler blur sits above the two-rasterizer blur.
+
+    Both numbers must already be the gate metric after `-blur 0x0.5`. A value
+    near zero means the preview is as close to poppler as the other PDF
+    rasterizer is. A clearly positive value is extra difference on the actual
+    files, beyond two PDF rasterizers of the same bytes. This is a measurement,
+    not a ceiling.
+    """
+    return gate_blur - floor_blur
+
+
+def actual_file_split(compare, convert, preview_dirs, floor, floor_pairs,
+                      render_dir, width, height):
+    """Preview-vs-poppler against poppler-vs-the-other-rasterizer, same bytes.
+
+    Uses the gate crop and the gate's 0.5 px blur. Does not change the ceiling,
+    the references, or the comparison the gate fails on.
+    """
+    lines = [
+        'actual-file split (same vector.pdf, 96 dpi, gate resize+crop, '
+        'compare -metric RMSE parenthesized 0..1, then -blur 0x0.5):',
+        f'  reference size {width}x{height}',
+    ]
+    for preview in preview_dirs:
+        match = re.search(r'preview_page_(\d+)', os.path.basename(preview))
+        if not match:
+            continue
+        index = int(match.group(1))
+        key = f'vector p{index}'
+        pair = floor_pairs.get(key)
+        if pair is None:
+            lines.append(f'  {key}: no poppler/mupdf pair, split not measured')
+            continue
+        poppler_norm, other_norm = pair
+        preview_norm = gate_shaped(
+            convert, preview,
+            os.path.join(render_dir, f'preview-p{index}-norm.png'),
+            width, height)
+        gate_raw = rmse(compare, poppler_norm, preview_norm)
+        floor_blur = rmse(
+            compare,
+            blur_half_pixel(convert, poppler_norm,
+                            os.path.join(render_dir, f'{key.replace(" ", "-")}-poppler-blur.png')),
+            blur_half_pixel(convert, other_norm,
+                            os.path.join(render_dir, f'{key.replace(" ", "-")}-other-blur.png')))
+        gate_blur = rmse(
+            compare,
+            blur_half_pixel(convert, poppler_norm,
+                            os.path.join(render_dir, f'{key.replace(" ", "-")}-poppler-gateblur.png')),
+            blur_half_pixel(convert, preview_norm,
+                            os.path.join(render_dir, f'preview-p{index}-blur.png')))
+        excess = blur_excess(gate_blur, floor_blur)
+        pw, ph = image_size(preview)
+        lines.append(
+            f'  {key}: preview {pw}x{ph} sha256 {sha256(preview)[:12]}; '
+            f'poppler-vs-other raw {floor[key]:.6f} blur {floor_blur:.6f}; '
+            f'preview-vs-poppler raw {gate_raw:.6f} blur {gate_blur:.6f}; '
+            f'blur excess {excess:+.6f}')
+    lines.append(
+        '  blur excess = preview-vs-poppler blur minus poppler-vs-other blur. '
+        'Near zero: the preview is as close to poppler as the other PDF '
+        'rasterizer is. Clearly positive: extra difference beyond two PDF '
+        'rasterizers of the same file. Measurement only; 0.02 is unchanged.')
+    return lines
+
+
 # ------------------------------------------------------------------ rendering
 def render_poppler(pdftoppm, pdf, out_prefix):
     run([pdftoppm, '-r', str(DPI), '-png', pdf, out_prefix])
@@ -333,6 +406,7 @@ def main(argv=None):
 
     width, height = image_size(preview_dirs[0])
     floor, regressions, gate = {}, {}, {}
+    floor_pairs = {}
 
     for name, path in cases:
         settings['cases'][name] = {'sha256': sha256(path)}
@@ -350,6 +424,7 @@ def main(argv=None):
             norm_right = gate_shaped(convert, right, os.path.join(
                 render_dir, f'{stem}-p{index}-mupdf-norm.png'), width, height)
             floor[key] = rmse(compare, norm_left, norm_right)
+            floor_pairs[key] = (norm_left, norm_right)
 
     # The gate's own number, for context, and the deliberate regressions.
     for preview in preview_dirs:
@@ -361,7 +436,17 @@ def main(argv=None):
             regressions[f'{key} {kind}'] = rmse(compare, preview, target)
 
     result = separation(floor, regressions)
-    lines = [f'renderer floor (same PDF, two engines, {DPI} dpi, gate-shaped):']
+    # Same bytes, same metric, same blur the gate already prints. The excess
+    # separates "two PDF rasterizers disagree" from "the preview disagrees
+    # with poppler by more than that". It does not change 0.02.
+    split_lines = actual_file_split(
+        compare, convert, preview_dirs, floor, floor_pairs, render_dir,
+        width, height)
+    vector_sha = settings['cases'].get('vector.pdf', {}).get('sha256', 'absent')
+    split_lines.insert(1, f'  vector.pdf sha256 {vector_sha}')
+    split_lines.insert(2, f'  poppler {settings["poppler"]}; other {settings["mupdf"]}')
+    lines = split_lines + [
+        f'renderer floor (same PDF, two engines, {DPI} dpi, gate-shaped):']
     lines += [f'  {key}: {value:.6f}' for key, value in sorted(floor.items())]
     lines.append('deliberate regressions (reference image vs itself, same metric):')
     lines += [f'  {key}: {value:.6f}'

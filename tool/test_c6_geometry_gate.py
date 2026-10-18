@@ -268,6 +268,109 @@ class Modes(unittest.TestCase):
                 self.assertEqual(gate.main([tmp, '--mode', 'enforce']), 2)
 
 
+class LayoutIntervals(unittest.TestCase):
+    def test_ink_inset_inside_the_caret_interval_is_not_a_position_violation(self):
+        # The 7.06 pt cluster: ink sits inside the advance interval, origin
+        # at the interval's left. That is side bearing / TJ, not a moved word.
+        words = [preview_word('التدفق', 100.0, 140.0, 70.0, 12.0, True)]
+        chars = []
+        x = 107.06
+        for ch in 'التدفق':
+            chars.append(gate.PdfChar(ch, x, x + 4.0, 70.0, 12.0, origin_x=x))
+            x += 4.5
+        violations, samples, _ = gate.compare(
+            [preview_line(words, 70.0)], [pdf_page(chars)], edges='origin')
+        self.assertNotIn('WORD-POSITION', {v.category for v in violations})
+        self.assertGreater(max(samples['word_left']), 6.5)
+
+
+class LayoutWordBoxes(unittest.TestCase):
+    def test_layout_words_are_the_comparison_boxes(self):
+        data = {'pages': [{'page': 1, 'widthPt': 595.0, 'heightPt': 842.0,
+                           'lines': [{'baselinePt': 40.0, 'source': 'block',
+                                      'runs': [{
+                                          'measured': True, 'rtl': False,
+                                          'fontSizePt': 12.0, 'xPt': 10.0,
+                                          'widthPt': 40.0,
+                                          'previewWords': [{
+                                              'text': 'Pick', 'leftPt': 14.0,
+                                              'rightPt': 22.0, 'rtl': False}],
+                                          'layoutWords': [{
+                                              'text': 'Pick', 'xPt': 10.0,
+                                              'textAdvancePt': 22.0,
+                                              'advancePt': 26.0, 'rtl': False}],
+                                      }]}]}]}
+        lines = gate.preview_lines(data, boxes='caret')
+        self.assertEqual(lines[0].box_source, 'caret')
+        self.assertAlmostEqual(lines[0].words[0].width, 22.0)
+        tight = gate.preview_lines(data, boxes='tight')
+        self.assertAlmostEqual(tight[0].words[0].width, 8.0)
+
+
+class FalseAlarms(unittest.TestCase):
+    """Findings that the tight-ink comparison raised and the caret contract must not.
+
+    These are the shapes behind the published 32: an italic word whose ink
+    centre leaves the tight box, a narrow mark stealing the ink centre, and a
+    digit whose tight box covers only part of the caret interval. None of them
+    is a deleted or moved word. The negative tests above still have to reject
+    a real deletion, shift, size change, reorder and missing rule.
+    """
+
+    def test_origin_inside_the_word_is_not_stolen_by_a_narrow_mark(self):
+        words = [preview_word('/', 100.0, 103.0, 40.0, 12.0, False),
+                 preview_word('الفائدة', 103.0, 140.0, 40.0, 12.0, False)]
+        # Ink centres of the word sit inside the slash box; origins do not.
+        chars = [gate.PdfChar('/', 100.0, 103.0, 40.0, 12.0, origin_x=101.5)]
+        x = 104.0
+        for ch in 'الفائدة':
+            chars.append(gate.PdfChar(ch, 100.2, 103.0, 40.0, 12.0, origin_x=x))
+            x += 5.0
+        violations, _, _ = gate.compare(
+            [preview_line(words, 40.0)], [pdf_page(chars)])
+        self.assertNotIn('WORD-MISSING', {v.category for v in violations})
+        self.assertNotIn('WORD-CONTENT', {v.category for v in violations})
+
+    def test_tight_box_mismatch_is_extraction_when_caret_interval_holds_the_origins(self):
+        # '١٥' tight box covers only '٥'. The caret interval holds both origins.
+        tight = [preview_line(
+            [preview_word('١٥', 200.0, 208.0, 80.0, 12.0, True)], 80.0)]
+        caret = [preview_line(
+            [preview_word('١٥', 190.0, 210.0, 80.0, 12.0, True)], 80.0)]
+        chars = [gate.PdfChar('١', 191.0, 196.0, 80.0, 12.0, origin_x=193.0),
+                 gate.PdfChar('٥', 202.0, 208.0, 80.0, 12.0, origin_x=205.0)]
+        page = pdf_page(chars)
+        tight_v, _, _ = gate.compare(tight, [page])
+        caret_v, _, _ = gate.compare(caret, [page])
+        self.assertEqual(caret_v, [])
+        self.assertTrue(any(v.category == 'WORD-CONTENT' for v in tight_v))
+        gate.classify_causes(caret_v, caret, [page])
+        gate.classify_tight_against_caret(tight_v, caret_v, caret, [page])
+        self.assertTrue(all(v.cause == 'extraction' for v in tight_v))
+
+    def test_deleted_word_is_still_product_content_not_extraction(self):
+        words = [preview_word('٢٠٢٧', 250.0, 270.0, 60.0, 12.0, True)]
+        preview = [preview_line(words, 60.0)]
+        page = pdf_page([pdf_word('درجة', 400.0, 430.0, 60.0)])
+        violations, _, _ = gate.compare(preview, [page])
+        gate.classify_causes(violations, preview, [page])
+        missing = [v for v in violations if v.category == 'WORD-MISSING']
+        self.assertTrue(missing)
+        self.assertEqual(missing[0].cause, 'letters-absent-from-extract')
+        self.assertNotEqual(missing[0].cause, 'extraction')
+
+    def test_shifted_origins_are_product_position(self):
+        words = [preview_word('في', 100.0, 112.0, 70.0, 12.0, True)]
+        preview = [preview_line(words, 70.0)]
+        chars = [gate.PdfChar(ch, 130.0 + i, 131.0 + i, 70.0, 12.0,
+                              origin_x=130.5 + i) for i, ch in enumerate('في')]
+        page = pdf_page(chars)
+        violations, _, _ = gate.compare(preview, [page], edges='origin')
+        gate.classify_causes(violations, preview, [page])
+        self.assertTrue(any(v.cause == 'origin-outside-interval'
+                           for v in violations))
+
+
 class RealArtifacts(unittest.TestCase):
     """Injection on the gate's own artifacts, when they are present.
 
@@ -291,9 +394,10 @@ class RealArtifacts(unittest.TestCase):
         # ones that must name it. That is the designed split, and this test is
         # what proved it: the first version demanded WORD-POSITION and failed.
         preview, pages = self._load()
-        pages[0].chars = [gate.PdfChar(c.text, c.x0 + 4.0, c.x1 + 4.0,
-                                       c.baseline, c.size, c.font)
-                          for c in pages[0].chars]
+        pages[0].chars = [gate.PdfChar(
+            c.text, c.x0 + 4.0, c.x1 + 4.0, c.baseline, c.size, c.font,
+            None if c.origin_x is None else c.origin_x + 4.0)
+            for c in pages[0].chars]
         violations, _, _ = gate.compare(preview, pages)
         self.assertIn('LINE-SHIFT', {v.category for v in violations})
 
@@ -306,7 +410,7 @@ class RealArtifacts(unittest.TestCase):
                       None)
         self.assertIsNotNone(target, 'fixture has no measurable word')
         pages[0].chars = [c for c in pages[0].chars
-                          if not (target.x0 <= (c.x0 + c.x1) / 2 <= target.x1)]
+                          if not (target.x0 - 0.5 <= gate._anchor(c) <= target.x1 + 0.5)]
         violations, _, _ = gate.compare(preview, pages)
         self.assertIn('WORD-MISSING', {v.category for v in violations})
 

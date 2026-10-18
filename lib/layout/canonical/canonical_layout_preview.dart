@@ -21,12 +21,19 @@ final class CanonicalLayoutPreviewAssets {
     this.pageFrame,
     Map<String, ui.Image> floatingImages = const <String, ui.Image>{},
     Map<String, ui.Image> mathImages = const <String, ui.Image>{},
+    Map<String, MathRaster> mathRasters = const <String, MathRaster>{},
   })  : floatingImages = Map<String, ui.Image>.unmodifiable(floatingImages),
-        mathImages = Map<String, ui.Image>.unmodifiable(mathImages);
+        mathImages = Map<String, ui.Image>.unmodifiable(mathImages),
+        mathRasters = Map<String, MathRaster>.unmodifiable(mathRasters);
 
   final ui.Image? pageFrame;
   final Map<String, ui.Image> floatingImages;
   final Map<String, ui.Image> mathImages;
+
+  /// PNG bytes of [mathImages], keyed by run id. The vector PDF embeds these
+  /// same bytes so the printed formula is the snapshot the preview drew,
+  /// not a second capture and not the readable-text fallback.
+  final Map<String, MathRaster> mathRasters;
   bool _disposed = false;
 
   static Future<CanonicalLayoutPreviewAssets> load({
@@ -35,6 +42,7 @@ final class CanonicalLayoutPreviewAssets {
   }) async {
     final floating = <String, ui.Image>{};
     final math = <String, ui.Image>{};
+    final mathRasters = <String, MathRaster>{};
     ui.Image? frame;
     try {
       final framePath = layout.pageFrameImagePath;
@@ -81,6 +89,7 @@ final class CanonicalLayoutPreviewAssets {
           try {
             final raster = await snapshot.toPngRaster();
             math[run.id] = await _decode(raster.pngBytes);
+            mathRasters[run.id] = raster;
           } finally {
             snapshot.dispose();
           }
@@ -93,6 +102,7 @@ final class CanonicalLayoutPreviewAssets {
       pageFrame: frame,
       floatingImages: floating,
       mathImages: math,
+      mathRasters: mathRasters,
     );
   }
 

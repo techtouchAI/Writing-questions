@@ -55,6 +55,7 @@ class PaginatedPdfExamEngine {
     LayoutDocument? layoutDocument,
     ExamFonts? fonts,
     Uint8List? frameImage,
+    PdfMathRasters? mathRasters,
   }) async {
     final documentIr = _documentIr(document);
     final loadedFonts = fonts ??
@@ -65,7 +66,7 @@ class PaginatedPdfExamEngine {
           quranFontAvailable: loadedFonts.hasQuranic,
           questionPageAssignments: pageAssignments,
         );
-    final mathRasters = await _rasterStoreFor(layout);
+    final resolvedMath = mathRasters ?? await _rasterStoreFor(layout);
     final pdf = _newDocument(document);
     const painter = CanonicalLayoutPdfPainter();
     final direction = layout.direction == DocumentDirection.ltr
@@ -88,7 +89,7 @@ class PaginatedPdfExamEngine {
             page: page,
             sourceDocument: document,
             fonts: loadedFonts,
-            mathRasters: mathRasters,
+            mathRasters: resolvedMath,
             frameImage: frameImage,
           ),
         ),

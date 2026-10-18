@@ -232,11 +232,20 @@ class CanonicalLayoutPdfPainter {
         pw.Positioned(
           left: run.x - originX,
           top: line.baseline - run.baselineOffset - originY,
-          child: pw.Image(
-            pw.MemoryImage(raster.pngBytes),
+          child: pw.Container(
             width: run.width,
             height: run.height,
-            fit: pw.BoxFit.fill,
+            // Same placement as the preview painter: keep the snapshot's
+            // aspect and center it in the canonical box. fill stretched a
+            // box that did not match the snapshot and moved the fraction
+            // relative to the preview.
+            alignment: pw.Alignment.center,
+            child: pw.Image(
+              pw.MemoryImage(raster.pngBytes),
+              width: run.width,
+              height: run.height,
+              fit: pw.BoxFit.contain,
+            ),
           ),
         ),
       ];
