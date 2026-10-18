@@ -67,7 +67,14 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
 
   /// «تحديد الكل» ↔ «إلغاء تحديد الكل»: إن كانت كل الأسئلة محددة تُفرَّغ،
   /// وإلا تُحدد كلها — مع الدخول في وضع التحديد في الحالتين.
+  ///
+  /// النطاق = أسئلة هذه الشاشة وحدها (رقائق الشريط نفسها)؛ الفروع والنقاط
+  /// ليست قابلة للتحديد هنا فلا تدخل العدّاد ولا التحديد.
   void _toggleSelectAll(List<QuestionModel> questions) {
+    if (questions.isEmpty) {
+      _showMessage('لا توجد أسئلة في هذه الشاشة لتحديدها.');
+      return;
+    }
     final ids = questions.map((question) => question.id).toSet();
     final allSelected = ids.isNotEmpty && _selectedQuestionIds.containsAll(ids);
     setState(() {
@@ -76,6 +83,69 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
         ..clear()
         ..addAll(allSelected ? const <String>{} : ids);
     });
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+    );
+  }
+
+  /// أهداف زرَّي «نسخ»/«حذف»: الأسئلة **المحددة فعلاً** داخل وضع التحديد،
+  /// وإلا السؤال المفتوح (سلوك الشريط السابق للتحديد المتعدد كما هو).
+  ///
+  /// وضع تحديد بلا عنصر محدد = بلا هدف: لا يُنسخ شيء ولا يُحذف شيء، حتى
+  /// لا تُطاح أسئلة لم يقصدها المستخدم (منع الحذف غير المقصود عند غياب
+  /// التحديد).
+  List<int> _actionTargets(ExamWizardController controller) {
+    if (!_selectionMode) {
+      return <int>[controller.currentQuestionIndex];
+    }
+    final questions = controller.questions;
+    return <int>[
+      for (var index = 0; index < questions.length; index++)
+        if (_selectedQuestionIds.contains(questions[index].id)) index,
+    ];
+  }
+
+  /// «نسخ»: ينسخ السؤال المحدد (أو الأسئلة المحددة) نسخاً حقيقياً داخل
+  /// المستند — كل نسخة بعد أصلها بمحتواها وإعداداتها — بآليّة التكرار
+  /// المعتمدة في المتحكم، لا نسخ نص للحافظة.
+  void _copyAction(ExamWizardController controller) {
+    final targets = _actionTargets(controller);
+    if (targets.isEmpty) {
+      _showMessage('لم تحدد أي سؤال — حدّد سؤالاً أو أكثر لنسخه.');
+      return;
+    }
+    controller.duplicateQuestions(targets);
+    final document = controller.document;
+    _showMessage(
+      targets.length == 1
+          ? 'نُسخ السؤال بعد الأصل مباشرة.'
+          : 'نُسخت ${document.formatNumber(targets.length)} من الأسئلة بعد أصولها.',
+    );
+  }
+
+  /// «حذف»: يحذف العناصر المحددة فقط. خارج وضع التحديد يبقى السؤال المفتوح
+  /// هو الهدف (سلوك الزر السابق كما هو)، وفي وضع التحديد لا يُحذف شيء بلا
+  /// تحديد. يبقى سؤال واحد على الأقل في المستند.
+  void _deleteAction(ExamWizardController controller) {
+    final targets = _actionTargets(controller);
+    if (targets.isEmpty) {
+      _showMessage('لم تحدد أي سؤال — الحذف يُطبَّق على المحدد فقط.');
+      return;
+    }
+    if (!_selectionMode) {
+      controller.removeQuestion(targets.single);
+      return;
+    }
+    final removed = controller.removeQuestions(targets);
+    _exitSelectionMode();
+    if (removed > 0) {
+      _showMessage(
+        'حُذف ${controller.document.formatNumber(removed)} من الأسئلة المحددة.',
+      );
+    }
   }
 
   @override
@@ -131,6 +201,12 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
     final colorScheme = Theme.of(context).colorScheme;
     final sections = layout.sections;
     final questionLabel = controller.document.displayQuestionLabel(question);
+    // حالة الأزرار تتبع التحديد: داخل وضع التحديد يعمل «نسخ»/«حذف» على
+    // المحدد وحده فيُعطَّلان بلا تحديد، وخارج الوضع يعملان على السؤال
+    // المفتوح (سلوكهما السابق كما هو).
+    final hasActionTarget = !_selectionMode || _selectedQuestionIds.isNotEmpty;
+    final copyEnabled = hasActionTarget;
+    final deleteEnabled = hasActionTarget && controller.questions.length > 1;
     _syncPromptField(controller, questionIndex);
 
     return Scaffold(
@@ -155,15 +231,21 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
               onPressed: () => controller.moveQuestion(questionIndex, questionIndex + 1),
             ),
           IconButton(
+            key: const ValueKey<String>('question-copy-action'),
             icon: const Icon(Icons.copy_outlined),
             tooltip: 'نسخ السؤال',
-            onPressed: () => controller.duplicateQuestion(questionIndex),
+            // معطَّل في وضع التحديد ما لم يكن هناك عنصر محدد فعلاً: زر
+            // «نسخ» ينسخ المحدد (حالة الأزرار تتبع التحديد).
+            onPressed:
+                copyEnabled ? () => _copyAction(controller) : null,
           ),
           if (controller.questions.length > 1)
             IconButton(
+              key: const ValueKey<String>('question-delete-action'),
               icon: const Icon(Icons.delete_outline),
               tooltip: 'حذف هذا السؤال',
-              onPressed: () => controller.removeQuestion(questionIndex),
+              onPressed:
+                  deleteEnabled ? () => _deleteAction(controller) : null,
             ),
         ],
       ),

@@ -1,11 +1,16 @@
-"""Tests for check_underline_parity.py (synthetic inputs only).
+"""Tests for check_underline_parity.py -- SYNTHETIC inputs only.
 
-The real numbers come from the CI fixture; these tests pin the *logic*: a rule
-is found from the file's own geometry, a rule is found in the pixels by its
-continuity, and a disagreement of a known size is reported as such and fails
-the check. If the detector cannot tell an agreeing case from a four-pixel
-disagreement on inputs whose cause is known by construction, its verdict on the
-fixture means nothing.
+The real numbers come from the CI fixture; these tests pin the *logic* on
+constructed pages whose rules are drawn at known offsets: a rule is found from
+the file's own geometry, a rule is found in the pixels by its continuity, and
+a disagreement of a known size is reported as such and fails the check. If
+the detector cannot tell an agreeing case from a four-pixel disagreement on
+inputs whose cause is known by construction, its verdict on the fixture means
+nothing.
+
+The REAL-artifact family (same check, the fixture's own printed underlining)
+is kept separate in test_diag_c6_underline_real_artifacts.py -- synthetic and
+real evidence must never be mistaken for each other.
 """
 import io
 import json
@@ -53,7 +58,7 @@ def build_artifacts(directory, pdf_offset_px, preview_offset_px, size=12.0,
                    'heightPx': pix.height}, handle)
 
 
-class LongestRunTests(unittest.TestCase):
+class SyntheticLongestRunTests(unittest.TestCase):
     """The discriminator between a glyph row and a rule row."""
 
     def test_single_stem_is_its_own_run(self):
@@ -75,7 +80,7 @@ class LongestRunTests(unittest.TestCase):
         self.assertEqual(cu.longest_run(row), 30)
 
 
-class PdfRuleTests(unittest.TestCase):
+class SyntheticPdfRuleTests(unittest.TestCase):
     """The rule and its owning baseline come from the file, not from pixels."""
 
     def setUp(self):
@@ -99,7 +104,7 @@ class PdfRuleTests(unittest.TestCase):
         self.assertEqual(cu.rules_in_pdf(page), [])
 
 
-class PreviewRuleTests(unittest.TestCase):
+class SyntheticPreviewRuleTests(unittest.TestCase):
     """The rule in the pixels is found by continuity, not by darkness."""
 
     def setUp(self):
@@ -123,7 +128,7 @@ class PreviewRuleTests(unittest.TestCase):
         self.assertIsNone(cu.preview_offset(blank, (0, 0, 20, 10), scale))
 
 
-class EndToEndTests(unittest.TestCase):
+class SyntheticEndToEndTests(unittest.TestCase):
     """The check's exit status is the gate: agreement passes, a four-pixel
     offset fails, and the numbers it prints say both offsets."""
 

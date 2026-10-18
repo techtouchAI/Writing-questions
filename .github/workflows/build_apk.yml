@@ -817,7 +817,7 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/diag-venv"
           "$RUNNER_TEMP/diag-venv/bin/pip" install -q pymupdf numpy
 
-      - name: Unit tests of the C6 diagnostics (synthetic)
+      - name: Unit tests of the C6 diagnostics (synthetic + real-artifact suites)
         shell: bash
         run: |
           # A failing unittest prints to the step log, which the checks API does
@@ -832,6 +832,8 @@ jobs:
             }
           }
           run_suite -m unittest discover -s tool -p 'test_diag_c6_*.py' -v
+          # عائلة التسطير الاصطناعي وحدها هنا؛ عائلتها الحقيقية خطوة مستقلة
+          # أدناه حتى يبقى الفصل بين الدليلين ظاهراً في سجلات التشغيل.
           run_suite -m unittest discover -s tool -p 'test_diag_c6_underline_parity.py' -v
           run_suite -m unittest tool/test_c6_geometry_gate.py -v
           run_suite -m unittest tool/test_c6_visual_calibration.py -v
@@ -850,6 +852,44 @@ jobs:
             || {
               tail -n 12 /tmp/c6-real.log | while IFS= read -r line; do
                 echo "::error title=C6 real-artifact tests::$line"
+              done
+              exit 1
+            }
+
+      # [C6-UNDERLINE] عائلة التسطير **الحقيقية**، منفصلة عن الاصطناعية:
+      # التسطير الحقيقي في مخرجات التركيبة نفسها يُقاس ويُقارن (والحبر
+      # المفقود skip لا اتفاق). الاصطناعية (منطق الكاشف على صفحات مرسومة
+      # بإزاحات معروفة) تبقى في خطوتها أعلاه.
+      - name: Real-artifact underline tests (separated from the synthetic)
+        if: always()
+        shell: bash
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          run_real () {
+            C6_ARTIFACTS=build/visual_parity \
+              "$RUNNER_TEMP/diag-venv/bin/python" "$@" 2>&1 | tee /tmp/c6-real.log || {
+                tail -n 12 /tmp/c6-real.log | while IFS= read -r line; do
+                  echo "::error title=C6 real-underline tests::$line"
+                done
+                return 1
+              }
+          }
+          run_real -m unittest tool.test_diag_c6_underline_real_artifacts -v
+
+      # [C6-CONTENT] حذف النصوص والمعادلات الصغيرة ذات الدلالة على **المخرجات
+      # الحقيقية**: يُمسح سطر نص حقيقي ومعادلة صغيرة حقيقية من صفحة التركيبة
+      # فيجب أن ترفض بوابة المحتوى كليهما — حساسية مثبتة على الصورة الحقيقية.
+      - name: Content-gate deletion tests on the real artifacts
+        if: always()
+        shell: bash
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          C6_ARTIFACTS=build/visual_parity \
+            "$RUNNER_TEMP/diag-venv/bin/python" -m unittest \
+            tool.test_diag_c6_visual_content_gate.RealArtifacts -v 2>&1 \
+            | tee /tmp/c6-content.log || {
+              tail -n 12 /tmp/c6-content.log | while IFS= read -r line; do
+                echo "::error title=C6 real-content tests::$line"
               done
               exit 1
             }
