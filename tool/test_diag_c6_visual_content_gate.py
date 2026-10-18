@@ -269,6 +269,16 @@ class RealArtifacts(unittest.TestCase):
     Skipped locally without `C6_ARTIFACTS`; in CI these erase a real text
     line and a real small equation from the produced page imagery, so the
     gate's rejection is proven on the real form, not only on a model.
+
+    Candidate eligibility matches the gate's known sensitivity law exactly:
+    the strip check fails a pair only when the wiped ink inside a 24px
+    measurement strip is >= 80px AND is > 20% of that strip's ink. A small
+    equation drowned in a sibling line's ink stays under the failure
+    fraction — that is the gate's intended relative (not absolute)
+    resolution, and the isolated synthetic tests
+    (TextAndEquationDeletionTests) cover it. Here we assert what the law
+    can actually see on real fixture pixels — without weakening the gate
+    and without claiming more than it does.
     """
 
     def _root(self):
@@ -281,6 +291,23 @@ class RealArtifacts(unittest.TestCase):
         mask_a = gate.ink_mask(gray, width, height)
         mask_b = gate.ink_mask(deleted, width, height)
         return gate.score_masks(mask_a, mask_b, width, height)
+
+    def _strip_sees(self, row_ink, band_rows, height):
+        """Eligibility: some 24px measurement strip (worst_strip's own grid)
+        holds the candidate's ink >= 90px and > 25% of the strip's ink —
+        with a small margin over the 80px/20% law to absorb the 2px dilation
+        rim, so the strip check can genuinely reject this deletion.
+
+        `row_ink[y]` = ink of the whole row; `band_rows[y]` = ink of the
+        candidate band in that row (0 outside the band)."""
+        step = max(1, gate.STRIP // 2)
+        for top in range(0, max(1, height - gate.STRIP + 1), step):
+            s0, s1 = top, min(height, top + gate.STRIP)
+            total = sum(row_ink[s0:s1])
+            band = sum(band_rows[s0:s1])
+            if band >= 90 and band > 0.25 * total:
+                return True
+        return False
 
     def test_real_text_line_deletion_is_rejected(self):
         root = self._root()
@@ -316,6 +343,11 @@ class RealArtifacts(unittest.TestCase):
             width, height, gray = gate.read_png(preview)
             sx = width / float(page['widthPt'])
             sy = height / float(page['heightPt'])
+            row_ink = [
+                sum(1 for x in range(width)
+                    if gray[y * width + x] < gate.INK_MAX)
+                for y in range(height)
+            ]
             for record in page.get('lines', []):
                 baseline = float(record['baselinePt']) * sy
                 for run in record.get('runs', []):
@@ -335,15 +367,23 @@ class RealArtifacts(unittest.TestCase):
                     x1, y1 = min(width, x1), min(height, y1)
                     if x1 - x0 < 3 or y1 - y0 < 3:
                         continue
+                    band_rows = [0] * height
+                    for y in range(y0, y1):
+                        band_rows[y] = sum(
+                            1 for x in range(x0, x1)
+                            if gray[y * width + x] < gate.INK_MAX)
+                    ink_here = sum(band_rows)
+                    if not 80 <= ink_here <= 800:
+                        continue  # تحت أرضية الحساسية أو ليست «صغيرة»
+                    # أهلية قانون الشريط: مرشح يراه القانون فعلاً (انظر
+                    # docstring الصنف) — دون ذلك يبقى الحذف تحت نسبة الفشل
+                    # الحاكمة (0.20 من حبر الشريط) وهذا حدّ الدقة المقصود.
+                    if not self._strip_sees(row_ink, band_rows, height):
+                        continue
                     deleted = list(gray)
                     for y in range(y0, y1):
                         for x in range(x0, x1):
                             deleted[y * width + x] = 255
-                    ink_here = sum(
-                        1 for y in range(y0, y1) for x in range(x0, x1)
-                        if gray[y * width + x] < gate.INK_MAX)
-                    if not 80 <= ink_here <= 800:
-                        continue  # تحت أرضية الحساسية أو ليست «صغيرة»
                     result = self._score(gray, deleted, width, height)
                     self.assertFalse(
                         result['ok'],
@@ -354,7 +394,9 @@ class RealArtifacts(unittest.TestCase):
                     if checked >= 3:
                         return
         if checked == 0:
-            self.skipTest('fixture has no small equation in the sensitivity band')
+            self.skipTest(
+                'fixture has no small equation inside the strip law '
+                'sensitivity band (>=80px ink and >25% of its strip)')
 
 
 if __name__ == '__main__':

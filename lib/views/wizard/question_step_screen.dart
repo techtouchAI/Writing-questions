@@ -548,23 +548,30 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
           ),
         SizedBox(
           height: 40,
-          child: ListView(
+          // تمرير أفقي غير كسول (Row داخل SingleChildScrollView لا ListView):
+          // تُبنى كل الرقائق دائماً في شجرة الودجت مهما طال النطاق، فتبقى
+          // قابلة للوصول في الاختبارات ومساعدات الوصول، مع التمرير الأفقي
+          // والتصميم كما هما تماماً.
+          child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            children: <Widget>[
-              ActionChip(
-                key: const ValueKey<String>('select-all-questions'),
-                avatar: Icon(
-                  allSelected ? Icons.deselect : Icons.select_all,
-                  size: 18,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                ActionChip(
+                  key: const ValueKey<String>('select-all-questions'),
+                  avatar: Icon(
+                    allSelected ? Icons.deselect : Icons.select_all,
+                    size: 18,
+                  ),
+                  label: Text(allSelected ? 'إلغاء تحديد الكل' : 'تحديد الكل'),
+                  onPressed: () => _toggleSelectAll(questions),
                 ),
-                label: Text(allSelected ? 'إلغاء تحديد الكل' : 'تحديد الكل'),
-                onPressed: () => _toggleSelectAll(questions),
-              ),
-              for (var index = 0; index < questions.length; index++) ...<Widget>[
-                const SizedBox(width: 6),
-                _buildQuestionChip(controller, index),
+                for (var index = 0; index < questions.length; index++) ...<Widget>[
+                  const SizedBox(width: 6),
+                  _buildQuestionChip(controller, index),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ],
