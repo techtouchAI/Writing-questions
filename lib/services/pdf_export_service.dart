@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import '../layout/canonical/layout_document.dart';
 import '../models/exam_document.dart';
 import '../pdf_engine/pdf_engine.dart';
+import '../pdf_engine/pdf_math_rasters.dart';
 import 'export_file_service.dart';
 import 'page_frame_store.dart';
 
@@ -36,6 +37,7 @@ abstract final class PdfExportService {
     required ExamDocument document,
     List<List<String>>? pageAssignments,
     LayoutDocument? layoutDocument,
+    PdfMathRasters? mathRasters,
   }) async {
     final frameImage = document.settings.pageBorder
         ? await PageFrameStore.read(document.settings.frameImagePath)
@@ -45,6 +47,7 @@ abstract final class PdfExportService {
       pageAssignments: pageAssignments,
       layoutDocument: layoutDocument,
       frameImage: frameImage,
+      mathRasters: mathRasters,
     );
   }
 

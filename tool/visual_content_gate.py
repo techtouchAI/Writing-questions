@@ -196,24 +196,32 @@ def worst_strip(mask, cover, width, height):
     """Largest fraction of this mask's ink in a strip that `cover` misses."""
     worst = 0.0
     worst_at = 0
+    worst_span = (0, 0, 0)
     step = max(1, STRIP // 2)
     for y in range(0, max(1, height - STRIP + 1), step):
         ink = missed = 0
+        x0, x1 = width, 0
         for row in range(y, min(height, y + STRIP)):
             start = row * width
-            for value, covered in zip(mask[start:start + width],
-                                      cover[start:start + width]):
-                if value:
+            for x, (value, covered) in enumerate(zip(mask[start:start + width],
+                                                     cover[start:start + width])):
+                if value and not covered:
+                    missed += 1
                     ink += 1
-                    if not covered:
-                        missed += 1
+                    if x < x0:
+                        x0 = x
+                    if x > x1:
+                        x1 = x
+                elif value:
+                    ink += 1
         if ink < STRIP_MIN_INK:
             continue
         fraction = missed / ink
         if fraction > worst:
             worst = fraction
             worst_at = y
-    return worst, worst_at
+            worst_span = (x0, x1, missed)
+    return worst, worst_at, worst_span
 
 
 def rule_row(mask, width, height):
@@ -243,8 +251,8 @@ def score_masks(a, b, width, height):
     lag_x, corr_x, corr_x0 = best_lag(ax, bx)
     lag_y, corr_y, corr_y0 = best_lag(ay, by)
     da, db = dilate(a, width, height), dilate(b, width, height)
-    miss_ab, at_ab = worst_strip(a, db, width, height)
-    miss_ba, at_ba = worst_strip(b, da, width, height)
+    miss_ab, at_ab, span_ab = worst_strip(a, db, width, height)
+    miss_ba, at_ba, span_ba = worst_strip(b, da, width, height)
     rule_a, rule_b = rule_row(a, width, height), rule_row(b, width, height)
     rule_delta = None
     if rule_a is not None and rule_b is not None:
@@ -254,7 +262,9 @@ def score_masks(a, b, width, height):
         reasons.append(f'shift lag x={lag_x} y={lag_y}')
     if miss_ab > STRIP_MISS_MAX or miss_ba > STRIP_MISS_MAX:
         reasons.append(
-            f'strip uncovered {miss_ab:.3f}@{at_ab}/{miss_ba:.3f}@{at_ba}')
+            f'strip uncovered {miss_ab:.3f}@{at_ab} x={span_ab[0]}..{span_ab[1]} '
+            f'n={span_ab[2]}/{miss_ba:.3f}@{at_ba} x={span_ba[0]}..{span_ba[1]} '
+            f'n={span_ba[2]}')
     if rule_delta is not None and rule_delta > RULE_ROW_MAX:
         reasons.append(f'rule row moved by {rule_delta}px ({rule_a}->{rule_b})')
     return {
