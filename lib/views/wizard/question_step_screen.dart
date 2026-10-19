@@ -65,6 +65,21 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
     });
   }
 
+  /// التحديد الفعّال داخل نطاق هذه الشاشة: تقاطع المعرّفات المخزَّنة مع
+  /// أسئلة المستند الحالية.
+  ///
+  /// المصدر الوحيد لحالة التحديد في العدّاد وحالة الأزرار وأهداف النسخ/
+  /// الحذف: معرّف سؤال حُذف (بحذف خارجي أو تراجع) لا يبقى محسوباً، فلا
+  /// يعرض العدّاد رقماً لا مقابل له في الشريط، ولا يصل هدف إلى سؤال غير
+  /// موجود.
+  Set<String> _selectedIdsInScope(List<QuestionModel> questions) {
+    if (!_selectionMode) {
+      return const <String>{};
+    }
+    final liveIds = questions.map((question) => question.id).toSet();
+    return _selectedQuestionIds.where(liveIds.contains).toSet();
+  }
+
   /// «تحديد الكل» ↔ «إلغاء تحديد الكل»: إن كانت كل الأسئلة محددة تُفرَّغ،
   /// وإلا تُحدد كلها — مع الدخول في وضع التحديد في الحالتين.
   ///
@@ -76,12 +91,17 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
       return;
     }
     final ids = questions.map((question) => question.id).toSet();
-    final allSelected = ids.isNotEmpty && _selectedQuestionIds.containsAll(ids);
+    final allSelected =
+        ids.isNotEmpty && _selectedIdsInScope(questions).containsAll(ids);
     setState(() {
       _selectionMode = true;
-      _selectedQuestionIds
-        ..clear()
-        ..addAll(allSelected ? const <String>{} : ids);
+      if (allSelected) {
+        _selectedQuestionIds.clear();
+      } else {
+        _selectedQuestionIds
+          ..removeWhere((id) => !ids.contains(id))
+          ..addAll(ids);
+      }
     });
   }
 
@@ -102,9 +122,10 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
       return <int>[controller.currentQuestionIndex];
     }
     final questions = controller.questions;
+    final selectedIds = _selectedIdsInScope(questions);
     return <int>[
       for (var index = 0; index < questions.length; index++)
-        if (_selectedQuestionIds.contains(questions[index].id)) index,
+        if (selectedIds.contains(questions[index].id)) index,
     ];
   }
 
@@ -204,7 +225,8 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
     // حالة الأزرار تتبع التحديد: داخل وضع التحديد يعمل «نسخ»/«حذف» على
     // المحدد وحده فيُعطَّلان بلا تحديد، وخارج الوضع يعملان على السؤال
     // المفتوح (سلوكهما السابق كما هو).
-    final hasActionTarget = !_selectionMode || _selectedQuestionIds.isNotEmpty;
+    final hasActionTarget = !_selectionMode ||
+        _selectedIdsInScope(controller.questions).isNotEmpty;
     final copyEnabled = hasActionTarget;
     final deleteEnabled = hasActionTarget && controller.questions.length > 1;
     _syncPromptField(controller, questionIndex);
@@ -233,7 +255,8 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
           IconButton(
             key: const ValueKey<String>('question-copy-action'),
             icon: const Icon(Icons.copy_outlined),
-            tooltip: 'نسخ السؤال',
+            tooltip:
+                _selectionMode ? 'نسخ الأسئلة المحددة' : 'نسخ السؤال',
             // معطَّل في وضع التحديد ما لم يكن هناك عنصر محدد فعلاً: زر
             // «نسخ» ينسخ المحدد (حالة الأزرار تتبع التحديد).
             onPressed:
@@ -243,7 +266,8 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
             IconButton(
               key: const ValueKey<String>('question-delete-action'),
               icon: const Icon(Icons.delete_outline),
-              tooltip: 'حذف هذا السؤال',
+              tooltip:
+                  _selectionMode ? 'حذف الأسئلة المحددة' : 'حذف هذا السؤال',
               onPressed:
                   deleteEnabled ? () => _deleteAction(controller) : null,
             ),
@@ -517,9 +541,8 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
   Widget _buildProgressStrip(BuildContext context, ExamWizardController controller) {
     final document = controller.document;
     final questions = controller.questions;
-    final selectedCount = _selectionMode
-        ? questions.where((question) => _selectedQuestionIds.contains(question.id)).length
-        : 0;
+    final selectedIds = _selectedIdsInScope(questions);
+    final selectedCount = selectedIds.length;
     final allSelected = questions.isNotEmpty && selectedCount == questions.length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -530,11 +553,14 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
             child: Row(
               children: <Widget>[
                 Expanded(
-                  child: Text(
-                    'المحدد ${document.formatNumber(selectedCount)} '
-                    'من ${document.formatNumber(questions.length)}',
-                    key: const ValueKey<String>('question-selection-count'),
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      'المحدد ${document.formatNumber(selectedCount)} '
+                      'من ${document.formatNumber(questions.length)}',
+                      key: const ValueKey<String>('question-selection-count'),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ),
                 TextButton.icon(
@@ -568,7 +594,7 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
                 ),
                 for (var index = 0; index < questions.length; index++) ...<Widget>[
                   const SizedBox(width: 6),
-                  _buildQuestionChip(controller, index),
+                  _buildQuestionChip(controller, index, selectedIds),
                 ],
               ],
             ),
@@ -581,10 +607,14 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
   /// رقاقة سؤال واحد: الضغطة العادية تفتحه للتحرير كما كانت دائماً (أو
   /// تقلب تحديده داخل وضع التحديد)، والضغط المطوّل يدخل وضع التحديد
   /// المتعدد ويحدد هذا السؤال — بلا أي أثر على بقية الأسئلة.
-  Widget _buildQuestionChip(ExamWizardController controller, int index) {
+  Widget _buildQuestionChip(
+    ExamWizardController controller,
+    int index,
+    Set<String> selectedIds,
+  ) {
     final question = controller.questions[index];
     final selectedInMode =
-        _selectionMode && _selectedQuestionIds.contains(question.id);
+        _selectionMode && selectedIds.contains(question.id);
     return GestureDetector(
       onLongPress: () {
         if (_selectionMode) {
