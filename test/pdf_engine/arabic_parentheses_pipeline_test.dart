@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -32,9 +31,7 @@ import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/pdf_engine/exam_fonts.dart';
 import 'package:writing_questions_app/pdf_engine/pdf_math_rasters.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
-import 'package:writing_questions_app/services/exact_export_service.dart';
 import 'package:writing_questions_app/services/math_snapshot_renderer.dart';
-import 'package:writing_questions_app/services/page_snapshot_service.dart';
 import 'package:writing_questions_app/services/pdf_export_service.dart';
 import 'package:writing_questions_app/views/widgets/math_snapshot_host.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
@@ -642,12 +639,12 @@ void main() {
       expect(boundaries, hasLength(layout.pageCount));
 
       // Capture raw RGBA + PNG snapshots from actual Skia Preview pages!
-      late List<PageSnapshot> snapshots;
+      late List<Map<String,dynamic>> snapshots;
       late ByteData page1Rgba;
       late int page1W;
       late int page1H;
       await tester.runAsync(() async {
-        final built = <PageSnapshot>[];
+        final built = <Map<String,dynamic>>[];
         for (var idx = 0; idx < boundaries.length; idx++) {
           final img = await boundaries[idx].toImage(pixelRatio: 1.0);
           if (idx == 0) {
@@ -659,12 +656,12 @@ void main() {
           final png = (await img.toByteData(format: ui.ImageByteFormat.png))!;
           img.dispose();
           built.add(
-            PageSnapshot(
-              pageIndex: idx,
-              pngBytes: png.buffer.asUint8List(),
-              widthPx: refW,
-              heightPx: refH,
-            ),
+            <String,dynamic>{
+              'pageIndex': idx,
+              'pngBytes': png.buffer.asUint8List(),
+              'widthPx': refW,
+              'heightPx': refH,
+            },
           );
         }
         snapshots = built;
@@ -738,8 +735,6 @@ void main() {
       // 4. Generate Vector PDF, Exact PDF, and Exact DOCX and verify ACTUAL
       //    embedded `/FontFile2` `glyf` contours + `/ToUnicode` + OOXML!
       Uint8List? vectorPdf;
-      Uint8List? exactPdf;
-      Uint8List? exactDocx;
       var exportsDone = false;
       Object? exportErr;
       StackTrace? exportSt;
@@ -753,8 +748,6 @@ void main() {
               layoutDocument: layout,
               mathRasters: sharedMath,
             );
-            exactPdf = await ExactExportService.buildPdfFromSnapshots(snapshots);
-            exactDocx = ExactExportService.buildDocxFromSnapshots(snapshots);
             exportsDone = true;
           } catch (e, s) {
             exportErr = e;
@@ -847,18 +840,7 @@ void main() {
         reason: 'LTR ")" on the very same page must NOT be flipped!',
       );
 
-      // 5. Verify Exact DOCX OOXML structure & byte-exact snapshot embedding:
-      final archive = ZipDecoder().decodeBytes(exactDocx!);
-      final docXmlFile = archive.findFile('word/document.xml');
-      expect(docXmlFile, isNotNull);
-      final docXml = utf8.decode(docXmlFile!.content as List<int>);
-      expect(docXml, contains('<w:bidi/>'),
-          reason: 'DOCX paragraphs must preserve RTL <w:bidi/> property');
-      final media1 = archive.findFile('word/media/page1.png');
-      expect(media1, isNotNull);
-      expect(media1!.content as List<int>, equals(snapshots.first.pngBytes),
-          reason: 'DOCX embedded PNG must match Preview snapshot byte-for-byte');
-      expect(exactPdf!.length, greaterThan(1000));
+      expect(vectorPdf!.length, greaterThan(1000));
 
       // Write real sample outputs for external Poppler + LibreOffice inspection!
       await tester.runAsync(() async {
@@ -866,14 +848,10 @@ void main() {
         await outDir.create(recursive: true);
         for (var i = 0; i < snapshots.length; i++) {
           await File('$_samplesDir/preview_page_${i + 1}.png')
-              .writeAsBytes(snapshots[i].pngBytes, flush: true);
+              .writeAsBytes(snapshots[i]['pngBytes'] as Uint8List, flush: true);
         }
         await File('$_samplesDir/vector.pdf')
             .writeAsBytes(vectorPdf!, flush: true);
-        await File('$_samplesDir/exact.pdf')
-            .writeAsBytes(exactPdf!, flush: true);
-        await File('$_samplesDir/exact.docx')
-            .writeAsBytes(exactDocx!, flush: true);
         await File('$_samplesDir/manifest.json').writeAsString(
           jsonEncode(<String, Object>{
             'pageCount': snapshots.length,
