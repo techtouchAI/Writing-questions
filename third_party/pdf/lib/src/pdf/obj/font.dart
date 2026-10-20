@@ -345,4 +345,14 @@ See https://github.com/DavBfr/dart_pdf/wiki/Fonts-Management
       rethrow;
     }
   }
+
+  /// Draw [glyphText] glyphs while mapping their CIDs to [toUnicodeText] in
+  /// `/ToUnicode` when supported (e.g. Type0 CID fonts under UAX #9 Rule L4).
+  void putMirroredText(
+    PdfStream stream,
+    String glyphText,
+    String toUnicodeText,
+  ) {
+    putText(stream, glyphText);
+  }
 }

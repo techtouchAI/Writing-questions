@@ -712,8 +712,12 @@ class FlutterTextMetrics implements FontMetricsProvider {
     return fallback;
   }
 
+  // Unicode UAX #9 P2/P3: ASCII digits U+0030..U+0039 have weak class `EN`
+  // (European Number), NOT strong `L`. Treating `0..9` as strong `L` wrongly
+  // flipped auto-direction RTL lines containing digits + brackets/equations
+  // without Arabic letters (such as `'1 )'`, `'(1)'`, or `'1 ) $5^2+6^2=$'`)
+  // to LTR in Preview/PDF/DOCX while the RTL editor displayed them as RTL.
   bool _containsStrongLtr(String text) => text.runes.any((rune) =>
-      (rune >= 0x0030 && rune <= 0x0039) ||
       (rune >= 0x0041 && rune <= 0x005A) ||
       (rune >= 0x0061 && rune <= 0x007A) ||
       (rune >= 0x00C0 && rune <= 0x02FF) ||

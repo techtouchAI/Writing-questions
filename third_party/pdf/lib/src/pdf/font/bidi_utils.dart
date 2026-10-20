@@ -80,29 +80,141 @@ const Map<int, int> basicToIsolatedMappings = {
   0x0629: 0xFE93, // ة
 };
 
+/// Visual glyph sequence paired with its aligned `/ToUnicode` character
+/// sequence for a single right-to-left run.
+class RtlShapedRun {
+  const RtlShapedRun({
+    required this.glyphText,
+    required this.toUnicodeText,
+  });
+
+  /// Visual-order characters selecting the rendered font glyphs (including
+  /// Unicode UAX #9 Rule L4 `Bidi_Mirrored_Glyph` substitutions at odd
+  /// embedding levels).
+  final String glyphText;
+
+  /// Visual-order Unicode characters written to the PDF `/ToUnicode` CMap so
+  /// text extraction, search, copy/paste, and structural probes preserve the
+  /// exact logical bracket characters (`U+0028` / `U+0029`, etc.) while still
+  /// keeping Arabic Presentation Forms for joined letters.
+  final String toUnicodeText;
+}
+
+bool _hasArabicScript(String input) => input.runes.any((rune) =>
+    (rune >= 0x0600 && rune <= 0x08FF) ||
+    (rune >= 0xFB50 && rune <= 0xFEFF) ||
+    (rune >= 0x10E60 && rune <= 0x10E7F) ||
+    (rune >= 0x1EC70 && rune <= 0x1EEFF));
+
+String _fallbackArabicShape(String input) => String.fromCharCodes(
+      arabic.convert(input).runes.map(
+            (rune) => basicToIsolatedMappings[rune] ?? rune,
+          ),
+    );
+
+const Map<int, int> _rtlMirroredGlyphPairs = <int, int>{
+  0x0028: 0x0029, // ( -> )
+  0x0029: 0x0028, // ) -> (
+  0x003C: 0x003E, // < -> >
+  0x003E: 0x003C, // > -> <
+  0x005B: 0x005D, // [ -> ]
+  0x005D: 0x005B, // ] -> [
+  0x007B: 0x007D, // { -> }
+  0x007D: 0x007B, // } -> {
+  0x00AB: 0x00BB, // « -> »
+  0x00BB: 0x00AB, // » -> «
+  0x2039: 0x203A, // ‹ -> ›
+  0x203A: 0x2039, // › -> ‹
+  0xFD3E: 0xFD3F, // ﴾ -> ﴿
+  0xFD3F: 0xFD3E, // ﴿ -> ﴾
+};
+
+/// Shapes a single right-to-left run using Unicode UAX #9 at an explicit odd
+/// RTL paragraph embedding level (`U+202B ... U+202C`, stripped internally by
+/// `package:bidi` so no directional formatting characters leak into either
+/// [RtlShapedRun.glyphText] or [RtlShapedRun.toUnicodeText]).
+///
+/// Running UAX #9 in a single pass at `embeddingLevel = 1` solves both:
+/// 1. Standalone neutral brackets split into their own word/run tokens (such
+///    as `'أ )'`, `'أ ('`, `'( أ )'`, `'(٢٠ درجة)'`, `'1 )'`) receive UAX #9
+///    Rule L4 glyph mirroring instead of falling back to LTR `embeddingLevel=0`.
+/// 2. Tokens already containing Arabic letters alongside brackets (such as
+///    `'أولاً)'` or `'((أ))'`) are reordered and mirrored once in the same UAX #9
+///    pass — never double-reversed or double-mirrored — while any embedded
+///    even-level LTR sub-runs stay unmirrored automatically.
+RtlShapedRun shapeRtlRun(String input) {
+  if (input.isEmpty) {
+    return const RtlShapedRun(glyphText: '', toUnicodeText: '');
+  }
+
+  final bidi.BidiString bidiText;
+  try {
+    // Pass `U+202B ... U+202C` (RLE ... PDF) to establish RTL paragraph level 1
+    // in one UAX #9 pass; `bidi.Paragraph` removes formatting markers from
+    // `bidiText` and `indices` automatically after level resolution.
+    bidiText = bidi.BidiString.fromLogical('\u202B$input\u202C');
+  } on RangeError {
+    if (!_hasArabicScript(input)) rethrow;
+    final shaped = _fallbackArabicShape(input);
+    final mirroredGlyphs = String.fromCharCodes(
+      shaped.runes.map((rune) => _rtlMirroredGlyphPairs[rune] ?? rune),
+    );
+    return RtlShapedRun(glyphText: mirroredGlyphs, toUnicodeText: shaped);
+  }
+
+  final glyphBuffer = <int>[];
+  final unicodeBuffer = <int>[];
+  final paragraphs = bidiText.paragraphs;
+  for (var pIdx = 0; pIdx < paragraphs.length; pIdx++) {
+    final paragraph = paragraphs[pIdx];
+    final endsWithNewLine = paragraph.separator == 10;
+    final bidiCodes = paragraph.bidiText;
+    final endIndex = bidiCodes.length - (endsWithNewLine ? 1 : 0);
+    final origText = paragraph.text;
+    final indices = paragraph.indices;
+
+    for (var i = 0; i < endIndex; i++) {
+      final glyphRune = bidiCodes[i];
+      glyphBuffer.add(glyphRune);
+
+      var unicodeRune = glyphRune;
+      if (i < indices.length) {
+        final origPos = indices[i];
+        if (origPos >= 0 && origPos < origText.length) {
+          final origRune = origText[origPos];
+          if (_rtlMirroredGlyphPairs[origRune] == glyphRune) {
+            unicodeRune = origRune;
+          }
+        }
+      }
+      unicodeBuffer.add(unicodeRune);
+    }
+
+    if (endsWithNewLine) {
+      glyphBuffer.add(10);
+      unicodeBuffer.add(10);
+    }
+  }
+
+  return RtlShapedRun(
+    glyphText: String.fromCharCodes(glyphBuffer),
+    toUnicodeText: String.fromCharCodes(unicodeBuffer),
+  );
+}
+
 /// Applies THE BIDIRECTIONAL ALGORITHM using (https://pub.dev/packages/bidi)
 String logicalToVisual(String input) {
   final bidi.BidiString bidiText;
   try {
     bidiText = bidi.BidiString.fromLogical(input);
-  } on RangeError catch (error) {
-    final hasArabic = input.runes.any((rune) =>
-        (rune >= 0x0600 && rune <= 0x08FF) ||
-        (rune >= 0xFB50 && rune <= 0xFEFF) ||
-        (rune >= 0x10E60 && rune <= 0x10E7F) ||
-        (rune >= 0x1EC70 && rune <= 0x1EEFF));
-    if (!hasArabic) rethrow;
+  } on RangeError {
+    if (!_hasArabicScript(input)) rethrow;
     // package:bidi's normalization can index past its original-length table
     // when an Arabic character decomposes into several code points. Keep PDF
     // export resilient with the package's Arabic word shaper, then map isolated
     // base letters to their Unicode presentation-form equivalents; canonical
     // run positions remain resolved by LayoutEngine.
-    final shaped = String.fromCharCodes(
-      arabic.convert(input).runes.map(
-            (rune) => basicToIsolatedMappings[rune] ?? rune,
-          ),
-    );
-    return shaped;
+    return _fallbackArabicShape(input);
   }
   final buffer = StringBuffer();
   final paragraphs = bidiText.paragraphs;
@@ -110,11 +222,13 @@ String logicalToVisual(String input) {
     final endsWithNewLine = paragraph.separator == 10;
     final endIndex = paragraph.bidiText.length - (endsWithNewLine ? 1 : 0);
     final visual = String.fromCharCodes(paragraph.bidiText, 0, endIndex);
+    // Legacy `pw.RichText` splits on spaces and reverses word order itself on
+    // RTL lines, so word tokens must stay in logical order while glyphs within
+    // each word stay visually shaped; canonical emission uses [shapeRtlRun].
     buffer.write(visual.split(' ').reversed.join(' '));
     if (endsWithNewLine) {
       buffer.writeln();
     }
   }
-  final visualText = buffer.toString();
-  return visualText;
+  return buffer.toString();
 }
