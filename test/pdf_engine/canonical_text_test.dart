@@ -418,6 +418,114 @@ void main() {
     }
   });
 
+  // ---------------------------------------------------------------------
+  // انحدار: اتجاه الأقواس في النص العربي (إصلاح انعكاس القوس في PDF).
+  //
+  // المرجع البصري هو خوارزمية UBA الكاملة (L1–L4) التي ترسمها
+  // المعاينة عبر SkParagraph/HarfBuzz — وهي تطبق قاعدة L4 فتراوي
+  // كل محرف مرآوي في جريان RTL. كانت شيفرة الإصدار تُكمل L1–L3
+  // فقط عبر logicalToVisual لكل كلمة منعزلة، فكلمة قوس محايدة
+  // صرفة (بلا محرف قوي) تُسقِط خوارزميتها المعزولة أساسها إلى LTR
+  // فلا تُراوَى، فيرسم PDF القوس باتجاه معاكس للمعاينة. shapeRtlRun
+  // تكمل L2/L4 ضد اتجاه الجريان المحلول مسبقاً.
+  // ---------------------------------------------------------------------
+  group('RTL bracket mirroring (UAX#9 L4) — the preview/PDF flip', () {
+    test('a lone bracket in an RTL run mirrors to its counterpart', () {
+      // منطقي «أ )»: المعاينة ترسم «( أ» — القوس المغلق مُرآةً
+      // فاتحاً على يسار الألف. فكلمة «)» المنعزلة تُراى «(.».
+      expect(shapeRtlRun(')'), '(');
+      expect(shapeRtlRun('('), ')');
+    });
+
+    test('every mirrored punctuation pair flips in an RTL run', () {
+      expect(shapeRtlRun('['), ']');
+      expect(shapeRtlRun(']'), '[');
+      expect(shapeRtlRun('{'), '}');
+      expect(shapeRtlRun('}'), '{');
+      expect(shapeRtlRun('<'), '>');
+      expect(shapeRtlRun('>'), '<');
+      expect(shapeRtlRun('«'), '»');
+      expect(shapeRtlRun('»'), '«');
+    });
+
+    test('a neutral-only run is reordered then mirrored (L2 then L4)', () {
+      // «((» في سطر RTL تُرسم «))»، و«)(» تُرسم «)(».
+      expect(shapeRtlRun('(('), '))');
+      expect(shapeRtlRun(')('), ')(');
+    });
+
+    test('runs with a strong character keep logicalToVisual unchanged', () {
+      // كلمة تحمل محرفاً قوياً RTL تحسم أساسها الاتجاهي بنفسها
+      // حتى معزولة، فإصدارها القائم صحيح ولا يتغير — ولا يُراوَى
+      // مرتين.
+      expect(shapeRtlRun('أ)'), logicalToVisual('أ)'));
+      expect(shapeRtlRun('عِلْمًا'), logicalToVisual('عِلْمًا'));
+      // وذلك الإصدار القائم يراو القوس المتأخر فعلاً ضد أساس RTL:
+      // «أ)» منطقياً تُرسم «(أ».
+      expect(shapeRtlRun('أ)'), '(أ');
+    });
+
+    test('runs with a digit keep logicalToVisual unchanged', () {
+      // الأرقام المشرقية تُقرأ بالترتيب — لا يعكسها الإصلاح ولا
+      // يُراوها، فتبقى كما كانت بايتاً بايتاً.
+      expect(shapeRtlRun('١٢٣'), logicalToVisual('١٢٣'));
+      expect(shapeRtlRun('(١)'), logicalToVisual('(١)'));
+    });
+
+    test('the label «( أ )» emits hugged brackets per word', () {
+      // التخطيط يقطع «( أ )» إلى ثلاثة جريانات بلا مسافات عند
+      // مواضعها البصرية الكنسية: «)» المنطقية أقصى اليسار، «أ»
+      // وسطاً، «(» أقصى اليمين. كل واحدة تُرسم بمحرفها المرآوي
+      // L4 فتُقرأ الصفحة «( أ )» كما ترسمها المعاينة.
+      expect(shapeRtlRun('('), ')'); // منطقية «(» → يميناً، محرفها «)»
+      expect(shapeRtlRun('أ'), 'أ');
+      expect(shapeRtlRun(')'), '('); // منطقية «)» → يساراً، محرفها «(»
+    });
+
+    test('emission draws the mirrored bracket glyph in the PDF bytes',
+        () async {
+      final font = await _loadRegular();
+      final pdfFont = _pdfFontOf(font);
+      // كلمة منعزلة بلا محرف قوي تُرسم في جريان RTL: ما يقرؤه
+      // العارض (عبر /ToUnicode) هو محرفها المرآوي، مطابقاً للمعاينة.
+      for (final entry in <MapEntry<String, String>>[
+        const MapEntry<String, String>(')', '('),
+        const MapEntry<String, String>('(', ')'),
+        const MapEntry<String, String>('أ', 'أ'),
+      ]) {
+        final shaped = shapeRtlRun(entry.key);
+        // تصحيح TJ غير صفري مضمون → مصفوفة TJ (نفس مسار الإنتاج).
+        final pdfAdvance =
+            pdfFont.stringMetrics(shaped).advanceWidth * 12;
+        final raw = await _emit(
+          (font) => _canonicalWordText(
+            font,
+            entry.key,
+            rtl: true,
+            underline: false,
+            canonicalAdvance: pdfAdvance + 1,
+          ),
+        );
+        final emission = _parseWordEmission(raw);
+        final unicodesByCid = <int, int>{
+          for (final pair in RegExp(
+                  r'<([0-9A-Fa-f]{4})>\s*<([0-9A-Fa-f]{4})>')
+              .allMatches(raw))
+            int.parse(pair.group(1)!, radix: 16):
+                int.parse(pair.group(2)!, radix: 16),
+        };
+        final decoded = <int>[
+          for (var index = 0; index < emission.hex.length; index += 4)
+            unicodesByCid[
+                int.parse(emission.hex.substring(index, index + 4),
+                    radix: 16)]!,
+        ];
+        expect(String.fromCharCodes(decoded), entry.value,
+            reason: 'الكلمة المنطقية «${entry.key}» في جريان RTL');
+      }
+    });
+  });
+
   test('differential parity with pw.Text: viewer-composed ink, underline, '
       'color; only the TJ number and the widened clip differ', () async {
     for (final rtl in <bool>[true, false]) {

@@ -1664,6 +1664,16 @@ void main() {
     // `PdfContentProbe` keeps PDF text operators in emission order (RTL's
     // rightmost-first order), not visual left-to-right order. Measure brackets
     // by their actual x positions within the first line containing a pair.
+    //
+    // العقد (UAX#9 L4): الأقواس محارف مرآوية (`Bidi_Mirrored`) تُرسم
+    // بمحرفها المقابل في جريان RTL. المعاينة (SkParagraph → HarfBuzz
+    // `hb_ot_mirror_chars`) تطبق ذلك دائماً، فالتسمية المنطقية «( أ )»
+    // تُرسم في المعاينة «( أ )» — القوس الفاتح أقصى اليسار. PDF المتجه
+    // يرسم كل كلمة منعزلة، وكلمة قوس محايدة صرفة بلا محرف قوي تُسقط
+    // خوارزميتها المعزولة أساسها إلى LTR فلا تُراوَى — وكان ذلك يقلب
+    // القوس في المطبوع عن المعاينة. `CanonicalText` تكمل L4 الآن against
+    // اتجاه الجريان المحلول، فأقصى قوس يساراً في سطر RTL هو **الفاتح**
+    // «(» مطابقاً للمعاينة. هذا الثابت يقيس تطابق المرايا بين المصرفين.
     final firstVisualParenLine = <ProbedWord>[];
     for (final page in report.pages) {
       for (final line in page.lines) {
@@ -1681,8 +1691,9 @@ void main() {
     expect(firstVisualParenLine.length, greaterThan(1),
         reason: 'أقواس مرسومة أقلّ من المتوقع لتسميات ( أ ) و(١) و(ب): '
             '${firstVisualParenLine.map((word) => word.text).toList()}');
-    expect(firstVisualParenLine.first.text, ')',
-        reason: 'أقصى قوس يساراً في سطر RTL يجب أن يكون المغلق: '
+    expect(firstVisualParenLine.first.text, '(',
+        reason: 'أقصى قوس يساراً في سطر RTL يجب أن يكون الفاتح (مرآة '
+            'UAX#9 L4 كما ترسمه المعاينة): '
             '${firstVisualParenLine.map((word) => '${word.text}@${word.x.toStringAsFixed(1)}').toList()}');
 
     // الأرقام المشرقية واللاتينية في الورقة العربية نفسها.

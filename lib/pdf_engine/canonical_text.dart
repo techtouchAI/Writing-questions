@@ -68,6 +68,93 @@ import 'package:flutter/widgets.dart' show Matrix4;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+/// الجدول المرآوي لقاعدة UAX#9 L4 — كل محرف يحمل خاصية
+/// `Bidi_Mirrored` ورسمه في جريان RTL يكون بمحرفه المقابل.
+///
+/// هذا هو جدول الأقواس والزوايا والاقتباسات الوثائقية الشائعة؛
+/// المحارف الرياضية المرآوية تُرسَم عبر لقطة محرك الرياضيات لا
+/// كنص، فلا دخول لها هنا. الزوج الواحد يظهر مرتين (كل اتجاه).
+const Map<int, int> _kBidiMirrored = <int, int>{
+  0x0028: 0x0029, // ( ↔ )
+  0x0029: 0x0028,
+  0x003C: 0x003E, // < ↔ >
+  0x003E: 0x003C,
+  0x005B: 0x005D, // [ ↔ ]
+  0x005D: 0x005B,
+  0x007B: 0x007D, // { ↔ }
+  0x007D: 0x007B,
+  0x00AB: 0x00BB, // « ↔ »
+  0x00BB: 0x00AB,
+  0x2039: 0x203A, // ‹ ↔ ›
+  0x203A: 0x2039,
+  0x2045: 0x2046, // ⁅ ↔ ⁆
+  0x2046: 0x2045,
+  0x207D: 0x207E, // ⁽ ↔ ⁾
+  0x207E: 0x207D,
+  0x208D: 0x208E, // ₍ ↔ ₎
+  0x208E: 0x208D,
+};
+
+/// يكمل خوارزمية BiDi لجريان واحد حُلّ اتجاهه **RTL** مسبقاً
+/// (عند كامل الفقرة، لا عند الكلمة المعزولة).
+///
+/// الجريان الذي يحمل محرفاً قوياً (عربي/لاتيني/…) أو رقماً يُترَك
+/// لدالة [logicalToVisual] كما كان دائماً — فاتجاه أساسه المعزول
+/// يطابق اتجاه الجريان المحلول، فترتيبها ومراوتها صحيحان حرفيّاً.
+/// أما الجريان المحايد الصرف (قوس أو علامة ترقيم بلا محرف قوي ولا
+/// رقم) فخوارزميته المعزولة تُسقط أساسه إلى LTR (UAX#9 P2/P3: أول
+/// محرف قوي، وافتراضي LTR بلا واحد) فلا تعكس ولا تقلب — بينما في
+/// سياق الفقرة RTL كل محارفه عند مستوى فردي، فتُطبَّق عليه L2
+/// (عكس الترتيب) ثم L4 (مراوة كل محرف مرآوي).
+///
+/// الدالة نقية ولا تقرأ ولا تكتب أي حالة — مصدر الحقيقة للنص
+/// المنطقي هو [text] كما خزّنه المحرر، والناتج هو نص الإصدار فقط.
+String shapeRtlRun(String text) {
+  if (_hasStrongDirectionalOrDigit(text)) {
+    return logicalToVisual(text);
+  }
+  // جريان محايد صرف في سياق RTL: L2 ثم L4.
+  final reversed = String.fromCharCodes(text.runes.toList().reversed);
+  final buffer = StringBuffer();
+  for (final rune in reversed.runes) {
+    buffer.writeCharCode(_kBidiMirrored[rune] ?? rune);
+  }
+  return buffer.toString();
+}
+
+/// هل يحوي النص محرفاً قوياً الاتجاه (L/R/AL) أو رقماً (EN/AN)؟
+/// تلك الكلمات تحسم خوارزميتها المعزولة اتجاهها بنفسها فلا يحتمل
+/// الحرف الأخير منها سوى ما فعلته [logicalToVisual] أصلاً.
+bool _hasStrongDirectionalOrDigit(String text) {
+  for (final rune in text.runes) {
+    if (_isStrongDirectionalRune(rune) || _isDigitRune(rune)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// محرف قوي الاتجاه: لاتيني (L)، أو عبراني/عربي (R/AL).
+bool _isStrongDirectionalRune(int rune) =>
+    // L: الأساسية واللاتينية الممدودة واليونانية والسنغلي
+    (rune >= 0x0041 && rune <= 0x005A) ||
+        (rune >= 0x0061 && rune <= 0x007A) ||
+        (rune >= 0x00C0 && rune <= 0x02FF) ||
+        (rune >= 0x0370 && rune <= 0x058F) ||
+        // R: العبرية
+        (rune >= 0x0590 && rune <= 0x05FF) ||
+        // AL: العربية واشتقاقاتها
+        (rune >= 0x0600 && rune <= 0x08FF) ||
+        (rune >= 0xFB50 && rune <= 0xFEFF) ||
+        (rune >= 0x10E60 && rune <= 0x10E7F) ||
+        (rune >= 0x1EC70 && rune <= 0x1EEFF);
+
+/// رقم: لاتيني (EN)، مشرقي (AN)، أو مشرقي ممدود.
+bool _isDigitRune(int rune) =>
+    (rune >= 0x0030 && rune <= 0x0039) ||
+        (rune >= 0x0660 && rune <= 0x0669) ||
+        (rune >= 0x06F0 && rune <= 0x06F9);
+
 class CanonicalText extends pw.Widget {
   CanonicalText({
     required this.text,
@@ -124,18 +211,31 @@ class CanonicalText extends pw.Widget {
   /// renderings.
   static const double syntheticObliqueShear = 0.25;
 
-  /// Shaped emission text, mirroring package:pdf's default shaping dispatch.
+  /// Shaped emission text, mirroring package:pdf's default shaping dispatch
+  /// **completed** for the run's resolved direction.
   ///
-  /// Rule L4 (mirroring) is deliberately NOT applied here. HarfBuzz mirrors a
-  /// lone "(" when it shapes with direction RTL, and one rendered comparison
-  /// against the preview suggested the PDF should follow. It must not: the
-  /// repository's own P0-GATE-03 pins the opposite contract for this path —
-  /// "the leftmost bracket in an RTL line must be the closing one" — and that
-  /// gate is green on the visual order the vendored shaper already produces.
-  /// Mirroring here flipped the emitted glyphs out of that contract, so the
-  /// change was withdrawn. Settling the two readings needs its own measurement
-  /// against the preview on the same construct, not a substitution here.
-  String shapedText() => rtl ? logicalToVisual(text) : text;
+  /// The dispatch itself (RTL runs through [logicalToVisual], LTR runs raw)
+  /// is unchanged — this path must stay term-for-term with the replaced
+  /// `pw.Text` for every run that carries its own strong character or a
+  /// digit. What changed is the one case the dispatch cannot settle on its
+  /// own: a run the canonical layout resolved RTL **whose text holds no
+  /// strong character and no digit** (a lone bracket, a pure-punctuation
+  /// mark). The vendored algorithm infers a paragraph's base direction from
+  /// its first strong character (UAX#9 P2/P3) and defaults to LTR when there
+  /// is none, so such an isolated run was reordered never and mirrored never
+  /// — while the Preview (SkParagraph → HarfBuzz `hb_ot_mirror_chars`) shapes
+  /// the *same* run against the whole paragraph, resolves it RTL, and paints
+  /// the bracket mirrored. The two readings disagreed exactly on «أ )»-style
+  /// runs: the Preview drew the closing parenthesis mirrored to an opening
+  /// one at the left of the line, the PDF drew it unmirrored in the opposite
+  /// direction — the bracket-flip in the printed page.
+  ///
+  /// [shapeRtlRun] completes rule L2/L4 against the direction the layout
+  /// already resolved, so the PDF now paints what the Preview paints. Runs
+  /// with a strong character or a digit keep [logicalToVisual]'s output
+  /// byte-for-byte (Arabic words, Latin islands, numerals — all unchanged),
+  /// and LTR runs stay raw, so Latin text and equations are untouched.
+  String shapedText() => rtl ? shapeRtlRun(text) : text;
 
   /// Trailing TJ adjustment in viewer-executed thousandths of an em, or null
   /// when there is no correction: the executed word advance (font advance

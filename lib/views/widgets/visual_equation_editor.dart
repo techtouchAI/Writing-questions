@@ -334,8 +334,19 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
       start = selection.start;
       end = selection.end;
     }
-    final pre = text.substring(0, start);
-    final selected = text.substring(start, end);
+    var pre = text.substring(0, start);
+    var selected = text.substring(start, end);
+    if (start == end && start > 0) {
+      // لا تحديد — المؤشر فقط: آخر محرف قبله هو القاعدة، كما
+      // تربط TeX الأس («x^2» ترفع x) وكما يفعل Word. فـ«5» ثم
+      // «x²» تعطي «5²» مباشرة دون أن يضطر المدرس لتحديد «5».
+      // (قاعدة متعددة المحارف تُحدَّد فتُصبح القاعدة كاملة.)
+      final before = text.substring(start - 1, start);
+      if (before.trim().isNotEmpty) {
+        selected = before;
+        pre = text.substring(0, start - 1);
+      }
+    }
     final post = text.substring(end);
     setState(() {
       list
@@ -597,7 +608,51 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: colorScheme.outlineVariant),
       ),
-      child: _buildSequence(_model.nodes),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          for (var index = 0; index < _model.nodes.length; index++)
+            _buildNode(_model.nodes[index], _model.nodes, index),
+          // فتحة الإلحاق: المكوّن التالي يُضاف على مستوى
+          // المعادلة لا داخل البنية قيد التحرير.
+          _buildAppendSlot(colorScheme),
+        ],
+      ),
+    );
+  }
+
+  /// فتحة إلحاق مكوّن على مستوى المعادلة: خانة نص علوية
+  /// جديدة تُركَّز عند النقرة.
+  ///
+  /// الجذر هنا لخلل «تداخل الأجزاء»: كل أداة إدراج كانت
+  /// تُغرز داخل الخانة النشطة — وأثناء تحرير محتوى جذر
+  /// أو كسر، كان العامل التالي (+، =، جذر ثانٍ…) يندرج
+  /// داخل ذلك المحتوى فتبتل «أجزاء» المعادلة بعضها
+  /// («√5 + √8» تولد «√(5+)»). بالنقر على هذه الفتحة
+  /// يعود الإدراج إلى مستوى المعادلة فيُلحق مكوّناً
+  /// مستقلاً بعد الأخير، بترتيب صريح ومستقر.
+  Widget _buildAppendSlot(ColorScheme colorScheme) {
+    return GestureDetector(
+      key: const ValueKey<String>('equation-append-slot'),
+      onTap: () {
+        final fresh = EqText('');
+        setState(() {
+          _model.nodes.add(fresh);
+          _activeText = fresh;
+        });
+        _focusAfterBuild(fresh);
+      },
+      child: Container(
+        width: 42,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: colorScheme.outlineVariant),
+        ),
+        child: const Icon(Icons.add, size: 16, color: Colors.grey),
+      ),
     );
   }
 
@@ -619,6 +674,7 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
     }
     if (node is EqFraction) {
       return _deletable(
+        node,
         parent,
         index,
         Column(
@@ -633,6 +689,7 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
     }
     if (node is EqSqrt) {
       return _deletable(
+        node,
         parent,
         index,
         Row(
@@ -651,6 +708,7 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
     }
     if (node is EqSup) {
       return _deletable(
+        node,
         parent,
         index,
         Row(
@@ -668,6 +726,7 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
     }
     if (node is EqSub) {
       return _deletable(
+        node,
         parent,
         index,
         Row(
@@ -685,6 +744,7 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
     }
     if (node is EqFence) {
       return _deletable(
+        node,
         parent,
         index,
         Row(
@@ -706,6 +766,7 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
     }
     if (node is EqAccent) {
       return _deletable(
+        node,
         parent,
         index,
         Column(
@@ -719,6 +780,7 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
     }
     if (node is EqGroup) {
       return _deletable(
+        node,
         parent,
         index,
         Container(
@@ -774,6 +836,12 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
           ),
         ),
         child: TextField(
+          // مفتاح مستقّر بهوية العقدة: البناء يُعاد مع كل
+          // ضربة زر، فبدون مفتاح تُطابَق الحقول موضعياً
+          // وتُخطئ رابطة المؤشر/التركيز عند إدراج مكوّن
+          // وسط المتتالية. بهوية العقدة يبقى لكل خانة
+          // حالتها ومكوّنها النشط مهما تغيّر الترتيب.
+          key: ValueKey(node),
           controller: controller,
           focusNode: _focusFor(node),
           textDirection: TextDirection.ltr,
@@ -827,8 +895,14 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
   }
 
   /// يغلّف بنية بزر حذف صغير (النص يُحرَّر ولا يُحذَف بزر).
-  Widget _deletable(List<EqNode> parent, int index, Widget child) {
+  ///
+  /// المفتاح بهوية العقدة: حين تُدرج بنية وسط المتتالية
+  /// تُطابَق البنى القائمة بأماكنها ولا تُعاد إقامة
+  /// حالاتها — فلا تتبدّل مواضع المكوّنات ولا تُفقد
+  /// تركيزاتها.
+  Widget _deletable(EqNode node, List<EqNode> parent, int index, Widget child) {
     return Stack(
+      key: ValueKey(node),
       clipBehavior: Clip.none,
       children: <Widget>[
         Padding(
