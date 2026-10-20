@@ -3315,16 +3315,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                         ),
                       ),
                     ),
-                      const Positioned.fill(
-                        child: AbsorbPointer(
-                          child: ColoredBox(
-                            color: Colors.white,
-                            child: Center(
-                              child: CircularProgressIndicator(),
+                      if (_isBusy)
+                        const Positioned.fill(
+                          child: AbsorbPointer(
+                            child: ColoredBox(
+                              color: Colors.white,
+                              child: Center(
+                                child: CircularProgressIndicator(),
+                              ),
                             ),
                           ),
                         ),
-                      ),
                   ],
                 );
               },
