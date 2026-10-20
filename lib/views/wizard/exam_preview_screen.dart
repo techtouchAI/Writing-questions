@@ -6680,6 +6680,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       style: style,
       semanticContent: semanticContent,
       textAlign: textAlign,
+      hint: hint,
       onActivate: () => _activateField(fieldKey, controller),
       onEditFormula: () => _editEquationInField(fieldKey),
       // في وضع التحديد المتعدد لا يبتلع الحقل الضغط المطوّل: يمرّ إلى كتلة
