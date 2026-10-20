@@ -144,6 +144,9 @@ jobs:
               --out "$RUNNER_TEMP/test-digest-gate"
             cat "$RUNNER_TEMP/test-digest-gate/counts.txt" || true
           fi
+          main_counts="$(cat "$RUNNER_TEMP/test-digest/counts.txt" 2>/dev/null || true)"
+          gate_counts="$(cat "$RUNNER_TEMP/test-digest-gate/counts.txt" 2>/dev/null || true)"
+          echo "::notice title=Gate Test Counts::main=[$main_counts] canonical_gate=[$gate_counts]"
 
       # Vacuous-run guards: a drifted --name (or an emptied file list)
       # must fail loudly, never pass silent. Main suite: ~634 tests (72
@@ -661,7 +664,29 @@ jobs:
       # always: a geometry measurement error must not skip the required gate.
       - name: Compare rendered files against the preview (RMSE)
         if: always()
-        run: bash tool/verify_visual_parity.sh build/visual_parity
+        shell: bash
+        run: |
+          bash tool/verify_visual_parity.sh build/visual_parity
+          if [ -s build/visual_parity/report.txt ]; then
+            rep="$(tail -n 18 build/visual_parity/report.txt)"
+            rep="${rep//%/%25}"
+            rep="${rep//$'\r'/%0D}"
+            rep="${rep//$'\n'/%0A}"
+            echo "::notice title=Visual Parity Gate Summary::$rep"
+          fi
+
+      - name: Verify Issue 1 & Issue 2 sample exports via Poppler and LibreOffice
+        shell: bash
+        run: |
+          flutter test test/pdf_engine/arabic_parentheses_pipeline_test.dart
+          bash tool/verify_visual_parity.sh build/issue1_issue2_samples
+          if [ -s build/issue1_issue2_samples/report.txt ]; then
+            srep="$(tail -n 18 build/issue1_issue2_samples/report.txt)"
+            srep="${srep//%/%25}"
+            srep="${srep//$'\r'/%0D}"
+            srep="${srep//$'\n'/%0A}"
+            echo "::notice title=Issue 1+2 Sample Export Visual Parity::$srep"
+          fi
 
       # سبب الفشل يُنشر كتعليق على التشغيل: سجلات CI قد لا تكون مقروءة من كل
       # بيئة، والملخّص يجب أن يحمل السبب لا رقم الخروج وحده.

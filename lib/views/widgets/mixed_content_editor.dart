@@ -460,12 +460,15 @@ class _MathBlockEditor extends StatelessWidget {
                 )
               : Directionality(
                   textDirection: TextDirection.ltr,
-                  child: Center(
-                    child: SafeMathTex(
-                      block.latex,
-                      mathStyle:
-                          block.isBlock ? MathStyle.display : MathStyle.text,
-                      textStyle: const TextStyle(fontSize: 18),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Center(
+                      child: SafeMathTex(
+                        block.latex,
+                        mathStyle:
+                            block.isBlock ? MathStyle.display : MathStyle.text,
+                        textStyle: const TextStyle(fontSize: 18),
+                      ),
                     ),
                   ),
                 ),

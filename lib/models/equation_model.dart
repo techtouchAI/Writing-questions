@@ -25,10 +25,25 @@ String sanitizeMathText(String input) => input.replaceAll(r'$', r'\$');
 String _joinNodes(List<EqNode> nodes) =>
     nodes.map((node) => node.toLatex()).join();
 
-/// عقدة واحدة في بنية المعادلة المرئية.
+int _nextEqNodeSerial = 0;
+
+String _allocateEqNodeId() => 'eq_${++_nextEqNodeSerial}';
+
+/// عقدة واحدة في بنية المعادلة المرئية بمعرّف مستقر عبر التحديثات.
 abstract class EqNode {
+  EqNode({String? id}) : id = id ?? _allocateEqNodeId();
+
+  /// معرّف مستقر للعقدة داخل جلسة التحرير والاختبارات لمنع انزياح المفاتيح.
+  final String id;
+
   /// يولّد LaTeX الداخلي لهذه العقدة.
   String toLatex();
+
+  /// الخانات الفرعية المرتبة من اليسار إلى اليمين (بسط ← مقام، قاعدة ← أس...).
+  List<List<EqNode>> get slots => const <List<EqNode>>[];
+
+  /// نسخة عميقة مستقلة (مع خيار الحفاظ على المعرّفات في سجل التراجع).
+  EqNode clone({bool preserveIds = false});
 }
 
 /// نص رياضي حر (أرقام/حروف/رموز) يُكتب مباشرة داخل خانة.
@@ -39,17 +54,21 @@ abstract class EqNode {
 /// المحارف الخاصة تُهرَّب (`{` ← `\{`) والمكافئة تُكتب أوامرها القياسية
 /// (`α` ← `\alpha`) والناقصة تُطبَّع (`−` ← `-`) — انظر [MathSymbols.toLatex].
 class EqText extends EqNode {
-  EqText(this.text);
+  EqText(this.text, {super.id});
 
   String text;
 
   @override
   String toLatex() => MathSymbols.toLatex(text);
+
+  @override
+  EqText clone({bool preserveIds = false}) =>
+      EqText(text, id: preserveIds ? id : null);
 }
 
 /// كسر ببسط ومقام قابلين للتحرير (`\frac{num}{den}`).
 class EqFraction extends EqNode {
-  EqFraction({List<EqNode>? numerator, List<EqNode>? denominator})
+  EqFraction({List<EqNode>? numerator, List<EqNode>? denominator, super.id})
       : numerator = numerator ?? <EqNode>[],
         denominator = denominator ?? <EqNode>[];
 
@@ -57,13 +76,28 @@ class EqFraction extends EqNode {
   final List<EqNode> denominator;
 
   @override
+  List<List<EqNode>> get slots => <List<EqNode>>[numerator, denominator];
+
+  @override
   String toLatex() =>
       '\\frac{${_joinNodes(numerator)}}{${_joinNodes(denominator)}}';
+
+  @override
+  EqFraction clone({bool preserveIds = false}) => EqFraction(
+        id: preserveIds ? id : null,
+        numerator: <EqNode>[
+          for (final child in numerator) child.clone(preserveIds: preserveIds),
+        ],
+        denominator: <EqNode>[
+          for (final child in denominator)
+            child.clone(preserveIds: preserveIds),
+        ],
+      );
 }
 
 /// جذر تربيعي (أو نوني عند ملء [root]) قابل للتحرير.
 class EqSqrt extends EqNode {
-  EqSqrt({List<EqNode>? body, List<EqNode>? root})
+  EqSqrt({List<EqNode>? body, List<EqNode>? root, super.id})
       : body = body ?? <EqNode>[],
         root = root ?? <EqNode>[];
 
@@ -73,17 +107,33 @@ class EqSqrt extends EqNode {
   final List<EqNode> root;
 
   @override
+  List<List<EqNode>> get slots => root.isNotEmpty
+      ? <List<EqNode>>[root, body]
+      : <List<EqNode>>[body];
+
+  @override
   String toLatex() {
     if (root.isEmpty) {
       return '\\sqrt{${_joinNodes(body)}}';
     }
     return '\\sqrt[${_joinNodes(root)}]{${_joinNodes(body)}}';
   }
+
+  @override
+  EqSqrt clone({bool preserveIds = false}) => EqSqrt(
+        id: preserveIds ? id : null,
+        body: <EqNode>[
+          for (final child in body) child.clone(preserveIds: preserveIds),
+        ],
+        root: <EqNode>[
+          for (final child in root) child.clone(preserveIds: preserveIds),
+        ],
+      );
 }
 
 /// أسّ/قوة: قاعدة ودليل قابلان للتحرير (`x^{2}`).
 class EqSup extends EqNode {
-  EqSup({List<EqNode>? base, List<EqNode>? exponent})
+  EqSup({List<EqNode>? base, List<EqNode>? exponent, super.id})
       : base = base ?? <EqNode>[],
         exponent = exponent ?? <EqNode>[];
 
@@ -91,12 +141,26 @@ class EqSup extends EqNode {
   final List<EqNode> exponent;
 
   @override
+  List<List<EqNode>> get slots => <List<EqNode>>[base, exponent];
+
+  @override
   String toLatex() => '${_scriptPart(base)}^{${_joinNodes(exponent)}}';
+
+  @override
+  EqSup clone({bool preserveIds = false}) => EqSup(
+        id: preserveIds ? id : null,
+        base: <EqNode>[
+          for (final child in base) child.clone(preserveIds: preserveIds),
+        ],
+        exponent: <EqNode>[
+          for (final child in exponent) child.clone(preserveIds: preserveIds),
+        ],
+      );
 }
 
 /// دليل سفري: قاعدة ودليل قابلان للتحرير (`x_{1}`).
 class EqSub extends EqNode {
-  EqSub({List<EqNode>? base, List<EqNode>? subscript})
+  EqSub({List<EqNode>? base, List<EqNode>? subscript, super.id})
       : base = base ?? <EqNode>[],
         subscript = subscript ?? <EqNode>[];
 
@@ -104,13 +168,31 @@ class EqSub extends EqNode {
   final List<EqNode> subscript;
 
   @override
+  List<List<EqNode>> get slots => <List<EqNode>>[base, subscript];
+
+  @override
   String toLatex() => '${_scriptPart(base)}_{${_joinNodes(subscript)}}';
+
+  @override
+  EqSub clone({bool preserveIds = false}) => EqSub(
+        id: preserveIds ? id : null,
+        base: <EqNode>[
+          for (final child in base) child.clone(preserveIds: preserveIds),
+        ],
+        subscript: <EqNode>[
+          for (final child in subscript) child.clone(preserveIds: preserveIds),
+        ],
+      );
 }
 
 /// أقواس مرئية حول محتوى قابل للتحرير (`(...)` / `[...]` / `\{...\}`).
 class EqFence extends EqNode {
-  EqFence({required this.left, required this.right, List<EqNode>? body})
-      : body = body ?? <EqNode>[];
+  EqFence({
+    required this.left,
+    required this.right,
+    List<EqNode>? body,
+    super.id,
+  }) : body = body ?? <EqNode>[];
 
   /// القوس الأيسر بصيغة LaTeX (`(` أو `[` أو `\{` أو `\left(`...).
   final String left;
@@ -121,17 +203,36 @@ class EqFence extends EqNode {
   final List<EqNode> body;
 
   @override
+  List<List<EqNode>> get slots => <List<EqNode>>[body];
+
+  @override
   String toLatex() => '$left${_joinNodes(body)}$right';
+
+  @override
+  EqFence clone({bool preserveIds = false}) => EqFence(
+        id: preserveIds ? id : null,
+        left: left,
+        right: right,
+        body: <EqNode>[
+          for (final child in body) child.clone(preserveIds: preserveIds),
+        ],
+      );
 }
 
 /// علامة فوق متغير: سهم `\vec` أو قبعة `\hat` أو خط `\bar`/`\overline`.
 class EqAccent extends EqNode {
-  EqAccent({this.kind = EqAccentKind.vector, List<EqNode>? body})
-      : body = body ?? <EqNode>[];
+  EqAccent({
+    this.kind = EqAccentKind.vector,
+    List<EqNode>? body,
+    super.id,
+  }) : body = body ?? <EqNode>[];
 
   final EqAccentKind kind;
 
   final List<EqNode> body;
+
+  @override
+  List<List<EqNode>> get slots => <List<EqNode>>[body];
 
   String get _command {
     switch (kind) {
@@ -146,6 +247,15 @@ class EqAccent extends EqNode {
 
   @override
   String toLatex() => '$_command{${_joinNodes(body)}}';
+
+  @override
+  EqAccent clone({bool preserveIds = false}) => EqAccent(
+        id: preserveIds ? id : null,
+        kind: kind,
+        body: <EqNode>[
+          for (final child in body) child.clone(preserveIds: preserveIds),
+        ],
+      );
 }
 
 /// نوع العلامة فوق المتغير.
@@ -153,12 +263,25 @@ enum EqAccentKind { vector, hat, bar }
 
 /// مجموعة صريحة بأقواس معقوفة (`{...}`) تحفظ تجميع LaTeX الأصلي.
 class EqGroup extends EqNode {
-  EqGroup([List<EqNode>? children]) : children = children ?? <EqNode>[];
+  EqGroup([List<EqNode>? children, String? id])
+      : children = children ?? <EqNode>[],
+        super(id: id);
 
   final List<EqNode> children;
 
   @override
+  List<List<EqNode>> get slots => <List<EqNode>>[children];
+
+  @override
   String toLatex() => '{${_joinNodes(children)}}';
+
+  @override
+  EqGroup clone({bool preserveIds = false}) => EqGroup(
+        <EqNode>[
+          for (final child in children) child.clone(preserveIds: preserveIds),
+        ],
+        preserveIds ? id : null,
+      );
 }
 
 /// قاعدة الأسّ/الدليل: المحرف الواحد يُكتب عارياً (`x^2`)، وغيره
@@ -190,6 +313,274 @@ class EquationModel {
   /// يولّد LaTeX الداخلي للمعادلة كاملة.
   String toLatex() => _joinNodes(nodes);
 
+  /// نسخة عميقة مستقلة من النموذج الكامل.
+  EquationModel clone({bool preserveIds = false}) => EquationModel(
+        nodes: <EqNode>[
+          for (final node in nodes) node.clone(preserveIds: preserveIds),
+        ],
+      );
+
+  /// كل خانات النص الورقية بترتيب القراءة الرياضي من اليسار إلى اليمين.
+  List<EqText> allLeafTextSlots() {
+    final result = <EqText>[];
+    void visit(List<EqNode> list) {
+      for (final node in list) {
+        if (node is EqText) {
+          result.add(node);
+        } else {
+          for (final slot in node.slots) {
+            visit(slot);
+          }
+        }
+      }
+    }
+
+    visit(nodes);
+    return result;
+  }
+
+  /// موقع عقدة بالمعرّف داخل الشجرة (القائمة المالكة، الفهرس، العقدة الأم).
+  ({List<EqNode> parentList, int index, EqNode node, EqNode? parentNode})?
+      locateById(String targetId) {
+    ({List<EqNode> parentList, int index, EqNode node, EqNode? parentNode})?
+        found;
+    void search(List<EqNode> list, EqNode? parentNode) {
+      for (var index = 0; index < list.length; index++) {
+        final node = list[index];
+        if (node.id == targetId) {
+          found = (
+            parentList: list,
+            index: index,
+            node: node,
+            parentNode: parentNode,
+          );
+          return;
+        }
+        for (final slot in node.slots) {
+          search(slot, node);
+          if (found != null) return;
+        }
+      }
+    }
+
+    search(nodes, null);
+    return found;
+  }
+
+  /// سلسلة الأسلاف البنيوية (من الجذر إلى العقدة الحاضنة المباشرة).
+  List<EqNode> ancestorChain(String targetId) {
+    final chain = <EqNode>[];
+    bool walk(List<EqNode> list) {
+      for (final node in list) {
+        if (node.id == targetId) return true;
+        chain.add(node);
+        for (final slot in node.slots) {
+          if (walk(slot)) return true;
+        }
+        chain.removeLast();
+      }
+      return false;
+    }
+
+    walk(nodes);
+    return chain;
+  }
+
+  /// العقدة المركبة الحاضنة المباشرة للخانة المعطاة (أو `null` في المستوى الأعلى).
+  EqNode? enclosingCompound(String targetId) {
+    final chain = ancestorChain(targetId);
+    return chain.isEmpty ? null : chain.last;
+  }
+
+  /// ينتقل إلى الخانة التالية يساراً→يميناً، أو يخرج من البنية المركبة الحالية
+  /// بإيجاد/إدراج خانة نص شقيقة بعدها مباشرةً في متتالية الأب.
+  EqText stepNextOrExit(String? activeLeafId) {
+    final leaves = allLeafTextSlots();
+    if (activeLeafId == null) {
+      if (leaves.isNotEmpty) return leaves.last;
+      final fresh = EqText('');
+      nodes.add(fresh);
+      return fresh;
+    }
+
+    final compound = enclosingCompound(activeLeafId);
+    if (compound != null) {
+      final compoundLeaves = <EqText>[];
+      void collect(EqNode n) {
+        if (n is EqText) {
+          compoundLeaves.add(n);
+        } else {
+          for (final s in n.slots) {
+            for (final c in s) {
+              collect(c);
+            }
+          }
+        }
+      }
+
+      collect(compound);
+      final posInCompound =
+          compoundLeaves.indexWhere((leaf) => leaf.id == activeLeafId);
+      if (posInCompound >= 0 && posInCompound + 1 < compoundLeaves.length) {
+        return compoundLeaves[posInCompound + 1];
+      }
+      // آخر خانة داخل المكوّن المركب ← اخرج إلى شقيق بعده في قائمة الأب.
+      final loc = locateById(compound.id);
+      if (loc != null) {
+        if (loc.index + 1 < loc.parentList.length &&
+            loc.parentList[loc.index + 1] is EqText) {
+          return loc.parentList[loc.index + 1] as EqText;
+        }
+        final nextSibling = EqText('');
+        loc.parentList.insert(loc.index + 1, nextSibling);
+        return nextSibling;
+      }
+    }
+
+    final pos = leaves.indexWhere((leaf) => leaf.id == activeLeafId);
+    if (pos >= 0 && pos + 1 < leaves.length) {
+      return leaves[pos + 1];
+    }
+    if (nodes.isNotEmpty && nodes.last is EqText) {
+      return nodes.last as EqText;
+    }
+    final trailing = EqText('');
+    nodes.add(trailing);
+    return trailing;
+  }
+
+  /// ينتقل إلى الخانة السابقة في الترتيب الرياضي من اليمين إلى اليسار.
+  EqText? stepPrevious(String? activeLeafId) {
+    final leaves = allLeafTextSlots();
+    if (leaves.isEmpty) return null;
+    if (activeLeafId == null) return leaves.first;
+    final pos = leaves.indexWhere((leaf) => leaf.id == activeLeafId);
+    if (pos > 0) return leaves[pos - 1];
+    return leaves.first;
+  }
+
+  /// يدرج/يفعّل خانة نص شقيقة قبل المكوّن المركب الحالي أو الخانة الحالية.
+  EqText insertSlotBefore(String? activeLeafId) {
+    if (activeLeafId == null) {
+      if (nodes.isNotEmpty && nodes.first is EqText) {
+        return nodes.first as EqText;
+      }
+      final fresh = EqText('');
+      nodes.insert(0, fresh);
+      return fresh;
+    }
+    final anchorId = enclosingCompound(activeLeafId)?.id ?? activeLeafId;
+    final loc = locateById(anchorId);
+    if (loc == null) {
+      final fresh = EqText('');
+      nodes.insert(0, fresh);
+      return fresh;
+    }
+    if (loc.index > 0 && loc.parentList[loc.index - 1] is EqText) {
+      return loc.parentList[loc.index - 1] as EqText;
+    }
+    final fresh = EqText('');
+    loc.parentList.insert(loc.index, fresh);
+    return fresh;
+  }
+
+  /// يدرج/يفعّل خانة نص شقيقة بعد المكوّن المركب الحالي أو الخانة الحالية.
+  EqText insertSlotAfter(String? activeLeafId) {
+    if (activeLeafId == null) {
+      if (nodes.isNotEmpty && nodes.last is EqText) {
+        return nodes.last as EqText;
+      }
+      final fresh = EqText('');
+      nodes.add(fresh);
+      return fresh;
+    }
+    final anchorId = enclosingCompound(activeLeafId)?.id ?? activeLeafId;
+    final loc = locateById(anchorId);
+    if (loc == null) {
+      final fresh = EqText('');
+      nodes.add(fresh);
+      return fresh;
+    }
+    if (loc.index + 1 < loc.parentList.length &&
+        loc.parentList[loc.index + 1] is EqText) {
+      return loc.parentList[loc.index + 1] as EqText;
+    }
+    final fresh = EqText('');
+    loc.parentList.insert(loc.index + 1, fresh);
+    return fresh;
+  }
+
+  /// يحذف عقدة بنيوية ويدمج الخانات النصية المتجاورة حول موضع الحذف بسلاسة
+  /// مع إرجاع الخانة النشطة الجديدة وموضع المؤشر الدقيق عند موضع الالتحام.
+  ({EqText? focus, int caretOffset}) removeComponentAndRefocus(
+    List<EqNode> parent,
+    int index,
+  ) {
+    if (index < 0 || index >= parent.length) {
+      final fallback = allLeafTextSlots();
+      return (
+        focus: fallback.isEmpty ? null : fallback.last,
+        caretOffset: fallback.isEmpty ? 0 : fallback.last.text.length,
+      );
+    }
+    parent.removeAt(index);
+
+    // إذا التقى نصّان شقيقان حول موضع الحذف، يُدمجان دون فقد موضع المؤشر.
+    if (index > 0 &&
+        index <= parent.length &&
+        index < parent.length &&
+        parent[index - 1] is EqText &&
+        parent[index] is EqText) {
+      final left = parent[index - 1] as EqText;
+      final right = parent[index] as EqText;
+      final seam = left.text.length;
+      left.text = left.text + right.text;
+      parent.removeAt(index);
+      return (focus: left, caretOffset: seam);
+    }
+
+    // إن أفرغ الحذف خانة فرعية (داخل بسط/جذر/قوس)، نضمن بقاء خانة قابلة للكتابة.
+    if (!identical(parent, nodes) && parent.isEmpty) {
+      final placeholder = EqText('');
+      parent.add(placeholder);
+      return (focus: placeholder, caretOffset: 0);
+    }
+
+    if (index < parent.length && parent[index] is EqText) {
+      return (focus: parent[index] as EqText, caretOffset: 0);
+    }
+    if (index > 0 && parent[index - 1] is EqText) {
+      final left = parent[index - 1] as EqText;
+      return (focus: left, caretOffset: left.text.length);
+    }
+    final remaining = allLeafTextSlots();
+    if (remaining.isEmpty) {
+      return (focus: null, caretOffset: 0);
+    }
+    final clamped = index.clamp(0, remaining.length - 1);
+    return (
+      focus: remaining[clamped],
+      caretOffset: remaining[clamped].text.length,
+    );
+  }
+
+  static final RegExp _unicodeRadicalBraced = RegExp(r'√\{([^}]*)\}');
+  static final RegExp _unicodeRadicalAtom = RegExp(r'√([A-Za-z0-9]+)');
+
+  static String _normalizeLegacyInput(String latex) {
+    if (!latex.contains('√') &&
+        !latex.runes.any((r) => r >= 0x0080 && r != 0x00B0)) {
+      return latex;
+    }
+    var normalized = MathSymbols.canonicalize(latex);
+    if (normalized.contains('√')) {
+      normalized = normalized
+          .replaceAllMapped(_unicodeRadicalBraced, (m) => '\\sqrt{${m[1]}}')
+          .replaceAllMapped(_unicodeRadicalAtom, (m) => '\\sqrt{${m[1]}}');
+    }
+    return normalized;
+  }
+
   /// يحلّل LaTeX مخزَّناً إلى بنية مرئية قابلة للتحرير.
   ///
   /// البنى المدعومة تركيبياً: `\frac` و`\sqrt` (مع `[n]` الاختياري)
@@ -198,7 +589,9 @@ class EquationModel {
   /// فلا يُفقَد معنى أي معادلة قديمة ولا تُستبدل بأخرى فارغة.
   static EquationModel parse(String latex) {
     try {
-      return EquationModel(nodes: _EqParser(latex).parseTopLevel());
+      return EquationModel(
+        nodes: _EqParser(_normalizeLegacyInput(latex)).parseTopLevel(),
+      );
     } catch (_) {
       return EquationModel(nodes: <EqNode>[EqText(latex)]);
     }
@@ -515,7 +908,28 @@ class _EqParser {
         if (nodes.isEmpty) {
           base = <EqNode>[EqText('')];
         } else {
-          base = <EqNode>[nodes.removeLast()];
+          final previous = nodes.removeLast();
+          if (previous is EqGroup) {
+            // `{x+1}^{2}` ← القاعدة هي محتوى المجموعة مباشرةً دون تكرار `{}`.
+            base = previous.children.isEmpty
+                ? <EqNode>[EqText('')]
+                : previous.children;
+          } else if (previous is EqText && previous.text.length > 1) {
+            // في TeX يرتبط `^`/`_` بالمحرف الرياضي الأخير فقط (`5 + 6^{2}` ←
+            // نص `'5 + '` يتبعه `6^{2}`، لا `'{5 + 6}^{2}'`).
+            final runes = previous.text.runes.toList(growable: false);
+            if (runes.length > 1) {
+              final prefix =
+                  String.fromCharCodes(runes.sublist(0, runes.length - 1));
+              final lastAtom = String.fromCharCode(runes.last);
+              nodes.add(EqText(prefix));
+              base = <EqNode>[EqText(lastAtom)];
+            } else {
+              base = <EqNode>[previous];
+            }
+          } else {
+            base = <EqNode>[previous];
+          }
         }
         nodes.add(
           char == '^'
