@@ -698,6 +698,9 @@ void main() {
       expect(openLine, isNotNull, reason: 'Line "أ (" must exist on page 1');
       expect(pureLtrLine, isNotNull,
           reason: 'Line "Solve (x + 1) = (2x - 3)" must exist on page 1');
+      final resolvedCloseLine = closeLine!;
+      final resolvedOpenLine = openLine!;
+      final resolvedPureLtrLine = pureLtrLine!;
 
       Rect bracketPixelRect(LayoutLine line, String ch) {
         final word = line.runs
@@ -715,13 +718,13 @@ void main() {
         page1Rgba,
         page1W,
         page1H,
-        bracketPixelRect(closeLine!, ')'),
+        bracketPixelRect(resolvedCloseLine, ')'),
       );
       final openCurvature = _measureBracketCurvatureDeltaPx(
         page1Rgba,
         page1W,
         page1H,
-        bracketPixelRect(openLine!, '('),
+        bracketPixelRect(resolvedOpenLine, '('),
       );
       // `أ )` visually draws `(` on the left of `أ` (mid apex strictly LEFT of tips -> < 0)!
       // `أ (` visually draws `)` on the left of `أ` (mid apex strictly RIGHT of tips -> > 0)!
@@ -778,16 +781,16 @@ void main() {
       //  - LTR `Solve (x + 1) = (2x - 3)` ON THE SAME PAGE: `'('` word has
       //    `/ToUnicode == '('` AND `glyf` contour == `parenleft` (`(`), while
       //    `')'` word has `/ToUnicode == ')'` AND `glyf` contour == `parenright` (`)`)!
-      final closeWord = closeLine.runs
+      final closeWord = resolvedCloseLine.runs
           .expand((r) => r.words)
           .firstWhere((w) => w.text.trim() == ')');
-      final openWord = openLine.runs
+      final openWord = resolvedOpenLine.runs
           .expand((r) => r.words)
           .firstWhere((w) => w.text.trim() == '(');
-      final ltrOpenWord = pureLtrLine!.runs
+      final ltrOpenWord = resolvedPureLtrLine.runs
           .expand((r) => r.words)
           .firstWhere((w) => w.text.startsWith('('));
-      final ltrCloseWord = pureLtrLine.runs
+      final ltrCloseWord = resolvedPureLtrLine.runs
           .expand((r) => r.words)
           .firstWhere((w) => w.text.endsWith(')'));
 
@@ -799,7 +802,7 @@ void main() {
         );
       }
 
-      final pdfCloseToken = tokenAt(closeWord.x, closeLine.baseline);
+      final pdfCloseToken = tokenAt(closeWord.x, resolvedCloseLine.baseline);
       expect(pdfCloseToken.unicodeText, ')',
           reason: 'Logical /ToUnicode of "أ )" bracket must remain ")"');
       final closeGlyphBytes = inspected
@@ -810,7 +813,7 @@ void main() {
           reason:
               'Vector PDF glyf outline for RTL "أ )" must be mirrored parenleft "(" matching Preview!');
 
-      final pdfOpenToken = tokenAt(openWord.x, openLine.baseline);
+      final pdfOpenToken = tokenAt(openWord.x, resolvedOpenLine.baseline);
       expect(pdfOpenToken.unicodeText, '(',
           reason: 'Logical /ToUnicode of "أ (" bracket must remain "("');
       final openGlyphBytes = inspected
@@ -821,7 +824,7 @@ void main() {
           reason:
               'Vector PDF glyf outline for RTL "أ (" must be mirrored parenright ")" matching Preview!');
 
-      final pdfLtrOpen = tokenAt(ltrOpenWord.x, pureLtrLine.baseline);
+      final pdfLtrOpen = tokenAt(ltrOpenWord.x, resolvedPureLtrLine.baseline);
       expect(pdfLtrOpen.unicodeText.codeUnitAt(0), 0x0028);
       expect(
         inspected.fonts[pdfLtrOpen.fontKey]!.parser
@@ -831,7 +834,7 @@ void main() {
         reason: 'LTR "(" on the very same page must NOT be flipped!',
       );
 
-      final pdfLtrClose = tokenAt(ltrCloseWord.x, pureLtrLine.baseline);
+      final pdfLtrClose = tokenAt(ltrCloseWord.x, resolvedPureLtrLine.baseline);
       expect(
         pdfLtrClose.unicodeText.codeUnitAt(pdfLtrClose.unicodeText.length - 1),
         0x0029,
