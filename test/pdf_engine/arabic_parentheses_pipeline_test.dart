@@ -9,8 +9,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdf/pdf.dart';
-// ignore: implementation_imports
-import 'package:pdf/src/pdf/font/ttf_parser.dart';
 import 'package:provider/provider.dart';
 
 import 'package:writing_questions_app/layout/canonical/canonical_layout_preview.dart';
@@ -310,6 +308,23 @@ double _measureBracketCurvatureDeltaPx(
   return meanMidX - meanTipX;
 }
 
+Future<void> _loadAppFonts() async {
+  Future<void> load(String family, List<String> assets) async {
+    final loader = FontLoader(family);
+    for (final asset in assets) {
+      loader.addFont(rootBundle.load(asset));
+    }
+    await loader.load();
+  }
+
+  await load(ExamFont.arabicFamily, <String>[
+    ExamFonts.regularAsset,
+    ExamFonts.boldAsset,
+  ]);
+  await load('Amiri', <String>[ExamFont.quranicAsset]);
+  await load('Tajawal', <String>['assets/fonts/Tajawal-Regular.ttf']);
+}
+
 PdfMathRasters _sharedMathRasters(
   LayoutDocument layout,
   CanonicalLayoutPreviewAssets assets,
@@ -319,15 +334,10 @@ PdfMathRasters _sharedMathRasters(
     for (final run in line.runs) {
       final raster = assets.mathRasters[run.id];
       if (raster == null) continue;
-      final key = PdfMathRasters.cacheKey(
-        run.text,
-        run.style.fontSizePt,
-        display: false,
-      );
-      cache.putIfAbsent(key, () => raster);
+      cache[PdfMathRasters.key(run.text, run.style.fontSizePt)] = raster;
     }
   }
-  return PdfMathRasters.fromCache(cache);
+  return PdfMathRasters.serving(cache);
 }
 
 bool _containsHiddenBidiControls(String text) => text.runes.any(
@@ -393,7 +403,7 @@ void main() {
     testWidgets(
         'ASCII digits + brackets ("1 )", "1 (", "(1)") stay RTL in auto-direction blocks matching Editor, while Latin stays LTR',
         (_) async {
-      await loadAppFonts();
+      await _loadAppFonts();
       const metrics = FlutterTextMetrics();
       const style = LayoutTextStyle(
         font: PaperFont.naskh,
@@ -459,7 +469,7 @@ void main() {
     testWidgets(
         'End-to-end Editor/Storage -> Skia Preview pixels -> Vector PDF glyf contours & ToUnicode -> Exact PDF/DOCX across all bracket cases',
         (tester) async {
-      await loadAppFonts();
+      await _loadAppFonts();
       final sourceFontData = await rootBundle.load(ExamFonts.regularAsset);
       final sourceParser = TtfParser(sourceFontData);
       final expectedParenLeftOutline =
@@ -473,7 +483,7 @@ void main() {
       final originalDoc = ExamDocument(
         id: 'arabic-parens-e2e',
         name: 'اختبار شامل للأقواس والمعادلات المركبة',
-        header: const ExamHeaderModel(
+        header: ExamHeaderModel.initial(
           schoolName: 'ثانوية المتفوقين (للبنين)',
           examType: 'اختبار (الفصل الأول)',
           academicYear: '2026 / 2027',
@@ -519,19 +529,21 @@ void main() {
             branches: <BranchModel>[
               BranchModel(
                 id: 'b1',
-                statement: 'اختر الجواب الصحيح من بين الأقواس:',
-                items: <BranchItem>[
-                  BranchItem(
-                    id: 'mcq-1',
-                    kind: PointKind.multipleChoice,
-                    text: 'قيمة الجذر التربيعي في العبارة (أ):',
-                    marks: 5,
-                    options: <QuestionOption>[
-                      QuestionOption(id: 'o1', text: 'خمسة (5)'),
-                      QuestionOption(id: 'o2', text: 'ستة (6)'),
-                    ],
-                  ),
-                ],
+                content: BranchContent(
+                  statement: 'اختر الجواب الصحيح من بين الأقواس:',
+                  items: <BranchItem>[
+                    BranchItem(
+                      id: 'mcq-1',
+                      kind: PointKind.multipleChoice,
+                      text: 'قيمة الجذر التربيعي في العبارة (أ):',
+                      marks: 5,
+                      options: <QuestionOption>[
+                        QuestionOption(id: 'o1', text: 'خمسة (5)'),
+                        QuestionOption(id: 'o2', text: 'ستة (6)'),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -540,11 +552,9 @@ void main() {
 
       // 1. Storage save + reopen JSON round-trip check:
       //    Exact logical order preserved byte-for-byte, zero hidden controls.
-      final encodedJson = jsonEncode(originalDoc.toJson());
+      final encodedJson = originalDoc.toJson();
       expect(_containsHiddenBidiControls(encodedJson), isFalse);
-      final reopenedDoc = ExamDocument.fromJson(
-        jsonDecode(encodedJson) as Map<String, dynamic>,
-      );
+      final reopenedDoc = ExamDocument.fromJson(encodedJson);
       expect(reopenedDoc.questions.single.items[0].text, 'أ )');
       expect(reopenedDoc.questions.single.items[1].text, 'أ (');
       expect(
@@ -681,7 +691,7 @@ void main() {
         final run = line.runs.firstWhere((r) => r.text.trim() == ch);
         return Rect.fromLTWH(
           LayoutUnits.ptToPx(run.x),
-          LayoutUnits.ptToPx(line.top),
+          LayoutUnits.ptToPx(line.y),
           LayoutUnits.ptToPx(run.width),
           LayoutUnits.ptToPx(line.height),
         );

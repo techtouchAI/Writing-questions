@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/equation_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
+import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/views/widgets/mixed_content_editor.dart';
 import 'package:writing_questions_app/views/widgets/safe_math_tex.dart';
@@ -177,6 +176,8 @@ void main() {
         () {
       final doc = ExamDocument(
         id: 'eq-save-reopen',
+        name: 'اختبار المعادلات المركبة',
+        header: ExamHeaderModel.initial(),
         questions: <QuestionModel>[
           QuestionModel(
             id: 'q1',
@@ -192,9 +193,7 @@ void main() {
           ),
         ],
       );
-      final jsonRoundTrip = ExamDocument.fromJson(
-        jsonDecode(jsonEncode(doc.toJson())) as Map<String, dynamic>,
-      );
+      final jsonRoundTrip = ExamDocument.fromJson(doc.toJson());
       expect(jsonRoundTrip.questions.single.statement,
           doc.questions.single.statement);
       expect(jsonRoundTrip.questions.single.items.single.text,

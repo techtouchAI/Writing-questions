@@ -24,7 +24,8 @@ export 'src/pdf/font/ttf_parser.dart';
 // pdf-bidi-export: the canonical PDF emitter shapes words with the same
 // vendored shaper the replaced pw.Text path used; show-listed so no other
 // bidi internal leaks out.
-export 'src/pdf/font/bidi_utils.dart' show logicalToVisual;
+export 'src/pdf/font/bidi_utils.dart'
+    show RtlShapedRun, logicalToVisual, shapeRtlRun;
 export 'src/pdf/format/name.dart';
 export 'src/pdf/format/object_base.dart' show DeflateCallback, PdfVersion;
 export 'src/pdf/graphic_state.dart';
