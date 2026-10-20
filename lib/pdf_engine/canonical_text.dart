@@ -124,18 +124,21 @@ class CanonicalText extends pw.Widget {
   /// renderings.
   static const double syntheticObliqueShear = 0.25;
 
-  /// Shaped emission text, mirroring package:pdf's default shaping dispatch.
+  /// Shaped emission run, pairing rendered visual glyph characters with their
+  /// `/ToUnicode` logical Unicode characters under UAX #9 Rule L4.
   ///
-  /// Rule L4 (mirroring) is deliberately NOT applied here. HarfBuzz mirrors a
-  /// lone "(" when it shapes with direction RTL, and one rendered comparison
-  /// against the preview suggested the PDF should follow. It must not: the
-  /// repository's own P0-GATE-03 pins the opposite contract for this path —
-  /// "the leftmost bracket in an RTL line must be the closing one" — and that
-  /// gate is green on the visual order the vendored shaper already produces.
-  /// Mirroring here flipped the emitted glyphs out of that contract, so the
-  /// change was withdrawn. Settling the two readings needs its own measurement
-  /// against the preview on the same construct, not a substitution here.
-  String shapedText() => rtl ? logicalToVisual(text) : text;
+  /// In RTL runs, [shapeRtlRun] runs UAX #9 at an explicit odd RTL paragraph
+  /// embedding level so standalone and attached mirrored brackets (`(`, `)`,
+  /// `[`, `]`, `{`, `}`, `«`, `»`) select their mirrored glyph outlines in the
+  /// embedded CID font while keeping their original logical code points in
+  /// `/ToUnicode` (preserving copy/paste, search, and `P0-GATE-03` logical
+  /// bracket extraction simultaneously with pixel-identical Preview parity).
+  RtlShapedRun shapedRun() => rtl
+      ? shapeRtlRun(text)
+      : RtlShapedRun(glyphText: text, toUnicodeText: text);
+
+  /// Shaped glyph string whose font metrics and outlines are rendered.
+  String shapedText() => shapedRun().glyphText;
 
   /// Trailing TJ adjustment in viewer-executed thousandths of an em, or null
   /// when there is no correction: the executed word advance (font advance
@@ -184,7 +187,8 @@ class CanonicalText extends pw.Widget {
       return;
     }
     final pdfFont = font.getFont(context);
-    final shaped = shapedText();
+    final run = shapedRun();
+    final shaped = run.glyphText;
     final correction = trailingTjAdjustment(pdfFont);
     // Same scaled word metrics pw.Text measures the single word with (zero
     // letter spacing). The clip box is the replaced line box (font advance
@@ -255,6 +259,7 @@ class CanonicalText extends pw.Widget {
       // same explicit `0 Tc` is emitted.
       charSpace: 0,
       trailingTj: correction,
+      toUnicode: run.toUnicodeText,
     );
     if (shear != 0) {
       canvas.restoreContext();

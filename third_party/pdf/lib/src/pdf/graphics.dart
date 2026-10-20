@@ -516,6 +516,7 @@ class PdfGraphics {
     PdfTextRenderingMode mode = PdfTextRenderingMode.fill,
     double? rise,
     double? trailingTj,
+    String? toUnicode,
   }) {
     assert(() {
       if (_page.settings.verbose) {
@@ -565,7 +566,11 @@ class PdfGraphics {
     }());
 
     _buf.putString('[');
-    font.putText(_buf, s);
+    if (toUnicode != null && toUnicode != s) {
+      font.putMirroredText(_buf, s, toUnicode);
+    } else {
+      font.putText(_buf, s);
+    }
     if (trailingTj != null && trailingTj != 0) {
       // pdf-trailing-tj-patch: viewer-executed advance correction.
       _buf.putString(' ');

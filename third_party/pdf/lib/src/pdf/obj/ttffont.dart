@@ -52,6 +52,12 @@ class PdfTtfFont extends PdfFont {
 
   late PdfUnicodeCmap unicodeCMap;
 
+  /// Glyph character code per CID (index 0 = `.notdef`). Matches
+  /// [unicodeCMap.cmap] element-for-element except when Unicode BiDi Rule L4
+  /// renders a mirrored glyph outline while keeping the logical bracket
+  /// character in `/ToUnicode`.
+  final List<int> glyphChars = <int>[0];
+
   late PdfFontDescriptor descriptor;
 
   late PdfObjectStream file;
@@ -118,7 +124,7 @@ class PdfTtfFont extends PdfFont {
     int charMax;
 
     final ttfWriter = TtfWriter(font);
-    final data = ttfWriter.withChars(unicodeCMap.cmap);
+    final data = ttfWriter.withChars(glyphChars);
     file.buf.putBytes(data);
     file.params['/Length1'] = PdfNum(data.length);
 
@@ -147,10 +153,10 @@ class PdfTtfFont extends PdfFont {
     params['/ToUnicode'] = unicodeCMap.ref();
 
     charMin = 0;
-    charMax = unicodeCMap.cmap.length - 1;
+    charMax = glyphChars.length - 1;
     for (var i = charMin; i <= charMax; i++) {
-      widthsObject.params.add(PdfNum(
-          (glyphMetrics(unicodeCMap.cmap[i]).advanceWidth * 1000.0).toInt()));
+      widthsObject.params.add(
+          PdfNum((glyphMetrics(glyphChars[i]).advanceWidth * 1000.0).toInt()));
     }
   }
 
@@ -165,22 +171,57 @@ class PdfTtfFont extends PdfFont {
     }
   }
 
+  int _cidForPair(int glyphRune, int unicodeRune) {
+    final len = unicodeCMap.cmap.length;
+    for (var cid = 0; cid < len; cid++) {
+      if (unicodeCMap.cmap[cid] == unicodeRune && glyphChars[cid] == glyphRune) {
+        return cid;
+      }
+    }
+    final cid = len;
+    unicodeCMap.cmap.add(unicodeRune);
+    glyphChars.add(glyphRune);
+    return cid;
+  }
+
   @override
   void putText(PdfStream stream, String text) {
     if (!font.unicode) {
       super.putText(stream, text);
+      return;
     }
 
     final runes = text.runes;
 
     stream.putByte(0x3c);
     for (final rune in runes) {
-      var char = unicodeCMap.cmap.indexOf(rune);
-      if (char == -1) {
-        char = unicodeCMap.cmap.length;
-        unicodeCMap.cmap.add(rune);
-      }
+      final char = _cidForPair(rune, rune);
+      stream.putBytes(latin1.encode(char.toRadixString(16).padLeft(4, '0')));
+    }
+    stream.putByte(0x3e);
+  }
 
+  @override
+  void putMirroredText(
+    PdfStream stream,
+    String glyphText,
+    String toUnicodeText,
+  ) {
+    if (!font.unicode) {
+      super.putText(stream, glyphText);
+      return;
+    }
+
+    final gRunes = glyphText.runes.toList(growable: false);
+    final uRunes = toUnicodeText.runes.toList(growable: false);
+    if (gRunes.length != uRunes.length) {
+      putText(stream, glyphText);
+      return;
+    }
+
+    stream.putByte(0x3c);
+    for (var i = 0; i < gRunes.length; i++) {
+      final char = _cidForPair(gRunes[i], uRunes[i]);
       stream.putBytes(latin1.encode(char.toRadixString(16).padLeft(4, '0')));
     }
     stream.putByte(0x3e);
