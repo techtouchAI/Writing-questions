@@ -1,13 +1,3 @@
-
-
-
-
-
-
-
-
-
-
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
@@ -4180,38 +4170,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  Widget _buildCanonicalZoomedPage(
-    ExamWizardController controller,
-    LayoutDocument layout,
-    LayoutPage page,
-    CanonicalLayoutPreviewAssets assets, {
-    required bool interactive,
-  }) {
-    final width = LayoutUnits.ptToPx(page.pageSize.width);
-    final height = LayoutUnits.ptToPx(page.pageSize.height);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: SizedBox(
-        width: width * _zoom,
-        height: height * _zoom,
-        child: FittedBox(
-          fit: BoxFit.fill,
-          child: SizedBox(
-            width: width,
-            height: height,
-            child: _buildCanonicalPage(
-                controller,
-                layout,
-                page,
-                assets,
-                interactive: interactive,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  // DISABLED _buildCanonicalZoomedPage for debugging
 
   // سطح الورقة التفاعلي: تُبنى الصفحة كودجات قابلة للتحرير فوق ترقيم
   // المتحكم المقاس (انظر [_buildPaperZoomedPage]).
