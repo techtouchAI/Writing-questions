@@ -54,10 +54,11 @@ void main() {
         expect(shapeRtlRun(word), logicalToVisual(word),
             reason: 'الكلمة «$word» تحمل محرفاً قوياً');
       }
-      // وهذا الإصدار القائم يراو القوس فعلاً (أرضية UBA):
-      // «أ)» منطقياً تُرسم «(أ».
-      expect(shapeRtlRun('أ)'), '(أ');
-      expect(shapeRtlRun('(أ)'), '(أ)');
+      // وهذا الإصدار القائم يراو القوس فعلاً ويشكّل الألف
+      // معزولة (U+FE83) — أرضية UBA كاملة: «أ)» تُرسم
+      // «(ﺃ» و«(أ)» تُرسم «(ﺃ)».
+      expect(shapeRtlRun('أ)'), '(ﺃ');
+      expect(shapeRtlRun('(أ)'), '(ﺃ)');
     });
 
     test('a run with a digit keeps logicalToVisual (no reversal)', () {

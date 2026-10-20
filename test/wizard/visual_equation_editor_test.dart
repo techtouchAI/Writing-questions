@@ -363,14 +363,16 @@ void main() {
         await typeInLastSlot(tester, radicand);
         await appendComponent(tester);
       }
-      await tester.tap(find.text('إدراج'));
-      await tester.pumpAndSettle();
       // الجذران باقيان بمحتويهما لا مكرَّران ولا مدمجان:
-      // لا «+» اختفت ولا محتوى تضاعف.
-      expect(find.text(r'النتيجة: $\sqrt{a}\sqrt{b}$'),
-          findsOneWidget);
+      // خانة كل جذر تحمل محتواه وحده قبل الإدراج.
       expect(_slotTexts(tester).where((t) => t == 'a').length, 1);
       expect(_slotTexts(tester).where((t) => t == 'b').length, 1);
+
+      await tester.tap(find.text('إدراج'));
+      await tester.pumpAndSettle();
+      // ولا «+» اختفت ولا محتوى تضاعف في المقطع المخزَّن.
+      expect(find.text(r'النتيجة: $\sqrt{a}\sqrt{b}$'),
+          findsOneWidget);
     });
 
     testWidgets('inserting a structure before a component keeps '
@@ -470,9 +472,16 @@ void main() {
     test('powers compound round-trips with base and exponent', () {
       const latex = r'5^{2}+6^{2}=';
       final model = EquationModel.parse(latex);
-      expect(model.nodes, hasLength(4));
+      // «+» بين أسّين تصير قاعدة الأس الثاني (قاعدة
+      // «آخر وحدة» في المحلل — مثل قاعدة الأس في
+      // المحرر)، فالمستوى الجذري ثلاث عقد: أسّ، أسّ، نص.
+      expect(model.nodes, hasLength(3));
       expect(model.nodes[0], isA<EqSup>());
       expect((model.nodes[0] as EqSup).base.single, isA<EqText>());
+      expect((model.nodes[0] as EqSup).exponent.single, isA<EqText>());
+      expect(model.nodes[1], isA<EqSup>());
+      expect(model.nodes[2], isA<EqText>());
+      // والجولة تُطابق المصدر بايتاً بايتاً رغم الدمج.
       expect(model.toLatex(), latex);
     });
 
@@ -503,7 +512,7 @@ void main() {
       final segments = TexContent.split(source);
       expect(segments, hasLength(3));
       expect(segments[0].text, 'نص ');
-      expect(segments[1].text, r'\sqrt{(x+1)}');
+      expect(segments[1].text, r'\\sqrt{(x+1)}');
       expect(segments[2].text, ' نص');
       // ولنص المعادلة مقروءٌ بلا كود ولا فقدان للأقواس.
       expect(

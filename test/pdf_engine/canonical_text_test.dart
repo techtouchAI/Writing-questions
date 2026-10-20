@@ -460,9 +460,9 @@ void main() {
       // مرتين.
       expect(shapeRtlRun('أ)'), logicalToVisual('أ)'));
       expect(shapeRtlRun('عِلْمًا'), logicalToVisual('عِلْمًا'));
-      // وذلك الإصدار القائم يراو القوس المتأخر فعلاً ضد أساس RTL:
-      // «أ)» منطقياً تُرسم «(أ».
-      expect(shapeRtlRun('أ)'), '(أ');
+      // وذلك الإصدار القائم يراو القوس المتأخر فعلاً ضد أساس
+      // RTL ويشكّل الألف معزولة (U+FE83): «أ)» تُرسم «(ﺃ».
+      expect(shapeRtlRun('أ)'), '(ﺃ');
     });
 
     test('runs with a digit keep logicalToVisual unchanged', () {
@@ -478,7 +478,8 @@ void main() {
       // وسطاً، «(» أقصى اليمين. كل واحدة تُرسم بمحرفها المرآوي
       // L4 فتُقرأ الصفحة «( أ )» كما ترسمها المعاينة.
       expect(shapeRtlRun('('), ')'); // منطقية «(» → يميناً، محرفها «)»
-      expect(shapeRtlRun('أ'), 'أ');
+      // الألف محصورة بين فواصل الجريان فتُشكَّل معزولة (U+FE83).
+      expect(shapeRtlRun('أ'), 'ﺃ');
       expect(shapeRtlRun(')'), '('); // منطقية «)» → يساراً، محرفها «(»
     });
 
@@ -491,7 +492,7 @@ void main() {
       for (final entry in <MapEntry<String, String>>[
         const MapEntry<String, String>(')', '('),
         const MapEntry<String, String>('(', ')'),
-        const MapEntry<String, String>('أ', 'أ'),
+        const MapEntry<String, String>('أ', 'ﺃ'),
       ]) {
         final shaped = shapeRtlRun(entry.key);
         // تصحيح TJ غير صفري مضمون → مصفوفة TJ (نفس مسار الإنتاج).
