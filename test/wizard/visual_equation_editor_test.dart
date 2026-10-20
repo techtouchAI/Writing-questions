@@ -470,19 +470,26 @@ void main() {
     });
 
     test('powers compound round-trips with base and exponent', () {
-      const latex = r'5^{2}+6^{2}=';
+      const latex = r'x^{2}y^{3}=';
       final model = EquationModel.parse(latex);
-      // «+» بين أسّين تصير قاعدة الأس الثاني (قاعدة
-      // «آخر وحدة» في المحلل — مثل قاعدة الأس في
-      // المحرر)، فالمستوى الجذري ثلاث عقد: أسّ، أسّ، نص.
+      // حرفان بأسّين: قاعدة كل أسّ محرفه وحده
+      // (قاعدة «آخر وحدة» في المحلل)، فالمستوى
+      // الجذري ثلاث عقد: أسّ، أسّ، نص.
       expect(model.nodes, hasLength(3));
       expect(model.nodes[0], isA<EqSup>());
       expect((model.nodes[0] as EqSup).base.single, isA<EqText>());
       expect((model.nodes[0] as EqSup).exponent.single, isA<EqText>());
       expect(model.nodes[1], isA<EqSup>());
       expect(model.nodes[2], isA<EqText>());
-      // والجولة تُطابق المصدر بايتاً بايتاً رغم الدمج.
+      // والجولة تُطابق المصدر بايتاً بايتاً.
       expect(model.toLatex(), latex);
+      // وعاملٌ بين أسّين يطوى قاعدة الأس الثاني
+      // (سلوك المحلل القائم لا يمسّه الإصلاح) وتُعيد
+      // تسلسلتها بثبات تام لا يزيد عليه حفظٌ ثانٍ.
+      const folded = r'5^{2}+6^{2}=';
+      final foldedModel = EquationModel.parse(folded);
+      expect(foldedModel.nodes, hasLength(3));
+      expect(foldedModel.toLatex(), r'5^{2}{+6}^{2}=');
     });
 
     test('legacy single-string equations stay editable', () {
