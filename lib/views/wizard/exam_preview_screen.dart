@@ -590,6 +590,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   void _ensureCanonicalPreview([ExamWizardController? owner]) {
     if (!_useCanonicalSurface) return;
     final controller = owner ?? _controller;
+    if (controller == null) return;
     final sourceDocument = controller.document;
     if (identical(_canonicalPreviewSourceDocument, sourceDocument) &&
         _canonicalPreviewLayout != null &&
@@ -611,6 +612,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   void _scheduleCanonicalPreviewRefresh() {
     final controller = _controller;
+    if (controller == null) return;
     final sourceDocument = controller.document;
     if (identical(_canonicalPreviewSourceDocument, sourceDocument) &&
         _canonicalPreviewLayout != null &&
@@ -5008,12 +5010,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             ),
             marks: _marksTarget(
               marks: data.title.marks,
-                  document.settings.showQuestionMarks,
+              showPlaceholder: document.settings.showQuestionMarks,
               style: titleStyle,
               onEdit: () => _editQuestionMarks(questionIndex),
             ),
-                ? const <Widget>[]
-                : <Widget>[
+            actions: <Widget>[
                     IconButton(
                       tooltip: 'إضافة فرع',
                       visualDensity: VisualDensity.compact,
@@ -5492,12 +5493,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
           marks: _marksTarget(
             marks: data.title.marks,
-                document.settings.showQuestionMarks,
+            showPlaceholder: document.settings.showQuestionMarks,
             style: bodyStyle,
             onEdit: () => _editBranchMarks(ref),
           ),
-              ? const <Widget>[]
-              : <Widget>[
+          actions: <Widget>[
                   IconButton(
                     tooltip: 'نسخ الفرع',
                     visualDensity: VisualDensity.compact,
@@ -5608,7 +5608,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         : document.questions[owner.questionIndex].items;
     final item = sourceItems.firstWhere((candidate) => candidate.id == point.id);
     final fieldKey = _itemKey(item.id);
-    final showActions =
+    final showActions = _activeItemFieldKey == fieldKey;
     return Padding(
       padding: const EdgeInsetsDirectional.only(
         start: VisualMetrics.pointIndentPx,
@@ -5660,7 +5660,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 ),
               _marksTarget(
                 marks: point.marks,
-                    controller.document.settings.showQuestionMarks,
+                showPlaceholder: controller.document.settings.showQuestionMarks,
                 style: bodyStyle,
                 onEdit: () => _editPointMarks(owner, item.id),
               ),
