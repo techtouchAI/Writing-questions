@@ -264,8 +264,8 @@ double _measureBracketCurvatureDeltaPx(
   int imageHeight,
   Rect rectPx,
 ) {
-  final left = (rectPx.left.floor() - 2).clamp(0, imageWidth - 1);
-  final right = (rectPx.right.ceil() + 2).clamp(0, imageWidth - 1);
+  final left = (rectPx.left.floor() - 1).clamp(0, imageWidth - 1);
+  final right = (rectPx.right.ceil() + 1).clamp(0, imageWidth - 1);
   final top = (rectPx.top.floor() - 2).clamp(0, imageHeight - 1);
   final bottom = (rectPx.bottom.ceil() + 2).clamp(0, imageHeight - 1);
 
@@ -694,7 +694,7 @@ void main() {
         return Rect.fromLTWH(
           LayoutUnits.ptToPx(word.x),
           LayoutUnits.ptToPx(line.y),
-          LayoutUnits.ptToPx(word.width),
+          LayoutUnits.ptToPx(word.textAdvance),
           LayoutUnits.ptToPx(line.height),
         );
       }
