@@ -33,9 +33,7 @@ class ExportContractEntry {
 
   bool get reachesPdf => surfaces.contains(ExportSurface.pdfVector);
 
-  bool get isPreviewOnly => reachesPreview &&
-      !reachesPdf &&
-      !surfaces.contains(ExportSurface.exact);
+  bool get isPreviewOnly => reachesPreview && !reachesPdf;
 
   bool get isPartial =>
       !isPreviewOnly && surfaces.length < ExportSurface.values.length;

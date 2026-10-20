@@ -283,34 +283,6 @@ class _TextInputDialogState extends State<_TextInputDialog> {
   }
 }
 
-class _PreviewUiSnapshot {
-  const _PreviewUiSnapshot({
-    required this.multiSelect,
-    required this.selectedQuestions,
-    required this.selectedBranches,
-    required this.headerSelected,
-    required this.selectedAttachment,
-    required this.selectedDividerKey,
-    required this.activeItemFieldKey,
-    required this.activeFieldKey,
-    required this.activeCanonicalSemanticNodeId,
-    required this.stagedFormula,
-    required this.stagedFormulaIsBlock,
-  });
-
-  final bool multiSelect;
-  final Set<String> selectedQuestions;
-  final Set<BranchRef> selectedBranches;
-  final bool headerSelected;
-  final _AttachmentRef? selectedAttachment;
-  final String? selectedDividerKey;
-  final String? activeItemFieldKey;
-  final String? activeFieldKey;
-  final String? activeCanonicalSemanticNodeId;
-  final String? stagedFormula;
-  final bool stagedFormulaIsBlock;
-}
-
 typedef CanonicalPreviewLayoutResolver = Future<LayoutDocument> Function({
   required ExamDocument document,
   required DocumentIR sourceIr,
@@ -466,38 +438,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   void _trimPageKeysByIndices(Iterable<int> indices) {
     final valid = indices.toSet();
     _pageCanvasKeys.removeWhere((key, _) => !valid.contains(key));
-  }
-
-  _PreviewUiSnapshot _snapshotUiState() => _PreviewUiSnapshot(
-        multiSelect: _multiSelect,
-        selectedQuestions: Set<String>.from(_selectedQuestions),
-        selectedBranches: Set<BranchRef>.from(_selectedBranches),
-        headerSelected: _headerSelected,
-        selectedAttachment: _selectedAttachment,
-        selectedDividerKey: _selectedDividerKey,
-        activeItemFieldKey: _activeItemFieldKey,
-        activeFieldKey: _activeFieldKey,
-        activeCanonicalSemanticNodeId: _activeCanonicalSemanticNodeId,
-        stagedFormula: _stagedFormula,
-        stagedFormulaIsBlock: _stagedFormulaIsBlock,
-      );
-
-  void _restoreUiState(_PreviewUiSnapshot snapshot) {
-    _multiSelect = snapshot.multiSelect;
-    _selectedQuestions
-      ..clear()
-      ..addAll(snapshot.selectedQuestions);
-    _selectedBranches
-      ..clear()
-      ..addAll(snapshot.selectedBranches);
-    _headerSelected = snapshot.headerSelected;
-    _selectedAttachment = snapshot.selectedAttachment;
-    _selectedDividerKey = snapshot.selectedDividerKey;
-    _activeItemFieldKey = snapshot.activeItemFieldKey;
-    _activeFieldKey = snapshot.activeFieldKey;
-    _activeCanonicalSemanticNodeId = snapshot.activeCanonicalSemanticNodeId;
-    _stagedFormula = snapshot.stagedFormula;
-    _stagedFormulaIsBlock = snapshot.stagedFormulaIsBlock;
   }
 
   // ------------------------------------------------------------------
@@ -2251,16 +2191,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         setState(() => _isBusy = false);
       }
     }
-  }
-
-  void _restoreScrollOffset(ScrollController controller, double? offset) {
-    if (offset == null || !controller.hasClients) {
-      return;
-    }
-    final position = controller.position;
-    controller.jumpTo(
-      offset.clamp(position.minScrollExtent, position.maxScrollExtent).toDouble(),
-    );
   }
 
   Future<void> _exportPdf({
@@ -4942,8 +4872,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           behavior: HitTestBehavior.translucent,
           onTap: () => _tapQuestion(questionIndex),
           child: _titleRow(
-                ? const SizedBox.shrink()
-                : _locked
+            dragHandle: _locked
                     ? Icon(
                         Icons.drag_indicator,
                         size: 18,
@@ -5075,6 +5004,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         ],
         if (directlySelected) _addPointButton(controller, owner),
         // السؤال الجديد يبدأ بلا فروع؛ تُنشأ فقط بطلب صريح (زر +).
+        if (question.branches.isEmpty)
           Padding(
             padding: const EdgeInsetsDirectional.only(start: 44, top: 2, bottom: 2),
             child: Text(
@@ -5315,8 +5245,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
     // مقبض السحب وحده يبدأ السحب (حتى لا يتعارض مع تحديد النص في الحقول)؛
     // الهدف هو كتلة الفرع كاملة.
-        ? const SizedBox.shrink()
-        : _locked
+    final dragHandle = _locked
             ? Icon(
                 Icons.drag_indicator,
                 size: 16,
@@ -5629,9 +5558,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       left: VisualMetrics.pointLabelGapPx,
                     ),
                     child: point.labelContent.isEmpty
-                            ? const SizedBox.shrink()
-                            : const Icon(Icons.tag, size: 12, color: Colors.grey)
-                        : _semanticInline(
+                            ? const Icon(Icons.tag, size: 12, color: Colors.grey)
+                            : _semanticInline(
                             point.labelContent,
                             bodyStyle.copyWith(fontWeight: FontWeight.bold),
                           ),
@@ -5719,8 +5647,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     TextAlign ownerAlign,
   ) {
     final options = point.options!.options;
-        (_activeItemFieldKey == _itemKey(item.id) ||
-            (_activeFieldKey?.startsWith('option-${item.id}-') ?? false));
+    final active = _activeItemFieldKey == _itemKey(item.id) ||
+            (_activeFieldKey?.startsWith('option-${item.id}-') ?? false);
     return Padding(
       padding: const EdgeInsetsDirectional.only(
         start: VisualMetrics.optionIndentPx,
@@ -5743,9 +5671,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       child: Padding(
                         padding: const EdgeInsets.only(top: 1),
                         child: options[index].labelContent.isEmpty
-                                ? const SizedBox.shrink()
-                                : const Icon(Icons.tag, size: 12, color: Colors.grey)
-                            : _semanticInline(options[index].labelContent, bodyStyle),
+                                ? const Icon(Icons.tag, size: 12, color: Colors.grey)
+                                : _semanticInline(options[index].labelContent, bodyStyle),
                       ),
                     ),
                   ),

@@ -971,7 +971,6 @@ void main() {
     // مرجع المعاينة قيس في P0-GATE-00 ولا تُمشى الشجرة مرتين في اختبار واحد:
     // إعادة المشي هي ما استهلك «TimeoutException after 0:10:00» كله.
     _gate.requirePreview();
-    final rtl = _gate.rtlCapture!;
 
     // التوليد يمسّ I/O حقيقياً (تحميل خطوط من الأصول، فكّ صور، لقطة
     // المعادلات). داخل testWidgets يعمل كل await في منطقة FakeAsync فلا يكتمل
@@ -1157,7 +1156,6 @@ void main() {
 
     final ltrDocument = P0GateFixture.ltr();
     _gate.requirePreview();
-    final ltr = _gate.ltrCapture!;
 
     final watch = Stopwatch();
     await tester.runAsync(() async {
