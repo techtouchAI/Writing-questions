@@ -5,8 +5,6 @@
 //     Flutter (96dpi = بكسل اللوحة نفسه).
 //   * `build/visual_parity/vector.pdf` — PDF متجهي مرسوم من LayoutDocument
 //     نفسه الذي عُرض في المعاينة.
-//   * `build/visual_parity/exact.pdf` و`exact.docx` — مسار Exact المنفصل
-//     المبني من لقطات المعاينة نفسها (وهو Word الوحيد اليوم).
 //
 // (حُذف في C5 مع Word القابل للتحرير: قطعة `editable.docx` من مسار
 // DocumentIR → LegacyDocxAdapter → PaginationEngine.)
@@ -51,9 +49,7 @@ import 'package:writing_questions_app/layout/canonical/canonical_layout_service.
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
-import 'package:writing_questions_app/services/exact_export_service.dart';
 import 'package:writing_questions_app/services/math_snapshot_renderer.dart';
-import 'package:writing_questions_app/services/page_snapshot_service.dart';
 import 'package:writing_questions_app/services/pdf_export_service.dart';
 import 'package:writing_questions_app/views/widgets/math_snapshot_host.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
@@ -433,9 +429,9 @@ void main() {
     expect(boundaries.every((boundary) => !boundary.debugNeedsPaint), isTrue,
         reason: 'صفحة لم تُرسم (خارج نافذة العرض) فلا يمكن لقطها.');
 
-    final snapshots = <PageSnapshot>[];
+    final snapshots = <Map<String,dynamic>>[];
     final capture = await tester.runAsync(() async {
-      final pages = <PageSnapshot>[];
+      final pages = <Map<String,dynamic>>[];
       for (final boundary in boundaries) {
         final image = await boundary.toImage(pixelRatio: 1);
         final data = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -445,14 +441,12 @@ void main() {
         if (data == null) {
           continue;
         }
-        pages.add(
-          PageSnapshot(
-            pageIndex: pages.length,
-            pngBytes: data.buffer.asUint8List(),
-            widthPx: width.toDouble(),
-            heightPx: height.toDouble(),
-          ),
-        );
+        pages.add(<String,dynamic>{
+            'pageIndex': pages.length,
+            'pngBytes': data.buffer.asUint8List(),
+            'widthPx': width.toDouble(),
+            'heightPx': height.toDouble(),
+          });
       }
       return pages;
     });
@@ -469,8 +463,6 @@ void main() {
     // المنطقة مهلات `.timeout` الداخلية. المنطق نفسه حرفياً؛ المتغير فقط
     // سائق الانتظار (مضخات محدودة بدل انتظار حقيقي).
     Uint8List? exportVector;
-    Uint8List? exportExactPdf;
-    Uint8List? exportExactDocx;
     var exportsDone = false;
     Object? exportError;
     StackTrace? exportStack;
@@ -489,11 +481,7 @@ void main() {
           );
           _stage('Vector PDF generated: ${exportVector!.length} bytes');
 
-          // Exact: صفحات الصور الملتقطة أعلاه فقط — مستقل عن vector.
-          exportExactPdf =
-              await ExactExportService.buildPdfFromSnapshots(snapshots);
-          exportExactDocx = ExactExportService.buildDocxFromSnapshots(snapshots);
-          _stage('Exact PDF/DOCX generated');
+          _stage('Vector PDF generated');
           exportsDone = true;
         } catch (error, stack) {
           exportError = error;
@@ -513,31 +501,23 @@ void main() {
     final exportArtifacts = exportsDone
         ? (
             vectorPdfBytes: exportVector!,
-            exactPdfBytes: exportExactPdf!,
-            exactDocxBytes: exportExactDocx!,
           )
         : null;
     _stage('exports finished after pumps: done=$exportsDone');
     if (!exportsDone && exportError == null) {
       fail(
         'HANG: exports did not complete after $pumpCount pumps: '
-        'vector=${exportVector != null}, '
-        'exactPdf=${exportExactPdf != null}, exactDocx=${exportExactDocx != null}',
+        'vector=${exportVector != null}',
       );
     }
     expect(exportArtifacts, isNotNull);
     final vectorPdfBytes = exportArtifacts!.vectorPdfBytes;
-    final exactPdfBytes = exportArtifacts.exactPdfBytes;
-    final exactDocxBytes = exportArtifacts.exactDocxBytes;
     final manifest = <String, Object?>{
       'pageCount': snapshots.length,
-      'widthPx': snapshots.first.widthPx,
-      'heightPx': snapshots.first.heightPx,
-      'dpi': PageSnapshotService.canvasDpi,
+      'widthPx': snapshots.first['widthPx'],
+      'heightPx': snapshots.first['heightPx'],
       'files': <String>[
         'vector.pdf',
-        'exact.pdf',
-        'exact.docx',
         for (var index = 0; index < snapshots.length; index++)
           'preview_page_${index + 1}.png',
       ],
@@ -549,20 +529,18 @@ void main() {
     }
     for (var index = 0; index < snapshots.length; index++) {
       File('$_artifactDir/preview_page_${index + 1}.png')
-          .writeAsBytesSync(snapshots[index].pngBytes);
+          .writeAsBytesSync(snapshots[index]['pngBytes'] as Uint8List);
     }
     File('$_artifactDir/vector.pdf').writeAsBytesSync(vectorPdfBytes);
-    File('$_artifactDir/exact.pdf').writeAsBytesSync(exactPdfBytes);
-    File('$_artifactDir/exact.docx').writeAsBytesSync(exactDocxBytes);
     File('$_artifactDir/manifest.json')
         .writeAsStringSync(const JsonEncoder.withIndent('  ').convert(manifest));
 
     // فحوص سريعة على القطع نفسها (تفشل مبكراً برسالة مفهومة قبل مقارنة CI).
     for (final snapshot in snapshots) {
-      expect(snapshot.pngBytes.sublist(0, 8),
+      expect((snapshot['pngBytes'] as Uint8List).sublist(0, 8),
           <int>[137, 80, 78, 71, 13, 10, 26, 10]);
-      expect(snapshot.widthPx, greaterThan(700));
-      expect(snapshot.heightPx, greaterThan(1000));
+      expect(snapshot['widthPx'] as double, greaterThan(700));
+      expect(snapshot['heightPx'] as double, greaterThan(1000));
     }
     // النمط الإنجليزي يظهر في الصفحة نفسها بمحاذاة يسار (تحقق تركيبي خفيف).
     expect(fixtureDocument().questions[2].bodyAlign, PaperAlign.left);

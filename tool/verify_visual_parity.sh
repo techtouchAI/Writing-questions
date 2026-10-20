@@ -118,14 +118,12 @@ echo "الصفحات: $PAGES، المقاس المرجعي: ${WIDTH}x${HEIGHT} (
 
 # ------------------------------ التصيير ------------------------------
 
-# تصيير كل PDF بدقة 96dpi (بكسل لوحة المعاينة نفسه): المتجهي وExact.
-for track in vector exact; do
-  if ! render_pdf "$ARTIFACTS/$track.pdf" \
-      "$RENDERED/${track}_pdf/page" "تصيير PDF $track"; then
-    echo "::error title=تصيير PDF $track::تعذّر تصيير $track.pdf بأدوات poppler — انظر $REPORT."
-    exit 1
-  fi
-done
+# تصيير PDF المتجه بدقة 96dpi (بكسل لوحة المعاينة نفسه).
+if ! render_pdf "$ARTIFACTS/vector.pdf" \
+    "$RENDERED/vector_pdf/page" "تصيير PDF المتجه"; then
+  echo "::error title=تصيير PDF المتجه::تعذّر تصيير vector.pdf بأدوات poppler — انظر $REPORT."
+  exit 1
+fi
 
 # LibreOffice يحوّل Word (Exact اليوم) إلى PDF ثم poppler يصيّره. إعداد ملف
 # تعريف منفصل يمنع تعارض القفل، مع تعطيل الضغط الفاقد/تصغير الصور الوسيطة.
@@ -172,7 +170,7 @@ convert_docx() { # <exact>
     return 1
   fi
 }
-convert_docx exact
+# Exact/Word tracks removed — vector only.
 
 # ------------------------------ المقارنة ------------------------------
 
@@ -299,14 +297,9 @@ check_track() { # <وسم> <مجلد التصيير> <سقف>
 
 {
   echo "Vector PDF: بوابة محتوى (وجود الحبر ومحاذاته). RMSE ≤ $PDF_THRESHOLD يُطبع تشخيصاً ولا يحكم هذا المسار."
-  echo "Exact PDF: RMSE ≤ $PDF_THRESHOLD. Exact DOCX: RMSE ≤ $DOCX_THRESHOLD."
-  echo "Exact DOCX يحتفظ أيضاً بفحص بايتات الصور المضمّنة (تطابق تام)."
   echo
 } >>"$REPORT"
 check_track "Vector-PDF" "$RENDERED/vector_pdf" "$PDF_THRESHOLD" 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
-check_track "Exact-PDF" "$RENDERED/exact_pdf" "$PDF_THRESHOLD" 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
-check_track "Exact-Word" "$RENDERED/exact_docx" "$DOCX_THRESHOLD" 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
-check_embedded_media 2>&1 | tee -a "$REPORT" || failures=$((failures + 1))
 
 {
   echo

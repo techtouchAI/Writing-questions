@@ -1,11 +1,6 @@
-// نمط التصدير في حوار المراجعة: «مطابق للمعاينة (Exact)» مقابل النص المتجه.
-//
-// Exact نمط اختياري لا افتراضي، ويخصّ PDF وحده: المسار المعتاد يبقي PDF
-// نصياً قابلاً للبحث، بينما Word صور صفحات المعاينة دائماً (مطابق للمعاينة
-// وغير قابل للتحرير — يُعلَن ذلك في الوضع الافتراضي نفسه). عند تفعيل Exact
-// يجب أن يُعلَن صراحةً أن PDF صار صوراً بلا بحث/تحديد نصي. الاختبار يقرأ
-// الوصف من حوار المستخدم نفسه. (حُدّث العقد في C5 مع إزالة Word القابل
-// للتحرير: لا OMML بعد اليوم.)
+// تمت إزالة نمط التصدير Exact وزر Word: المعاينة الآن تصدر PDF متجه فقط.
+// يثبت هذا الاختبار زوال مفتاح Exact وزر Word من الحوار، وبقاء زر PDF.
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -60,9 +55,6 @@ Future<void> _openReview(WidgetTester tester) async {
   await tester.ensureVisible(tool);
   await tester.pumpAndSettle();
   await tester.tap(tool);
-  // Opening review resolves the canonical pagination document before showing
-  // the dialog. Pump the real loading state until the dialog appears; this
-  // tolerates the toolbar's indeterminate busy animation without settling it.
   final reviewTitle = find.text('مراجعة الورقة');
   for (var frame = 0; frame < 300 && reviewTitle.evaluate().isEmpty; frame++) {
     await tester.pump(const Duration(milliseconds: 100));
@@ -72,37 +64,15 @@ Future<void> _openReview(WidgetTester tester) async {
 
 void main() {
   testWidgets(
-    'Exact is optional by default and accurately discloses image-only exports',
+    'review dialog exposes only PDF export, no Exact toggle nor Word button',
     (tester) async {
       await _pump(tester);
       await _openReview(tester);
 
-      const switchKey = ValueKey<String>('export-exact-mode');
-      final switchFinder = find.byKey(switchKey);
-      expect(
-        switchFinder,
-        findsOneWidget,
-        reason: 'مفتاح نمط التصدير في الحوار.',
-      );
-      expect(
-        tester.widget<SwitchListTile>(switchFinder).value,
-        isFalse,
-        reason: 'PDF الافتراضي نصي؛ Word صور دائماً.',
-      );
-      expect(find.textContaining('OMML'), findsNothing);
-      expect(find.textContaining('غير قابل للتحرير'), findsOneWidget);
-      expect(find.textContaining('صور صفحات المعاينة'), findsOneWidget);
-      expect(find.text('صفحات المعاينة'), findsOneWidget);
-
-      // Toggle the same live review dialog: Exact must disclose the loss of
-      // PDF searchability explicitly (Word stays image-only in both modes,
-      // disclosed in the default state above).
-      await tester.tap(switchFinder);
-      await tester.pump();
-      expect(tester.widget<SwitchListTile>(switchFinder).value, isTrue);
-      expect(find.textContaining('صور صفحات المعاينة'), findsOneWidget);
-      expect(find.textContaining('بلا بحث/تحديد نصي'), findsOneWidget);
-      expect(find.textContaining('Word صور دائماً'), findsOneWidget);
+      expect(find.text('تصدير PDF'), findsOneWidget);
+      expect(find.text('تصدير Word'), findsNothing,
+          reason: 'زر Word أُزيل؛ PDF المتجه هو المسار الوحيد.');
+      // The disclosure that mentioned non-editable images must be gone.
       expect(find.textContaining('OMML'), findsNothing);
     },
   );

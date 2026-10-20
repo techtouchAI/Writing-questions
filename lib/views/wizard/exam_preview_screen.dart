@@ -36,8 +36,6 @@ import '../../providers/exam_document_provider.dart';
 import '../../providers/exam_wizard_controller.dart';
 import '../../services/export_file_service.dart';
 import '../../services/page_frame_store.dart';
-import '../../services/exact_export_service.dart';
-import '../../services/page_snapshot_service.dart';
 import '../../services/pdf_export_service.dart';
 import '../widgets/floating_element_view.dart';
 import '../widgets/formula_inserter.dart';
@@ -335,7 +333,7 @@ typedef CanonicalPreviewAssetLoader =
 ///   ([CanonicalLayoutPreviewPage]) بلا إعادة التفاف أو تقسيم، والنقرات
 ///   تتحول إلى source offset عبر حقل IME مخفي. للاختبارات والمراجعة.
 /// - **التصدير**: PDF المتجهي يحسم هندسته عند الطلب دون اعتماد على
-///   حالة المعاينة الحية؛ Word مطابق للمعاينة (صور صفحاتها) دائماً.
+///   حالة المعاينة الحية؛ وهو المسار الوحيد للتصدير.
 /// - **التحديد والتنسيق**: تحديد سؤال/فرع/ترويسة/مربع نص (منفرد أو متعدد)
 ///   ثم تنسيقه من شريط المعاينة (خط/حجم/عريض/محاذاة/إطار).
 /// - **إعادة الترتيب**: سحب سؤال كامل أو فرع داخل سؤاله؛ الإفلات على فرع
@@ -369,14 +367,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   final Map<int, GlobalKey> _pageCanvasKeys = <int, GlobalKey>{};
 
   /// جذور اللقط (RepaintBoundary) لكل صفحة في المعاينة الحية.
-  final Map<int, GlobalKey> _pageSnapshotKeys = <int, GlobalKey>{};
-
-  /// يجمّد زخارف التحرير ويُظهر حاجباً أثناء التقاط صفحات المعاينة الأصلية.
-  bool _exactCaptureInProgress = false;
-  LayoutDocument? _canonicalCaptureLayout;
-  ExamDocument? _canonicalCaptureSourceDocument;
-  CanonicalLayoutPreviewAssets? _canonicalCaptureAssets;
-
   /// The live preview uses the same canonical point geometry as PDF. This is
   /// independent of the legacy controller's measurement-driven pagination.
   LayoutDocument? _canonicalPreviewLayout;
@@ -387,12 +377,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   Timer? _canonicalPreviewDebounce;
   int _canonicalPreviewRevision = 0;
 
-  /// يكبح زخارف التحديد من صورة Exact (إطارات التحديد ومقابض العناصر).
-  bool _suppressSelectionChrome = false;
-
-  /// النمط الافتراضي يحافظ على PDF المتجهي (Word صور دائماً)؛ يُفعّل
-  /// Exact صراحةً فقط عند أولوية التطابق البصري التام على البحث النصي.
-  bool _exactExport = false;
   ExamWizardController? _controller;
   _AttachmentRef? _selectedAttachment;
   String? _selectedDividerKey;
@@ -471,8 +455,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     _canonicalPreviewRevision++;
     _canonicalPreviewPendingDocument = null;
     _canonicalPreviewAssets?.dispose();
-    _canonicalCaptureAssets?.dispose();
-    _canonicalCaptureSourceDocument = null;
     for (final field in _fields.values) {
       field.dispose();
     }
@@ -484,7 +466,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   void _trimPageKeysByIndices(Iterable<int> indices) {
     final valid = indices.toSet();
     _pageCanvasKeys.removeWhere((key, _) => !valid.contains(key));
-    _pageSnapshotKeys.removeWhere((key, _) => !valid.contains(key));
   }
 
   _PreviewUiSnapshot _snapshotUiState() => _PreviewUiSnapshot(
@@ -609,7 +590,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   void _ensureCanonicalPreview([ExamWizardController? owner]) {
     if (!_useCanonicalSurface) return;
     final controller = owner ?? _controller;
-    if (controller == null || _exactCaptureInProgress) return;
     final sourceDocument = controller.document;
     if (identical(_canonicalPreviewSourceDocument, sourceDocument) &&
         _canonicalPreviewLayout != null &&
@@ -631,7 +611,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   void _scheduleCanonicalPreviewRefresh() {
     final controller = _controller;
-    if (controller == null || _exactCaptureInProgress) return;
     final sourceDocument = controller.document;
     if (identical(_canonicalPreviewSourceDocument, sourceDocument) &&
         _canonicalPreviewLayout != null &&
@@ -1017,9 +996,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   /// هل الفرع [ref] محدد حالياً (منفرداً أو ضمن متعدد)؟
   bool _isBranchSelected(BranchRef ref) {
-    if (_suppressSelectionChrome) {
-      return false;
-    }
     if (_selectedBranches.contains(ref)) {
       return true;
     }
@@ -1028,9 +1004,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   /// هل السؤال [index] محدد؟
   bool _isQuestionSelected(int index) {
-    if (_suppressSelectionChrome) {
-      return false;
-    }
     final questions = _controller!.questions;
     // حارس أمان: فهرس قديم أثناء إعادة بناء متداخلة = غير محدد لا عطل.
     if (index < 0 || index >= questions.length) {
@@ -2278,123 +2251,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
   }
 
-  /// يلتقط صفحات Exact من حدود صفحات المعاينة الأصلية، واحدةً تلو الأخرى.
-  ///
-  /// جلب الصفحة إلى نافذة التمرير قبل الالتقاط يعالج سبب فشل الصفحات البعيدة
-  /// (حدود `RepaintBoundary` خارج النافذة لم تكن مرسومة)، ويجنّب إنشاء نسخة
-  /// ثانية من محررات النص والقياس لكل صفحة. أثناء اللقط تُخفى فقط زخارف
-  /// التحرير وإطار/ظل الشاشة، ثم تُستعاد حالة التحديد والتمرير كما كانت.
-  Future<List<PageSnapshot>> _capturePreviewPages() async {
-    final controller = _controller!;
-    final sourceDocument = controller.document;
-    FocusManager.instance.primaryFocus?.unfocus();
-    final currentPreviewLayout =
-        identical(_canonicalPreviewSourceDocument, sourceDocument)
-            ? _canonicalPreviewLayout
-            : null;
-    final canonicalLayout = currentPreviewLayout ??
-        await PdfExportService.resolveLayoutDocument(document: sourceDocument);
-    final previewAssets = await CanonicalLayoutPreviewAssets.load(
-      layout: canonicalLayout,
-      document: sourceDocument,
-    );
-    if (!mounted ||
-        !identical(_controller, controller) ||
-        !identical(controller.document, sourceDocument)) {
-      previewAssets.dispose();
-      throw const ExportException(
-        'تغيّر المستند أثناء تجهيز صفحات Exact. أعد المحاولة.',
-      );
-    }
-    final pages = canonicalLayout.pages.toList()
-      ..sort((left, right) => left.index.compareTo(right.index));
-    if (pages.isEmpty) {
-      previewAssets.dispose();
-      throw StateError('لا توجد صفحات معاينة لالتقاطها.');
-    }
-
-    final uiSnapshot = _snapshotUiState();
-    final verticalOffset = _vScroll.hasClients ? _vScroll.offset : null;
-    final horizontalOffset = _hScroll.hasClients ? _hScroll.offset : null;
-    setState(() {
-      _canonicalCaptureLayout = canonicalLayout;
-      _canonicalCaptureSourceDocument = sourceDocument;
-      _canonicalCaptureAssets = previewAssets;
-      _suppressSelectionChrome = true;
-      _exactCaptureInProgress = true;
-      _clearSelection();
-      _stagedFormula = null;
-      _stagedFormulaIsBlock = false;
-    });
-    await SchedulerBinding.instance.endOfFrame;
-
-    try {
-      final snapshots = <PageSnapshot>[];
-      for (final page in pages) {
-        try {
-          if (!mounted ||
-              !identical(_controller, controller) ||
-              !identical(controller.document, sourceDocument)) {
-            throw const ExportException(
-              'تغيّر المستند أثناء التقاط صفحات Exact. أعد المحاولة.',
-            );
-          }
-          final boundaryKey = _pageSnapshotKeys[page.index];
-          if (boundaryKey == null) {
-            throw StateError(
-              'لم تُبنَ لوحة صفحة المعاينة ${page.index + 1}.',
-            );
-          }
-          final snapshot = await PageSnapshotService.captureVisiblePage(
-            boundaryKey,
-            pageIndex: page.index,
-          );
-          if (!mounted ||
-              !identical(_controller, controller) ||
-              !identical(controller.document, sourceDocument)) {
-            throw const ExportException(
-              'تغيّر المستند أثناء التقاط صفحات Exact. أعد المحاولة.',
-            );
-          }
-          snapshots.add(snapshot);
-        } catch (error, stackTrace) {
-          PageSnapshotService.logCaptureFailure(error, stackTrace, page.index);
-          Error.throwWithStackTrace(
-            ExportException(
-              'تعذّر التقاط صفحة ${page.index + 1} من المعاينة. '
-              'أعد المحاولة بعد ظهور الصفحة بالكامل.',
-            ),
-            stackTrace,
-          );
-        }
-      }
-      if (snapshots.length != pages.length) {
-        throw StateError(
-          'عدد اللقطات (${snapshots.length}) لا يطابق عدد صفحات المعاينة '
-          '(${pages.length}).',
-        );
-      }
-      return List<PageSnapshot>.unmodifiable(snapshots);
-    } finally {
-      if (mounted) {
-        setState(() {
-          _exactCaptureInProgress = false;
-          _canonicalCaptureLayout = null;
-          _canonicalCaptureSourceDocument = null;
-          _canonicalCaptureAssets = null;
-          _suppressSelectionChrome = false;
-          _restoreUiState(uiSnapshot);
-        });
-        _ensureCanonicalPreview();
-        // ننتظر تحديث مدى التمرير قبل استعادة الإزاحة أو تحرير صور اللقط.
-        await SchedulerBinding.instance.endOfFrame;
-        _restoreScrollOffset(_vScroll, verticalOffset);
-        _restoreScrollOffset(_hScroll, horizontalOffset);
-      }
-      previewAssets.dispose();
-    }
-  }
-
   void _restoreScrollOffset(ScrollController controller, double? offset) {
     if (offset == null || !controller.hasClients) {
       return;
@@ -2408,30 +2264,23 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   Future<void> _exportPdf({
     List<List<String>>? pageAssignments,
     LayoutDocument? layoutDocument,
-    bool? exact,
   }) async {
     if (_isBusy) {
       return;
     }
     final controller = _controller!;
     final document = controller.document;
-    final useExact = exact ?? _exactExport;
     setState(() => _isBusy = true);
     try {
-      if (!useExact &&
+      if (
           layoutDocument != null &&
           !identical(layoutDocument.source, controller.documentIr)) {
         throw const ExportException(
           'تغيّر المستند بعد حساب صفحات المراجعة. افتح المراجعة مجدداً.',
         );
       }
-      final bytes = useExact
-          ? await ExactExportService.buildPdfFromSnapshots(
-              await _capturePreviewPages(),
-            )
-          : await PdfExportService.buildDocumentPdfBytes(
+      final bytes = await PdfExportService.buildDocumentPdfBytes(
               document: document,
-              // القياس من محتوى الطباعة فقط؛ ارتفاع أدوات التحرير لا يترك فراغاً.
               pageAssignments: pageAssignments ??
                   await PdfExportService.resolvePageAssignments(
                     document: document,
@@ -2461,47 +2310,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           error is ExportException
               ? error.message
               : 'تعذر إنشاء ملف الـ PDF. حاول مرة أخرى.',
-          isError: true,
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isBusy = false);
-      }
-    }
-  }
-
-  /// تصدير Word (مطابق للمعاينة دائماً): كل صفحة صورة صفحتها النهائية —
-  /// مطابق للمعاينة بالبناء، وغير قابل للتحرير (يُعلَن ذلك في الواجهة).
-  /// مسار Word القابل للتحرير أُزيل مع مرحلة PDF-first (C5).
-  Future<void> _exportWord() async {
-    if (_isBusy) {
-      return;
-    }
-    final controller = _controller!;
-    final document = controller.document;
-    setState(() => _isBusy = true);
-    try {
-      final file = await ExactExportService.exportDocxFile(
-        snapshots: await _capturePreviewPages(),
-        baseName: '${document.name}_ورقة_الامتحان',
-      );
-      if (!mounted) {
-        return;
-      }
-      await _saveToLibrary();
-      if (!mounted) {
-        return;
-      }
-      _showMessage('تم إنشاء ملف Word مطابق للمعاينة (الصفحات صور).');
-      await ExactExportService.shareDocxFile(file);
-    } catch (error, stackTrace) {
-      ExportFileService.logError('Wizard Word export failed', error, stackTrace);
-      if (mounted) {
-        _showMessage(
-          error is ExportException
-              ? error.message
-              : 'تعذر إنشاء ملف الـ Word. حاول مرة أخرى.',
           isError: true,
         );
       }
@@ -2938,28 +2746,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 document.formatNumber(canonicalReviewLayout?.pageCount ?? 0),
               ),
               const Divider(height: 20),
-              // Exact اختياري ومطفأ افتراضياً: يصدّر PDF صفحاتِ المعاينة
-              // صوراً؛ Word مطابق للمعاينة (صور) دائماً. المسار الافتراضي
-              // يحافظ على النص المتجه في PDF.
-              SwitchListTile(
-                key: const ValueKey<String>('export-exact-mode'),
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                value: _exactExport,
-                onChanged: (value) {
-                  setDialogState(() => _exactExport = value);
-                  setState(() {});
-                },
-                title: const Text('مطابق للمعاينة (Exact)'),
-                subtitle: Text(
-                  _exactExport
-                      ? 'عند تفعيله: PDF = صور صفحات المعاينة نفسها دون '
-                          'أدوات التحرير (بلا بحث/تحديد نصي)؛ Word صور دائماً.'
-                      : 'الافتراضي: PDF نصي قابل للبحث؛ Word = صور صفحات '
-                          'المعاينة (مطابق للمعاينة، غير قابل للتحرير). فعّل '
-                          'Exact عندما تكون أولوية التطابق البصري التام في PDF.',
-                ),
-              ),
             ],
           ),
         ),
@@ -2974,19 +2760,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               _exportPdf(
                 pageAssignments: pageAssignments,
                 layoutDocument: canonicalReviewLayout,
-                exact: _exactExport,
               );
             },
             icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
             label: const Text('تصدير PDF'),
-          ),
-          FilledButton.tonalIcon(
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              _exportWord();
-            },
-            icon: const Icon(Icons.description_outlined, size: 18),
-            label: const Text('تصدير Word'),
           ),
         ],
       ),
@@ -3364,15 +3141,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (!_useCanonicalSurface) {
       _trimPageKeysByIndices(pagination.pages.map((page) => page.index));
     }
-    if (!_exactCaptureInProgress) _ensureCanonicalPreview(controller);
-    final canonicalCapture = _exactCaptureInProgress ? _canonicalCaptureLayout : null;
-    final canonicalPreview = canonicalCapture ??
-        (identical(_canonicalPreviewSourceDocument, document)
+    _ensureCanonicalPreview(controller);
+    final canonicalPreview =
+        identical(_canonicalPreviewSourceDocument, document)
             ? _canonicalPreviewLayout
-            : null);
-    final canonicalAssets = canonicalCapture != null
-        ? _canonicalCaptureAssets
-        : _canonicalPreviewAssets;
+            : null;
+    final canonicalAssets = _canonicalPreviewAssets;
     if (canonicalPreview != null) {
       _trimPageKeysByIndices(canonicalPreview.pages.map((page) => page.index));
     }
@@ -3499,7 +3273,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             onToggleFormulas: () => setState(() => _showFormulas = !_showFormulas),
             onSave: _save,
             onExportPdf: _showReview,
-            onExportWord: _showReview,
             isBusy: _isBusy,
           ),
           if (_showFormulas)
@@ -3566,7 +3339,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                                     canonicalPreview,
                                     page,
                                     canonicalAssets,
-                                    interactive: canonicalCapture == null,
+                                    interactive: true,
                                   )
                               else if (identical(
                                 _canonicalPreviewFailedDocument,
@@ -3607,7 +3380,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                         ),
                       ),
                     ),
-                    if (_exactCaptureInProgress)
                       const Positioned.fill(
                         child: AbsorbPointer(
                           child: ColoredBox(
@@ -3804,7 +3576,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     Map<InlineNode, _CanonicalFieldBinding> bindings,
     CanonicalPagePointerEvent event,
   ) {
-    if (_exactCaptureInProgress) return;
     if (_stagedFormula != null && !_locked) {
       _placeStagedFormula(event.localPositionPx, pageIndex: page.index);
       return;
@@ -3961,9 +3732,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     CanonicalLayoutPreviewAssets assets, {
     required bool interactive,
   }) {
-    final sourceDocument = identical(_canonicalCaptureLayout, layout)
-        ? (_canonicalCaptureSourceDocument ?? controller.document)
-        : controller.document;
+    final sourceDocument = controller.document;
     final bindings = _canonicalFieldBindings(controller, layout.source);
     _CanonicalFieldBinding? activeBinding;
     if (_activeFieldKey != null) {
@@ -4462,10 +4231,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               layout,
               page,
               pageCount,
-              snapshotKeys: _pageSnapshotKeys,
-              canvasKeys: _pageCanvasKeys,
-              interactive: !_exactCaptureInProgress,
-              showPreviewChrome: !_exactCaptureInProgress,
             ),
           ),
         ),
@@ -4492,14 +4257,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           child: SizedBox(
             width: width,
             height: height,
-            child: RepaintBoundary(
-              key: _pageSnapshotKeys.putIfAbsent(
-                page.index,
-                () => GlobalKey(
-                  debugLabel: 'canonical-page-snapshot-${page.index}',
-                ),
-              ),
-              child: _buildCanonicalPage(
+            child: _buildCanonicalPage(
                 controller,
                 layout,
                 page,
@@ -4520,8 +4278,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     SubjectLayoutTemplate layout,
     PaginatedPage page,
     int pageCount, {
-    required Map<int, GlobalKey> snapshotKeys,
-    Map<int, GlobalKey>? canvasKeys,
     bool interactive = true,
     bool showPreviewChrome = true,
   }) {
@@ -4571,7 +4327,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             )
           : question;
       // إفلات سؤال مسحوب هنا يعيد ترتيبه (السؤال وحدة لا تتجزأ). في سطح
-      // Exact لا نحتاج أي سلوك تفاعلي، فنرسم الكتلة نفسها بلا أهداف سحب.
+      // ليس هناك وضع Exact منفصل؛ كل الصفحات تُرسم بنفس الكتلة.
       blocks.add(
         interactive
             ? DragTarget<int>(
@@ -4699,7 +4455,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
           for (final ref in pageAttachments) ..._buildPageElement(controller, ref),
           // Controls are siblings in the page-sized hit-test area and painted
-          // last so other attachments cannot cover them. Exact render bypasses
+          // last so other attachments cannot cover them. Non-interactive render bypasses
           // them entirely because they are editor chrome, not paper content.
           if (interactive)
             for (final ref in pageAttachments)
@@ -4721,12 +4477,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
 
     final pageShell = Container(
-      key: canvasKeys?.putIfAbsent(
+      key: _pageCanvasKeys.putIfAbsent(
         page.index,
         () => GlobalKey(
-          debugLabel: interactive
-              ? 'a4-page-canvas-${page.index}'
-              : 'exact-page-canvas-${page.index}',
+          debugLabel: 'a4-page-canvas-${page.index}',
         ),
       ),
       width: ExamCanvasGeometry.width,
@@ -4761,17 +4515,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
     return Directionality(
       textDirection: layout.textDirection,
-      child: RepaintBoundary(
-        key: snapshotKeys.putIfAbsent(
-          page.index,
-          () => GlobalKey(
-            debugLabel: interactive
-                ? 'a4-page-snapshot-${page.index}'
-                : 'exact-page-snapshot-${page.index}',
-          ),
-        ),
-        child: pageShell,
-      ),
+      child: RepaintBoundary(child: pageShell),
     );
   }
 
@@ -5196,7 +4940,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           behavior: HitTestBehavior.translucent,
           onTap: () => _tapQuestion(questionIndex),
           child: _titleRow(
-            dragHandle: _exactCaptureInProgress
                 ? const SizedBox.shrink()
                 : _locked
                     ? Icon(
@@ -5265,12 +5008,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             ),
             marks: _marksTarget(
               marks: data.title.marks,
-              showPlaceholder: !_exactCaptureInProgress &&
                   document.settings.showQuestionMarks,
               style: titleStyle,
               onEdit: () => _editQuestionMarks(questionIndex),
             ),
-            actions: _exactCaptureInProgress
                 ? const <Widget>[]
                 : <Widget>[
                     IconButton(
@@ -5333,7 +5074,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         ],
         if (directlySelected) _addPointButton(controller, owner),
         // السؤال الجديد يبدأ بلا فروع؛ تُنشأ فقط بطلب صريح (زر +).
-        if (question.branches.isEmpty && !_exactCaptureInProgress)
           Padding(
             padding: const EdgeInsetsDirectional.only(start: 44, top: 2, bottom: 2),
             child: Text(
@@ -5574,7 +5314,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
     // مقبض السحب وحده يبدأ السحب (حتى لا يتعارض مع تحديد النص في الحقول)؛
     // الهدف هو كتلة الفرع كاملة.
-    final dragHandle = _exactCaptureInProgress
         ? const SizedBox.shrink()
         : _locked
             ? Icon(
@@ -5753,12 +5492,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
           marks: _marksTarget(
             marks: data.title.marks,
-            showPlaceholder: !_exactCaptureInProgress &&
                 document.settings.showQuestionMarks,
             style: bodyStyle,
             onEdit: () => _editBranchMarks(ref),
           ),
-          actions: _exactCaptureInProgress
               ? const <Widget>[]
               : <Widget>[
                   IconButton(
@@ -5872,7 +5609,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final item = sourceItems.firstWhere((candidate) => candidate.id == point.id);
     final fieldKey = _itemKey(item.id);
     final showActions =
-        !_exactCaptureInProgress && _activeItemFieldKey == fieldKey;
     return Padding(
       padding: const EdgeInsetsDirectional.only(
         start: VisualMetrics.pointIndentPx,
@@ -5893,7 +5629,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       left: VisualMetrics.pointLabelGapPx,
                     ),
                     child: point.labelContent.isEmpty
-                        ? _exactCaptureInProgress
                             ? const SizedBox.shrink()
                             : const Icon(Icons.tag, size: 12, color: Colors.grey)
                         : _semanticInline(
@@ -5925,7 +5660,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 ),
               _marksTarget(
                 marks: point.marks,
-                showPlaceholder: !_exactCaptureInProgress &&
                     controller.document.settings.showQuestionMarks,
                 style: bodyStyle,
                 onEdit: () => _editPointMarks(owner, item.id),
@@ -5985,7 +5719,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     TextAlign ownerAlign,
   ) {
     final options = point.options!.options;
-    final active = !_exactCaptureInProgress &&
         (_activeItemFieldKey == _itemKey(item.id) ||
             (_activeFieldKey?.startsWith('option-${item.id}-') ?? false));
     return Padding(
@@ -6010,7 +5743,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       child: Padding(
                         padding: const EdgeInsets.only(top: 1),
                         child: options[index].labelContent.isEmpty
-                            ? _exactCaptureInProgress
                                 ? const SizedBox.shrink()
                                 : const Icon(Icons.tag, size: 12, color: Colors.grey)
                             : _semanticInline(options[index].labelContent, bodyStyle),
@@ -6042,8 +5774,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                     ),
                   ),
                   // أداة الحذف تخص وضع التحرير ولا تدخل صورة الورقة النهائية.
-                  if (!_exactCaptureInProgress)
-                    InkWell(
+                  InkWell(
                       onTap: () =>
                           controller.removePointOption(owner, item.id, index),
                       child: const Padding(
@@ -7011,7 +6742,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       style: style,
       semanticContent: semanticContent,
       textAlign: textAlign,
-      hint: _exactCaptureInProgress ? null : hint,
       onActivate: () => _activateField(fieldKey, controller),
       onEditFormula: () => _editEquationInField(fieldKey),
       // في وضع التحديد المتعدد لا يبتلع الحقل الضغط المطوّل: يمرّ إلى كتلة

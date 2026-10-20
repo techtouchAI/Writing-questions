@@ -6,8 +6,6 @@ enum ExportSurface {
   /// ملف PDF المتجه (`PaginatedPdfExamEngine` + `PdfPaperBuilder`).
   pdfVector,
 
-  /// التصدير الدقيق (Exact): صور صفحات المعاينة نفسها في PDF وWord.
-  exact,
 }
 
 /// بند في عقد التصدير: خاصية واحدة في النموذج ومسار وصولها إلى Renderers.
@@ -48,9 +46,8 @@ class ExportContractEntry {
 /// المعاينة وحدها» ([ExportContractAudit.previewOnly] فارغة)، وكل بند موسوم
 /// بدليل يُراجع عند تغيير المعمارية.
 ///
-/// التصدير الدقيق ([ExportSurface.exact]) لا يُعادة فيه حساب أي شيء: هو
-/// صورة الصفحة النهائية، فيرث كل بند بالبناء. (أُزيل Word القابل للتحرير
-/// في C5؛ فلا تُدَّعى له تغطية.)
+/// كان التصدير الدقيق وWord المطابق للمعاينة صورةً للصفحات؛ أُزيلا واكتُفي
+/// بمسار PDF المتجه الموحّد المتطابق بصرياً والمقروء نصياً.
 abstract final class ExportContractAudit {
   static const List<ExportContractEntry> entries = <ExportContractEntry>[
     // ------------------------------ إعدادات الورقة ------------------------------
@@ -58,7 +55,7 @@ abstract final class ExportContractAudit {
       property: 'PaperSettings.baseFontSize (fontScale)',
       effect: 'قياس كل أحجام الخطوط مرة واحدة',
       surfaces: ExportSurface.values,
-      evidence: 'ExamTypography.resolve + page_snapshot_service',
+      evidence: 'ExamTypography.resolve + CanonicalLayoutPdfPainter',
     ),
     ExportContractEntry(
       property: 'PaperSettings.lineSpacing (heightScale)',
@@ -231,7 +228,7 @@ abstract final class ExportContractAudit {
       // كان في Word القابل للتحرير قيدٌ معلن (صف الخيارات فقرة واحدة)؛
       // أُزيل ذلك السطح في C5 فأصبحت المحاذاة تصل إلى كل الأسطح.
       surfaces: ExportSurface.values,
-      evidence: 'option.option.align في المعاينة وPDF وExact',
+      evidence: 'option.option.align في المعاينة وPDF',
     ),
 
     // ------------------------------ العناصر الحرة والمعادلات ------------------------------
