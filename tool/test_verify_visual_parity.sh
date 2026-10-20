@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# Locks the LibreOffice conversion contract in tool/verify_visual_parity.sh.
-#
-# A missing, empty, or stale PDF must fail the script. A non-zero soffice
-# exit that still wrote a new non-empty PDF (the javaldx warning seen in CI)
-# must not be treated as a failed conversion, and must not skip the compare.
-# Success of that path is not a fake visual pass: the mocks below make the
-# rendered pages match, so RMSE is really zero. A conversion that produces
-# nothing must not print the acceptance line.
+# يعقد فحص أداة التحقق البصري (tool/verify_visual_parity.sh) بعد إزالة مسار Exact/Word:
+# يبقى فقط المسار المتجهي (vector PDF)؛ لا تحويل DOCX عبر LibreOffice بعد الآن.
+# سيناريوهات:
+# 1. ملفات صالحة (manifest + vector.pdf + لقطة معاينة) → خروج 0 وسطر القبول في التقرير.
+# 2. manifest مفقود → خروج 2 مع خطأ صريح ولا يُدعى التحويل على الإطلاق.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -44,8 +41,7 @@ cat >"$TMP/bin/compare" <<'EOF'
 echo "0 (0)"
 exit 0
 EOF
-# A real blank PNG. The vector content gate reads pixels; the text "png" is
-# not a page, and a decode error must not look like a conversion failure.
+# صورة PNG فارغة صالحة (بكسل 8×8 متبادل الأبيض والأسود) ताकत المقارنة لا تفكّ تشفيرها.
 BLANK_PNG="$(python3 - <<'PY'
 import base64, struct, zlib
 def chunk(tag, payload):
@@ -87,47 +83,8 @@ EOF
 cat >"$TMP/bin/soffice" <<'EOF'
 #!/bin/sh
 if [ "$1" = "--version" ]; then echo "LibreOffice mock"; exit 0; fi
-outdir=""
-prev=""
-for arg in "$@"; do
-  if [ "$prev" = "--outdir" ]; then outdir="$arg"; fi
-  prev="$arg"
-done
-mode="${SOFFICE_MODE:-fail}"
-case "$mode" in
-  fail)
-    echo "Error: conversion failed"
-    exit 1
-    ;;
-  empty)
-    : >"$outdir/exact.pdf"
-    echo "Error: empty output"
-    exit 1
-    ;;
-  stale)
-    # Refuse to write. A pre-seeded file, if the script failed to delete it,
-    # must not be accepted.
-    echo "Error: source could not be loaded"
-    exit 1
-    ;;
-  javaldx)
-    printf '%%PDF-1.4 mock\n' >"$outdir/exact.pdf"
-    echo "Warning: failed to launch javaldx - java may not function correctly"
-    exit 1
-    ;;
-  old)
-    # Writes a file, then backdates it, so a converter that reuses an older
-    # document cannot pass the mtime check.
-    printf 'STALE' >"$outdir/exact.pdf"
-    touch -d '2000-01-01 00:00:00' "$outdir/exact.pdf"
-    echo "Error: reused an older document"
-    exit 1
-    ;;
-  *)
-    echo "unknown mode $mode" >&2
-    exit 2
-    ;;
-esac
+echo "LibreOffice mock: no conversion performed (vector track only)" >&2
+exit 0
 EOF
 chmod +x "$TMP/bin/"*
 
@@ -137,75 +94,27 @@ json.dump({"pageCount": 1, "widthPx": 794, "heightPx": 1123}, open(sys.argv[1], 
 PY
 printf 'preview-bytes' >"$TMP/art/preview_page_1.png"
 printf '%%PDF' >"$TMP/art/vector.pdf"
-printf '%%PDF' >"$TMP/art/exact.pdf"
-printf 'docx' >"$TMP/art/exact.docx"
 
 export PATH="$TMP/bin:$PATH"
-export PREVIEW_PNG="$TMP/art/preview_page_1.png"
 
-run() {
-  local mode="$1"
-  local art="$TMP/case-$mode"
-  rm -rf "$art"
-  mkdir -p "$art/rendered/exact_docx_pdf"
-  cp "$TMP/art/manifest.json" "$TMP/art/preview_page_1.png" \
-    "$TMP/art/vector.pdf" "$TMP/art/exact.pdf" "$TMP/art/exact.docx" "$art/"
-  # A stale PDF from a previous run. The script must delete it before converting.
-  printf 'STALE' >"$art/rendered/exact_docx_pdf/exact.pdf"
-  touch -d '2000-01-01 00:00:00' "$art/rendered/exact_docx_pdf/exact.pdf"
-  SOFFICE_MODE="$mode" bash "$SCRIPT" "$art" >"$TMP/out-$mode.txt" 2>&1
-}
-
-# 1. No output file: fail, and do not claim the visual gate passed.
+# 1. ملفات صالحة: المسار المتجهي ينجح ويُnisب قبول الطابقة.
 set +e
-run fail
+bash "$SCRIPT" "$TMP/art" >"$TMP/out-valid.txt" 2>&1
 status=$?
 set -e
-[ "$status" -ne 0 ] || fail "missing PDF exited 0"
-grep -q 'تعذّر إنتاج ملف غير فارغ' "$TMP/case-fail/report.txt" \
-  || fail "missing PDF did not record a conversion error"
-if grep -q 'الطابقة البصرية مقبولة' "$TMP/case-fail/report.txt"; then
-  fail "missing PDF printed an acceptance line"
-fi
-if grep -q 'STALE' "$TMP/case-fail/rendered/exact_docx_pdf/exact.pdf" 2>/dev/null; then
-  fail "stale PDF survived a failed conversion"
-fi
+[ "$status" -eq 0 ] || fail "valid vector artifacts exited $status: $(cat "$TMP/out-valid.txt")"
+grep -q 'الطابقة البصرية مقبولة' "$TMP/art/report.txt" \
+  || fail "valid run did not print the acceptance line"
+grep -q 'تحويل' "$TMP/art/report.txt" && fail "valid run mentioned conversion though Word track was removed"
 
-# 2. Empty file: fail. An empty file is not a converted document.
+# 2. manifest مفقود: رفض فوري دون touching التحويل.
+rm -f "$TMP/art/manifest.json"
 set +e
-run empty
+bash "$SCRIPT" "$TMP/art" >"$TMP/out-missing.txt" 2>&1
 status=$?
 set -e
-[ "$status" -ne 0 ] || fail "empty PDF exited 0"
-grep -q 'تعذّر إنتاج ملف غير فارغ' "$TMP/case-empty/report.txt" \
-  || fail "empty PDF was accepted"
-if grep -q 'الطابقة البصرية مقبولة' "$TMP/case-empty/report.txt"; then
-  fail "empty PDF printed an acceptance line"
-fi
+[ "$status" -ne 0 ] || fail "missing manifest exited 0"
+grep -q 'manifest.json مفقود' "$TMP/out-missing.txt" \
+  || fail "missing manifest did not report the missing manifest"
 
-# 3. A converter that writes and then backdates the file is still a stale file.
-set +e
-run old
-status=$?
-set -e
-[ "$status" -ne 0 ] || fail "backdated PDF exited 0"
-grep -q 'أقدم من بدء التحويل' "$TMP/case-old/report.txt" \
-  || fail "backdated PDF was not rejected"
-if grep -q 'الطابقة البصرية مقبولة' "$TMP/case-old/report.txt"; then
-  fail "backdated PDF printed an acceptance line"
-fi
-
-# 4. javaldx: non-zero exit, new non-empty PDF, pages match. The conversion
-# warning must not fail the script by itself, and the compare must have run.
-set +e
-run javaldx
-status=$?
-set -e
-[ "$status" -eq 0 ] || fail "javaldx with a new PDF exited $status: $(cat "$TMP/out-javaldx.txt")"
-grep -q 'exit=1' "$TMP/case-javaldx/report.txt" \
-  || fail "javaldx exit code was not recorded"
-grep -q 'الطابقة البصرية مقبولة' "$TMP/case-javaldx/report.txt" \
-  || fail "matching pages were not accepted"
-grep -q 'STALE' "$TMP/case-javaldx/rendered/exact_docx_pdf/exact.pdf" \
-  && fail "javaldx path compared the stale PDF" || true
-echo "verify_visual_parity conversion contract: ok"
+echo "verify_visual_parity vector contract: ok"
