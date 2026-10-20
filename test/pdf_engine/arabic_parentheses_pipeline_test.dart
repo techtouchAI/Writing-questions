@@ -483,7 +483,7 @@ void main() {
       final originalDoc = ExamDocument(
         id: 'arabic-parens-e2e',
         name: 'اختبار شامل للأقواس والمعادلات المركبة',
-        header: ExamHeaderModel.initial(
+        header: ExamHeaderModel(
           schoolName: 'ثانوية المتفوقين (للبنين)',
           examType: 'اختبار (الفصل الأول)',
           academicYear: '2026 / 2027',
@@ -688,11 +688,13 @@ void main() {
           reason: 'Line "Solve (x + 1) = (2x - 3)" must exist on page 1');
 
       Rect bracketPixelRect(LayoutLine line, String ch) {
-        final run = line.runs.firstWhere((r) => r.text.trim() == ch);
+        final word = line.runs
+            .expand((r) => r.words)
+            .firstWhere((w) => w.text.trim() == ch);
         return Rect.fromLTWH(
-          LayoutUnits.ptToPx(run.x),
+          LayoutUnits.ptToPx(word.x),
           LayoutUnits.ptToPx(line.y),
-          LayoutUnits.ptToPx(run.width),
+          LayoutUnits.ptToPx(word.width),
           LayoutUnits.ptToPx(line.height),
         );
       }
@@ -764,8 +766,12 @@ void main() {
       //  - LTR `Solve (x + 1) = (2x - 3)` ON THE SAME PAGE: `'('` word has
       //    `/ToUnicode == '('` AND `glyf` contour == `parenleft` (`(`), while
       //    `')'` word has `/ToUnicode == ')'` AND `glyf` contour == `parenright` (`)`)!
-      final closeRun = closeLine.runs.firstWhere((r) => r.text.trim() == ')');
-      final openRun = openLine.runs.firstWhere((r) => r.text.trim() == '(');
+      final closeWord = closeLine.runs
+          .expand((r) => r.words)
+          .firstWhere((w) => w.text.trim() == ')');
+      final openWord = openLine.runs
+          .expand((r) => r.words)
+          .firstWhere((w) => w.text.trim() == '(');
       final ltrOpenWord = pureLtrLine!.runs
           .expand((r) => r.words)
           .firstWhere((w) => w.text.startsWith('('));
@@ -781,7 +787,7 @@ void main() {
         );
       }
 
-      final pdfCloseToken = tokenAt(closeRun.x, closeLine.baseline);
+      final pdfCloseToken = tokenAt(closeWord.x, closeLine.baseline);
       expect(pdfCloseToken.unicodeText, ')',
           reason: 'Logical /ToUnicode of "أ )" bracket must remain ")"');
       final closeGlyphBytes = inspected
@@ -792,7 +798,7 @@ void main() {
           reason:
               'Vector PDF glyf outline for RTL "أ )" must be mirrored parenleft "(" matching Preview!');
 
-      final pdfOpenToken = tokenAt(openRun.x, openLine.baseline);
+      final pdfOpenToken = tokenAt(openWord.x, openLine.baseline);
       expect(pdfOpenToken.unicodeText, '(',
           reason: 'Logical /ToUnicode of "أ (" bracket must remain "("');
       final openGlyphBytes = inspected
