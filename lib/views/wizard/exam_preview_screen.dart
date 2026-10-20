@@ -341,9 +341,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// جذور اللقط (RepaintBoundary) لكل صفحة في المعاينة الحية.
   final Map<int, GlobalKey> _pageSnapshotKeys = <int, GlobalKey>{};
 
-  /// يجمّد زخارف التحرير ويُظهر حاجباً أثناء التقاط صفحات المعاينة الأصلية.
-  bool _exactCaptureInProgress = false;
-
   /// جذور اللقط (RepaintBoundary) لكل صفحة في المعاينة الحية.
   /// The live preview uses the same canonical point geometry as PDF. This is
   /// independent of the legacy controller's measurement-driven pagination.
