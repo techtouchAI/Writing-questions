@@ -154,7 +154,9 @@ class _MixedContentEditorState extends State<MixedContentEditor> {
         return;
       }
       final index = _blocks.indexOf(target);
-      final caret = _activeCaret.clamp(0, target.text.length);
+      final caret = _activeText != null
+          ? _activeCaret.clamp(0, target.text.length)
+          : target.text.length;
       final pre = target.text.substring(0, caret);
       final post = target.text.substring(caret);
       final math = _MixedBlock.math(id: _nextBlockId++, latex: '', isBlock: false);
