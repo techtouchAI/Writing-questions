@@ -151,7 +151,7 @@ void main() {
   // قاعدة الأس.
   // ---------------------------------------------------------------------
   group('compound equations — explicit component sequence', () {
-    Future<void> _typeInLastSlot(WidgetTester tester, String text) async {
+    Future<void> typeInLastSlot(WidgetTester tester, String text) async {
       final slots = find.byType(TextField);
       final count = slots.evaluate().length;
       expect(count, greaterThan(0));
@@ -159,7 +159,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    Future<void> _appendComponent(WidgetTester tester) async {
+    Future<void> appendComponent(WidgetTester tester) async {
       await tester.tap(
         find.byKey(const ValueKey<String>('equation-append-slot')),
       );
@@ -169,7 +169,7 @@ void main() {
     /// يبني متتالية مكوّنات علوية من نصوص: الأول يُكتب في
     /// الخانة التي يخلقها الموضع الفارغ، وكل لاحقٍ يُلحق
     /// بفتحة الإلحاق — فلا تبقى خانة أولى فارغة.
-    Future<void> _buildTopLevelSequence(
+    Future<void> buildTopLevelSequence(
       WidgetTester tester,
       List<String> pieces,
     ) async {
@@ -177,10 +177,10 @@ void main() {
         find.text('انقر هنا للكتابة، أو ابنِ المعادلة من الشريط أدناه.'),
       );
       await tester.pumpAndSettle();
-      await _typeInLastSlot(tester, pieces.first);
+      await typeInLastSlot(tester, pieces.first);
       for (final piece in pieces.sublist(1)) {
-        await _appendComponent(tester);
-        await _typeInLastSlot(tester, piece);
+        await appendComponent(tester);
+        await typeInLastSlot(tester, piece);
       }
     }
 
@@ -193,10 +193,10 @@ void main() {
       // جذر أوّل ومحتواه.
       await tester.tap(find.widgetWithText(InkWell, '√'));
       await tester.pumpAndSettle();
-      await _typeInLastSlot(tester, '5');
+      await typeInLastSlot(tester, '5');
 
       // مكوّن علوي جديد ثم العملية — لا تندرج داخل الجذر.
-      await _appendComponent(tester);
+      await appendComponent(tester);
       await tester.tap(find.text('+'));
       await tester.pumpAndSettle();
       // جسم الجذر الأول بقي «5» وحده: العملية ليست داخله.
@@ -205,10 +205,10 @@ void main() {
       // جذر ثانٍ ومحتواه.
       await tester.tap(find.widgetWithText(InkWell, '√'));
       await tester.pumpAndSettle();
-      await _typeInLastSlot(tester, '8');
+      await typeInLastSlot(tester, '8');
 
       // علامة المساواة مكوّناً علوياً.
-      await _appendComponent(tester);
+      await appendComponent(tester);
       await tester.tap(find.text('='));
       await tester.pumpAndSettle();
 
@@ -228,24 +228,24 @@ void main() {
         find.text('انقر هنا للكتابة، أو ابنِ المعادلة من الشريط أدناه.'),
       );
       await tester.pumpAndSettle();
-      await _typeInLastSlot(tester, '5');
+      await typeInLastSlot(tester, '5');
       await tester.tap(find.text('x²'));
       await tester.pumpAndSettle();
       // قاعدة غير فارغة ودليل فارغ يُنتظر ملؤه.
       expect(_slotTexts(tester), <String>['5', '']);
-      await _typeInLastSlot(tester, '2');
+      await typeInLastSlot(tester, '2');
 
-      await _appendComponent(tester);
+      await appendComponent(tester);
       await tester.tap(find.text('+'));
       await tester.pumpAndSettle();
 
-      await _appendComponent(tester);
-      await _typeInLastSlot(tester, '6');
+      await appendComponent(tester);
+      await typeInLastSlot(tester, '6');
       await tester.tap(find.text('x²'));
       await tester.pumpAndSettle();
-      await _typeInLastSlot(tester, '2');
+      await typeInLastSlot(tester, '2');
 
-      await _appendComponent(tester);
+      await appendComponent(tester);
       await tester.tap(find.text('='));
       await tester.pumpAndSettle();
 
@@ -262,7 +262,7 @@ void main() {
         find.text('انقر هنا للكتابة، أو ابنِ المعادلة من الشريط أدناه.'),
       );
       await tester.pumpAndSettle();
-      await _typeInLastSlot(tester, 'x+1');
+      await typeInLastSlot(tester, 'x+1');
 
       // تحديد كل النص ثم x²: القاعدة كاملة بين قوسين.
       final field = find.byType(TextField).last;
@@ -277,7 +277,7 @@ void main() {
       );
       await tester.tap(find.text('x²'));
       await tester.pumpAndSettle();
-      await _typeInLastSlot(tester, '2');
+      await typeInLastSlot(tester, '2');
 
       await tester.tap(find.text('إدراج'));
       await tester.pumpAndSettle();
@@ -292,7 +292,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // x + y بثلاثة مكوّنات علوية.
-      await _buildTopLevelSequence(tester, <String>['x', '+', 'y']);
+      await buildTopLevelSequence(tester, <String>['x', '+', 'y']);
       expect(_slotTexts(tester), <String>['x', '+', 'y']);
 
       // تعديل المكوّن الأوسط من «+» إلى «-».
@@ -312,7 +312,7 @@ void main() {
       await _pumpEditor(tester, const _EditorHost());
       await tester.tap(find.text('فتح المحرر'));
       await tester.pumpAndSettle();
-      await _buildTopLevelSequence(tester, <String>['x', '+', 'y']);
+      await buildTopLevelSequence(tester, <String>['x', '+', 'y']);
 
       // حذف الأخير يزيل «y» فقط.
       await tester.tap(find.text('⌫ حذف الأخير'));
@@ -320,8 +320,8 @@ void main() {
       expect(_slotTexts(tester), <String>['x', '+']);
 
       // ثم إلحاق مكوّن جديد بعده.
-      await _appendComponent(tester);
-      await _typeInLastSlot(tester, 'z');
+      await appendComponent(tester);
+      await typeInLastSlot(tester, 'z');
       expect(_slotTexts(tester), <String>['x', '+', 'z']);
 
       await tester.tap(find.text('إدراج'));
@@ -336,7 +336,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // تعبير طويل: أرقام وعمليات متعاقبة.
-      await _buildTopLevelSequence(
+      await buildTopLevelSequence(
         tester,
         <String>['1', '+', '2', '+', '3', '+', '4'],
       );
@@ -360,8 +360,8 @@ void main() {
       for (final radicand in <String>['a', 'b']) {
         await tester.tap(find.widgetWithText(InkWell, '√'));
         await tester.pumpAndSettle();
-        await _typeInLastSlot(tester, radicand);
-        await _appendComponent(tester);
+        await typeInLastSlot(tester, radicand);
+        await appendComponent(tester);
       }
       await tester.tap(find.text('إدراج'));
       await tester.pumpAndSettle();
@@ -378,7 +378,7 @@ void main() {
       await _pumpEditor(tester, const _EditorHost());
       await tester.tap(find.text('فتح المحرر'));
       await tester.pumpAndSettle();
-      await _buildTopLevelSequence(tester, <String>['x', '+', 'y']);
+      await buildTopLevelSequence(tester, <String>['x', '+', 'y']);
       expect(_slotTexts(tester), <String>['x', '+', 'y']);
 
       // المؤشر في بداية «y» ثم جذر: يُدرَج قبلها على مستوى
@@ -410,8 +410,8 @@ void main() {
       for (final radicand in <String>['a', 'b', 'c']) {
         await tester.tap(find.widgetWithText(InkWell, '√'));
         await tester.pumpAndSettle();
-        await _typeInLastSlot(tester, radicand);
-        await _appendComponent(tester);
+        await typeInLastSlot(tester, radicand);
+        await appendComponent(tester);
       }
       expect(_slotTexts(tester), <String>['a', 'b', 'c', '']);
 
@@ -430,9 +430,9 @@ void main() {
         (tester) async {
       await _pumpEditor(
         tester,
-        Directionality(
+        const Directionality(
           textDirection: TextDirection.rtl,
-          child: const _EditorHost(),
+          child: _EditorHost(),
         ),
       );
       await tester.tap(find.text('فتح المحرر'));
@@ -440,12 +440,12 @@ void main() {
 
       await tester.tap(find.widgetWithText(InkWell, '√'));
       await tester.pumpAndSettle();
-      await _typeInLastSlot(tester, '5');
-      await _appendComponent(tester);
+      await typeInLastSlot(tester, '5');
+      await appendComponent(tester);
       await tester.tap(find.text('+'));
       await tester.pumpAndSettle();
-      await _appendComponent(tester);
-      await _typeInLastSlot(tester, '=');
+      await appendComponent(tester);
+      await typeInLastSlot(tester, '=');
 
       await tester.tap(find.text('إدراج'));
       await tester.pumpAndSettle();
@@ -499,7 +499,7 @@ void main() {
     test('equation brackets inside Arabic text never touch the text', () {
       // المعادلة مخزّنة LaTeX LTR داخل نص عربي — لا BiDi
       // تطبَّق على المحتوى الرياضي ولا على النص العربي.
-      const source = 'نص $\\sqrt{(x+1)}$ نص';
+      const source = r'نص $\\sqrt{(x+1)}$ نص';
       final segments = TexContent.split(source);
       expect(segments, hasLength(3));
       expect(segments[0].text, 'نص ');
