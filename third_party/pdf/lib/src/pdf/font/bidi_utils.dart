@@ -222,10 +222,10 @@ String logicalToVisual(String input) {
     final endsWithNewLine = paragraph.separator == 10;
     final endIndex = paragraph.bidiText.length - (endsWithNewLine ? 1 : 0);
     final visual = String.fromCharCodes(paragraph.bidiText, 0, endIndex);
-    // `paragraph.bidiText` is ALREADY in visual character order per UAX #9
-    // Rule L2; reversing whitespace-delimited words a second time inverted
-    // multi-word phrases. Keep the visual line as resolved by UAX #9.
-    buffer.write(visual);
+    // Legacy `pw.RichText` splits on spaces and reverses word order itself on
+    // RTL lines, so word tokens must stay in logical order while glyphs within
+    // each word stay visually shaped; canonical emission uses [shapeRtlRun].
+    buffer.write(visual.split(' ').reversed.join(' '));
     if (endsWithNewLine) {
       buffer.writeln();
     }

@@ -496,6 +496,7 @@ void main() {
             id: 'q-parens',
             questionNumber: 1,
             statement: 'أجب عن الفروع الآتية (جميعها) بدقة:',
+            body: 'أ )\nأ (\n1 )\nSolve (x + 1) = (2x - 3)',
             marksOverride: 20,
             items: <BranchItem>[
               BranchItem(id: 'case-close', labelOverride: '', text: 'أ )'),
@@ -674,13 +675,24 @@ void main() {
       LayoutLine? closeLine;
       LayoutLine? openLine;
       LayoutLine? pureLtrLine;
-      for (final block in page1.blocks) {
+      void visitBlock(LayoutBlock block) {
         for (final line in block.lines) {
-          final joined = line.runs.map((r) => r.text).join().trim();
-          if (joined == 'أ )') closeLine = line;
-          if (joined == 'أ (') openLine = line;
-          if (joined.contains('Solve (x + 1)')) pureLtrLine = line;
+          final orderedRuns = List<LayoutRun>.of(line.runs)
+            ..sort((a, b) => a.logicalIndex.compareTo(b.logicalIndex));
+          final joined = orderedRuns.map((r) => r.text).join().trim();
+          if (joined == 'أ )' && closeLine == null) closeLine = line;
+          if (joined == 'أ (' && openLine == null) openLine = line;
+          if (joined.contains('Solve (x + 1)') && pureLtrLine == null) {
+            pureLtrLine = line;
+          }
         }
+        for (final child in block.children) {
+          visitBlock(child);
+        }
+      }
+
+      for (final block in page1.blocks) {
+        visitBlock(block);
       }
       expect(closeLine, isNotNull, reason: 'Line "أ )" must exist on page 1');
       expect(openLine, isNotNull, reason: 'Line "أ (" must exist on page 1');

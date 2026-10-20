@@ -476,7 +476,9 @@ class EquationModel {
       nodes.insert(0, fresh);
       return fresh;
     }
-    if (loc.index > 0 && loc.parentList[loc.index - 1] is EqText) {
+    if (loc.index > 0 &&
+        loc.parentList[loc.index - 1] is EqText &&
+        (loc.parentList[loc.index - 1] as EqText).text.isEmpty) {
       return loc.parentList[loc.index - 1] as EqText;
     }
     final fresh = EqText('');
@@ -502,7 +504,8 @@ class EquationModel {
       return fresh;
     }
     if (loc.index + 1 < loc.parentList.length &&
-        loc.parentList[loc.index + 1] is EqText) {
+        loc.parentList[loc.index + 1] is EqText &&
+        (loc.parentList[loc.index + 1] as EqText).text.isEmpty) {
       return loc.parentList[loc.index + 1] as EqText;
     }
     final fresh = EqText('');

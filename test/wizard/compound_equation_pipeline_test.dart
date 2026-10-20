@@ -210,13 +210,18 @@ void main() {
       await tester.pumpAndSettle();
 
       // 1. Add first root √5
-      await tester.tap(find.text('√'));
+      await tester.tap(find.widgetWithText(OutlinedButton, '√'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).first, '5');
       await tester.pumpAndSettle();
 
-      // Verify inside RTL app that '√' symbol sits STRICTLY TO THE LEFT of its radicand TextField!
-      final sqrtSymbolDx = tester.getTopLeft(find.text('√').last).dx;
+      // Verify inside RTL app that '√' symbol inside the equation canvas sits
+      // STRICTLY TO THE LEFT of its radicand TextField (never reversed as "5√")!
+      final canvasSqrtFinder = find.descendant(
+        of: find.byKey(const Key('eq_canvas_ltr')),
+        matching: find.text('√'),
+      );
+      final sqrtSymbolDx = tester.getTopLeft(canvasSqrtFinder.first).dx;
       final bodyFieldDx = tester.getTopLeft(find.byType(TextField).first).dx;
       expect(sqrtSymbolDx, lessThan(bodyFieldDx),
           reason:
@@ -225,10 +230,10 @@ void main() {
       // 2. Step out of √5 -> add '+' -> add second √8 -> step out -> add '='
       await tester.tap(find.byKey(const Key('eq_nav_next')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('+'));
+      await tester.tap(find.widgetWithText(OutlinedButton, '+'));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('√'));
+      await tester.tap(find.widgetWithText(OutlinedButton, '√'));
       await tester.pumpAndSettle();
       // Active focus automatically moved inside the second root!
       final activeFields = tester
@@ -240,7 +245,7 @@ void main() {
 
       await tester.tap(find.byKey(const Key('eq_nav_next')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('='));
+      await tester.tap(find.widgetWithText(OutlinedButton, '='));
       await tester.pumpAndSettle();
 
       // Verify ALL 4 visual slots increase strictly left-to-right on screen:
@@ -387,7 +392,7 @@ void main() {
 
       await _tapVisible(tester, find.text('إضافة معادلة'));
 
-      await _tapVisible(tester, find.text('√'));
+      await _tapVisible(tester, find.widgetWithText(OutlinedButton, '√'));
       final mathSlots = find.byWidgetPredicate(
         (w) => w is TextField && w.decoration?.hintText == '?',
       );
@@ -395,12 +400,12 @@ void main() {
       await tester.pumpAndSettle();
 
       await _tapVisible(tester, find.byKey(const Key('eq_nav_next')));
-      await _tapVisible(tester, find.text('+'));
-      await _tapVisible(tester, find.text('√'));
+      await _tapVisible(tester, find.widgetWithText(OutlinedButton, '+'));
+      await _tapVisible(tester, find.widgetWithText(OutlinedButton, '√'));
       await tester.enterText(mathSlots.last, '8');
       await tester.pumpAndSettle();
       await _tapVisible(tester, find.byKey(const Key('eq_nav_next')));
-      await _tapVisible(tester, find.text('='));
+      await _tapVisible(tester, find.widgetWithText(OutlinedButton, '='));
 
       await _tapVisible(tester, find.text('حفظ المحتوى'));
       expect(
