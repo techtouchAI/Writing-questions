@@ -1413,6 +1413,7 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
 
   Widget _buildToolbar(BuildContext context) {
     return Column(
+      key: const Key('eq_toolbar'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _toolRow(context, 'البنى', <_Tool>[

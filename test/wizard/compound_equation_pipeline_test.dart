@@ -85,6 +85,11 @@ Future<void> _tapVisible(WidgetTester tester, Finder target) async {
   await tester.tap(target);
   await tester.pumpAndSettle();
 }
+
+Finder _toolBtn(String label) => find.descendant(
+      of: find.byKey(const Key('eq_toolbar')),
+      matching: find.text(label),
+    );
 Future<void> _pumpRtlApp(WidgetTester tester, Widget home) async {
   tester.view.physicalSize = const Size(960, 1500);
   tester.view.devicePixelRatio = 1.0;
@@ -167,7 +172,10 @@ void main() {
       // Neighboring IDs of untouched components stay 100% identical!
       expect(model.nodes.first.id, firstRootId);
       expect(model.locateById(lastRootId), isNotNull);
-      refocus.focus!.text = '+';
+      expect(refocus.focus!.text, '2+');
+      expect(refocus.caretOffset, 1);
+      expect(model.toLatex(), r'\sqrt{5}+2+\sqrt{8}=');
+      refocus.focus!.text = '';
       expect(model.toLatex(), r'\sqrt{5}+\sqrt{8}=');
     });
 
@@ -210,8 +218,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // 1. Add first root √5
-      await tester.tap(find.widgetWithText(OutlinedButton, '√'));
-      await tester.pumpAndSettle();
+      await _tapVisible(tester, _toolBtn('√'));
       await tester.enterText(find.byType(TextField).first, '5');
       await tester.pumpAndSettle();
 
@@ -228,13 +235,10 @@ void main() {
               'Inside Arabic RTL app, √ glyph ($sqrtSymbolDx) must sit to the LEFT of radicand slot ($bodyFieldDx), never reversed as "5√"!');
 
       // 2. Step out of √5 -> add '+' -> add second √8 -> step out -> add '='
-      await tester.tap(find.byKey(const Key('eq_nav_next')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(OutlinedButton, '+'));
-      await tester.pumpAndSettle();
+      await _tapVisible(tester, find.byKey(const Key('eq_nav_next')));
+      await _tapVisible(tester, _toolBtn('+'));
 
-      await tester.tap(find.widgetWithText(OutlinedButton, '√'));
-      await tester.pumpAndSettle();
+      await _tapVisible(tester, _toolBtn('√'));
       // Active focus automatically moved inside the second root!
       final activeFields = tester
           .widgetList<TextField>(find.byType(TextField))
@@ -243,10 +247,8 @@ void main() {
       await tester.enterText(find.byType(TextField).last, '8');
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('eq_nav_next')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(OutlinedButton, '='));
-      await tester.pumpAndSettle();
+      await _tapVisible(tester, find.byKey(const Key('eq_nav_next')));
+      await _tapVisible(tester, _toolBtn('='));
 
       // Verify ALL 4 visual slots increase strictly left-to-right on screen:
       // [5] < [+] < [8] < [=] even inside `Directionality.rtl`!
@@ -392,7 +394,7 @@ void main() {
 
       await _tapVisible(tester, find.text('إضافة معادلة'));
 
-      await _tapVisible(tester, find.widgetWithText(OutlinedButton, '√'));
+      await _tapVisible(tester, _toolBtn('√'));
       final mathSlots = find.byWidgetPredicate(
         (w) => w is TextField && w.decoration?.hintText == '?',
       );
@@ -400,12 +402,12 @@ void main() {
       await tester.pumpAndSettle();
 
       await _tapVisible(tester, find.byKey(const Key('eq_nav_next')));
-      await _tapVisible(tester, find.widgetWithText(OutlinedButton, '+'));
-      await _tapVisible(tester, find.widgetWithText(OutlinedButton, '√'));
+      await _tapVisible(tester, _toolBtn('+'));
+      await _tapVisible(tester, _toolBtn('√'));
       await tester.enterText(mathSlots.last, '8');
       await tester.pumpAndSettle();
       await _tapVisible(tester, find.byKey(const Key('eq_nav_next')));
-      await _tapVisible(tester, find.widgetWithText(OutlinedButton, '='));
+      await _tapVisible(tester, _toolBtn('='));
 
       await _tapVisible(tester, find.text('حفظ المحتوى'));
       expect(

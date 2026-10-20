@@ -854,7 +854,7 @@ void main() {
       final docXml = utf8.decode(docXmlFile!.content as List<int>);
       expect(docXml, contains('<w:bidi/>'),
           reason: 'DOCX paragraphs must preserve RTL <w:bidi/> property');
-      final media1 = archive.findFile('word/media/page_1.png');
+      final media1 = archive.findFile('word/media/page1.png');
       expect(media1, isNotNull);
       expect(media1!.content as List<int>, equals(snapshots.first.pngBytes),
           reason: 'DOCX embedded PNG must match Preview snapshot byte-for-byte');
