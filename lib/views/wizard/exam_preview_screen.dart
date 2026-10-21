@@ -32,6 +32,7 @@ import '../../models/point_kind.dart';
 import '../../models/quran_text.dart';
 import '../../models/subject_layout.dart';
 import '../../models/tex_content.dart';
+import '../../models/text_format_span.dart';
 import '../../providers/exam_document_provider.dart';
 import '../../providers/exam_wizard_controller.dart';
 import '../../services/export_file_service.dart';
@@ -86,6 +87,30 @@ class _CanonicalFieldBinding {
   final InlineContent content;
   final ValueChanged<String> onEdit;
   final VoidCallback onLongPress;
+}
+
+/// خصائص التنسيق التي تُطبَّق على التحديد النصّي وحده.
+enum _RangeFormatAttribute { bold, italic, underline }
+
+/// هدف تنسيق نصّي محدَّد: نص الحقل المخزَّن ونطاقاته وطريقة حفظها.
+///
+/// وجود هذا الهدف يعني أن المدرس **داخل حقل نص**، فتنسيقاته تُطبَّق على
+/// التحديد (أو الجزء الذي عليه المؤشر) لا على السؤال كله.
+class _RangeFormatTarget {
+  const _RangeFormatTarget({
+    required this.text,
+    required this.spans,
+    required this.style,
+    required this.save,
+  });
+
+  final String text;
+  final List<TextFormatSpan> spans;
+
+  /// نمط العنصر الافتراضي: هو مرجع «القيمة الحالية» عند قلب bold/italic/….
+  final PaperTextStyle style;
+
+  final void Function(List<TextFormatSpan> formats) save;
 }
 
 class _CanonicalSelectionPainter extends CustomPainter {
@@ -1453,6 +1478,163 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
     }
     // حقل بلا موديل مخصص بعد (مثل قسم السؤال) — يبقى في خريطة الشاشة.
+  }
+
+  /// حقل النص النشط إن كان من حقول النموذج القابلة للتنسيق بالنطاقات.
+  _RangeFormatTarget? _activeRangeTarget() {
+    final controller = _controller;
+    final key = _activeFieldKey;
+    if (controller == null || key == null) return null;
+    final document = controller.document;
+    if (key.startsWith('branch-statement-') || key.startsWith('branch-body-')) {
+      final isStatement = key.startsWith('branch-statement-');
+      final id = key.substring(isStatement ? 17 : 12);
+      for (var questionIndex = 0;
+          questionIndex < document.questions.length;
+          questionIndex++) {
+        final branches = document.questions[questionIndex].branches;
+        for (var branchIndex = 0;
+            branchIndex < branches.length;
+            branchIndex++) {
+          final branch = branches[branchIndex];
+          if (branch.id != id) continue;
+          final ref = BranchRef(
+            questionIndex: questionIndex,
+            branchIndex: branchIndex,
+          );
+          final content = branch.content;
+          return _RangeFormatTarget(
+            text: isStatement ? content.statement : content.body,
+            spans:
+                isStatement ? content.statementFormats : content.bodyFormats,
+            style: branch.style,
+            save: isStatement
+                ? (formats) =>
+                    controller.updateBranchStatementFormats(ref, formats)
+                : (formats) =>
+                    controller.updateBranchBodyFormats(ref, formats),
+          );
+        }
+      }
+      return null;
+    }
+    final isStatement = key.startsWith('statement-');
+    final isBody = key.startsWith('body-');
+    if (!isStatement && !isBody) return null;
+    final id = key.substring(isStatement ? 10 : 5);
+    for (var index = 0; index < controller.questions.length; index++) {
+      final question = controller.questions[index];
+      if (question.id != id) continue;
+      return _RangeFormatTarget(
+        text: isStatement ? question.statement : question.body,
+        spans: isStatement ? question.statementFormats : question.bodyFormats,
+        style: question.style,
+        save: isStatement
+            ? (formats) => controller.updateQuestionStatementFormats(
+                  index,
+                  formats,
+                )
+            : (formats) =>
+                controller.updateQuestionBodyFormats(index, formats),
+      );
+    }
+    return null;
+  }
+
+  /// النطاق المستهدف من تحديد الحقل النشط؛ `null` يعني «لا نص لتنسيقه».
+  TextFormatSpan? _selectedRange(_RangeFormatTarget target) {
+    final field = _fields[_activeFieldKey];
+    final selection = field?.selection;
+    if (selection == null || !selection.isValid) return null;
+    return TextFormatSpans.targetRange(
+      target.text,
+      start: selection.baseOffset,
+      end: selection.extentOffset,
+    );
+  }
+
+  /// يقلب bold/italic/underline على التحديد وحده.
+  ///
+  /// القاعدة المعلنة: داخل حقل نص لا يوجد «تنسيق للسؤال كله». مؤشر مطوٍ يعني
+  /// الكلمة التي عليه؛ وحقل فارغ يعني رسالة لا تعديل.
+  void _toggleSelectionFormat(_RangeFormatAttribute attribute) {
+    final target = _activeRangeTarget();
+    if (target == null) {
+      // لا حقل نصي نشط: يبقى التنسيق نمطًا افتراضيًا للعنصر المحدَّد.
+      _applyStyle((current) => switch (attribute) {
+            _RangeFormatAttribute.bold =>
+              current.copyWith(bold: () => !(current.bold ?? false)),
+            _RangeFormatAttribute.italic =>
+              current.copyWith(italic: () => !(current.italic ?? false)),
+            _RangeFormatAttribute.underline =>
+              current.copyWith(underline: () => !(current.underline ?? false)),
+          });
+      return;
+    }
+    final range = _selectedRange(target);
+    if (range == null) {
+      _showMessage('لا نص تحت المؤشر في هذا الحقل. اكتب أو حدّد جزءًا لتنسيقه.');
+      return;
+    }
+    final current = TextFormatSpans.attributeAt(target.spans, range.start);
+    final bool value;
+    switch (attribute) {
+      case _RangeFormatAttribute.bold:
+        value = !(current?.bold ?? target.style.bold ?? false);
+        break;
+      case _RangeFormatAttribute.italic:
+        value = !(current?.italic ?? target.style.italic ?? false);
+        break;
+      case _RangeFormatAttribute.underline:
+        value = !(current?.underline ?? target.style.underline ?? false);
+        break;
+    }
+    target.save(
+      TextFormatSpans.apply(
+        target.spans,
+        TextFormatSpan(
+          start: range.start,
+          end: range.end,
+          bold: attribute == _RangeFormatAttribute.bold ? value : null,
+          italic: attribute == _RangeFormatAttribute.italic ? value : null,
+          underline: attribute == _RangeFormatAttribute.underline ? value : null,
+        ),
+        textLength: target.text.length,
+      ),
+    );
+  }
+
+  /// يطبّق اللون على التحديد وحده؛ `null` = عودة إلى لون العنصر.
+  void _applySelectionColor(int? color) {
+    final target = _activeRangeTarget();
+    if (target == null) {
+      _applyColor(color);
+      return;
+    }
+    final range = _selectedRange(target);
+    if (range == null) {
+      _showMessage('لا نص تحت المؤشر في هذا الحقل. اكتب أو حدّد جزءًا لتلوينه.');
+      return;
+    }
+    target.save(
+      color == null
+          ? TextFormatSpans.clear(
+              target.spans,
+              start: range.start,
+              end: range.end,
+              color: true,
+              textLength: target.text.length,
+            )
+          : TextFormatSpans.apply(
+              target.spans,
+              TextFormatSpan(
+                start: range.start,
+                end: range.end,
+                color: color,
+              ),
+              textLength: target.text.length,
+            ),
+    );
   }
 
   void _applyStyle(PaperTextStyle Function(PaperTextStyle current) update) {
@@ -3147,18 +3329,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               _applyStyle((current) => current.copyWith(fontSize: () => size));
             },
             isBold: activeStyle.bold,
-            onToggleBold: () => _applyStyle(
-              (current) => current.copyWith(bold: () => !(current.bold ?? false)),
-            ),
+            onToggleBold: () =>
+                _toggleSelectionFormat(_RangeFormatAttribute.bold),
             isItalic: activeStyle.italic,
-            onToggleItalic: () => _applyStyle(
-              (current) => current.copyWith(italic: () => !(current.italic ?? false)),
-            ),
+            onToggleItalic: () =>
+                _toggleSelectionFormat(_RangeFormatAttribute.italic),
             isUnderline: activeStyle.underline,
-            onToggleUnderline: () => _applyStyle(
-              (current) =>
-                  current.copyWith(underline: () => !(current.underline ?? false)),
-            ),
+            onToggleUnderline: () =>
+                _toggleSelectionFormat(_RangeFormatAttribute.underline),
             activeAlign: _activeAlign(),
             onAlignChanged: _onAlignChanged,
             activeLineHeight: activeStyle.lineHeight,
@@ -3196,7 +3374,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 _showCustomColor();
                 return;
               }
-              _applyColor(value);
+              _applySelectionColor(value);
             },
             hasFrame: _activeFrame(),
             onToggleFrame: _toggleFrame,

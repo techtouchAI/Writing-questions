@@ -4,6 +4,7 @@ import 'branch_item.dart';
 import 'floating_element.dart';
 import 'paper_divider.dart';
 import 'paper_text_style.dart';
+import 'text_format_span.dart';
 
 /// المحتوى الفعلي لفرع السؤال: منطوق الفرع ونصه ونقاطه.
 ///
@@ -17,7 +18,15 @@ class BranchContent {
     this.statement = '',
     this.body = '',
     List<BranchItem>? items,
-  }) : items = List<BranchItem>.unmodifiable(items ?? const <BranchItem>[]);
+    List<TextFormatSpan>? statementFormats,
+    List<TextFormatSpan>? bodyFormats,
+  })  : items = List<BranchItem>.unmodifiable(items ?? const <BranchItem>[]),
+        statementFormats = List<TextFormatSpan>.unmodifiable(
+          statementFormats ?? const <TextFormatSpan>[],
+        ),
+        bodyFormats = List<TextFormatSpan>.unmodifiable(
+          bodyFormats ?? const <TextFormatSpan>[],
+        );
 
   /// محتوى فارغ (الافتراضي للفرع الجديد).
   factory BranchContent.empty() => BranchContent();
@@ -30,6 +39,12 @@ class BranchContent {
 
   /// النقاط المرقّمة داخل الفرع (١-، ٢-، ٣-...) بأنواعها المختلطة — بلا حد.
   final List<BranchItem> items;
+
+  /// تنسيق نطاقات منطوق الفرع (محارف محدَّدة داخل [statement]).
+  final List<TextFormatSpan> statementFormats;
+
+  /// تنسيق نطاقات نص الفرع (محارف محدَّدة داخل [body]).
+  final List<TextFormatSpan> bodyFormats;
 
   bool get hasStatement => statement.trim().isNotEmpty;
   bool get hasBody => body.trim().isNotEmpty;
@@ -46,11 +61,15 @@ class BranchContent {
     String? statement,
     String? body,
     List<BranchItem>? items,
+    List<TextFormatSpan>? statementFormats,
+    List<TextFormatSpan>? bodyFormats,
   }) {
     return BranchContent(
       statement: statement ?? this.statement,
       body: body ?? this.body,
       items: items ?? this.items,
+      statementFormats: statementFormats ?? this.statementFormats,
+      bodyFormats: bodyFormats ?? this.bodyFormats,
     );
   }
 
@@ -107,6 +126,12 @@ class BranchContent {
       if (hasBody) 'body': body,
       if (items.isNotEmpty)
         'items': items.map((item) => item.toMap()).toList(growable: false),
+      if (statementFormats.isNotEmpty)
+        'statementFormats':
+            statementFormats.map((span) => span.toMap()).toList(growable: false),
+      if (bodyFormats.isNotEmpty)
+        'bodyFormats':
+            bodyFormats.map((span) => span.toMap()).toList(growable: false),
     };
   }
 
@@ -123,6 +148,8 @@ class BranchContent {
       statement: rawStatement?.toString() ?? '',
       body: rawBody?.toString() ?? '',
       items: BranchItem.listFromValue(map['items']),
+      statementFormats: TextFormatSpan.listFromValue(map['statementFormats']),
+      bodyFormats: TextFormatSpan.listFromValue(map['bodyFormats']),
     );
   }
 

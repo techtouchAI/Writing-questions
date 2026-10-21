@@ -5,6 +5,7 @@ import '../../models/exam_document.dart';
 import '../../models/point_kind.dart';
 import '../../models/question_model.dart';
 import '../../models/question_option.dart';
+import '../../models/text_format_span.dart';
 import '../document_direction.dart';
 import '../semantic/inline_nodes.dart';
 
@@ -701,9 +702,16 @@ class _BlueprintBuilder {
     );
   }
 
-  InlineContent? _nonBlankContent(String raw) {
+  InlineContent? _nonBlankContent(
+    String raw, {
+    List<TextFormatSpan> formats = const <TextFormatSpan>[],
+  }) {
     final trimmed = raw.trim();
-    return trimmed.isEmpty ? null : InlineContent.fromSource(trimmed);
+    if (trimmed.isEmpty) return null;
+    return InlineContent.fromSource(
+      trimmed,
+      formats: TextFormatSpans.forTrimmed(formats, raw),
+    );
   }
 
   QuestionBlueprint _question(int index) {
@@ -739,10 +747,19 @@ class _BlueprintBuilder {
                     ? DocumentDirection.ltr
                     : DocumentDirection.rtl,
               ),
-        statementContent: InlineContent.fromSource(question.statement.trim()),
+        statementContent: InlineContent.fromSource(
+          question.statement.trim(),
+          formats: TextFormatSpans.forTrimmed(
+            question.statementFormats,
+            question.statement,
+          ),
+        ),
         marksNode: _marks(question.marks),
       ),
-      bodyContent: _nonBlankContent(question.body),
+      bodyContent: _nonBlankContent(
+        question.body,
+        formats: question.bodyFormats,
+      ),
       points: _points(question.items),
       branches: <BranchBlueprint>[
         for (var branchIndex = 0;
@@ -774,11 +791,17 @@ class _BlueprintBuilder {
               ? DocumentDirection.ltr
               : DocumentDirection.rtl,
         ),
-        statementContent: InlineContent.fromSource(content.statement.trim()),
+        statementContent: InlineContent.fromSource(
+          content.statement.trim(),
+          formats:
+              TextFormatSpans.forTrimmed(content.statementFormats, content.statement),
+        ),
         marksNode: _marks(branch.marks),
       ),
-      body: _nonBlankContent(content.body)?.legacyText,
-      bodyContent: _nonBlankContent(content.body),
+      body: _nonBlankContent(content.body, formats: content.bodyFormats)
+          ?.legacyText,
+      bodyContent:
+          _nonBlankContent(content.body, formats: content.bodyFormats),
       points: _points(content.items),
     );
   }

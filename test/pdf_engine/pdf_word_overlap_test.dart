@@ -148,8 +148,11 @@ void main() {
         () {
       // الأرقام المشرقية تُرسم محارف منطقية في /ToUnicode (لا أشكال عرض)،
       // فيمكن مطابقتها كما هي. الشرطة محرف محايد يفصل مجموعتي الأرقام.
-      const first = '٢٠٢٦';
-      const second = '٢٠٢٧';
+      // القيمة المتوقّعة مشتقّة من بيانات المستند نفسه، لا مكتوبة في الاختبار.
+      final year = _document().header.academicYear.split('/');
+      expect(year.length, 2, reason: 'العام الدراسي ليس «سنة/سنة».');
+      final first = _arabicIndic(year[0]);
+      final second = _arabicIndic(year[1]);
       const slash = '/';
       final probe = PdfContentProbe.fromBytes(pdfBytes, pageIndex: 0);
       ProbedWord wordOf(String text) {

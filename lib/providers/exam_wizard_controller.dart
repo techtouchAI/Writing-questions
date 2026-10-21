@@ -21,6 +21,7 @@ import '../models/point_kind.dart';
 import '../models/question_model.dart';
 import '../models/question_option.dart';
 import '../models/subject_layout.dart';
+import '../models/text_format_span.dart';
 
 /// حالة منشئ ورقة الأسئلة ومعاينة A4.
 ///
@@ -433,8 +434,21 @@ class ExamWizardController extends ChangeNotifier {
     if (questions[index].statement == statement) {
       return;
     }
+    final current = questions[index];
     _commit(
-      _document.withQuestionAt(index, questions[index].copyWith(statement: statement)),
+      _document.withQuestionAt(
+        index,
+        current.copyWith(
+          statement: statement,
+          // إزاحات التنسيق تتبع النص: تحرير في الوسط لا يمدّ التنسيق إلى نص
+          // جديد، والحذف/الإدخال يُزيح ما بعده بمقداره.
+          statementFormats: TextFormatSpans.rebase(
+            current.statementFormats,
+            previous: current.statement,
+            next: statement,
+          ),
+        ),
+      ),
       coalesceKey: 'statement-${questions[index].id}',
     );
   }
@@ -445,9 +459,61 @@ class ExamWizardController extends ChangeNotifier {
     if (questions[index].body == body) {
       return;
     }
+    final current = questions[index];
     _commit(
-      _document.withQuestionAt(index, questions[index].copyWith(body: body)),
+      _document.withQuestionAt(
+        index,
+        current.copyWith(
+          body: body,
+          bodyFormats: TextFormatSpans.rebase(
+            current.bodyFormats,
+            previous: current.body,
+            next: body,
+          ),
+        ),
+      ),
       coalesceKey: 'body-${questions[index].id}',
+    );
+  }
+
+  /// يحفظ تنسيق نطاقات منطوق السؤال (العنوان) بعد تطبيقه على التحديد.
+  void updateQuestionStatementFormats(
+    int index,
+    List<TextFormatSpan> formats,
+  ) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    final normalized = TextFormatSpans.normalize(
+      formats,
+      textLength: questions[index].statement.length,
+    );
+    if (_sameSpans(questions[index].statementFormats, normalized)) {
+      return;
+    }
+    _commit(
+      _document.withQuestionAt(
+        index,
+        questions[index].copyWith(statementFormats: normalized),
+      ),
+      coalesceKey: 'statement-formats-${questions[index].id}',
+    );
+  }
+
+  /// يحفظ تنسيق نطاقات نص السؤال.
+  void updateQuestionBodyFormats(int index, List<TextFormatSpan> formats) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    final normalized = TextFormatSpans.normalize(
+      formats,
+      textLength: questions[index].body.length,
+    );
+    if (_sameSpans(questions[index].bodyFormats, normalized)) {
+      return;
+    }
+    _commit(
+      _document.withQuestionAt(
+        index,
+        questions[index].copyWith(bodyFormats: normalized),
+      ),
+      coalesceKey: 'body-formats-${questions[index].id}',
     );
   }
 
@@ -898,7 +964,16 @@ class ExamWizardController extends ChangeNotifier {
     _commit(
       _document.withBranchAt(
         ref,
-        branch.copyWith(content: branch.content.copyWith(statement: statement)),
+        branch.copyWith(
+          content: branch.content.copyWith(
+            statement: statement,
+            statementFormats: TextFormatSpans.rebase(
+              branch.content.statementFormats,
+              previous: branch.content.statement,
+              next: statement,
+            ),
+          ),
+        ),
       ),
       coalesceKey: 'branch-statement-${branch.id}',
     );
@@ -916,10 +991,58 @@ class ExamWizardController extends ChangeNotifier {
     _commit(
       _document.withBranchAt(
         ref,
-        branch.copyWith(content: branch.content.copyWith(body: body)),
+        branch.copyWith(
+          content: branch.content.copyWith(
+            body: body,
+            bodyFormats: TextFormatSpans.rebase(
+              branch.content.bodyFormats,
+              previous: branch.content.body,
+              next: body,
+            ),
+          ),
+        ),
       ),
       coalesceKey: 'branch-body-${branch.id}',
     );
+  }
+
+  /// يحفظ تنسيق نطاقات منطوق الفرع.
+  void updateBranchStatementFormats(
+    BranchRef ref,
+    List<TextFormatSpan> formats,
+  ) {
+    if (!_document.containsRef(ref)) return;
+    final branch = _document.branchAt(ref);
+    final normalized = TextFormatSpans.normalize(
+      formats,
+      textLength: branch.content.statement.length,
+    );
+    if (_sameSpans(branch.content.statementFormats, normalized)) {
+      return;
+    }
+    _commit(_document.withBranchAt(
+      ref,
+      branch.copyWith(
+        content: branch.content.copyWith(statementFormats: normalized),
+      ),
+    ));
+  }
+
+  /// يحفظ تنسيق نطاقات نص الفرع.
+  void updateBranchBodyFormats(BranchRef ref, List<TextFormatSpan> formats) {
+    if (!_document.containsRef(ref)) return;
+    final branch = _document.branchAt(ref);
+    final normalized = TextFormatSpans.normalize(
+      formats,
+      textLength: branch.content.body.length,
+    );
+    if (_sameSpans(branch.content.bodyFormats, normalized)) {
+      return;
+    }
+    _commit(_document.withBranchAt(
+      ref,
+      branch.copyWith(content: branch.content.copyWith(bodyFormats: normalized)),
+    ));
   }
 
   void updateBranchMarks(BranchRef ref, double marks) {
@@ -1522,5 +1645,16 @@ class ExamWizardController extends ChangeNotifier {
     _autoSaveTimer?.cancel();
     _autoSaveTimer = null;
     super.dispose();
+  }
+
+  static bool _sameSpans(
+    List<TextFormatSpan> a,
+    List<TextFormatSpan> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (var index = 0; index < a.length; index++) {
+      if (a[index] != b[index]) return false;
+    }
+    return true;
   }
 }

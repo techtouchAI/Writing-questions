@@ -1,4 +1,5 @@
 import '../../models/paper_font.dart';
+import '../../models/text_format_span.dart';
 import '../../models/quran_text.dart';
 import '../../models/tex_content.dart';
 
@@ -152,6 +153,106 @@ class RichContent {
   /// وWord، ويقرأ الراسمان القائمة نفسها بلا إعادة تحليل.
   factory RichContent.parse(String text) {
     return RichContent(_parse(text));
+  }
+
+  /// يحلّل [text] ثم يوزّع [formats] (تنسيق المدرس بالنطاقات) على مقاطعه.
+  ///
+  /// القطع يحدث على حدود النطاقات فقط، وداخل المقاطع النصية/القرآنية لا
+  /// الرياضية: الصيغة الرياضية تُرسم كصورة عند الحاجة، وتنسيقها الجزئي قرار
+  /// محرك الرياضيات لا نطاق نص. كل مقطع جديد يحمل `sourceStartOffset`/
+  /// `sourceEndOffset` دقيقين، فيبقى رسم التحديد والمؤشر في المعاينة صحيحًا.
+  factory RichContent.parseFormatted(
+    String text,
+    List<TextFormatSpan> formats,
+  ) {
+    final base = RichContent.parse(text);
+    final spans = TextFormatSpans.normalize(formats, textLength: text.length);
+    if (spans.isEmpty) {
+      return base;
+    }
+    final runs = <VisualRun>[];
+    for (final run in base.runs) {
+      if (run.kind == VisualRunKind.math || run.text.isEmpty) {
+        runs.add(run);
+        continue;
+      }
+      final map = run.sourceOffsetMap;
+      final runStart = run.sourceStartOffset;
+      int sourceAt(int display) {
+        if (map != null && display >= 0 && display < map.length) {
+          return map[display];
+        }
+        return runStart + display;
+      }
+
+      final cuts = <int>{0, run.text.length};
+      for (final span in spans) {
+        cuts.add(_displayIndexAtOrAfter(run.text.length, sourceAt, span.start));
+        cuts.add(_displayIndexAtOrAfter(run.text.length, sourceAt, span.end));
+      }
+      final ordered = cuts.toList()..sort();
+      for (var index = 0; index + 1 < ordered.length; index++) {
+        final start = ordered[index];
+        final end = ordered[index + 1];
+        if (end <= start) continue;
+        final attributes = _attributesAt(spans, sourceAt(start));
+        final style = attributes == null
+            ? run.style
+            : (run.style ?? const VisualRunStyle()).merge(attributes);
+        runs.add(
+          VisualRun(
+            run.kind,
+            run.text.substring(start, end),
+            style: style,
+            sourceStartOffset: sourceAt(start),
+            sourceEndOffset: map == null
+                ? sourceAt(start) + (end - start)
+                : sourceAt(end - 1) + 1,
+            sourceOffsetMap: map != null && end <= map.length
+                ? List<int>.unmodifiable(map.sublist(start, end))
+                : null,
+          ),
+        );
+      }
+    }
+    return RichContent(List<VisualRun>.unmodifiable(runs));
+  }
+
+  static int _displayIndexAtOrAfter(
+    int length,
+    int Function(int) sourceAt,
+    int sourceOffset,
+  ) {
+    for (var index = 0; index < length; index++) {
+      if (sourceAt(index) >= sourceOffset) return index;
+    }
+    return length;
+  }
+
+  static VisualRunStyle? _attributesAt(
+    List<TextFormatSpan> spans,
+    int sourceOffset,
+  ) {
+    bool? bold;
+    bool? italic;
+    bool? underline;
+    int? color;
+    var any = false;
+    for (final span in spans) {
+      if (!span.covers(sourceOffset)) continue;
+      any = true;
+      bold = span.bold ?? bold;
+      italic = span.italic ?? italic;
+      underline = span.underline ?? underline;
+      color = span.color ?? color;
+    }
+    if (!any) return null;
+    return VisualRunStyle(
+      bold: bold,
+      italic: italic,
+      underline: underline,
+      colorArgb: color,
+    );
   }
 
   final List<VisualRun> runs;
