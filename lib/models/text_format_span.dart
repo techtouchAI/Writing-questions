@@ -99,7 +99,10 @@ class TextFormatSpan {
     final spans = <TextFormatSpan>[];
     for (final entry in value) {
       if (entry is! Map) continue;
-      final span = TextFormatSpan.fromMap(Map<String, dynamic>.from(entry));
+      final map = Map<String, dynamic>.from(entry);
+      // الإزاحات مطلوبة؛ قيمة تالفة تعني نطاقًا مجهول الموضع فلا يُخمَّن.
+      if (_int(map['start']) == null || _int(map['end']) == null) continue;
+      final span = TextFormatSpan.fromMap(map);
       if (span.isApplicable) {
         spans.add(span);
       }
@@ -412,17 +415,24 @@ class TextFormatSpans {
 
     final rebased = <TextFormatSpan>[];
     for (final span in spans) {
-      var start = span.start;
-      var end = span.end;
-      if (start >= oldChangeEnd) {
-        start += delta;
-        end += delta;
-      } else if (end > prefix) {
-        // يتقاطع مع الجزء المتغيّر: يبقى على ما قبل التغيير فقط.
-        end = prefix;
+      // (أ) الجزء الواقع قبل موضع التغيير يبقى كما هو (مقصوصًا عند الموضع).
+      if (span.start < prefix) {
+        final end = span.end < prefix ? span.end : prefix;
+        if (end > span.start) {
+          rebased.add(span.copyWith(end: end));
+        }
       }
-      if (end <= start) continue;
-      rebased.add(span.copyWith(start: start, end: end));
+      // (ب) الجزء الواقع بعد الجزء المتغيّر يُزاح بمقدار الفرق ويحتفظ
+      // بتنسيقه؛ فمن يكتب داخل كلمة عريضة لا يفقد تعريض بقية الكلمة.
+      if (span.end > oldChangeEnd) {
+        final start = span.start > oldChangeEnd ? span.start : oldChangeEnd;
+        if (span.end > start) {
+          rebased.add(span.copyWith(
+            start: start + delta,
+            end: span.end + delta,
+          ));
+        }
+      }
     }
     return normalize(rebased, textLength: next.length);
   }

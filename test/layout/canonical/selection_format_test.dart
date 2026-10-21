@@ -79,18 +79,27 @@ LayoutBlock _titleBlock(LayoutDocument layout) {
   throw StateError('لا كتلة عنوان في التخطيط.');
 }
 
-LayoutBlock _bodyBlock(LayoutDocument layout) {
+/// أول كتلة تحمل جريانات يبدأ معرّفها الدلالي بـ[prefix] (نص السؤال مثلًا).
+LayoutBlock _blockWithPrefix(LayoutDocument layout, String prefix) {
   for (final page in layout.pages) {
     for (final block in _allBlocks(page.blocks)) {
-      if (block.kind == LayoutBlockKind.body) return block;
+      for (final line in block.allLines) {
+        if (line.runs.any((run) => run.semanticNodeId.startsWith(prefix))) {
+          return block;
+        }
+      }
     }
   }
-  throw StateError('لا كتلة نص في التخطيط.');
+  throw StateError('لا كتلة جريانات بادئتها $prefix.');
 }
 
-/// كل الجريانات النصية غير الرياضية في كتلة، بترتيب القراءة.
-List<LayoutRun> _textRuns(LayoutBlock block) => <LayoutRun>[
-      for (final line in block.allLines) ...line.runs.where((run) => !run.isMath),
+/// جريانات نصّ الكتلة التي يبدأ معرّفها بـ[prefix] فقط — بلا رقم السؤال ولا
+/// مجموعته ولا الدرجة، فالمقارنة تكون على نصّ الحقل نفسه.
+List<LayoutRun> _textRuns(LayoutBlock block, String prefix) => <LayoutRun>[
+      for (final line in block.allLines)
+        ...line.runs.where(
+          (run) => !run.isMath && run.semanticNodeId.startsWith(prefix),
+        ),
     ];
 
 String _joined(List<LayoutRun> runs) =>
@@ -110,7 +119,7 @@ void main() {
           TextFormatSpan(start: 5, end: 12, bold: true),
         ],
       ));
-      final runs = _textRuns(_titleBlock(layout));
+      final runs = _textRuns(_titleBlock(layout), 'q1/title/statement');
       expect(_joined(runs), _statement,
           reason: 'تنسيق التحديد غيّر نص العنوان المرسوم: $_joined(runs)');
       final boldRuns = runs.where((run) => run.style.bold == true).toList();
@@ -132,7 +141,7 @@ void main() {
           TextFormatSpan(start: 3, end: 5, bold: true),
         ],
       ));
-      final runs = _textRuns(_bodyBlock(layout));
+      final runs = _textRuns(_blockWithPrefix(layout, 'q1/body'), 'q1/body');
       expect(_joined(runs), _body);
       final bold = runs.where((run) => run.style.bold == true).toList();
       expect(bold, hasLength(1));
@@ -154,7 +163,7 @@ void main() {
           TextFormatSpan(start: 3, end: 5, color: 0xFFCC0000),
         ],
       ));
-      final runs = _textRuns(_bodyBlock(layout));
+      final runs = _textRuns(_blockWithPrefix(layout, 'q1/body'), 'q1/body');
       final colored =
           runs.where((run) => run.style.colorArgb == 0xFFCC0000).toList();
       expect(colored, hasLength(1));
@@ -176,7 +185,8 @@ void main() {
         restored.questions.single.statementFormats,
         original.questions.single.statementFormats,
       );
-      final runs = _textRuns(_titleBlock(_layout(restored)));
+      final runs =
+          _textRuns(_titleBlock(_layout(restored)), 'q1/title/statement');
       final styled = runs
           .where((run) => run.style.bold == true && run.style.colorArgb == 0xFF123456)
           .toList();

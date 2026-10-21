@@ -166,8 +166,9 @@ void main() {
         previous: 'بسم الله',
         next: 'سم الله',
       );
-      expect(rebased.single.start, 2);
-      expect(rebased.single.end, 6);
+      // «بسم الله» ← «سم الله»: النطاق كان «الله» [4,8) فصار [3,7).
+      expect(rebased.single.start, 3);
+      expect(rebased.single.end, 7);
     });
 
     test('الكتابة داخل النطاق لا توسّعه على النص الجديد', () {
@@ -176,8 +177,18 @@ void main() {
         previous: 'بسم الله',
         next: 'بسم الشيء الله',
       );
-      expect(rebased.single.end, 4,
-          reason: 'التنسيق امتدّ إلى نص لم يحدّده المدرس.');
+      // «الله» صارت «الشيء الله»: الجزء القديم «ال» يبقى [4,6)، والبقية
+      // «له» تنتقل إلى [12,14) — والنص المُدخل نفسه يبقى بلا تنسيق.
+      expect(rebased, hasLength(2), reason: '$rebased');
+      expect(rebased[0].start, 4);
+      expect(rebased[0].end, 6);
+      expect(rebased[1].start, 12);
+      expect(rebased[1].end, 14);
+      for (final span in rebased) {
+        expect(span.bold, isTrue, reason: 'التنسيق ضاع عند الكتابة داخل الكلمة.');
+      }
+      // النص المُدخل (بين 6 و12) بلا تعريض.
+      expect(TextFormatSpans.attributeAt(rebased, 8)?.bold, isNot(isTrue));
     });
   });
 

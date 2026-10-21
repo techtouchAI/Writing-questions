@@ -1541,11 +1541,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return null;
   }
 
-  /// النطاق المستهدف من تحديد الحقل النشط؛ `null` يعني «لا نص لتنسيقه».
+  /// النطاق المحدَّد فعليًّا في الحقل النشط.
+  ///
+  /// القاعدة المعلنة: **لا نطاق بلا تحديد**. المؤشر المطوي (نقرة في حقل)
+  /// يُبقي سلوك التنسيق القديم: تعديل النمط الافتراضي للعنصر. أما تحديد نصّي
+  /// حقيقي فيأخذ مساره الخاص: bold/italic/underline/اللون على المحارف وحدها.
   TextFormatSpan? _selectedRange(_RangeFormatTarget target) {
     final field = _fields[_activeFieldKey];
     final selection = field?.selection;
-    if (selection == null || !selection.isValid) return null;
+    if (selection == null || !selection.isValid || selection.isCollapsed) {
+      return null;
+    }
     return TextFormatSpans.targetRange(
       target.text,
       start: selection.baseOffset,
@@ -1559,7 +1565,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// الكلمة التي عليه؛ وحقل فارغ يعني رسالة لا تعديل.
   void _toggleSelectionFormat(_RangeFormatAttribute attribute) {
     final target = _activeRangeTarget();
-    if (target == null) {
+    final range = target == null ? null : _selectedRange(target);
+    if (target == null || range == null) {
       // لا حقل نصي نشط: يبقى التنسيق نمطًا افتراضيًا للعنصر المحدَّد.
       _applyStyle((current) => switch (attribute) {
             _RangeFormatAttribute.bold =>
@@ -1569,11 +1576,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             _RangeFormatAttribute.underline =>
               current.copyWith(underline: () => !(current.underline ?? false)),
           });
-      return;
-    }
-    final range = _selectedRange(target);
-    if (range == null) {
-      _showMessage('لا نص تحت المؤشر في هذا الحقل. اكتب أو حدّد جزءًا لتنسيقه.');
       return;
     }
     final current = TextFormatSpans.attributeAt(target.spans, range.start);
@@ -1607,13 +1609,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// يطبّق اللون على التحديد وحده؛ `null` = عودة إلى لون العنصر.
   void _applySelectionColor(int? color) {
     final target = _activeRangeTarget();
-    if (target == null) {
+    final range = target == null ? null : _selectedRange(target);
+    if (target == null || range == null) {
       _applyColor(color);
-      return;
-    }
-    final range = _selectedRange(target);
-    if (range == null) {
-      _showMessage('لا نص تحت المؤشر في هذا الحقل. اكتب أو حدّد جزءًا لتلوينه.');
       return;
     }
     target.save(

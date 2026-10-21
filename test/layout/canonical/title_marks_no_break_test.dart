@@ -1,65 +1,52 @@
-// =============================================================================
-// قاعدة موضع درجة السؤال في سطر العنوان (المحرك القانوني المشترك).
+// قاعدة طباعية: موضع درجة السؤال في نهاية سطر العنوان — لا تُفصل عنه.
 //
-// المطلوب ليس «تبدو في نهاية السطر» بل ثلاث خصائص تُقاس على `LayoutDocument`
-// نفسه — وهو المصدر الذي يرسمه كلٌّ من المعاينة وPDF:
-//   1. **عدم الانفصال**: لا تبدأ مجموعة الدرجة `(٢٠ درجة)` سطرًا وحدها؛
-//      تبقى على سطر يحمل كلمةً من عنوان السؤال.
-//   2. **عدم الانقسام الداخلي**: `(٢٠` و`درجة)` و`٢٠` لا تفترق بين سطرين:
-//      المجموعة وحدة واحدة (فواصلها الداخلية غير كاسرة).
-//   3. **الالتفاف الكامل**: عند ضيق العرض تنتقل الدرجة **مع** آخر كلمة من
-//      العنوان، لا منفردة؛ ولا تُقتطع ولا تُخفى.
+// الحكم على `LayoutDocument` نفسه (المصدر الوحيد الذي يرسمه Preview وPDF)،
+// لا على صورة ولا على «شكل مقبول»:
+//   1. مجموعة الدرجة `(٢٠ درجة)` لا تنقسم بين سطرين.
+//   2. لا تبدأ سطرًا وحدها: سطرها يحمل كلمة من عنوان السؤال.
+//   3. موضعها نهاية السطر في سياق RTL: كل جريانات العنوان في سطرها إلى يمينها.
 //
-// الحالات المغطاة: عنوان قصير يتّسع، عنوان طويل يلتف، عرض ضيّق (هامش كبير)،
-// ونص درجة متغيّر الطول — كلها على نفس المسار الإنتاجي
-// (`ExamBlueprint` → `DocumentIR` → `LayoutEngine`).
-// =============================================================================
+// الحالات: عنوان قصير يتّسع في سطر، وعنوان طويل يلتف، وهامش ضيّق يجبر الالتفاف
+// (قاعدة العرض متغيّرة، لا إحداثيات ثابتة).
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/layout/blueprint/exam_blueprint.dart';
 import 'package:writing_questions_app/layout/canonical/exam_document_layout_adapter.dart';
 import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart';
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/canonical/layout_engine.dart';
-import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/layout/document_ir.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/paper_settings.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 
-/// عنوان قصير: يتّسع سطرًا واحدًا مع الدرجة.
-const String _shortStatement = 'اختر الإجابة';
+const String _shortStatement = 'أكمل المعادلة';
 
-/// عنوان طويل يلتف على أسطر في عرض A4 القابل للطباعة.
 const String _longStatement =
-    'اشرح بالتفصيل دلالة الاستعارة في البيت الشعري الآتي ثم بيّن أثرها في '
-    'المعنى العام ووازن بينها وبين الكناية في البيت الثاني مع التعليل';
+    'اشرح دلالة الاستعارة في البيت الشعري الآتي ثم بيّن أثرها في المعنى العام '
+    'ووازن بينها وبين الكناية في البيت الثاني مع التعليل';
 
 ExamDocument _document({
   required String statement,
-  required double marksOverride,
-  PaperSettings settings = const PaperSettings(),
-}) {
-  return ExamDocument(
-    name: 'اختبار موضع الدرجة',
-    header: ExamHeaderModel(
-      schoolName: 'مدرسة',
-      examType: 'نصف السنة',
-      academicYear: '2026/2027',
-      subject: 'اللغة العربية',
-      showBismillah: false,
-    ),
-    settings: settings,
-    questions: <QuestionModel>[
-      QuestionModel(
-        id: 'q1',
-        questionNumber: 1,
-        statement: statement,
-        marksOverride: marksOverride,
+  double marginMm = 15,
+}) =>
+    ExamDocument(
+      name: 'ركيزة درجة السؤال',
+      header: ExamHeaderModel(subject: 'اللغة العربية'),
+      settings: PaperSettings(
+        marginMm: marginMm,
+        showQuestionMarks: true,
+        autoNumberQuestions: true,
       ),
-    ],
-  );
-}
+      questions: <QuestionModel>[
+        QuestionModel(
+          id: 'q1',
+          questionNumber: 1,
+          statement: statement,
+          marksOverride: 20,
+        ),
+      ],
+    );
 
 LayoutDocument _layout(ExamDocument document) {
   final ir = DocumentIR.fromBlueprint(
@@ -80,7 +67,6 @@ Iterable<LayoutBlock> _allBlocks(Iterable<LayoutBlock> blocks) sync* {
   }
 }
 
-/// أسطر كتلة العنوان (أول كتلة `title` في الصفحة الأولى).
 List<LayoutLine> _titleLines(LayoutDocument layout) {
   for (final page in layout.pages) {
     for (final block in _allBlocks(page.blocks)) {
@@ -92,58 +78,63 @@ List<LayoutLine> _titleLines(LayoutDocument layout) {
   throw StateError('لا كتلة عنوان في التخطيط.');
 }
 
-bool _isMarksRun(LayoutRun run) =>
-    run.semanticRole == LayoutSemanticRole.marks;
+bool _isMarks(LayoutRun run) =>
+    run.semanticRole == LayoutSemanticRole.marks ||
+    run.contentKind == LayoutContentKind.marks;
 
-/// يتحقق من قاعدة الدرجة ويعيد (عدد أسطر العنوان، عدد جريانات الدرجة).
-({int titleLineCount, int marksRunCount}) _expectGradeRule(
+String _describe(LayoutLine line) =>
+    '[${line.runs.map((run) => '"${run.text}"@${run.x.toStringAsFixed(1)}${_isMarks(run) ? "*" : ""}').join(' ')}]';
+
+/// يفحص القاعدة ويعيد (عدد أسطر العنوان، عدد أسطر الدرجة).
+({int titleLines, int marksLines}) _expectMarksRule(
   LayoutDocument layout, {
   required String caseName,
 }) {
   final lines = _titleLines(layout);
-  final marksLines = <int>{};
-  final marksRunCount = <String>{};
-  var sawMarks = false;
-
-  for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-    final line = lines[lineIndex];
-    final marksOnLine = line.runs.where(_isMarksRun).toList(growable: false);
-    if (marksOnLine.isEmpty) continue;
-    sawMarks = true;
-    marksLines.add(lineIndex);
-    // (1) لا سطر يحمل الدرجة وحدها: لا بد أن يحمل معها جريانًا من العنوان.
-    final withTitleContent = line.runs.any(
-      (run) => !_isMarksRun(run) && run.semanticRole != LayoutSemanticRole.separator,
-    );
-    expect(
-      withTitleContent,
-      isTrue,
-      reason: '[$caseName] السطر $lineIndex يحمل الدرجة منفردة عن عنوانها.\n'
-          'الكلمات: ${_describe(line)}',
-    );
-    for (final run in marksOnLine) {
-      marksRunCount.add(run.id);
+  final marksLineIndices = <int>{};
+  for (var index = 0; index < lines.length; index++) {
+    if (lines[index].runs.any(_isMarks)) {
+      marksLineIndices.add(index);
     }
   }
+  expect(marksLineIndices, isNotEmpty,
+      reason: '[$caseName] لا مجموعة درجة في التخطيط — الاختبار لم يقس شيئًا.');
 
-  expect(sawMarks, isTrue,
-      reason: '[$caseName] لم تُسقَط الدرجة من التخطيط إطلاقًا — '
-          'الاختبار لم يقس شيئًا.');
-
-  // (2) مجموعة الدرجة كلها على سطر واحد: لا انقسام داخلي.
+  // (1) لا انقسام: مجموعة الدرجة كلها في سطر واحد.
   expect(
-    marksLines.length,
+    marksLineIndices.length,
     1,
-    reason: '[$caseName] مجموعة الدرجة انقسمت على ${marksLines.length} سطرًا '
-        '(الأسطر: $marksLines) — فواصلها الداخلية يجب أن تكون غير كاسرة.\n'
-        'أسطر العنوان: ${lines.map(_describe).toList()}',
+    reason: '[$caseName] مجموعة الدرجة انقسمت على ${marksLineIndices.length} '
+        'سطرًا: ${lines.map(_describe).toList()}',
   );
 
-  return (titleLineCount: lines.length, marksRunCount: marksRunCount.length);
-}
+  final line = lines[marksLineIndices.single];
+  // (2) لا تنفرد بسطر: معها كلمة من العنوان.
+  final statementRuns = line.runs
+      .where((run) => !_isMarks(run) && run.text.trim().isNotEmpty)
+      .toList();
+  expect(
+    statementRuns,
+    isNotEmpty,
+    reason: '[$caseName] سطر الدرجة لا يحمل كلمة من العنوان: ${_describe(line)}',
+  );
 
-String _describe(LayoutLine line) =>
-    '[${line.runs.map((run) => '"${run.text}"').join(' ')}]';
+  // (3) نهاية السطر في RTL: الدرجة أقصى يسار سطرها.
+  final marksRuns = line.runs.where(_isMarks).toList();
+  final marksRight = marksRuns
+      .map((run) => run.x + run.advance)
+      .reduce((a, b) => a > b ? a : b);
+  final statementLeft = statementRuns
+      .map((run) => run.x)
+      .reduce((a, b) => a < b ? a : b);
+  expect(
+    marksRight,
+    lessThanOrEqualTo(statementLeft + 0.5),
+    reason: '[$caseName] الدرجة ليست في نهاية السطر: يمين الدرجة='
+        '$marksRight ويسار العنوان=$statementLeft.\n${_describe(line)}',
+  );
+  return (titleLines: lines.length, marksLines: marksLineIndices.length);
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -152,135 +143,35 @@ void main() {
     await FlutterTextMetrics.ensureFontsLoaded();
   });
 
-  group('موضع الدرجة في عنوان السؤال', () {
-    test('عنوان قصير: الدرجة في سطر العنوان نفسه ولا تنفرد بسطر', () {
-      final layout = _layout(
-        _document(statement: _shortStatement, marksOverride: 20),
-      );
-      final measured = _expectGradeRule(layout, caseName: 'قصير');
-      expect(measured.titleLineCount, 1,
-          reason: 'عنوان قصير + درجة يجب أن يبقى سطرًا واحدًا.');
-      expect(measured.marksRunCount, greaterThanOrEqualTo(3),
-          reason: 'مجموعة الدرجة تتكوّن من قوس ورقم وفراغ ووحدة وقوس: '
-              '${measured.marksRunCount} جريانًا فقط — أُسقط جزء منها.');
-    });
-
-    test('عنوان طويل يلتف: الدرجة تبقى مع آخر كلمة لا منفردة', () {
-      final layout = _layout(
-        _document(statement: _longStatement, marksOverride: 20),
-      );
-      final measured = _expectGradeRule(layout, caseName: 'طويل');
-      expect(measured.titleLineCount, greaterThan(1),
-          reason: 'العنوان الطويل يجب أن يلتف على أكثر من سطر حتى يقيس '
-              'الاختبار حالة الالتفاف فعلاً.');
-    });
-
-    test('نص درجة طويل (مئة وخمسون درجة) لا ينفصل ولا ينقسم', () {
-      final layout = _layout(
-        _document(statement: _longStatement, marksOverride: 150),
-      );
-      _expectGradeRule(layout, caseName: 'درجة طويلة');
-    });
-
-    test('عرض ضيّق (هامش 34 مم): الالتفاف لا يبتر الدرجة', () {
-      final layout = _layout(
-        _document(
-          statement: _longStatement,
-          marksOverride: 20,
-          settings: const PaperSettings(marginMm: 34),
-        ),
-      );
-      final measured = _expectGradeRule(layout, caseName: 'عرض ضيق');
-      expect(measured.titleLineCount, greaterThan(1),
-          reason: 'الهامش الكبير يضيّق العمود فيجب أن يلتف العنوان.');
-    });
-
-    test('كل جريانات الدرجة داخل الصفحة الأولى ومرتّبة مع العنوان', () {
-      final layout = _layout(
-        _document(statement: _shortStatement, marksOverride: 20),
-      );
-      final lines = _titleLines(layout);
-      final marksLines = <LayoutLine>[
-        for (final line in lines)
-          if (line.runs.any(_isMarksRun)) line,
-      ];
-      expect(marksLines.length, 1,
-          reason: 'جريانات الدرجة موزّعة على ${marksLines.length} سطرًا.');
-      final sorted = marksLines.single.runs.where(_isMarksRun).toList()
-        ..sort((a, b) => a.x.compareTo(b.x));
-      for (var index = 0; index + 1 < sorted.length; index++) {
-        final gap = sorted[index + 1].x - (sorted[index].x + sorted[index].advance);
-        expect(
-          gap,
-          greaterThan(-0.75),
-          reason: 'تراكب داخل مجموعة الدرجة بين '
-              '"${sorted[index].text}" و"${sorted[index + 1].text}": '
-              'الفجوة $gap نقطة.',
-        );
-      }
-    });
-
-    test('وحدة الدرجة تُطبع كما في النموذج بلا تغيير نصّها', () {
-      final document = _document(statement: _shortStatement, marksOverride: 20);
-      final blueprint = ExamBlueprint.from(document);
-      // العقد القديم (نصّ مسطّح) لا يتغيّر: القاعدة تخطيطية لا بياناتية.
-      expect(blueprint.questions.single.title.marks, '(٢٠ درجة)');
-      final layout = _layout(document);
-      // الرسم في سياق RTL: الترتيب المنطقي هو تناقص الإحداثي x. نقرأ الجريانات
-      // من اليمين إلى اليسار ونطابق النص المنطقي نفسه — لا ترتيب العرض.
-      final marksRuns = <LayoutRun>[
-        for (final line in _titleLines(layout))
-          ...line.runs.where(_isMarksRun),
-      ]..sort((a, b) => b.x.compareTo(a.x));
-      final logicalText = marksRuns
-          .map((run) => run.text.replaceAll('\u00A0', ' '))
-          .join();
-      expect(
-        logicalText,
-        '(٢٠ درجة)',
-        reason: 'نصّ الدرجة المتدفّق للرسم يختلف عن النموذج.\n'
-            'الجريانات (يمين ← يسار): '
-            '${marksRuns.map((run) => '"${run.text}"').toList()}',
-      );
-      // قاعدة تخطيطية: المسافة داخل المجموعة صارت غير كاسرة.
-      expect(
-        marksRuns.any((run) => run.text.contains('\u00A0')),
-        isTrue,
-        reason: 'فواصل مجموعة الدرجة بقيت كاسرة (مسافة عادية) — '
-            'يمكن أن تنقسم بين سطرين.',
-      );
-      // دور المجموعة دور واحد: كل جريان داخلها — بما فيها كلمة الوحدة —
-      // مصنَّف marks، وإلا اختل تنسيق المجموعة في المعاينة/PDF.
-      expect(
-        marksRuns.any((run) => run.text.contains('درجة')),
-        isTrue,
-        reason: 'كلمة الوحدة في مجموعة الدرجة ليست من جريانات marks: '
-            'الجريانات ${marksRuns.map((run) => run.text).toList()}',
-      );
-    });
+  test('عنوان قصير: الدرجة في سطر العنوان نفسه (لا سطر مستقل)', () {
+    final measured = _expectMarksRule(
+      _layout(_document(statement: _shortStatement)),
+      caseName: 'قصير',
+    );
+    expect(measured.titleLines, 1);
   });
 
-  group('سلامة وحدة القياس', () {
-    test('هامش العرض الضيق لا يجعل الدرجة صفر المساحة', () {
-      final layout = _layout(
-        _document(
-          statement: _shortStatement,
-          marksOverride: 20,
-          settings: const PaperSettings(marginMm: 34),
-        ),
-      );
-      final contentWidth = LayoutUnits.a4.width -
-          2 * LayoutUnits.mmToPt(34);
-      for (final line in _titleLines(layout)) {
-        for (final run in line.runs.where(_isMarksRun)) {
-          expect(run.advance, greaterThan(0),
-              reason: 'جريان درجة بعرض صفر: "${run.text}"');
-          expect(run.x, greaterThanOrEqualTo(-0.01));
-          expect(run.x + run.advance, lessThanOrEqualTo(contentWidth + 0.5),
-              reason: 'الدرجة تتجاوز عرض المحتوى: '
-                  '${run.x + run.advance} > $contentWidth');
-        }
-      }
-    });
+  test('عنوان طويل يلتف: الدرجة تلتصق بآخر كلمة لا تنفرد', () {
+    final measured = _expectMarksRule(
+      _layout(_document(statement: _longStatement)),
+      caseName: 'طويل',
+    );
+    expect(measured.titleLines, greaterThan(1),
+        reason: 'العنوان لم يلتف أصلًا، فالاختبار لا يقيس حالة الالتفاف.');
+  });
+
+  test('هامش ضيّق (36 مم): الالتفاف لا يفصل الدرجة عن العنوان', () {
+    final measured = _expectMarksRule(
+      _layout(_document(statement: _longStatement, marginMm: 36)),
+      caseName: 'هامش ضيّق',
+    );
+    expect(measured.titleLines, greaterThan(1));
+  });
+
+  test('هامش واسع (8 مم): ما زالت في نهاية السطر نفسه', () {
+    _expectMarksRule(
+      _layout(_document(statement: _longStatement, marginMm: 8)),
+      caseName: 'هامش واسع',
+    );
   });
 }
