@@ -350,7 +350,11 @@ class FlutterTextMetrics implements FontMetricsProvider {
             // One visual unit only when the island stays on one line; a
             // wrapped island keeps the per-scalar path so its lines split.
             final islandLine = _lineForBox(boxes.first, lineMetrics);
-            final isSingleLineNonArabicIsland = !_containsArabic(sourceText) &&
+            // «عربية» هنا تعني حروفًا عربية، لا أرقامًا هندية: ٢٠٢٦ داخل
+            // U+0600..U+08FF لكنه جزيرة رقمية LTR، ولو عُدّ عربيًّا لبقي
+            // العام الدراسي مقطّعًا إلى مقاطع متراكبة.
+            final isSingleLineNonArabicIsland =
+                !_containsArabicLetter(sourceText) &&
                 _containsNumberOrLtr(sourceText) &&
                 boxes.every((box) => _lineForBox(box, lineMetrics) == islandLine);
             final splitVisualRuns = !isSingleLineNonArabicIsland &&
@@ -747,6 +751,20 @@ class FlutterTextMetrics implements FontMetricsProvider {
       (rune >= 0x0061 && rune <= 0x007A) ||
       (rune >= 0x00C0 && rune <= 0x02FF) ||
       (rune >= 0x0370 && rune <= 0x058F);
+
+  /// حروف عربية فقط (بلا الأرقام الهندية ٠-٩ ولا علامات الترقيم العربية).
+  ///
+  /// الأرقام الهندية تقع في النطاق نفسه (U+0660..U+0669)، فعدّها «عربية» كان
+  /// يُبقي «٢٠٢٦/٢٠٢٧» على مسار التقسيم لكل محرف، فتتراكب مجموعتاها.
+  bool _containsArabicLetter(String text) => text.runes.any((rune) =>
+      (rune >= 0x0621 && rune <= 0x063A) ||
+      (rune >= 0x0641 && rune <= 0x064A) ||
+      (rune >= 0x066E && rune <= 0x06D3) ||
+      (rune >= 0x06FA && rune <= 0x06FF) ||
+      (rune >= 0x0750 && rune <= 0x077F) ||
+      (rune >= 0x08A0 && rune <= 0x08FF) ||
+      (rune >= 0xFB50 && rune <= 0xFDFF) ||
+      (rune >= 0xFE70 && rune <= 0xFEFF));
 
   bool _containsArabic(String text) => text.runes.any((rune) =>
       (rune >= 0x0590 && rune <= 0x05FF) ||
