@@ -178,6 +178,44 @@ void main() {
         expect((word.y - baseline).abs(), lessThan(0.5),
             reason: 'سطر السنة يمتد على أكثر من خط أساس: ${line.describe()}');
       }
+
+      // جزيرة LTR داخل سياق RTL: ترتيبها المرئي يسارًا → يمينًا هو
+      // ٢٠٢٦ ثم الشرطة ثم ٢٠٢٧، ومجموعتا الأرقام لا تشتركان في الموضع.
+      final canonicalYearWords = <LayoutWord>[
+        for (final page in layout.pages)
+          for (final line in page.allLines)
+            for (final run in line.runs)
+              ...run.words.where(
+                (word) =>
+                    run.semanticNodeId.contains('header') &&
+                    (word.text == first ||
+                        word.text == second ||
+                        word.text == '/'),
+              ),
+      ];
+      expect(canonicalYearWords, isNotEmpty,
+          reason: 'لم تُعثر كلمات العام الدراسي في التخطيط القانوني.');
+      final leftToRight = <LayoutWord>[...canonicalYearWords]
+        ..sort((a, b) => a.x.compareTo(b.x));
+      expect(
+        leftToRight.map((word) => word.text).toList(),
+        <String>[first, '/', second],
+        reason: 'ترتيب العام الدراسي المرئي في التخطيط (ومن ثمّ في المعاينة '
+            'وPDF) ليس LTR:\n'
+            '${leftToRight.map((word) => '"${word.text}"@'
+                '${word.x.toStringAsFixed(2)}').toList()}',
+      );
+      for (var index = 0; index + 1 < leftToRight.length; index++) {
+        final current = leftToRight[index];
+        final next = leftToRight[index + 1];
+        expect(
+          current.x + current.textAdvance,
+          lessThanOrEqualTo(next.x + 0.5),
+          reason: 'تراكب داخل العام الدراسي: "${current.text}" ينتهي عند '
+              '${(current.x + current.textAdvance).toStringAsFixed(2)} و'
+              '"${next.text}" يبدأ عند ${next.x.toStringAsFixed(2)}.',
+        );
+      }
     });
 
     test('عدد الكلمات المرسومة لا يزيد على كلمات التخطيط', () {
