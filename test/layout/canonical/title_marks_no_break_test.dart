@@ -37,7 +37,7 @@ const String _longStatement =
 
 ExamDocument _document({
   required String statement,
-  required double marks,
+  required double marksOverride,
   PaperSettings settings = const PaperSettings(),
 }) {
   return ExamDocument(
@@ -55,7 +55,7 @@ ExamDocument _document({
         id: 'q1',
         questionNumber: 1,
         statement: statement,
-        marksOverride: marks,
+        marksOverride: marksOverride,
       ),
     ],
   );
