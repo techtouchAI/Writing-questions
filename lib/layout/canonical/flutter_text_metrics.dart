@@ -357,6 +357,16 @@ class FlutterTextMetrics implements FontMetricsProvider {
                 !_containsArabicLetter(sourceText) &&
                 _containsNumberOrLtr(sourceText) &&
                 boxes.every((box) => _lineForBox(box, lineMetrics) == islandLine);
+            if (sourceText.contains('\u0662\u0660\u0662\u0666')) {
+              // TEMP-DIAG
+              // ignore: avoid_print
+              print('DIAG-ISLAND text="$sourceText" boxes=${boxes.length} '
+                  'dirs=${boxes.map((b) => b.direction.name).toList()} '
+                  'ltrs=${boxes.map((b) => '${b.left.toStringAsFixed(2)}..${b.right.toStringAsFixed(2)}').toList()} '
+                  'arabicLetter=${_containsArabicLetter(sourceText)} '
+                  'numberOrLtr=${_containsNumberOrLtr(sourceText)} '
+                  'island=$isSingleLineNonArabicIsland');
+            }
             final splitVisualRuns = !isSingleLineNonArabicIsland &&
                 (boxes.length != 1 ||
                     (boxes.single.direction == ui.TextDirection.ltr &&
