@@ -123,25 +123,43 @@ void main() {
   });
 
   group('التخطيط القانوني يحمل التنسيق الجزئي', () {
-    test('تعريض كلمة واحدة في المنطوق يصل إلى جريان واحد فقط', () {
+    test('لون كلمة واحدة في المنطوق يصل إلى جريان واحد فقط', () {
+      // العنوان عريض بحكم القالب (titleStyle = body + bold)، فالمقياس النقي
+      // لتنسيق جزئي فيه هو اللون. التعريض الجزئي يُقاس في متن السؤال أدناه.
       final layout = _layout(_document(
         statementFormats: const <TextFormatSpan>[
-          TextFormatSpan(start: 5, end: 12, bold: true),
+          TextFormatSpan(start: 5, end: 12, color: 0xFFCC0000),
         ],
       ));
       final runs = _textRuns(_titleBlock(layout), 'q1/title/statement');
       expect(_joined(runs), _statement,
-          reason: 'تنسيق التحديد غيّر نص العنوان المرسوم: $_joined(runs)');
-      final boldRuns = runs.where((run) => run.style.bold == true).toList();
-      expect(boldRuns, hasLength(1),
-          reason: 'التعريض أصاب ${boldRuns.length} جريانًا بدل جريان واحد:\n'
-              '${runs.map((run) => '"${run.text}" bold=${run.style.bold}').toList()}');
-      expect(boldRuns.single.text.trim(), 'الإجابة');
+          reason: 'تنسيق التحديد غيّر نص العنوان المرسوم: ${_joined(runs)}');
+      final colored =
+          runs.where((run) => run.style.colorArgb == 0xFFCC0000).toList();
+      expect(colored, hasLength(1),
+          reason: 'اللون أصاب ${colored.length} جريانًا بدل جريان واحد:\n'
+              '${runs.map((run) => '"${run.text}" color=${run.style.colorArgb}').toList()}');
+      expect(colored.single.text.trim(), 'الإجابة');
       for (final run in runs) {
-        if (identical(run, boldRuns.single)) continue;
-        expect(run.style.bold, isNot(isTrue),
-            reason: 'جريان خارج التحديد صار عريضًا: "${run.text}"');
+        if (identical(run, colored.single)) continue;
+        expect(run.style.colorArgb, isNot(0xFFCC0000),
+            reason: 'جريان خارج التحديد أخذ اللون: "${run.text}"');
       }
+    });
+
+    test('تعريض كلمة واحدة في المتن يصل إلى جريان واحد فقط', () {
+      final layout = _layout(_document(
+        bodyFormats: const <TextFormatSpan>[
+          TextFormatSpan(start: 3, end: 5, bold: true),
+        ],
+      ));
+      final runs = _textRuns(_blockWithPrefix(layout, 'q1/body'), 'q1/body');
+      expect(_joined(runs), _body);
+      final bold = runs.where((run) => run.style.bold == true).toList();
+      expect(bold, hasLength(1),
+          reason: 'التعريض أصاب ${bold.length} جريانًا بدل جريان واحد:\n'
+              '${runs.map((run) => '"${run.text}" bold=${run.style.bold}').toList()}');
+      expect(bold.single.text.trim(), 'هو');
     });
 
     test('مائل للنص كله + تعريض لكلمة: التداخل محفوظ', () {
@@ -187,7 +205,7 @@ void main() {
     test('الحفظ والتحميل ثم التخطيط: التنسيق نفسه على الكلمة نفسها', () {
       final original = _document(
         statementFormats: const <TextFormatSpan>[
-          TextFormatSpan(start: 5, end: 12, bold: true, color: 0xFF123456),
+          TextFormatSpan(start: 5, end: 12, color: 0xFF123456),
         ],
       );
       final restored = ExamDocument.fromMap(original.toMap());
@@ -198,7 +216,7 @@ void main() {
       final runs =
           _textRuns(_titleBlock(_layout(restored)), 'q1/title/statement');
       final styled = runs
-          .where((run) => run.style.bold == true && run.style.colorArgb == 0xFF123456)
+          .where((run) => run.style.colorArgb == 0xFF123456)
           .toList();
       expect(styled, hasLength(1),
           reason: 'التنسيق لم يصل بعد إعادة التحميل: '
