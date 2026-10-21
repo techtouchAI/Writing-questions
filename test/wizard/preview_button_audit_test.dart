@@ -306,7 +306,7 @@ void main() {
     expect(find.text('رياضيات'), findsNothing);
     await tapTool('شريط الصيغ والوسائط');
     expect(find.text('رياضيات'), findsOneWidget);
-    for (final format in ['PDF', 'Word']) {
+    for (final format in ['PDF']) {
       await tapTool('مراجعة وتصدير $format');
       expect(find.text('مراجعة الورقة'), findsOneWidget);
       // ورقة واحدة للأسئلة: لا مبدّل «ورقة الطالب/نموذج الإجابة» إطلاقاً.
@@ -314,6 +314,8 @@ void main() {
       expect(find.textContaining('نموذج الإجابة'), findsNothing);
       await _tap(tester, find.text('رجوع'));
     }
+    // لم يُجرَ حذف زر Word هنا عمداً: مسار التصدير لا يحتوي على Word بعد الإزالة.
+    expect(find.byTooltip('مراجعة وتصدير Word'), findsNothing);
     // لا وجود لنسخة «نموذج الإجابة» ولا لأي زر يفتحها في أي مرحلة.
     expect(find.byTooltip('عرض نموذج الإجابة'), findsNothing);
     await _tap(tester, find.byTooltip('العودة للأسئلة'));

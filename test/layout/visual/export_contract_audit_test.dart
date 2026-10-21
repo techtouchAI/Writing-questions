@@ -53,14 +53,12 @@ void main() {
     }
   });
 
-  test('التصدير الدقيق يغطي كل بند لأنه صورة الصفحة النهائية', () {
+  test('كل البنود تصل إلى المعاينة وPDF المتجه', () {
     for (final entry in ExportContractAudit.entries) {
-      expect(
-        entry.surfaces.contains(ExportSurface.exact),
-        isTrue,
-        reason: 'البند «${entry.property}» يجب أن يكون مشمولاً في Exact '
-            '(الصورة تحمل كل ما في الصفحة)، أو يُعلَن قيده صراحةً.',
-      );
+      expect(entry.surfaces.contains(ExportSurface.preview), isTrue,
+          reason: 'البند «${entry.property}» يجب أن يصل إلى المعاينة.');
+      expect(entry.surfaces.contains(ExportSurface.pdfVector), isTrue,
+          reason: 'البند «${entry.property}» يجب أن يصل إلى PDF المتجه.');
     }
   });
 }

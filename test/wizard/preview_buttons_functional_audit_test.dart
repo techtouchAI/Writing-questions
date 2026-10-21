@@ -723,9 +723,8 @@ void main() {
     await _tap(tester, _tool('مراجعة وتصدير PDF'));
     expect(find.text('مراجعة الورقة'), findsOneWidget);
     await _tap(tester, find.text('رجوع'));
-    await _tap(tester, _tool('مراجعة وتصدير Word'));
-    expect(find.text('مراجعة الورقة'), findsOneWidget);
-    await _tap(tester, find.text('رجوع'));
+    // زر التصدير إلى Word أُزيل من واجهة التصدير.
+    expect(find.byTooltip('مراجعة وتصدير Word'), findsNothing);
     await _tap(tester, find.byTooltip('إعدادات الورقة'));
     await _tap(tester, find.text('إلغاء'));
 

@@ -7,8 +7,7 @@
 //   في PDF/DOCX، وتُقارَن بجذر RMSE. ذلك يقيس دقة لقطة المعاينة، ولا يقيس
 //   إطلاقاً محرك PDF المتجه — وهو الممرّ الذي فيه الانحرافات. هذه البوابة
 //   تفصل المسارات: `vector.pdf` من `PaginatedPdfExamEngine`، و`exact.*` من
-//   `ExactExportService` — ويبقى Exact مساراً مستقلاً لا يُستعمل بديلاً عنه
-//   (تُثبت البوابة أنه صورٌ بلا نص، فيثبت الفصل).
+
 //   (أُزيل ممرّ Word القابل للتحرير `editable.docx` في C5 مع مولّده، فسقطت
 //   معه فحوص P0.4 وبندا `w:ind`/محاذاة الافتراضي من P0.5 واختبارات
 //   GATE-06/07 والشق الـ Word من GATE-08/11/99.)
@@ -62,13 +61,10 @@ import 'package:writing_questions_app/pdf_engine/exam_fonts.dart';
 import 'package:writing_questions_app/pdf_engine/exam_strategy.dart';
 import 'package:writing_questions_app/pdf_engine/paginated_pdf_exam_engine.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
-import 'package:writing_questions_app/services/exact_export_service.dart';
-import 'package:writing_questions_app/services/page_snapshot_service.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 
 import '../pdf_engine/fake_math_host.dart';
 import '../pdf_engine/pdf_content_probe.dart';
-import 'ooxml_probe.dart';
 import 'p0_gate_fixture.dart';
 import 'pdf_structure_probe.dart';
 
@@ -197,11 +193,7 @@ class _Gate {
   List<String> previewLtrMarkerOrder = <String>[];
 
   Uint8List? rtlVectorPdf;
-  Uint8List? rtlExactPdf;
-  Uint8List? rtlExactDocx;
   Uint8List? ltrVectorPdf;
-  Uint8List? ltrExactPdf;
-  Uint8List? ltrExactDocx;
   List<Uint8List> rtlPreviewPages = <Uint8List>[];
   List<Uint8List> ltrPreviewPages = <Uint8List>[];
   int rtlPreviewPageCount = 0;
@@ -219,11 +211,7 @@ class _Gate {
 
   bool get artifactsReady =>
       rtlVectorPdf != null &&
-      ltrVectorPdf != null &&
-      rtlExactPdf != null &&
-      rtlExactDocx != null &&
-      ltrExactPdf != null &&
-      ltrExactDocx != null;
+      ltrVectorPdf != null;
 
   late final PdfStructureReport rtlPdfReport =
       PdfStructureReport.fromBytes(rtlVectorPdf!);
@@ -490,7 +478,7 @@ class _PreviewCapture {
     required this.layout,
   });
 
-  final List<PageSnapshot> snapshots;
+  final List<Uint8List> snapshots;
   final List<Uint8List> pages;
   final Map<String, _PreviewText> texts;
   final List<String> markerOrder;
@@ -815,22 +803,15 @@ Future<_PreviewCapture> _capturePreviewOf(
   ).where((marker) => !excluded.contains(marker)).toList();
 
   final capture = await tester.runAsync(() async {
-    final snapshots = <PageSnapshot>[];
+    final snapshots = <Uint8List>[];
     for (final boundary in boundaries) {
       final image = await boundary.toImage(pixelRatio: 1);
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
-      final width = image.width;
-      final height = image.height;
       image.dispose();
       if (data == null) {
         continue;
       }
-      snapshots.add(PageSnapshot(
-        pageIndex: snapshots.length,
-        pngBytes: data.buffer.asUint8List(),
-        widthPx: width.toDouble(),
-        heightPx: height.toDouble(),
-      ));
+      snapshots.add(data.buffer.asUint8List());
     }
     return snapshots;
   });
@@ -839,11 +820,10 @@ Future<_PreviewCapture> _capturePreviewOf(
   expect(snapshots, hasLength(pageCount),
       reason: 'لقطة لكل صفحة معاينة (${snapshots.length}/$pageCount).');
   for (final snapshot in snapshots) {
-    expect(snapshot.pngBytes.sublist(0, 8),
+    expect(snapshot.sublist(0, 8),
         <int>[137, 80, 78, 71, 13, 10, 26, 10],
         reason: 'لقطة المعاينة ليست PNG صالحاً.');
-    expect(snapshot.widthPx, greaterThan(700));
-    expect(snapshot.heightPx, greaterThan(1000));
+
   }
 
   _stage('معاينة ${document.name}: $pageCount صفحة، '
@@ -851,7 +831,7 @@ Future<_PreviewCapture> _capturePreviewOf(
   return _PreviewCapture(
     snapshots: snapshots,
     pages: snapshots
-        .map((snapshot) => Uint8List.fromList(snapshot.pngBytes))
+        .map((snapshot) => Uint8List.fromList(snapshot))
         .toList(),
     texts: texts,
     markerOrder: markerOrder,
@@ -991,7 +971,6 @@ void main() {
     // مرجع المعاينة قيس في P0-GATE-00 ولا تُمشى الشجرة مرتين في اختبار واحد:
     // إعادة المشي هي ما استهلك «TimeoutException after 0:10:00» كله.
     _gate.requirePreview();
-    final rtl = _gate.rtlCapture!;
 
     // التوليد يمسّ I/O حقيقياً (تحميل خطوط من الأصول، فكّ صور، لقطة
     // المعادلات). داخل testWidgets يعمل كل await في منطقة FakeAsync فلا يكتمل
@@ -1102,11 +1081,6 @@ void main() {
         ..reset()
         ..start();
       // Exact: لقطات المعاينة نفسها، في مسار منفصل عن الفحوص البنيوية.
-      _gate.rtlExactPdf =
-          await ExactExportService.buildPdfFromSnapshots(rtl.snapshots);
-      _gate.rtlExactDocx =
-          ExactExportService.buildDocxFromSnapshots(rtl.snapshots);
-      _stage('توليد exact.* عربي: ${watch.elapsedMilliseconds}ms');
       watch.stop();
     });
 
@@ -1116,8 +1090,7 @@ void main() {
           'preview_rtl_page_${index + 1}.png', _gate.rtlPreviewPages[index]);
     }
     await _writeArtifact('vector.pdf', _gate.rtlVectorPdf!);
-    await _writeArtifact('exact.pdf', _gate.rtlExactPdf!);
-    await _writeArtifact('exact.docx', _gate.rtlExactDocx!);
+
     _writeText(
       'preview_geometry.json',
       const JsonEncoder.withIndent('  ').convert(<String, Object?>{
@@ -1136,8 +1109,6 @@ void main() {
     // كل قطعة موجودة وغير فارغة.
     for (final name in <String>[
       'vector.pdf',
-      'exact.pdf',
-      'exact.docx',
       for (var index = 0; index < _gate.rtlPreviewPages.length; index++)
         'preview_rtl_page_${index + 1}.png',
     ]) {
@@ -1147,14 +1118,8 @@ void main() {
           reason: 'القطعة $name أصغر من أن تكون مخرجاً حقيقياً.');
     }
 
-    // Exact ≠ vector: لا يُقاس ممرّ بغيره.
-    expect(_gate.rtlVectorPdf!.length, isNot(_gate.rtlExactPdf!.length),
-        reason: 'vector.pdf يطابق exact.pdf بايتاً: الممرّان لم يُقيسا منفصلين.');
     expect(PdfContentProbe.fromBytes(_gate.rtlVectorPdf!).words, isNotEmpty,
         reason: 'vector.pdf بلا نص قابل للتحديد — لا تُبنى عليه بوابة بنيوية.');
-    expect(PdfContentProbe.fromBytes(_gate.rtlExactPdf!).words, isEmpty,
-        reason: 'exact.pdf يجب أن يبقى صوراً بلا نص؛ وجود نص فيه يعني أن '
-            'القطع اختلطت بين الممرّين.');
 
     _stage('vector عربي: ${_gate.rtlPdfReport.pageCount} صفحة؛ '
         'المعاينة: ${_gate.rtlPreviewPageCount} صفحة؛ '
@@ -1191,7 +1156,6 @@ void main() {
 
     final ltrDocument = P0GateFixture.ltr();
     _gate.requirePreview();
-    final ltr = _gate.ltrCapture!;
 
     final watch = Stopwatch();
     await tester.runAsync(() async {
@@ -1203,11 +1167,6 @@ void main() {
       watch
         ..reset()
         ..start();
-      _gate.ltrExactPdf =
-          await ExactExportService.buildPdfFromSnapshots(ltr.snapshots);
-      _gate.ltrExactDocx =
-          ExactExportService.buildDocxFromSnapshots(ltr.snapshots);
-      _stage('توليد exact_ltr.*: ${watch.elapsedMilliseconds}ms');
       watch.stop();
     });
 
@@ -1216,8 +1175,7 @@ void main() {
           'preview_ltr_page_${index + 1}.png', _gate.ltrPreviewPages[index]);
     }
     await _writeArtifact('vector_ltr.pdf', _gate.ltrVectorPdf!);
-    await _writeArtifact('exact_ltr.pdf', _gate.ltrExactPdf!);
-    await _writeArtifact('exact_ltr.docx', _gate.ltrExactDocx!);
+
     _writeText(
       'preview_geometry_ltr.json',
       const JsonEncoder.withIndent('  ').convert(<String, Object?>{
@@ -1229,8 +1187,6 @@ void main() {
 
     for (final name in <String>[
       'vector_ltr.pdf',
-      'exact_ltr.pdf',
-      'exact_ltr.docx',
       for (var index = 0; index < _gate.ltrPreviewPages.length; index++)
         'preview_ltr_page_${index + 1}.png',
     ]) {
@@ -1240,13 +1196,8 @@ void main() {
           reason: 'القطعة $name أصغر من أن تكون مخرجاً حقيقياً.');
     }
 
-    expect(_gate.ltrVectorPdf!.length, isNot(_gate.ltrExactPdf!.length),
-        reason: 'vector_ltr.pdf يطابق exact_ltr.pdf بايتاً: الممرّان لم '
-            'يُقيسا منفصلين.');
     expect(PdfContentProbe.fromBytes(_gate.ltrVectorPdf!).words, isNotEmpty,
         reason: 'vector_ltr.pdf بلا نص قابل للتحديد — لا تُبنى عليه بوابة.');
-    expect(PdfContentProbe.fromBytes(_gate.ltrExactPdf!).words, isEmpty,
-        reason: 'exact_ltr.pdf يجب أن يبقى صوراً بلا نص.');
 
     final ltrPdfPages = _gate.ltrPdfReport.pageCount;
     final ltrPreviewPages = _gate.ltrPreviewPageCount;
@@ -2405,58 +2356,8 @@ void _recordPreviewCells(_PreviewCapture rtl, _PreviewCapture ltr) {
           '${(ltrSta.rect.left - ltrBody.rect.left).abs().toStringAsFixed(2)}pt.');
 }
 
-// =============================================================================
-// خلايا Exact: صور المعاينة ملفوفة — لا نص ولا OOXML، فتُقيس ما يمكن قياسه.
-// =============================================================================
-void _recordExactCells() {
-  final exactReport = PdfStructureReport.fromBytes(_gate.rtlExactPdf!);
-  final exactDocx = OoxmlProbe.decode(_gate.rtlExactDocx!);
-  final exactPages = exactReport.pageCount;
-  final drawnWords =
-      exactReport.pages.fold<int>(0, (sum, page) => sum + page.wordCount);
-  final previewPages = _gate.rtlPreviewPageCount;
-  final imagesPerPage =
-      exactReport.pages.map((page) => page.embeddedImageObjects).join('/');
-
-  // ما يُقاس في Exact حقاً: أنه يحمل المرجع البصري كاملاً — صفحة لكل صفحة،
-  // وصورة واحدة ملؤها، وبلا أي نص (فلا يُستعمل بديلاً عن الممرّين البنيويين).
-  expect(drawnWords, 0,
-      reason: 'exact.pdf يحوي نصاً مرسوماً ($drawnWords) — لم يعد لقطة '
-          'معاينة ملفوفة، فلا يصحّ ما تفترضه المصفوفة من فصل الممرّات.');
-  expect(exactPages, previewPages,
-      reason: 'Exact في $exactPages صفحة والمعاينة في $previewPages.');
-  expect(
-    exactReport.pages.every((page) => page.embeddedImageObjects >= 1),
-    isTrue,
-    reason: 'ليست كل صفحة في exact.pdf صورةً واحدة على الأقل: $imagesPerPage.',
-  );
-  expect(exactDocx.mediaNames.length, greaterThanOrEqualTo(previewPages),
-      reason: 'exact.docx يحوي ${exactDocx.mediaNames.length} وسائط مقابل '
-          '$previewPages صفحة معاينة.');
-
-  _matrix.record('pagination', P0Path.exact, P0Status.pass,
-      evidence: '$exactPages صفحة = $previewPages صفحة معاينة، '
-          'وصورة صفحة واحدة لكل صفحة ($imagesPerPage)');
-  for (final feature in kP0Features) {
-    if (feature.key == 'pagination') {
-      continue;
-    }
-    _matrix.record(
-      feature.key,
-      P0Path.exact,
-      P0Status.deferredToP1,
-      reason: 'Exact لقطة نقطية للصفحة: لا نص مرسوم ($drawnWords كلمة)، '
-          'ولا `w:t`/`w:bidi`/`w:ind` ولا خطوط مضمَّنة — فالتسلسل والتشكيل '
-          'والأرقام وخصائص الفقرة لا تُقاس فيه بنيةً، وأي «صحة» فيه تُستنتج '
-          'من صورة المعاينة لا من المخرج. البوابة القائمة '
-          '(tool/verify_visual_parity.sh) تقيس مطابقته للبكسل، وهذا تمام '
-          'دوره؛ خصائص البنية تُقاس في vector/editable.',
-      evidence: 'كلمات مرسومة=$drawnWords، وسائط في exact.docx='
-          '${exactDocx.mediaNames.length}، أجزاء xml='
-          '${exactDocx.xmlPartNames.length}',
-    );
-  }
-}
+// Exact/Word removed: no exact cells.
+void _recordExactCells() {}
 
 // =============================================================================
 // مُركّبات الوثائق لقياس شمول الفحص القرآني (سطح واحد لكل حالة).

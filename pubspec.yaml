@@ -15,7 +15,6 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
-  archive: ^3.6.1
   path_provider: ^2.1.4
   # محرك رسم الـ PDF: الإصداران مثبّتان بدقة لضمان توافق CI مع Flutter 3.22.3.
   pdf: 3.11.3

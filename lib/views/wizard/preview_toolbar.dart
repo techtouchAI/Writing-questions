@@ -63,7 +63,6 @@ class PreviewToolbar extends StatelessWidget {
     required this.onToggleFormulas,
     required this.onSave,
     required this.onExportPdf,
-    required this.onExportWord,
     required this.isBusy,
   });
 
@@ -144,7 +143,6 @@ class PreviewToolbar extends StatelessWidget {
 
   final VoidCallback onSave;
   final VoidCallback onExportPdf;
-  final VoidCallback onExportWord;
   final bool isBusy;
 
   static const List<double> fontSizes = <double>[
@@ -331,11 +329,6 @@ class PreviewToolbar extends StatelessWidget {
             const _Divider(),
             _ToolButton(icon: Icons.save_outlined, tooltip: 'حفظ', onTap: isBusy ? null : onSave),
             _ExportButton(label: 'PDF', tooltip: 'مراجعة وتصدير PDF', onTap: isBusy ? null : onExportPdf),
-            _ExportButton(
-              label: 'Word',
-              tooltip: 'مراجعة وتصدير Word',
-              onTap: isBusy ? null : onExportWord,
-            ),
             if (selectionLabel.isNotEmpty) _SelectionChip(label: selectionLabel),
           ]),
         ),
