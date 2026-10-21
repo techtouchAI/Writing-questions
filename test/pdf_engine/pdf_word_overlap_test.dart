@@ -182,15 +182,14 @@ void main() {
       // جزيرة LTR داخل سياق RTL: ترتيبها المرئي يسارًا → يمينًا هو
       // ٢٠٢٦ ثم الشرطة ثم ٢٠٢٧، ومجموعتا الأرقام لا تشتركان في الموضع.
       final canonicalYearWords = <LayoutWord>[
-        for (final page in layout.pages)
-          for (final line in page.allLines)
-            for (final run in line.runs)
+        for (final line in layout.allLines)
+          for (final run in line.runs)
+            if (run.semanticNodeId.contains('header'))
               ...run.words.where(
                 (word) =>
-                    run.semanticNodeId.contains('header') &&
-                    (word.text == first ||
-                        word.text == second ||
-                        word.text == '/'),
+                    word.text == first ||
+                    word.text == second ||
+                    word.text == '/',
               ),
       ];
       expect(canonicalYearWords, isNotEmpty,
