@@ -233,3 +233,42 @@ bodyFormats` و`BranchContent.statementFormats/bodyFormats`. `PaperTextStyle`
 3. **التحقق البصري بصور حقيقية**: لم أُصدر PDF ولا رمّزت صفحات في بيئة العمل
    الحالية (لا Flutter/Dart ولا poppler محليًا، والخروج الشبكي محجوب). كل
    التحقق هنا عبر GitHub Actions فقط، ولا أدّعي غيره.
+
+## 12. ما تحقّق فعليًا (دليل من التشغيل، لا من القراءة)
+
+**آخر تشغيل أخضر** (Pull request #47): `Build & Release Android APK` — الوظيفة
+«Analyze, test, and build APK» نجحت، و«Visual regression» نجحت.
+
+- `Analyze`: `No issues found!` (flutter analyze --fatal-infos ضمن الخطوة).
+- `Run required tests`: `passed=743 failed=0 suites=81` (كل ملفات
+  `test/**/*_test.dart` ما عدا المجموعة الموسّعة `iso_*`/`hang_repro`/السيناريو
+  الشامل، وهي مجموعة CI المعتمدة).
+- `Canonical gate`: `passed=3 failed=0`.
+- `P0 matrix tally`: `PASS=28 FAIL=0 DEFERRED_TO_P1=2`.
+- APK: الوظيفة تبني `flutter build apk --release` وتنشر
+  `writing-questions-release-apk` (28.3MB) كمُخرَج للوظيفة.
+
+**أثر إصلاح العام الدراسي في ملف PDF حقيقي** — نصٌّ مستخرَج بـ`pdftotext` من
+`build/visual_parity/vector.pdf` (مُرفَق في تشغيل الـworkflow):
+
+قبل: السطر كان مقطوعًا/معكوسًا:
+```
+٢٠٢٧
+٢٠٢٦/        للعام الدراسي
+```
+بعد:
+```
+ﻟﻠﻌﺎﻡ ﺍﻟﺪﺭﺍﺳﻲ ٢٠٢٦/٢٠٢٧
+```
+أي أن الرمز صار متصلًا وبترتيبه المنطقي، وهو نفسه ما تقيسه
+`pdf_word_overlap_test` على الملف (رمز واحد، لا نسخة مقطوعة، بلا تراكب)، وما
+تقيسه بوابة الهندسة `pdf_glyph_overlap_test` بمقارنة كل كلمة PDF بموضعها في
+`LayoutDocument` (Δ ≤ 0.75pt).
+
+**حدّ مثبت في قابلية البحث (لم يُصلَح هنا، ولم أدّعِ خلافه)**: الحروف العربية
+تُستخرَج من PDF بأشكال العرض (presentation forms: `ﺍﻟﻠﻪ` بدل `الله`)، لأن
+محرك PDF يكتب المحارف بعد التشكيل؛ ولهذا لا يجد بحثٌ عن «الرحمن» بالحروف
+العادية تطابقًا مباشرًا في بعض العارضات. وبعض الفراغات بين الكلمات تُستخرج
+ملتصقة (`ﺍﻟﻠﻪﺍﻟﺮﺣﻤﻦ`) لأن الفراغ لا يُكتب محرفًا في المجرى (يُحسب موضعًا فقط).
+إصلاح ذلك يحتاج إعادة بناء إسقاط ToUnicode/كتابة الفراغات في مكتبة PDF
+المضمَّنة (`third_party/pdf`)، وهو عمل مستقل غير مُنفَّذ في هذه الدفعة.
