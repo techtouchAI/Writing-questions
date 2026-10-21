@@ -359,13 +359,24 @@ class FlutterTextMetrics implements FontMetricsProvider {
                 boxes.every((box) => _lineForBox(box, lineMetrics) == islandLine);
             if (sourceText.contains('\u0662\u0660\u0662\u0666')) {
               // TEMP-DIAG
+              final all = <String>[];
+              for (final r2 in spanRanges) {
+                final b2 = painter.getBoxesForSelection(
+                  TextSelection(baseOffset: r2.start, extentOffset: r2.end),
+                  boxHeightStyle: ui.BoxHeightStyle.strut,
+                  boxWidthStyle: ui.BoxWidthStyle.tight,
+                );
+                all.add('[${r2.spanIndex}] text="${plainText.substring(r2.start, r2.end)}" '
+                    'boxes=${b2.map((b) => '${b.direction.name}:${b.left.toStringAsFixed(2)}..${b.right.toStringAsFixed(2)}').toList()}');
+              }
+              final carets = <String>[];
+              for (var o = 0; o < plainText.length; o++) {
+                final c = painter.getOffsetForCaret(TextPosition(offset: o), ui.Rect.zero);
+                carets.add('$o:${c.dx.toStringAsFixed(2)}');
+              }
               // ignore: avoid_print
-              print('DIAG-ISLAND text="$sourceText" boxes=${boxes.length} '
-                  'dirs=${boxes.map((b) => b.direction.name).toList()} '
-                  'ltrs=${boxes.map((b) => '${b.left.toStringAsFixed(2)}..${b.right.toStringAsFixed(2)}').toList()} '
-                  'arabicLetter=${_containsArabicLetter(sourceText)} '
-                  'numberOrLtr=${_containsNumberOrLtr(sourceText)} '
-                  'island=$isSingleLineNonArabicIsland');
+              print('DIAG-PARAGRAPH dir=${bidiDirection.name} width=$width '
+                  'text="$plainText" carets=$carets all=$all');
             }
             final splitVisualRuns = !isSingleLineNonArabicIsland &&
                 (boxes.length != 1 ||
