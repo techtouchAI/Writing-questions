@@ -846,15 +846,40 @@ class FlutterTextMetrics implements FontMetricsProvider {
     final textPx = List<double>.filled(matches.length, 0);
     for (var index = 0; index < matches.length; index++) {
       final match = matches[index];
-      final bounds = _caretBounds(
+      final start = baseOffset + match.start;
+      final end = baseOffset + match.end;
+      final caret = _caretBoundsDetailed(
         painter,
-        baseOffset + match.start,
-        baseOffset + match.end,
+        start,
+        end,
         fallbackLeft: fragmentLeftPx,
         fallbackRight: fragmentRightPx,
       );
-      startsPx[index] = bounds.left;
-      textPx[index] = bounds.right - bounds.left;
+      var left = caret.left;
+      var right = caret.right;
+      if (caret.fellBack) {
+        // صندوق الكلمة نفسه (حدود الحبر) داخل المقطع، بشرط أن يقع داخل حدوده
+        // الأفقيّة وعلى السطر نفسه — وإلا بقي صندوق المقطع كما كان.
+        var boxLeft = double.infinity;
+        var boxRight = double.negativeInfinity;
+        for (final box in painter.getBoxesForSelection(
+          TextSelection(baseOffset: start, extentOffset: end),
+          boxHeightStyle: ui.BoxHeightStyle.strut,
+          boxWidthStyle: ui.BoxWidthStyle.tight,
+        )) {
+          if (box.right < fragmentLeftPx - 1 || box.left > fragmentRightPx + 1) {
+            continue;
+          }
+          if (box.left < boxLeft) boxLeft = box.left;
+          if (box.right > boxRight) boxRight = box.right;
+        }
+        if (boxRight - boxLeft > 0.5) {
+          left = boxLeft;
+          right = boxRight;
+        }
+      }
+      startsPx[index] = left;
+      textPx[index] = right - left;
     }
     final trailingPx =
         direction == DocumentDirection.ltr ? fragmentRightPx : fragmentLeftPx;
@@ -883,7 +908,32 @@ class FlutterTextMetrics implements FontMetricsProvider {
     required double fallbackLeft,
     required double fallbackRight,
   }) {
-    if (end <= start) return (left: fallbackLeft, right: fallbackRight);
+    final bounds = _caretBoundsDetailed(
+      painter,
+      start,
+      end,
+      fallbackLeft: fallbackLeft,
+      fallbackRight: fallbackRight,
+    );
+    return (left: bounds.left, right: bounds.right);
+  }
+
+  /// مثل [_caretBounds] لكنه يُبلّغ هل سقطنا إلى صندوق المقطع.
+  ///
+  /// السقوط يعني أن المؤشرين أعطيا فاصلًا غير معقول (فارغًا أو أوسع من الحبر
+  /// نفسه) — وهي الحالة التي تظهر في جزر الأرقام داخل سياق RTL. حينها يعود
+  /// [_measureWords] إلى صندوق الكلمة نفسه بدل أن يُسقط كل كلمة على حدّ
+  /// المقطع، وإلا اشتركت كلمتان في الموضع نفسه ورُسمت إحداهما فوق الأخرى.
+  ({double left, double right, bool fellBack}) _caretBoundsDetailed(
+    TextPainter painter,
+    int start,
+    int end, {
+    required double fallbackLeft,
+    required double fallbackRight,
+  }) {
+    if (end <= start) {
+      return (left: fallbackLeft, right: fallbackRight, fellBack: true);
+    }
     final startCaret = painter.getOffsetForCaret(
       TextPosition(offset: start),
       ui.Rect.zero,
@@ -905,9 +955,9 @@ class FlutterTextMetrics implements FontMetricsProvider {
     if (!advance.isFinite ||
         advance <= 0.001 ||
         (selectionWidth > 0.001 && advance > maximumPlausibleAdvance)) {
-      return (left: fallbackLeft, right: fallbackRight);
+      return (left: fallbackLeft, right: fallbackRight, fellBack: true);
     }
-    return (left: left, right: right);
+    return (left: left, right: right, fellBack: false);
   }
 
   List<MeasuredRunFragment> _resolveInlineMathDirection(
