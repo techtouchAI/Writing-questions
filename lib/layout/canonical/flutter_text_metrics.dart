@@ -340,9 +340,19 @@ class FlutterTextMetrics implements FontMetricsProvider {
             );
             if (boxes.isEmpty) continue;
             final sourceText = _textForRange(span, range, textRange);
-            final splitVisualRuns = boxes.length != 1 ||
-                (boxes.single.direction == ui.TextDirection.ltr &&
-                    _containsArabic(sourceText));
+            // Non-Arabic islands (digits, Latin, mixed numerics) are one
+            // visual unit even when Flutter returns several boxes for them.
+            // Splitting them produced fragments sharing one x (so one word
+            // was painted over another: `٢٠٢٧/` instead of `٢٠٢٦/٢٠٢٧`), and
+            // per-scalar boxes inside an RTL paragraph are the bidi run box,
+            // not the scalar's box. Measured whole, the island keeps its LTR
+            // order, its words stay contiguous, and PDF emits it as text.
+            final isNonArabicIsland =
+                !_containsArabic(sourceText) && _containsNumberOrLtr(sourceText);
+            final splitVisualRuns = !isNonArabicIsland &&
+                (boxes.length != 1 ||
+                    (boxes.single.direction == ui.TextDirection.ltr &&
+                        _containsArabic(sourceText)));
             if (!splitVisualRuns) {
               final box = boxes.single;
               final lineIndex = _lineForBox(box, lineMetrics);
@@ -717,11 +727,22 @@ class FlutterTextMetrics implements FontMetricsProvider {
   // flipped auto-direction RTL lines containing digits + brackets/equations
   // without Arabic letters (such as `'1 )'`, `'(1)'`, or `'1 ) $5^2+6^2=$'`)
   // to LTR in Preview/PDF/DOCX while the RTL editor displayed them as RTL.
-  bool _containsStrongLtr(String text) => text.runes.any((rune) =>
+  /// Digits, Latin letters, or both — the content of a "number/Latin island"
+  /// that renders left-to-right inside an Arabic line.
+  bool _containsNumberOrLtr(String text) => text.runes.any((rune) =>
+      (rune >= 0x30 && rune <= 0x39) ||
+      (rune >= 0x0660 && rune <= 0x0669) ||
+      (rune >= 0x06F0 && rune <= 0x06F9) ||
+      (rune >= 0xFF10 && rune <= 0xFF19) ||
+      _isStrongLtrRune(rune));
+
+  bool _containsStrongLtr(String text) => text.runes.any(_isStrongLtrRune);
+
+  bool _isStrongLtrRune(int rune) =>
       (rune >= 0x0041 && rune <= 0x005A) ||
       (rune >= 0x0061 && rune <= 0x007A) ||
       (rune >= 0x00C0 && rune <= 0x02FF) ||
-      (rune >= 0x0370 && rune <= 0x058F));
+      (rune >= 0x0370 && rune <= 0x058F);
 
   bool _containsArabic(String text) => text.runes.any((rune) =>
       (rune >= 0x0590 && rune <= 0x05FF) ||
