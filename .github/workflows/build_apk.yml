@@ -675,6 +675,39 @@ jobs:
             echo "::notice title=Visual Parity Gate Summary::$rep"
           fi
 
+      # [P3-TEXT] دليل النص القابل للاستخراج من ملف PDF الفعلي (لا من الشيفرة).
+      # البوابة تقارن الصور، والصورة لا تكشف كلمةً غطّت أخرى أو رقمًا ضاع؛ هذا
+      # الاستخراج يكشفه ويُحفظ مرفقًا للمراجعة البشرية. لا يُسقط الوظيفة بنفسه:
+      # الحكم على النص في test/pdf_engine/pdf_word_overlap_test.dart (يقرأ
+      # Td/TJ من الملف نفسه بلا أدوات خارجية)، وهذا السجل دليل لا بوابة.
+      - name: Extract PDF text (searchability evidence)
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          if [ ! -f build/visual_parity/vector.pdf ]; then
+            echo "::notice title=P3 text evidence::vector.pdf missing — skipped"
+            exit 0
+          fi
+          pdftotext -layout -enc UTF-8 build/visual_parity/vector.pdf \
+            build/visual_parity/vector.txt
+          echo '### P3 — النص المستخرَج من vector.pdf' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          head -n 40 build/visual_parity/vector.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          text="$(head -n 40 build/visual_parity/vector.txt)"
+          text="${text//%/%25}"; text="${text//$'\r'/%0D}"; text="${text//$'\n'/%0A}"
+          echo "::notice title=P3 extracted PDF text::$text"
+
+      - name: Upload P3 text-extraction evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: p3-pdf-text
+          path: build/visual_parity/vector.txt
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Verify Issue 1 & Issue 2 sample exports via Poppler and LibreOffice
         shell: bash
         run: |

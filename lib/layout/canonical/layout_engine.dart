@@ -694,9 +694,9 @@ class _LayoutBuilder {
     }
     if (point.marks != null) {
       if (point.content.isNotEmpty || point.trailer?.isNotEmpty == true) {
-        spans.add(_fixedSpacer(
-          '$id/gap/marks', style, direction, LayoutUnits.pxToPt(4), point.marks,
-        ));
+        // Same no-break rule as the question title: the grade never starts a
+        // line on its own, away from the point it grades.
+        spans.add(_nonBreakingGap('$id/gap/marks', style, direction));
       }
       spans.addAll(_nodeSpans(
         point.marks!, '$id/marks', style, direction, LayoutSemanticRole.marks,
@@ -872,10 +872,13 @@ class _LayoutBuilder {
     spans.addAll(_contentSpans(title.statement, '$id/statement', style, direction));
     if (title.marks != null) {
       if (title.statement.isNotEmpty) {
-        spans.add(_fixedSpacer(
-          '$id/gap/statement-marks', style, direction,
-          LayoutUnits.pxToPt(VisualMetrics.titleGapPx),
-        ));
+        // Typographic rule (grade placement): the marks group belongs to the
+        // title line. The gap before it is a *measured* no-break space instead
+        // of a fixed WidgetSpan spacer — a placeholder is U+FFFC, i.e. a valid
+        // line-break opportunity (UAX #14 LB20), so the grade could move to a
+        // line of its own, detached from the title it grades. NBSP carries
+        // UAX #14 GL, and its advance comes from the same font as the line.
+        spans.add(_nonBreakingGap('$id/gap/statement-marks', style, direction));
       }
       spans.addAll(_nodeSpans(
         title.marks!, '$id/marks', style, direction, LayoutSemanticRole.marks,
@@ -1220,7 +1223,7 @@ class _LayoutBuilder {
         _metricSpan(
           id: path,
           node: node,
-          text: node.text,
+          text: _separatorText(node, semanticRole),
           kind: LayoutContentKind.separator,
           role: semanticRole,
           style: style,
@@ -1283,6 +1286,19 @@ class _LayoutBuilder {
     return spans;
   }
 
+  /// Separator text for layout. Inside a marks group every whitespace separator
+  /// becomes a no-break space: `(٢٠ درجة)` prints as one unbreakable unit, so a
+  /// narrow column can move the whole grade but can never split it into
+  /// `(٢٠` / `درجة)`. The semantic model keeps the plain space, so legacy
+  /// projections (`TitleLineBlueprint.marks`, `MarksNode.legacyText`) and every
+  /// stored document are unchanged.
+  String _separatorText(SeparatorNode node, LayoutSemanticRole role) {
+    if (role != LayoutSemanticRole.marks) return node.text;
+    return node.text.trim().isEmpty && node.text.isNotEmpty
+        ? _nonBreakingSpace
+        : node.text;
+  }
+
   LayoutContentKind _contentKindForRole(LayoutSemanticRole role) => switch (role) {
         LayoutSemanticRole.text => LayoutContentKind.text,
         LayoutSemanticRole.label => LayoutContentKind.label,
@@ -1321,6 +1337,33 @@ class _LayoutBuilder {
         sourceEndOffset: sourceEndOffset,
         sourceOffsetMap: sourceOffsetMap,
       );
+
+  /// No-break glue before a marks group, measured in the line's own font.
+  ///
+  /// It is emitted as text (U+00A0) rather than as a fixed WidgetSpan spacer so
+  /// the paragraph engine treats it with UAX #14 class GL: the marks group can
+  /// never start a line without the word it grades. The advance is the font's
+  /// own NBSP advance — no constant, no manual spacing.
+  MetricSpan _nonBreakingGap(
+    String id,
+    LayoutTextStyle style,
+    DocumentDirection direction,
+  ) =>
+      MetricSpan(
+        semanticNodeId: id,
+        semanticNode: null,
+        text: _nonBreakingSpace,
+        contentKind: LayoutContentKind.separator,
+        semanticRole: LayoutSemanticRole.separator,
+        style: style,
+        direction: direction,
+        logicalIndex: _logicalRunSerial++,
+      );
+
+  /// U+00A0 — the only glue this engine uses for "must stay with the previous
+  /// unit" rules (canonical NBSP behaviour is covered by
+  /// `test/layout/canonical/canonical_nbsp_page_assignment_test.dart`).
+  static const String _nonBreakingSpace = '\u00A0';
 
   MetricSpan _fixedSpacer(
     String id,
