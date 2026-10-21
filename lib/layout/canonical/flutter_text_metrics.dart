@@ -347,14 +347,18 @@ class FlutterTextMetrics implements FontMetricsProvider {
             // per-scalar boxes inside an RTL paragraph are the bidi run box,
             // not the scalar's box. Measured whole, the island keeps its LTR
             // order, its words stay contiguous, and PDF emits it as text.
-            final isNonArabicIsland =
-                !_containsArabic(sourceText) && _containsNumberOrLtr(sourceText);
-            final splitVisualRuns = !isNonArabicIsland &&
+            // One visual unit only when the island stays on one line; a
+            // wrapped island keeps the per-scalar path so its lines split.
+            final islandLine = _lineForBox(boxes.first, lineMetrics);
+            final isSingleLineNonArabicIsland = !_containsArabic(sourceText) &&
+                _containsNumberOrLtr(sourceText) &&
+                boxes.every((box) => _lineForBox(box, lineMetrics) == islandLine);
+            final splitVisualRuns = !isSingleLineNonArabicIsland &&
                 (boxes.length != 1 ||
                     (boxes.single.direction == ui.TextDirection.ltr &&
                         _containsArabic(sourceText)));
             if (!splitVisualRuns) {
-              final box = boxes.single;
+              final box = boxes.length == 1 ? boxes.single : _unionBox(boxes);
               final lineIndex = _lineForBox(box, lineMetrics);
               final runBounds = _caretBounds(
                 painter,
@@ -945,6 +949,21 @@ class FlutterTextMetrics implements FontMetricsProvider {
   /// نفسه) — وهي الحالة التي تظهر في جزر الأرقام داخل سياق RTL. حينها يعود
   /// [_measureWords] إلى صندوق الكلمة نفسه بدل أن يُسقط كل كلمة على حدّ
   /// المقطع، وإلا اشتركت كلمتان في الموضع نفسه ورُسمت إحداهما فوق الأخرى.
+  /// أقل مستطيل يحيط بعدة صناديق بصرية (نفس السطر).
+  ui.TextBox _unionBox(List<ui.TextBox> boxes) {
+    var left = double.infinity;
+    var top = double.infinity;
+    var right = double.negativeInfinity;
+    var bottom = double.negativeInfinity;
+    for (final box in boxes) {
+      if (box.left < left) left = box.left;
+      if (box.top < top) top = box.top;
+      if (box.right > right) right = box.right;
+      if (box.bottom > bottom) bottom = box.bottom;
+    }
+    return ui.TextBox.fromLTRBD(left, top, right, bottom, boxes.first.direction);
+  }
+
   ({double left, double right, bool fellBack}) _caretBoundsDetailed(
     TextPainter painter,
     int start,
