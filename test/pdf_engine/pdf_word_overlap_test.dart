@@ -9,7 +9,8 @@
 //      (هذا هو عطل «اللارحمن» و«٢٠٢٧/» الظاهر في صور البلاغ: الكلمة تُرسم أوسع
 //      من موضعها فتغطي جارتها ويقصّ clip الكلمةُ حبرَ نفسها.)
 //   2. لا ضياع: كل كلمة من سطر البسملة موجودة مرسومة داخل السطر نفسه؛ والعام
-//      الدراسي يُرسم كلمةً واحدة كما في التخطيط لا مقطوعًا.
+//      الدراسي (أرقامه وشرطته) مرسوم متصلًا على سطر واحد وبترتيب LTR — أي أن
+//      الأرقام لا تُقطع ولا تُعاد ترتيبها ولا تُفصل عن شرطتها.
 //   3. لا كلمات زائدة: عدد الكلمات المرسومة في الصفحة لا يزيد على عدد كلمات
 //      التخطيط (كلمة مكرّرة أو مقطوعة تعني انحراف إسقاط).
 //
@@ -143,26 +144,53 @@ void main() {
               '$drawn');
     });
 
-    test('العام الدراسي يُرسم وحدةً واحدة (لا يُقطع ولا يضيع رقم)', () async {
+    test('العام الدراسي: أرقامه وشرطته مرسومة بترتيب LTR داخل سياق RTL',
+        () {
+      // الأرقام المشرقية تُرسم محارف منطقية في /ToUnicode (لا أشكال عرض)،
+      // فيمكن مطابقتها كما هي. الشرطة محرف محايد يفصل مجموعتي الأرقام.
+      const first = '٢٠٢٦';
+      const second = '٢٠٢٧';
+      const slash = '/';
       final probe = PdfContentProbe.fromBytes(pdfBytes, pageIndex: 0);
-      // الأرقام المشرقية تُطبع بحسب إعداد الورقة؛ نجرّب الشكلين المشكّلين.
-      final candidates = <String>{
-        await shaped(_arabicIndic('2026/2027')),
-        await shaped('2026/2027'),
-      };
-      final drawn = probe.words.map((word) => word.text).toList();
-      final matched = candidates.where(drawn.contains).toList();
+      ProbedWord wordOf(String text) {
+        final matches =
+            probe.words.where((word) => word.text == text).toList();
+        expect(
+          matches.length,
+          1,
+          reason: 'الكلمة "$text" مرسومة ${matches.length} مرة، والعدد '
+              'المطلوب مرة واحدة.\nكل الكلمات: '
+              '${probe.words.map((word) => word.text).toList()}',
+        );
+        return matches.single;
+      }
+
+      final start = wordOf(first);
+      final separator = wordOf(slash);
+      final end = wordOf(second);
+
+      // الأرقام متتالية على سطر واحد (نفس خط الأساس).
+      expect((start.y - end.y).abs(), lessThan(0.5),
+          reason: 'مجموعتا العام على خطين مختلفين: y=${start.y} و${end.y}.');
+      // وترتيبها كجزيرة LTR: ٢٠٢٦ ثم / ثم ٢٠٢٧ من اليسار إلى اليمين.
       expect(
-        matched.length,
-        1,
-        reason: 'كلمة العام الدراسي لم تُرسم كما في التخطيط.\n'
-            'الشكل المتوقع واحد من: $candidates\n'
-            'الكلمات المرسومة: $drawn',
+        start.x + start.advanceWidth,
+        lessThanOrEqualTo(separator.x + 0.5),
+        reason: 'ترتيب معكوس للعام الدراسي: الموضع (x) هو '
+            '[$first=${start.x.toStringAsFixed(2)}..'
+            '${(start.x + start.advanceWidth).toStringAsFixed(2)}] '
+            '[$slash=${separator.x.toStringAsFixed(2)}..'
+            '${(separator.x + separator.advanceWidth).toStringAsFixed(2)}] '
+            '[$second=${end.x.toStringAsFixed(2)}..'
+            '${(end.x + end.advanceWidth).toStringAsFixed(2)}]. '
+            'الجزيرة الرقمية يجب أن تُرسم يسارًا إلى يمين.',
       );
       expect(
-        drawn.where((word) => word == matched.single).length,
-        1,
-        reason: 'كلمة العام الدراسي مرسومة أكثر من مرة: $drawn',
+        separator.x + separator.advanceWidth,
+        lessThanOrEqualTo(end.x + 0.5),
+        reason: 'الشرطة ليست بين مجموعتي العام: '
+            'x(slash)=${separator.x.toStringAsFixed(2)} '
+            'x(second)=${end.x.toStringAsFixed(2)}.',
       );
     });
 

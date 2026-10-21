@@ -1189,7 +1189,11 @@ class _LayoutBuilder {
           '$path/content/$index',
           style,
           node.direction == DocumentDirection.inherit ? direction : node.direction,
-          LayoutSemanticRole.label,
+          // الدور ينتقل من الحاوية: كلمة الوحدة داخل مجموعة الدرجة جزء من
+          // المجموعة نفسها، فلا تُصنَّف `label` بينما قوساها ورقمها `marks`.
+          semanticRole == LayoutSemanticRole.marks
+              ? LayoutSemanticRole.marks
+              : LayoutSemanticRole.label,
         ));
       }
       return spans;

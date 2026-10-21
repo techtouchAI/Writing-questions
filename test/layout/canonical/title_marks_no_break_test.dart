@@ -226,22 +226,36 @@ void main() {
       // العقد القديم (نصّ مسطّح) لا يتغيّر: القاعدة تخطيطية لا بياناتية.
       expect(blueprint.questions.single.title.marks, '(٢٠ درجة)');
       final layout = _layout(document);
-      final marksText = <String>[
+      // الرسم في سياق RTL: الترتيب المنطقي هو تناقص الإحداثي x. نقرأ الجريانات
+      // من اليمين إلى اليسار ونطابق النص المنطقي نفسه — لا ترتيب العرض.
+      final marksRuns = <LayoutRun>[
         for (final line in _titleLines(layout))
-          for (final run in line.runs.where(_isMarksRun))
-            if (run.text.trim().isNotEmpty) run.text,
-      ];
+          ...line.runs.where(_isMarksRun),
+      ]..sort((a, b) => b.x.compareTo(a.x));
+      final logicalText = marksRuns
+          .map((run) => run.text.replaceAll('\u00A0', ' '))
+          .join();
       expect(
-        marksText.map((text) => text.replaceAll('\u00A0', ' ')).join(),
+        logicalText,
         '(٢٠ درجة)',
-        reason: 'نصّ الدرجة المتدفّق للرسم يختلف عن النموذج: $marksText',
+        reason: 'نصّ الدرجة المتدفّق للرسم يختلف عن النموذج.\n'
+            'الجريانات (يمين ← يسار): '
+            '${marksRuns.map((run) => '"${run.text}"').toList()}',
       );
-      // القاعدة تخطيطية: المسافة داخل المجموعة صارت غير كاسرة.
+      // قاعدة تخطيطية: المسافة داخل المجموعة صارت غير كاسرة.
       expect(
-        marksText.any((text) => text.contains('\u00A0')),
+        marksRuns.any((run) => run.text.contains('\u00A0')),
         isTrue,
         reason: 'فواصل مجموعة الدرجة بقيت كاسرة (مسافة عادية) — '
             'يمكن أن تنقسم بين سطرين.',
+      );
+      // دور المجموعة دور واحد: كل جريان داخلها — بما فيها كلمة الوحدة —
+      // مصنَّف marks، وإلا اختل تنسيق المجموعة في المعاينة/PDF.
+      expect(
+        marksRuns.any((run) => run.text.contains('درجة')),
+        isTrue,
+        reason: 'كلمة الوحدة في مجموعة الدرجة ليست من جريانات marks: '
+            'الجريانات ${marksRuns.map((run) => run.text).toList()}',
       );
     });
   });
