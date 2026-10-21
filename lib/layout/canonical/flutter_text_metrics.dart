@@ -327,7 +327,19 @@ class FlutterTextMetrics implements FontMetricsProvider {
       for (final range in spanRanges) {
         final span = spans[range.spanIndex];
         if (range.end <= range.start) continue;
-        final ranges = span.isMath || span.isFixedAdvance
+        // A text island with no Arabic letters (digits, Latin, `٢٠٢٦/٢٠٢٧`,
+        // `2 + 3 = 5`) is ONE visual unit laid out left-to-right even inside
+        // an RTL line. Splitting it into per-word ranges made every word a
+        // separate fragment whose caret fallback was the union box, so
+        // `٢٠٢٦` and `٢٠٢٧` landed on the same x and one covered the other.
+        // The island is kept whole only while it stays on one line; a wrapped
+        // island keeps the per-word ranges.
+        final islandCandidate = !span.isMath &&
+            !span.isFixedAdvance &&
+            _containsNoArabicLetter(span.text) &&
+            _containsNumberOrLtr(span.text) &&
+            _isSingleLineRange(painter, range.start, range.end);
+        final ranges = span.isMath || span.isFixedAdvance || islandCandidate
             ? <({int start, int end})>[(start: range.start, end: range.end)]
             : _wordRanges(painter, range.start, range.end);
         for (final textRange in ranges) {
@@ -340,44 +352,13 @@ class FlutterTextMetrics implements FontMetricsProvider {
             );
             if (boxes.isEmpty) continue;
             final sourceText = _textForRange(span, range, textRange);
-            // Non-Arabic islands (digits, Latin, mixed numerics) are one
-            // visual unit even when Flutter returns several boxes for them.
-            // Splitting them produced fragments sharing one x (so one word
-            // was painted over another: `٢٠٢٧/` instead of `٢٠٢٦/٢٠٢٧`), and
-            // per-scalar boxes inside an RTL paragraph are the bidi run box,
-            // not the scalar's box. Measured whole, the island keeps its LTR
-            // order, its words stay contiguous, and PDF emits it as text.
-            // One visual unit only when the island stays on one line; a
-            // wrapped island keeps the per-scalar path so its lines split.
             final islandLine = _lineForBox(boxes.first, lineMetrics);
-            // «عربية» هنا تعني حروفًا عربية، لا أرقامًا هندية: ٢٠٢٦ داخل
-            // U+0600..U+08FF لكنه جزيرة رقمية LTR، ولو عُدّ عربيًّا لبقي
-            // العام الدراسي مقطّعًا إلى مقاطع متراكبة.
+            // «عربية» هنا تعني حروفًا عربية لا أرقامًا هندية: ٢٠٢٦ يقع في
+            // U+0600..U+08FF لكنه جزيرة رقمية LTR.
             final isSingleLineNonArabicIsland =
                 !_containsArabicLetter(sourceText) &&
                 _containsNumberOrLtr(sourceText) &&
                 boxes.every((box) => _lineForBox(box, lineMetrics) == islandLine);
-            if (sourceText.contains('\u0662\u0660\u0662\u0666')) {
-              // TEMP-DIAG
-              final all = <String>[];
-              for (final r2 in spanRanges) {
-                final b2 = painter.getBoxesForSelection(
-                  TextSelection(baseOffset: r2.start, extentOffset: r2.end),
-                  boxHeightStyle: ui.BoxHeightStyle.strut,
-                  boxWidthStyle: ui.BoxWidthStyle.tight,
-                );
-                all.add('[${r2.spanIndex}] text="${plainText.substring(r2.start, r2.end)}" '
-                    'boxes=${b2.map((b) => '${b.direction.name}:${b.left.toStringAsFixed(2)}..${b.right.toStringAsFixed(2)}').toList()}');
-              }
-              final carets = <String>[];
-              for (var o = 0; o < plainText.length; o++) {
-                final c = painter.getOffsetForCaret(TextPosition(offset: o), ui.Rect.zero);
-                carets.add('$o:${c.dx.toStringAsFixed(2)}');
-              }
-              // ignore: avoid_print
-              print('DIAG-PARAGRAPH dir=${bidiDirection.name} width=$width '
-                  'text="$plainText" carets=$carets all=$all');
-            }
             final splitVisualRuns = !isSingleLineNonArabicIsland &&
                 (boxes.length != 1 ||
                     (boxes.single.direction == ui.TextDirection.ltr &&
@@ -772,6 +753,27 @@ class FlutterTextMetrics implements FontMetricsProvider {
       (rune >= 0x0061 && rune <= 0x007A) ||
       (rune >= 0x00C0 && rune <= 0x02FF) ||
       (rune >= 0x0370 && rune <= 0x058F);
+
+  /// هل يقع النطاق كله على سطر واحد في الفقرة المقيسة؟
+  bool _isSingleLineRange(TextPainter painter, int start, int end) {
+    final boxes = painter.getBoxesForSelection(
+      TextSelection(baseOffset: start, extentOffset: end),
+      boxHeightStyle: ui.BoxHeightStyle.strut,
+      boxWidthStyle: ui.BoxWidthStyle.tight,
+    );
+    if (boxes.length <= 1) return true;
+    final top = boxes.first.top;
+    final bottom = boxes.first.bottom;
+    for (final box in boxes.skip(1)) {
+      if ((box.top - top).abs() > 0.5 || (box.bottom - bottom).abs() > 0.5) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// الجزيرة النصية: لا حرف عربي فيها (أرقام هندية أو لاتينية أو مختلطة).
+  bool _containsNoArabicLetter(String text) => !_containsArabicLetter(text);
 
   /// حروف عربية فقط (بلا الأرقام الهندية ٠-٩ ولا علامات الترقيم العربية).
   ///
