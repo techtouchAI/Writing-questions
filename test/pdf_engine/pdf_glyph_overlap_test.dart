@@ -11,6 +11,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
@@ -53,13 +54,17 @@ void main() {
 
   late Uint8List bytes;
   late PdfContentProbe probe;
+  late LayoutDocument layout;
 
   setUpAll(() async {
     final fonts = await ExamFonts.load();
-    bytes = await PaginatedPdfExamEngine().generate(
-      document: _document(),
+    final engine = PaginatedPdfExamEngine();
+    final document = _document();
+    layout = await engine.resolveLayoutDocument(
+      document: document,
       fonts: fonts,
     );
+    bytes = await engine.generate(document: document, fonts: fonts);
     probe = PdfContentProbe.fromBytes(bytes, pageIndex: 0);
   });
 
@@ -91,54 +96,71 @@ void main() {
     );
   });
 
-  test('حبر الكلمة لا يتجاوز موضعها: العرض المرسوم يطابق التقدّم', () {
-    // كل كلمة تُرسم من `x` بتقدّم `advanceWidth`؛ إن كان الحبر أوسع من التقدّم
-    // دخل على الجارة. نقيس هنا الحالة الأكثر ظهورًا في البلاغ: السطر الذي يحمل
-    // العام الدراسي رقمًا وشرطة (جزيرة LTR داخل سياق RTL).
-    const arabicDigits = <String>['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-    String localize(String latin) => latin
-        .split('')
-        .map((char) {
-          final index = '0123456789'.indexOf(char);
-          return index >= 0 ? arabicDigits[index] : char;
-        })
-        .join();
-    final parts = _year.split('/');
-    final first = localize(parts.first);
-    final second = localize(parts.last);
+  test('هندسة الكلمات في PDF تطابق هندستها في التخطيط القانوني', () {
+    // المصدر الوحيد للحقيقة: `LayoutDocument` نفسه الذي يرسمه Preview وPDF.
+    // كل كلمة في التخطيط (نصًّا وموضعًا وعرض حبر) يجب أن تُرسم في الملف
+    // بالموضع نفسه. أي انزياح = حبر يغطي جارته، وهو عطل «اللارحمن».
+    final canonical =
+        <String, List<({String text, double x, double advance})>>{};
+    for (final line in layout.allLines) {
+      for (final run in line.runs) {
+        for (final word in run.words) {
+          canonical
+              .putIfAbsent(
+                word.text.trim(),
+                () => <({String text, double x, double advance})>[],
+              )
+              .add((
+            text: word.text,
+            x: word.x,
+            advance: word.textAdvance,
+          ));
+        }
+      }
+    }
+    final probed = <String, List<ProbedWord>>{};
+    for (final word in probe.words) {
+      probed.putIfAbsent(word.text, () => <ProbedWord>[]).add(word);
+    }
 
-    final yearLines = probe.lines
-        .where((line) =>
-            line.words.any((word) => word.text == first) &&
-            line.words.any((word) => word.text == second))
-        .toList();
-    expect(yearLines, hasLength(1),
-        reason: 'العام الدراسي (${parts.first}/${parts.last}) ليس على سطر واحد '
-            'في PDF. الكلمات المرسومة: '
-            '${probe.words.map((word) => word.text).toList()}');
-
-    final line = yearLines.single;
-    final firstWord = line.words.firstWhere((word) => word.text == first);
-    final secondWord = line.words.firstWhere((word) => word.text == second);
-    final slashes = line.words.where((word) => word.text == '/').toList();
-    expect(slashes, isNotEmpty, reason: 'شرطة العام الدراسي غير مرسومة.');
-
-    final separator = slashes.firstWhere(
-      (word) =>
-          word.x >= firstWord.x &&
-          word.x + word.advanceWidth <= secondWord.x + 0.5,
-      orElse: () => slashes.first,
-    );
-    // جزيرة LTR: الأرقام والشرطة تتقدّم يسارًا إلى يمين بلا تراكب.
-    expect(separator.x, greaterThanOrEqualTo(firstWord.x - 0.5),
-        reason: 'الشرطة قبل الرقم الأول: ${line.describe()}');
-    expect(secondWord.x, greaterThanOrEqualTo(separator.x - 0.5),
-        reason: 'الرقم الثاني قبل الشرطة: ${line.describe()}');
+    final mismatches = <String>[];
+    var compared = 0;
+    for (final entry in canonical.entries) {
+      final drawn = probed[entry.key];
+      if (drawn == null) continue; // غياب الكلمة تقيسه بوابة أخرى.
+      for (final word in entry.value) {
+        // أقرب كلمة مرسومة بنفس النص.
+        ProbedWord? closest;
+        var best = double.infinity;
+        for (final candidate in drawn) {
+          final distance = (candidate.x - word.x).abs();
+          if (distance < best) {
+            best = distance;
+            closest = candidate;
+          }
+        }
+        if (closest == null) continue;
+        compared++;
+        final dx = closest.x - word.x;
+        final dAdvance = closest.advanceWidth - word.advance;
+        if (dx.abs() > 0.75 || dAdvance.abs() > 0.75) {
+          mismatches.add(
+            '"${word.text}": التخطيط x=${word.x.toStringAsFixed(2)} '
+            'عرض=${word.advance.toStringAsFixed(2)} | '
+            'PDF x=${closest.x.toStringAsFixed(2)} '
+            'عرض=${closest.advanceWidth.toStringAsFixed(2)} '
+            '(Δx=${dx.toStringAsFixed(2)}، Δعرض=${dAdvance.toStringAsFixed(2)})',
+          );
+        }
+      }
+    }
+    expect(compared, greaterThan(10),
+        reason: 'لم تُقارن كلمات كافية ($compared) — الاختبار لم يقس شيئًا.');
     expect(
-      line.gaps.where((gap) => gap < -0.75),
+      mismatches,
       isEmpty,
-      reason: 'تداخل داخل سطر العام الدراسي: ${line.describe()}',
+      reason: 'كلمات رُسمت في غير موضعها من التخطيط (${mismatches.length}):\n'
+          '${mismatches.take(25).join('\n')}',
     );
   });
-
 }

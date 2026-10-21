@@ -10,6 +10,7 @@ import 'package:writing_questions_app/layout/blueprint/exam_blueprint.dart';
 import 'package:writing_questions_app/layout/canonical/exam_document_layout_adapter.dart';
 import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart';
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
+import 'package:writing_questions_app/layout/document_direction.dart';
 import 'package:writing_questions_app/layout/canonical/layout_engine.dart';
 import 'package:writing_questions_app/layout/document_ir.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
@@ -102,8 +103,17 @@ List<LayoutRun> _textRuns(LayoutBlock block, String prefix) => <LayoutRun>[
         ),
     ];
 
-String _joined(List<LayoutRun> runs) =>
-    runs.map((run) => run.text).join().replaceAll('\u00A0', ' ').trim();
+/// نصّ الجريانات بترتيب القراءة المنطقي: جريانات السطر مرتّبة بصريًّا من
+/// اليسار، ففي سياق RTL نقرأها من اليمين إلى اليسار (تناقص x) قبل الجمع.
+String _joined(List<LayoutRun> runs) {
+  if (runs.isEmpty) return '';
+  final rtl = runs.first.direction == DocumentDirection.rtl;
+  final ordered = <LayoutRun>[...runs];
+  ordered.sort(
+    (a, b) => rtl ? b.x.compareTo(a.x) : a.x.compareTo(b.x),
+  );
+  return ordered.map((run) => run.text).join().replaceAll('\u00A0', ' ').trim();
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

@@ -144,57 +144,40 @@ void main() {
               '$drawn');
     });
 
-    test('العام الدراسي: أرقامه وشرطته مرسومة بترتيب LTR داخل سياق RTL',
+    test('العام الدراسي: أرقامه وشرطته على سطر واحد وبترتيبها المنطقي',
         () {
-      // الأرقام المشرقية تُرسم محارف منطقية في /ToUnicode (لا أشكال عرض)،
-      // فيمكن مطابقتها كما هي. الشرطة محرف محايد يفصل مجموعتي الأرقام.
-      // القيمة المتوقّعة مشتقّة من بيانات المستند نفسه، لا مكتوبة في الاختبار.
+      // الأرقام المشرقية تُرسم محارف منطقية في /ToUnicode (لا أشكال عرض).
       final year = _document().header.academicYear.split('/');
-      expect(year.length, 2, reason: 'العام الدراسي ليس «سنة/سنة».');
-      final first = _arabicIndic(year[0]);
-      final second = _arabicIndic(year[1]);
-      const slash = '/';
+      final first = _arabicIndic(year.first);
+      final second = _arabicIndic(year.last);
       final probe = PdfContentProbe.fromBytes(pdfBytes, pageIndex: 0);
-      ProbedWord wordOf(String text) {
-        final matches =
-            probe.words.where((word) => word.text == text).toList();
-        expect(
-          matches.length,
-          1,
-          reason: 'الكلمة "$text" مرسومة ${matches.length} مرة، والعدد '
-              'المطلوب مرة واحدة.\nكل الكلمات: '
-              '${probe.words.map((word) => word.text).toList()}',
-        );
-        return matches.single;
+
+      final line = probe.lineWithWord(first);
+      expect(line, isNotNull,
+          reason: 'السنة $first غير مرسومة إطلاقًا في PDF. '
+              'الكلمات: ${probe.words.map((word) => word.text).toList()}');
+      final texts = line!.words.map((word) => word.text).toList();
+      expect(texts.where((text) => text == first), hasLength(1),
+          reason: 'السنة $first مرسومة أكثر من مرة: $texts');
+      expect(texts.where((text) => text == second), hasLength(1),
+          reason: 'السنة $second مرسومة أكثر من مرة أو غائبة: $texts');
+      final firstIndex = texts.indexOf(first);
+      final secondIndex = texts.indexOf(second);
+      final slashIndex = texts.indexOf('/');
+      expect(slashIndex, greaterThanOrEqualTo(0),
+          reason: 'شرطة العام الدراسي غير مرسومة على سطر السنة: $texts');
+      // ترتيب المجرى هو ترتيب الرسم: السنة الأولى ← الشرطة ← السنة الثانية.
+      // «٢٠٢٧/» أو «٢٠٢٦» بلا شرطة يعني عامًا مقلوبًا أو مقطوعًا.
+      expect(firstIndex, lessThan(slashIndex),
+          reason: 'العام الدراسي معكوس في مجرى الصفحة: $texts');
+      expect(slashIndex, lessThan(secondIndex),
+          reason: 'الشرطة ليست بين مجموعتي العام: $texts');
+      // وعلى سطر واحد: نفس خط الأساس.
+      final baseline = line.words.first.y;
+      for (final word in line.words) {
+        expect((word.y - baseline).abs(), lessThan(0.5),
+            reason: 'سطر السنة يمتد على أكثر من خط أساس: ${line.describe()}');
       }
-
-      final start = wordOf(first);
-      final separator = wordOf(slash);
-      final end = wordOf(second);
-
-      // الأرقام متتالية على سطر واحد (نفس خط الأساس).
-      expect((start.y - end.y).abs(), lessThan(0.5),
-          reason: 'مجموعتا العام على خطين مختلفين: y=${start.y} و${end.y}.');
-      // وترتيبها كجزيرة LTR: ٢٠٢٦ ثم / ثم ٢٠٢٧ من اليسار إلى اليمين.
-      expect(
-        start.x + start.advanceWidth,
-        lessThanOrEqualTo(separator.x + 0.5),
-        reason: 'ترتيب معكوس للعام الدراسي: الموضع (x) هو '
-            '[$first=${start.x.toStringAsFixed(2)}..'
-            '${(start.x + start.advanceWidth).toStringAsFixed(2)}] '
-            '[$slash=${separator.x.toStringAsFixed(2)}..'
-            '${(separator.x + separator.advanceWidth).toStringAsFixed(2)}] '
-            '[$second=${end.x.toStringAsFixed(2)}..'
-            '${(end.x + end.advanceWidth).toStringAsFixed(2)}]. '
-            'الجزيرة الرقمية يجب أن تُرسم يسارًا إلى يمين.',
-      );
-      expect(
-        separator.x + separator.advanceWidth,
-        lessThanOrEqualTo(end.x + 0.5),
-        reason: 'الشرطة ليست بين مجموعتي العام: '
-            'x(slash)=${separator.x.toStringAsFixed(2)} '
-            'x(second)=${end.x.toStringAsFixed(2)}.',
-      );
     });
 
     test('عدد الكلمات المرسومة لا يزيد على كلمات التخطيط', () {
