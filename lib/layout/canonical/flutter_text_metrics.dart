@@ -336,8 +336,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
         // island keeps the per-word ranges.
         final islandCandidate = !span.isMath &&
             !span.isFixedAdvance &&
-            _containsNoArabicLetter(span.text) &&
-            _containsNumberOrLtr(span.text) &&
+            _isInteriorNumberToken(span.text) &&
             _isSingleLineRange(painter, range.start, range.end);
         final ranges = span.isMath || span.isFixedAdvance || islandCandidate
             ? <({int start, int end})>[(start: range.start, end: range.end)]
@@ -355,9 +354,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
             final islandLine = _lineForBox(boxes.first, lineMetrics);
             // «عربية» هنا تعني حروفًا عربية لا أرقامًا هندية: ٢٠٢٦ يقع في
             // U+0600..U+08FF لكنه جزيرة رقمية LTR.
-            final isSingleLineNonArabicIsland =
-                !_containsArabicLetter(sourceText) &&
-                _containsNumberOrLtr(sourceText) &&
+            final isSingleLineNonArabicIsland = _isInteriorNumberToken(sourceText) &&
                 boxes.every((box) => _lineForBox(box, lineMetrics) == islandLine);
             final splitVisualRuns = !isSingleLineNonArabicIsland &&
                 (boxes.length != 1 ||
@@ -737,15 +734,6 @@ class FlutterTextMetrics implements FontMetricsProvider {
   // flipped auto-direction RTL lines containing digits + brackets/equations
   // without Arabic letters (such as `'1 )'`, `'(1)'`, or `'1 ) $5^2+6^2=$'`)
   // to LTR in Preview/PDF/DOCX while the RTL editor displayed them as RTL.
-  /// Digits, Latin letters, or both — the content of a "number/Latin island"
-  /// that renders left-to-right inside an Arabic line.
-  bool _containsNumberOrLtr(String text) => text.runes.any((rune) =>
-      (rune >= 0x30 && rune <= 0x39) ||
-      (rune >= 0x0660 && rune <= 0x0669) ||
-      (rune >= 0x06F0 && rune <= 0x06F9) ||
-      (rune >= 0xFF10 && rune <= 0xFF19) ||
-      _isStrongLtrRune(rune));
-
   bool _containsStrongLtr(String text) => text.runes.any(_isStrongLtrRune);
 
   bool _isStrongLtrRune(int rune) =>
@@ -772,8 +760,47 @@ class FlutterTextMetrics implements FontMetricsProvider {
     return true;
   }
 
-  /// الجزيرة النصية: لا حرف عربي فيها (أرقام هندية أو لاتينية أو مختلطة).
-  bool _containsNoArabicLetter(String text) => !_containsArabicLetter(text);
+  /// «جزيرة رقمية»: رمز واحد بلا فراغات، ولا حرف عربي فيه، وفواصله داخلية
+  /// بين رقمين/حرفين لاتينيين (`٢٠٢٦/٢٠٢٧`، `12:30`، `1-2`).
+  ///
+  /// هذا تعريف دلالي لا استثناء لحالة: الفاصل الداخلي يجعل الرمز وحدة LTR
+  /// واحدة بحكم UAX #9 (EN/CS/EN أو L/CS/L)، فقياسه قطعةً واحدة يمنع تراكب
+  /// مجموعتيه. أما الفاصل الطرفي (`١-` في تسمية عنصر، أو `-1`) فليس فاصلًا
+  /// داخليًا، ويبقى على مسار RTL القائم (الرقم ثم الفاصل).
+  bool _isInteriorNumberToken(String text) {
+    if (text.isEmpty || text.trim() != text) return false;
+    if (text.runes.any(_isWhitespaceRune)) return false;
+    if (_containsArabicLetter(text)) return false;
+    var sawContent = false;
+    var sawInteriorSeparator = false;
+    final runes = text.runes.toList(growable: false);
+    for (var index = 0; index < runes.length; index++) {
+      final rune = runes[index];
+      if (_isNumberOrLtrRune(rune)) {
+        sawContent = true;
+        continue;
+      }
+      // فاصل: لا بد أن يكون بين محتوى ومحتوى.
+      if (index == 0 || index + 1 >= runes.length) return false;
+      if (!_isNumberOrLtrRune(runes[index - 1]) ||
+          !_isNumberOrLtrRune(runes[index + 1])) {
+        return false;
+      }
+      sawInteriorSeparator = true;
+    }
+    return sawContent && sawInteriorSeparator;
+  }
+
+  bool _isWhitespaceRune(int rune) =>
+      rune == 0x20 || rune == 0x09 || rune == 0x0A || rune == 0x0D ||
+      rune == 0x0C || rune == 0x0B || rune == 0xA0 || rune == 0x202F;
+
+  bool _isNumberOrLtrRune(int rune) =>
+      (rune >= 0x30 && rune <= 0x39) ||
+      (rune >= 0x0660 && rune <= 0x0669) ||
+      (rune >= 0x06F0 && rune <= 0x06F9) ||
+      (rune >= 0xFF10 && rune <= 0xFF19) ||
+      _isStrongLtrRune(rune);
 
   /// حروف عربية فقط (بلا الأرقام الهندية ٠-٩ ولا علامات الترقيم العربية).
   ///

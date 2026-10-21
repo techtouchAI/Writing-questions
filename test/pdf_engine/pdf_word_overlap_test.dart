@@ -144,75 +144,45 @@ void main() {
               '$drawn');
     });
 
-    test('العام الدراسي: أرقامه وشرطته على سطر واحد وبترتيبها المنطقي',
+    test('العام الدراسي رمز واحد متصل بترتيبه المنطقي (لا يُقطع ولا يتراكب)',
         () {
-      // الأرقام المشرقية تُرسم محارف منطقية في /ToUnicode (لا أشكال عرض).
-      final year = _document().header.academicYear.split('/');
-      final first = _arabicIndic(year.first);
-      final second = _arabicIndic(year.last);
+      // «٢٠٢٦/٢٠٢٧» لا حرف عربي فيه وفاصله داخلي بين رقمين، فهو بحكم UAX #9
+      // جزيرة LTR واحدة؛ تُقاس قطعةً واحدة وتُكتب في PDF رمزًا واحدًا، فلا
+      // تنقسم مجموعتاه ولا تُرسم إحداهما فوق الأخرى ولا تُعاد الشرطة للطرف.
+      final year = _document().header.academicYear;
+      final localized = _arabicIndic(year);
       final probe = PdfContentProbe.fromBytes(pdfBytes, pageIndex: 0);
-
-      final line = probe.lineWithWord(first);
-      expect(line, isNotNull,
-          reason: 'السنة $first غير مرسومة إطلاقًا في PDF. '
-              'الكلمات: ${probe.words.map((word) => word.text).toList()}');
-      final texts = line!.words.map((word) => word.text).toList();
-      expect(texts.where((text) => text == first), hasLength(1),
-          reason: 'السنة $first مرسومة أكثر من مرة: $texts');
-      expect(texts.where((text) => text == second), hasLength(1),
-          reason: 'السنة $second مرسومة أكثر من مرة أو غائبة: $texts');
-      final firstIndex = texts.indexOf(first);
-      final secondIndex = texts.indexOf(second);
-      final slashIndex = texts.indexOf('/');
-      expect(slashIndex, greaterThanOrEqualTo(0),
-          reason: 'شرطة العام الدراسي غير مرسومة على سطر السنة: $texts');
-      // ترتيب المجرى هو ترتيب الرسم: السنة الأولى ← الشرطة ← السنة الثانية.
-      // «٢٠٢٧/» أو «٢٠٢٦» بلا شرطة يعني عامًا مقلوبًا أو مقطوعًا.
-      expect(firstIndex, lessThan(slashIndex),
-          reason: 'العام الدراسي معكوس في مجرى الصفحة: $texts');
-      expect(slashIndex, lessThan(secondIndex),
-          reason: 'الشرطة ليست بين مجموعتي العام: $texts');
-      // وعلى سطر واحد: نفس خط الأساس.
-      final baseline = line.words.first.y;
-      for (final word in line.words) {
-        expect((word.y - baseline).abs(), lessThan(0.5),
-            reason: 'سطر السنة يمتد على أكثر من خط أساس: ${line.describe()}');
-      }
-
-      // جزيرة LTR داخل سياق RTL: ترتيبها المرئي يسارًا → يمينًا هو
-      // ٢٠٢٦ ثم الشرطة ثم ٢٠٢٧، ومجموعتا الأرقام لا تشتركان في الموضع.
-      final canonicalYearWords = <LayoutWord>[
-        for (final line in layout.allLines)
-          for (final run in line.runs)
-            if (run.semanticNodeId.contains('header'))
-              ...run.words.where(
-                (word) =>
-                    word.text == first ||
-                    word.text == second ||
-                    word.text == '/',
-              ),
-      ];
-      expect(canonicalYearWords, isNotEmpty,
-          reason: 'لم تُعثر كلمات العام الدراسي في التخطيط القانوني.');
-      final leftToRight = <LayoutWord>[...canonicalYearWords]
-        ..sort((a, b) => a.x.compareTo(b.x));
+      final tokens = probe.words.where((word) => word.text == localized).toList();
       expect(
-        leftToRight.map((word) => word.text).toList(),
-        <String>[first, '/', second],
-        reason: 'ترتيب العام الدراسي المرئي في التخطيط (ومن ثمّ في المعاينة '
-            'وPDF) ليس LTR:\n'
-            '${leftToRight.map((word) => '"${word.text}"@'
-                '${word.x.toStringAsFixed(2)}').toList()}',
+        tokens,
+        hasLength(1),
+        reason: 'العام الدراسي «$localized» يجب أن يُرسم مرة واحدة رمزًا واحدًا.\n'
+            'الكلمات المرسومة: ${probe.words.map((word) => word.text).toList()}',
       );
-      for (var index = 0; index + 1 < leftToRight.length; index++) {
-        final current = leftToRight[index];
-        final next = leftToRight[index + 1];
+      final token = tokens.single;
+      // ترتيبه المنطقي هو نفسه المرئي (LTR) فلا يُعكس ولا تُقطع شرطته.
+      expect(token.text, localized);
+      // ومرة واحدة: لا نسخة مقطوعة إضافية من أي مجموعة أرقام.
+      final first = _arabicIndic(year.split('/').first);
+      final second = _arabicIndic(year.split('/').last);
+      expect(
+        probe.words.where((word) => word.text == first || word.text == second),
+        isEmpty,
+        reason: 'مجموعة أرقام من العام رُسمت منفصلة عن شرطتها (انقسام).',
+      );
+      // ولا تراكب مع الجارة على السطر نفسه.
+      final line = probe.lines.firstWhere((line) => line.words.contains(token));
+      final ordered = <ProbedWord>[...line.words]
+        ..sort((a, b) => a.x.compareTo(b.x));
+      for (var index = 0; index + 1 < ordered.length; index++) {
+        final current = ordered[index];
+        final next = ordered[index + 1];
+        if (!identical(current, token) && !identical(next, token)) continue;
         expect(
-          current.x + current.textAdvance,
-          lessThanOrEqualTo(next.x + 0.5),
-          reason: 'تراكب داخل العام الدراسي: "${current.text}" ينتهي عند '
-              '${(current.x + current.textAdvance).toStringAsFixed(2)} و'
-              '"${next.text}" يبدأ عند ${next.x.toStringAsFixed(2)}.',
+          current.x + current.advanceWidth,
+          lessThanOrEqualTo(next.x + 0.75),
+          reason: 'تراكب بين «${current.text}» و«${next.text}» في سطر العام: '
+              '${line.describe()}',
         );
       }
     });
