@@ -41,7 +41,7 @@ ExamDocument _document({
 
 /// سطر العام كما يصل إلى المخطط (المصدر الذي يرسمه كلٌّ من المعاينة وPDF).
 String? _yearLine(ExamBlueprint blueprint) {
-  for (final line in blueprint.header.centerContentLines) {
+  for (final line in blueprint.header.centerSemanticLines) {
     if (line.field == HeaderFieldKind.academicYear) return line.text;
   }
   return null;
@@ -98,7 +98,7 @@ void main() {
 
       final controller = ExamWizardController(document: restored);
       expect(_yearLine(controller.blueprint),
-          contains(restored.document.localizeDigits('2024')),
+          contains(restored.localizeDigits('2024')),
           reason: 'إعادة التحميل استبدلت العام المحفوظ بعام آخر.');
     });
 
