@@ -736,7 +736,7 @@ class _DocumentIRBuilder {
         role: VisualRole.branchTitle,
         override: model.style,
       ),
-      alignment: model.style.align,
+      alignment: model.titleAlign ?? model.style.align,
       direction: direction,
     );
     final bodyContent = source.bodyContent ??
@@ -749,7 +749,7 @@ class _DocumentIRBuilder {
               role: VisualRole.branchBody,
               override: model.style,
             ),
-            alignment: model.style.align,
+            alignment: model.bodyAlign ?? model.style.align,
             direction: direction,
           );
     final points = <PointBlock>[

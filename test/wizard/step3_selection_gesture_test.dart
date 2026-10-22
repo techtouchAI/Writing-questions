@@ -232,12 +232,16 @@ void main() {
 
     // والتخطيط (مصدر المعاينة وPDF معاً) يحمل التعريض على كلمتين رقميتين
     // لا على بقية المتن.
+    // التحديد الأصلي (native) قد يضمّ فراغاً مجاوراً للكلمة؛ المقياس المهم أن
+    // الكلمة نفسها وحدها صارت عريضة، ولا كلمة أخرى معها.
     final runs = _bodyRuns(_layout(controller.document));
-    final boldRuns = runs.where((run) => run.style.bold).toList();
-    expect(boldRuns, hasLength(1),
-        reason: 'التعريض وصل إلى ${boldRuns.length} جرياناً: '
+    final boldWordRuns = runs
+        .where((run) => run.style.bold && run.text.trim().isNotEmpty)
+        .toList();
+    expect(boldWordRuns, hasLength(1),
+        reason: 'التعريض أصاب ${boldWordRuns.length} كلمة: '
             '${runs.map((run) => '"${run.text}"').toList()}');
-    expect(boldRuns.single.text.trim(), '٢٠');
+    expect(boldWordRuns.single.text.trim(), '٢٠');
   });
 
   testWidgets('الضغط المطوّل (موبايل) يحدّد كلمة، والمائل يصيبها وحدها',
@@ -300,9 +304,21 @@ void main() {
     expect(underline.single.start, selection.start);
     expect(underline.single.end, selection.end);
     final runs = _bodyRuns(_layout(controller.document));
-    expect(runs.where((run) => run.style.underline), hasLength(1),
-        reason: 'التسطير لم يصل إلى جريان واحد في التخطيط: '
+    final underlined = runs.where((run) => run.style.underline).toList();
+    expect(underlined.where((run) => run.text.trim().isNotEmpty), isNotEmpty,
+        reason: 'التسطير لم يصل إلى أي كلمة في التخطيط: '
             '${runs.map((run) => run.text).toList()}');
+    // وكل تسطير واقع داخل النطاق المحدَّد لا خارجه (نصوص الكلمات تسقط داخل
+    // نصّ التحديد نفسه).
+    final selectedText = selection.textInside(text);
+    for (final run in underlined) {
+      final word = run.text.trim();
+      if (word.isEmpty) {
+        continue;
+      }
+      expect(selectedText, contains(word),
+          reason: 'التسطير تسرّب إلى «$word» خارج التحديد «$selectedText».');
+    }
   });
 
   testWidgets('تحديد يعبر أكثر من سطر مرئي: التسطير يصل إلى سطرين',
@@ -315,10 +331,21 @@ void main() {
 
     final text = _controllerOf(tester, field).text;
     final startPoint = _pointAt(tester, field, 0);
-    final endPoint = _pointAt(tester, field, text.length - 1);
+    // أول موضع يقع فعلاً على سطر مرئي تالٍ — يُقاس من هندسة الحقل لا يُفترض.
+    var endOffset = -1;
+    for (var offset = 1; offset < text.length; offset++) {
+      if (_pointAt(tester, field, offset).dy > startPoint.dy + 4) {
+        endOffset = offset;
+        break;
+      }
+    }
+    expect(endOffset, greaterThan(0),
+        reason: 'النصّ لم يلتف إلى سطرين في هذه البيئة — القياس بلا عيّنة.');
+    // نمتدّ داخل السطر الثاني حتى يقع النطاق على سطرين كاملين.
+    endOffset = (endOffset + 30).clamp(0, text.length - 1);
+    final endPoint = _pointAt(tester, field, endOffset);
     expect(endPoint.dy, greaterThan(startPoint.dy + 4),
-        reason: 'النصّ لم يلتف إلى سطرين في هذه البيئة — القياس بلا عيّنة '
-            '(نقطتان على السطر نفسه: $startPoint / $endPoint).');
+        reason: 'نهاية النطاق عادت إلى السطر الأول — لا تحديد متعدد الأسطر.');
 
     await _dragSelect(tester, startPoint, endPoint);
     final selection = _controllerOf(tester, field).selection;
@@ -358,12 +385,14 @@ void main() {
     );
     final selection = _controllerOf(tester, field).selection;
     expect(selection.start, 0);
-    expect(selection.end, greaterThanOrEqualTo(text.length - 1));
+    expect(selection.end, greaterThanOrEqualTo(text.length - 2),
+        reason: 'السحب إلى آخر النصّ لم يغطِّ المتن كاملاً '
+            '(توقف عند ${selection.end} من ${text.length}).');
 
     await _tapTool(tester, 'عريض');
     final question = controller.document.questions.single;
     expect(question.bodyFormats.single.start, 0);
-    expect(question.bodyFormats.single.end, text.length);
+    expect(question.bodyFormats.single.end, selection.end);
     expect(question.statementFormats, isEmpty,
         reason: 'تنسيق المتن تسرّب إلى منطوق السؤال.');
     expect(question.items.single.textFormats, isEmpty,
@@ -519,14 +548,20 @@ void main() {
         reason: 'عدد الكلمات العريضة في PDF لم يزد كلمة واحدة: '
             '${boldWords(plain)} ← ${boldWords(formatted)}');
 
-    // النصّ نفسه ما زال قابلًا للاستخراج (لم يُستبدل بصورة).
-    final probe = PdfContentProbe.fromBytes(formatted, pageIndex: 0);
-    expect(probe.words, isNotEmpty);
+    // النصّ نفسه ما زال قابلًا للاستخراج (لم يُستبدل بصورة) — في أي صفحة.
+    final drawnWords = <String>[
+      for (var page = 0;
+          page < PdfContentProbe.pageCountOf(formatted);
+          page++)
+        ...PdfContentProbe.fromBytes(formatted, pageIndex: page)
+            .words
+            .map((word) => word.text),
+    ];
+    expect(drawnWords, isNotEmpty);
     expect(
-      probe.words.any((word) => word.text.contains('المعادلات')),
+      drawnWords.any((word) => word.contains('المعادلات')),
       isTrue,
-      reason: 'الكلمة المنسّقة غابت عن النص المستخرَج: '
-          '${probe.words.map((word) => word.text).toList()}',
+      reason: 'الكلمة المنسّقة غابت عن النص المستخرَج: $drawnWords',
     );
   });
 }

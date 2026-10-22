@@ -199,6 +199,8 @@ class BranchModel {
     this.showFrame = false,
     this.dividerAfter,
     this.labelOverride,
+    this.titleAlign,
+    this.bodyAlign,
   })  : id = id ?? const Uuid().v4(),
         content = content ?? BranchContent.empty(),
         style = style ?? PaperTextStyle.empty,
@@ -229,6 +231,17 @@ class BranchModel {
   /// تسمية يدوية ثابتة للفرع (null = تلقائي من الفهرس).
   final String? labelOverride;
 
+  /// محاذاة سطر عنوان الفرع (الرقم ← المنطوق ← الدرجة). `null` = محاذاة
+  /// [style] المشتركة.
+  ///
+  /// المحاذاة خاصية **فقرة** لا محارف: فصلُها هنا يمنع أن تغيّر محاذاة نصّ
+  /// الفرع محاذاة عنوانه (وهو ما كان يحدث حين كانت المحاذاة الوحيدة في
+  /// [style] المشترك بين الفقرتين).
+  final PaperAlign? titleAlign;
+
+  /// محاذاة فقرة نصّ الفرع. `null` = محاذاة [style].
+  final PaperAlign? bodyAlign;
+
   BranchModel copyWith({
     BranchContent? content,
     double? marks,
@@ -237,6 +250,8 @@ class BranchModel {
     bool? showFrame,
     PaperDivider? Function()? dividerAfter,
     String? Function()? labelOverride,
+    PaperAlign? Function()? titleAlign,
+    PaperAlign? Function()? bodyAlign,
   }) {
     return BranchModel(
       id: id,
@@ -247,6 +262,8 @@ class BranchModel {
       showFrame: showFrame ?? this.showFrame,
       dividerAfter: dividerAfter != null ? dividerAfter() : this.dividerAfter,
       labelOverride: labelOverride != null ? labelOverride() : this.labelOverride,
+      titleAlign: titleAlign != null ? titleAlign() : this.titleAlign,
+      bodyAlign: bodyAlign != null ? bodyAlign() : this.bodyAlign,
     );
   }
 
@@ -260,6 +277,8 @@ class BranchModel {
       showFrame: showFrame,
       dividerAfter: dividerAfter,
       labelOverride: labelOverride,
+      titleAlign: titleAlign,
+      bodyAlign: bodyAlign,
     );
   }
 
@@ -275,6 +294,8 @@ class BranchModel {
       if (dividerAfter != null) 'dividerAfter': dividerAfter!.toMap(),
       if (labelOverride != null && labelOverride!.trim().isNotEmpty)
         'labelOverride': labelOverride,
+      if (titleAlign != null) 'titleAlign': titleAlign!.name,
+      if (bodyAlign != null) 'bodyAlign': bodyAlign!.name,
     };
   }
 
@@ -314,6 +335,10 @@ class BranchModel {
       showFrame: map['showFrame'] == true,
       dividerAfter: PaperDivider.fromValue(map['dividerAfter']),
       labelOverride: rawLabel == null || rawLabel.isEmpty ? null : rawLabel,
+      titleAlign:
+          map.containsKey('titleAlign') ? PaperAlign.parse(map['titleAlign']) : null,
+      bodyAlign:
+          map.containsKey('bodyAlign') ? PaperAlign.parse(map['bodyAlign']) : null,
     );
   }
 }

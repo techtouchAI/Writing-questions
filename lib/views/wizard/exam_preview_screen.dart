@@ -1347,7 +1347,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     for (final prefix in const <String>['branch-statement-', 'branch-body-']) {
       if (fieldKey.startsWith(prefix)) {
         final ref = _findBranchRef(doc, fieldKey.substring(prefix.length));
-        return ref == null ? null : doc.branchAt(ref).style.align;
+        if (ref == null) {
+          return null;
+        }
+        final branch = doc.branchAt(ref);
+        return prefix == 'branch-statement-'
+            ? branch.titleAlign ?? branch.style.align
+            : branch.bodyAlign ?? branch.style.align;
       }
     }
     if (fieldKey.startsWith('option-')) {
@@ -1475,15 +1481,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       return;
     }
 
-    // 5. منطوق الفرع ونصه: محاذاة نمط الفرع.
+    // 5. منطوق الفرع ونصه: كلٌّ فقرة مستقلة (لا تتبادل المحاذاة مع الأخرى).
     for (final prefix in const <String>['branch-statement-', 'branch-body-']) {
       if (key.startsWith(prefix)) {
         final ref = _findBranchRef(document, key.substring(prefix.length));
         if (ref != null) {
-          controller.updateBranchStyle(
-            ref,
-            document.branchAt(ref).style.copyWith(align: () => align),
-          );
+          if (prefix == 'branch-statement-') {
+            controller.updateBranchTitleAlign(ref, align);
+          } else {
+            controller.updateBranchBodyAlign(ref, align);
+          }
         }
         return;
       }

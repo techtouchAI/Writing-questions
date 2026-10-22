@@ -130,8 +130,29 @@ void main() {
         .generate(document: ltr, fonts: fonts);
     final report = PdfStructureReport.fromBytes(bytes);
 
-    // الترويسة (الوقت LTRT1) والتذييل (LTRF1) وعنوان السؤال (LTRSTA1).
-    for (final marker in const <String>['LTRT1', 'LTRF1', 'LTRSTA1']) {
+    // الترويسة تُرسم ثلاثة أعمدة على خطّ أساس واحد، فقياس «ترتيب السطر» كاملاً
+    // يخلط الأعمدة؛ لذلك يُقاس ترتيب كل حقل داخل نفسه: الكلمات المتوقعة للحقل
+    // تُرتَّب بموضعها الأفقي وتُقارن بترتيبها اللغوي.
+    void expectFieldOrder(String marker, List<String> tokens) {
+      final line = _pdfLineWith(report, marker);
+      final picked = line.words
+          .where((word) => tokens.contains(word.text.trim()))
+          .toList();
+      expect(picked.map((word) => word.text.trim()).toSet(), tokens.toSet(),
+          reason: 'كلمات الحقل $marker غير مكتملة في PDF: '
+              '${line.describe()}');
+      picked.sort((a, b) => a.x.compareTo(b.x));
+      expect(picked.map((word) => word.text.trim()).toList(), tokens,
+          reason: 'حقل $marker في PDF إنجليزي لا يتقدّم من اليسار: '
+              '${line.describe()}');
+    }
+
+    expectFieldOrder('LTRT1', const <String>['90', 'LTRT1', 'minutes']);
+    expectFieldOrder('LTRF1',
+        const <String>['End', 'of', 'questions', 'LTRF1']);
+
+    // سطر المتن وسطر عنوان السؤال في عمود واحد، فيُقاس ترتيبهما كاملاً.
+    for (final marker in const <String>['LTROBJ1', 'LTRSTA1']) {
       final line = _pdfLineWith(report, marker);
       expect(PdfPageStructure.orderOfLine(line), 'ltr',
           reason: 'السطر الحامل $marker في PDF إنجليزي لا يتقدّم من اليسار: '

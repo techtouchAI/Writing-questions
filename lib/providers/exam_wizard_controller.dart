@@ -610,16 +610,18 @@ class ExamWizardController extends ChangeNotifier {
   void updateQuestionBodyAlign(int index, PaperAlign? align) {
     RangeError.checkValidIndex(index, questions, 'index');
     final question = questions[index];
+    // المحاذاة فقرة لا محارف: تغيير محاذاة النصّ لا يجوز أن يحرّك محاذاة
+    // عنوان السؤال. محاذاة العنوان الفعلية كانت `titleAlign ?? style.align`،
+    // فتُثبَّت صراحةً قبل كتابة `style.align` (كتابة واحدة = خطوة تراجع واحدة).
+    final previousTitleAlign = question.titleAlign ?? question.style.align;
     if (question.bodyAlign == align && question.style.align == align) {
       return;
     }
-    // نقرة محاذاة واحدة = خطوة تراجع واحدة (سلوك Word): تُكتب محاذاة النص
-    // ومحاذاة نمط السؤال (الذي يشترك في عرض العنوان/النص) في commit واحد،
-    // وإلا بقي أحد الاثنين بعد التراجع وظهر الشكل متحيزاً.
     _commit(_document.withQuestionAt(
       index,
       question.copyWith(
         bodyAlign: () => align,
+        titleAlign: () => previousTitleAlign,
         style: question.style.copyWith(align: () => align),
       ),
     ));
@@ -647,6 +649,41 @@ class ExamWizardController extends ChangeNotifier {
       index,
       questions[index].copyWith(titleAlign: () => align),
     ));
+  }
+
+  /// محاذاة سطر عنوان الفرع وحدها (فقرة العنوان).
+  ///
+  /// كانت المحاذاة الوحيدة في `BranchModel.style` المشترك بين سطر العنوان
+  /// ونصّ الفرع، فتغيير أحدهما يحرّك الآخر. الفصل هنا يطابق نموذج السؤال:
+  /// `titleAlign` للعنوان و`bodyAlign` للنصّ، وكلاهما يرجع إلى `style` إن كان
+  /// `null` (توافق المستندات المحفوظة قبل الفصل).
+  void updateBranchTitleAlign(BranchRef ref, PaperAlign? align) {
+    final branch = _document.branchAt(ref);
+    if (branch.titleAlign == align) {
+      return;
+    }
+    _commit(
+      _document.withBranchAt(ref, branch.copyWith(titleAlign: () => align)),
+    );
+  }
+
+  /// محاذاة نصّ الفرع وحدها (فقرة النص)، مع تثبيت محاذاة عنوانه الحالية.
+  void updateBranchBodyAlign(BranchRef ref, PaperAlign? align) {
+    final branch = _document.branchAt(ref);
+    if (branch.bodyAlign == align && branch.style.align == align) {
+      return;
+    }
+    final previousTitleAlign = branch.titleAlign ?? branch.style.align;
+    _commit(
+      _document.withBranchAt(
+        ref,
+        branch.copyWith(
+          bodyAlign: () => align,
+          titleAlign: () => previousTitleAlign,
+          style: branch.style.copyWith(align: () => align),
+        ),
+      ),
+    );
   }
 
   void toggleQuestionFrame(int index) {
