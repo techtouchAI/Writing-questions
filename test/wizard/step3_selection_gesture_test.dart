@@ -118,6 +118,16 @@ Future<void> _doubleTapAt(WidgetTester tester, Offset at) async {
   await tester.pumpAndSettle();
 }
 
+/// يحرّك الحقل نفسه (آلية المحرّر) ليُظهر [offset] قبل القياس/السحب، فلا يقع
+/// طرف الإيماءة خارج منطقة العرض فتُسحب الصفحة بدل تحديد النصّ.
+Future<void> _revealOffset(WidgetTester tester, Finder field, int offset) async {
+  final state = tester.state<EditableTextState>(
+    find.descendant(of: field, matching: find.byType(EditableText)),
+  );
+  state.bringIntoView(TextPosition(offset: offset));
+  await tester.pumpAndSettle();
+}
+
 Future<void> _dragSelect(
   WidgetTester tester,
   Offset from,
@@ -339,11 +349,19 @@ void main() {
     // نمتدّ إلى آخر النصّ (مع بقاء البداية على السطر الأول) فيقع النطاق على
     // كل الأسطر المتقاطعة لا على جزء من الثاني.
     endOffset = text.length - 1;
+    // يُكشف موضع النهاية بآلية المحرّر نفسها ثم يُعاد قياس الطرفين بعد التمرير.
+    await _revealOffset(tester, field, endOffset);
+    final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
     final endPoint = _pointAt(tester, field, endOffset);
-    expect(endPoint.dy, greaterThan(startPoint.dy + 4),
+    final revealedStart = _pointAt(tester, field, 0);
+    expect(endPoint.dy, greaterThan(revealedStart.dy + 4),
         reason: 'نهاية النطاق عادت إلى السطر الأول — لا تحديد متعدد الأسطر.');
+    expect(endPoint.dx, inInclusiveRange(0, screen.width));
+    expect(endPoint.dy, inInclusiveRange(0, screen.height),
+        reason: 'طرف الإيماءة خارج الشاشة ($endPoint في $screen) — السحب لا '
+            'يصل إلى آخر النصّ.');
 
-    await _dragSelect(tester, startPoint, endPoint);
+    await _dragSelect(tester, revealedStart, endPoint);
     final selection = _controllerOf(tester, field).selection;
     expect(selection.isCollapsed, isFalse);
     expect(selection.end - selection.start, greaterThan(20),
@@ -373,6 +391,25 @@ void main() {
     expect(underlinedLines.length, greaterThanOrEqualTo(2),
         reason: 'التحديد عبر السطور لم يُسطّر إلا ${underlinedLines.length} '
             'سطراً — النطاق لم يُقس على كل الأسطر المتقاطعة.\n$layoutDump');
+
+    // الحكم الأدق: كل سطر يتقاطع نطاقه المصدري مع التحديد يجب أن يكون مسطَّراً،
+    // فلا يكفي «سطران» بينما جزء من النطاق بلا تنسيق.
+    final selectedLineIds = <String>{
+      for (final page in layout.pages)
+        for (final block in page.blocks)
+          for (final line in block.allLines)
+            if (line.runs.any((run) =>
+                run.semanticNodeId.startsWith('q1/body') &&
+                run.sourceEndOffset > selection.start &&
+                run.sourceStartOffset < selection.end))
+              line.id,
+    };
+    expect(selectedLineIds.length, greaterThanOrEqualTo(2),
+        reason: 'التخطيط لا يحمل النطاق المحدَّد على سطرين (${selectedLineIds})'
+            '\n$layoutDump');
+    expect(underlinedLines, containsAll(selectedLineIds),
+        reason: 'أسطر داخل التحديد لم تُسطَّر: '
+            '${selectedLineIds.difference(underlinedLines)}\n$layoutDump');
   });
 
   testWidgets('تحديد السؤال كاملًا: التعريض يشمل المتن ولا يمسّ النقاط',
@@ -384,6 +421,7 @@ void main() {
     await _focus(tester, field);
 
     final text = _controllerOf(tester, field).text;
+    await _revealOffset(tester, field, text.length - 1);
     await _dragSelect(
       tester,
       _pointAt(tester, field, 0),
