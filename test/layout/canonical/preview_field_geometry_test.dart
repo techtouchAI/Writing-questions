@@ -220,7 +220,7 @@ void main() {
       expect(
         fieldLines.length,
         canonicalLines.length,
-        reason: '${entry.key}: الحقل التُفّ على ${fieldLines.length} سطراً '
+          reason: '$entry.key المسافة بين السطر $index و${index + 1}: '
             'والتخطيط القانوني على ${canonicalLines.length}.\n'
             'حقل: ${fieldLines.map((l) => '${(l.right - l.left).toStringAsFixed(2)}pt').toList()}\n'
             'قانوني: ${canonicalLines.map((l) => '${(l.resolvedWidth).toStringAsFixed(2)}pt').toList()}',
@@ -236,7 +236,7 @@ void main() {
         expect(
           (actual - expected).abs(),
           lessThanOrEqualTo(kGeometryTolerancePt),
-          reason: '${entry.key} سطر ${index + 1}/${canonicalLines.length}: '
+          reason: '$entry.key المسافة بين السطر $index و${index + 1}: '
               'عرض الحقل ${actual.toStringAsFixed(2)}pt مقابل '
               '${expected.toStringAsFixed(2)}pt قانونياً '
               '(isJustified=${line.isJustified}, natural='
@@ -253,7 +253,7 @@ void main() {
         expect(
           (fieldGap - expectedGap).abs(),
           lessThanOrEqualTo(kVerticalTolerancePt),
-          reason: '$entry.key المسافة بين السطر ${index} و${index + 1}: '
+          reason: '$entry.key المسافة بين السطر $index و${index + 1}: '
               '${fieldGap.toStringAsFixed(2)}pt في الحقل مقابل '
               '${expectedGap.toStringAsFixed(2)}pt قانونياً.',
         );
@@ -267,7 +267,7 @@ void main() {
         if (!canonicalLines[index].isJustified) continue;
         final width = fieldLines[index].right - fieldLines[index].left;
         expect((width - columnWidth).abs(), lessThanOrEqualTo(kGeometryTolerancePt),
-            reason: '${entry.key} سطر ${index + 1} المضبوط لم يبلغ عرض العمود: '
+          reason: '$entry.key المسافة بين السطر $index و${index + 1}: '
                 '${width.toStringAsFixed(2)} مقابل '
                 '${columnWidth.toStringAsFixed(2)}pt');
       }
