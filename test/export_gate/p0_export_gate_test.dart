@@ -1934,84 +1934,61 @@ void main() {
   });
 
   // ===========================================================================
-  // P0.5-F — قاعدة واحدة لسطر واحد في الضبط (justify) لكل أسطح المعاينة.
+  // P0.5-F — الضبط (justify) قاعدة واحدة: المحرك، بلا توسعة يدوية.
   // ===========================================================================
-  test('P0-GATE-10: قرار الضبط مشترك بين PaperField وTexText', () {
-    const single = 'كلمة أولى وكلمة ثانية وثالثة';
-    final many = List<String>.filled(
-      40,
-      'نصٌّ طويلٌ يقيس التفاف الفقرة المضبوطة داخل صندوق العرض',
-    ).join(' ');
-    const style = TextStyle(fontFamily: 'NotoNaskhArabic', fontSize: 14);
-
-    // (1) سطر واحد لا يُمَدّ (مهما اتّسع الصندوق)، وفقرة ملتفّة تُمَدّ.
-    expect(
-      VisualFlutterStyle.justifyWordSpacing(
-        text: single,
-        style: style,
-        maxWidth: 3000,
-        direction: TextDirection.rtl,
-      ),
-      isNull,
-      reason: 'فقرة من سطر واحد نالت توسعة كلمات: القرار ما زال سطحاً سطحاً.',
-    );
-    final narrow = VisualFlutterStyle.justifyWordSpacing(
-      text: single,
-      style: style,
-      maxWidth: 40,
-      direction: TextDirection.rtl,
-    );
-    expect(narrow, isNotNull,
-        reason: 'فقرة مُلتفّة على عرض ضيّق بلا توسعة: القاعدة لا تعمل.');
-    final spread = VisualFlutterStyle.justifyWordSpacing(
-      text: many,
-      style: style,
-      maxWidth: 520,
-      direction: TextDirection.rtl,
-    );
-    expect(spread, isNotNull, reason: 'فقرة متعددة الأسطر بلا توسعة.');
-    expect(spread! <= 60, isTrue,
-        reason: 'التوسعة تجاوزت الحدّ الأقصى القائم (60px لكل كلمة): $spread');
-    expect(spread >= 0, isTrue,
-        reason: 'توسعة سالبة (انضغاط كلمات): $spread');
-
-    // (2) حَسم «من أين يُقرأ القرار»: لا إعادة تنفيذ للمنطق في السطحين.
-    for (final entry in <String, String>{
-      'lib/views/widgets/paper_field.dart':
-          File('lib/views/widgets/paper_field.dart').readAsStringSync(),
-      'lib/views/widgets/tex_text.dart':
-          File('lib/views/widgets/tex_text.dart').readAsStringSync(),
-    }.entries) {
-      expect(entry.value, contains('VisualFlutterStyle.justifyWordSpacing'),
-          reason: '${entry.key} لا يستعمل القاعدة المشتركة للضبط.');
-      expect(entry.value.contains('clamp(12.0, 60.0)'), isFalse,
-          reason: '${entry.key} أعاد تنفيذ حدّ التوسعة محلياً: منطقان '
-              'يفترقان مع الزمن.');
-      expect(entry.value.contains('computeLineMetrics'), isFalse,
-          reason: '${entry.key} يعُدّ الأسطر خارج القاعدة المشتركة.');
+  test('P0-GATE-10: الضبط يُقرأ من المحرك وحده، ولا توسعة كلمات في الأسطح', () {
+    // القاعدة (موثَّقة في flutter_text_metrics): كل سطر في فقرة متعددة الأسطر
+    // يوزّع فائضه على فواصله القابلة للكسر، والسطر الأخير لا يُمَدّ، والفقرة من
+    // سطر واحد لا تُمَدّ. أي توسعة `wordSpacing` فوق `TextAlign.justify` تُنتج
+    // سطراً بعرضين (حقل ≠ عمود ≠ PDF)، وقد أُزيلت من `PaperField` و`TexText`.
+    for (final path in <String>[
+      'lib/views/widgets/paper_field.dart',
+      'lib/views/widgets/tex_text.dart',
+      'lib/layout/visual/visual_flutter_style.dart',
+    ]) {
+      final source = File(path).readAsStringSync();
+      expect(source.contains('justifyWordSpacing'), isFalse,
+          reason: '$path: توسعة ضبط يدوية (منطق ثانٍ للقاعدة نفسها).');
+      expect(source.contains('clamp(12.0, 60.0)'), isFalse,
+          reason: '$path: حدّ توسعة محلي بدل قاعدة المحرك.');
     }
-    expect(
-      File('lib/layout/visual/visual_flutter_style.dart')
-          .readAsStringSync()
-          .contains('computeLineMetrics'),
-      isTrue,
-      reason: 'القاعدة المشتركة لا تعدّ الأسطر: شرط «سطر واحد» مفقود.',
-    );
-
-    // (3) القرار نفسه في الشجرة: فقرة LTR وRTL من سطر واحد بلا توسعة.
-    final rtlJust = _gate.previewRtl['JUSTS1'];
-    final ltrJust = _gate.previewLtr['JUSTL1'];
-    if (rtlJust != null) {
-      expect(rtlJust.lines, 1,
-          reason: 'متن Q4 (سطر واحد) التُفّ في المعاينة: ${rtlJust.text}');
-      expect(rtlJust.wordSpacing ?? 0, 0,
-          reason: 'فقرة سطر واحد مُدت في المعاينة: '
-              '${rtlJust.wordSpacing}');
+    final metrics = File('lib/layout/canonical/flutter_text_metrics.dart')
+        .readAsStringSync();
+    for (final needle in <String>[
+      'eligibleForJustification',
+      'index < lineMetrics.length - 1',
+      'opportunities > 0',
+    ]) {
+      expect(metrics.contains(needle), isTrue,
+          reason: 'قاعدة الضبط الواحدة مفقودة من المحرك: $needle');
     }
-    if (ltrJust != null) {
-      expect(ltrJust.wordSpacing ?? 0, 0,
-          reason: 'فقرة LTR من سطر واحد مُدت في المعاينة: '
-              '${ltrJust.wordSpacing}');
+
+    // والقاعدة مقيسة على التخطيط نفسه: فقرة مضبوطة متعددة الأسطر تُمدّ كلها
+    // إلا الأخير، والفقرة القصيرة لا تُمَدّ (GATE-05 يقيس أثرها في PDF).
+    _gate.requirePreview();
+    final justLines = _gate.rtlCapture!.layout.allLines
+        .where((line) => line.semanticNodeId.startsWith('p0q1/body'))
+        .toList();
+    expect(justLines.length, greaterThanOrEqualTo(2),
+        reason: 'الفقرة المضبوطة لم تلتف: القياس بلا عيّنة.');
+    for (var index = 0; index < justLines.length; index++) {
+      final line = justLines[index];
+      final isLast = index == justLines.length - 1;
+      expect(line.isJustified, isNot(isLast),
+          reason: 'سطر ${index + 1}/${justLines.length} من فقرة مضبوطة: '
+              'isJustified=${line.isJustified} (القاعدة: كل الأسطر إلا الأخير).');
+      if (isLast) continue;
+      expect(
+        (line.resolvedWidth - line.naturalWidth),
+        greaterThan(0),
+        reason: 'سطر مضبوط بلا فائض موزَّع: ${line.resolvedWidth} مقابل '
+            '${line.naturalWidth}',
+      );
+    }
+    final shortLine = _gate.previewRtl['JUSTS1'];
+    if (shortLine != null) {
+      expect(shortLine.lines, 1,
+          reason: 'الفقرة القصيرة التُفّت في المعاينة: ${shortLine.text}');
     }
   });
 

@@ -861,19 +861,40 @@ jobs:
           path: build/visual_parity
 
       - name: Install rendering and diagnostic tools
+        shell: bash
+        timeout-minutes: 8
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends poppler-utils imagemagick
+          # [C6-SETUP] كل خطوة تثبيت محدودة زمنياً: التشخيص على تشغيلين
+          # متزامنين (‏13:30 و13:37) استهلك مهلة الوظيفة كلها (20m) بلا سجل
+          # مفيد، ثم ظهر `exit code 127` من خطوات تالية لأن
+          # `$RUNNER_TEMP/diag-venv/bin/python` لم يكن قد أُنشئ. الوظيفة نفسها
+          # على نفس الالتزام استغرقت 2m36s حين لم يتعلّق التثبيت. فالحدّ
+          # الزمني يحوّل التعليق إلى فشل صريح سريع بدل استهلاك المهلة، ولا
+          # يغيّر أي فحص ولا عتبة ولا يحوّل الوظيفة إلى بوابة.
+          fail_setup () {
+            echo "::error title=C6 setup::$1"
+            exit 1
+          }
+          timeout 240 sudo apt-get update \
+            || fail_setup 'apt-get update تجاوز 240s'
+          timeout 240 sudo apt-get install -y --no-install-recommends \
+              poppler-utils imagemagick \
+            || fail_setup 'تثبيت poppler/imagemagick تجاوز 240s'
           # [C6-ATTR] مصيِّر ثانٍ مستقل لضابط أرضية المصيِّر: يقيس، في كل تشغيل
           # وعلى نفس بايتات vector.pdf، ما لا يستطيع أي تغيير في التخطيط أو
           # التنسيق إزالته (فرق الرَّستَرة نفسه). غير ملزم ولا يمسّ البوابة.
           # فشل التثبيت لا يُسقط الوظيفة؛ الأداة تعلن غياب الضابط صراحةً.
-          sudo apt-get install -y --no-install-recommends mupdf-tools \
+          timeout 240 sudo apt-get install -y --no-install-recommends mupdf-tools \
             || echo "::warning title=C6 renderer floor::mupdf-tools unavailable"
-          sudo apt-get install -y --no-install-recommends ghostscript \
+          timeout 240 sudo apt-get install -y --no-install-recommends ghostscript \
             || echo "::warning title=C6 renderer floor::ghostscript unavailable"
-          python3 -m venv "$RUNNER_TEMP/diag-venv"
-          "$RUNNER_TEMP/diag-venv/bin/pip" install -q pymupdf numpy
+          timeout 120 python3 -m venv "$RUNNER_TEMP/diag-venv" \
+            || fail_setup 'إنشاء venv تجاوز 120s'
+          timeout 300 "$RUNNER_TEMP/diag-venv/bin/pip" install -q \
+              --timeout 60 --retries 2 pymupdf numpy \
+            || fail_setup 'تثبيت pymupdf/numpy تجاوز 300s'
+          "$RUNNER_TEMP/diag-venv/bin/python" -c 'import fitz, numpy' \
+            || fail_setup 'حزم التشخيص غير قابلة للاستيراد بعد التثبيت'
 
       - name: Unit tests of the C6 diagnostics (synthetic + real-artifact suites)
         shell: bash

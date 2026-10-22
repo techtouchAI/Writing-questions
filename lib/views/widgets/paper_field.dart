@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../layout/semantic/inline_nodes.dart';
-import '../../layout/visual/visual_flutter_style.dart';
 import '../../models/quran_text.dart';
 import '../../models/tex_content.dart';
 import 'mixed_content_editor.dart';
@@ -230,31 +229,14 @@ class _PaperFieldState extends State<PaperField> {
     _focusNode.requestFocus();
   }
 
-  /// نمط الفقرة بعد قرار **الضبط** (justify) — بقاعدة واحدة مع `TexText`:
-  /// تُحسب التوسعة في `VisualFlutterStyle.justifyWordSpacing` ولا يكرّر أي
-  /// سطح منطق «متى يُمَدّ السطر».
-  TextStyle _resolveEffectiveStyle(
-    BoxConstraints constraints,
-    BuildContext context,
-  ) {
-    final baseStyle = widget.style;
-    if (widget.textAlign != TextAlign.justify ||
-        !constraints.hasBoundedWidth) {
-      return baseStyle;
-    }
-    final addedSpacing = VisualFlutterStyle.justifyWordSpacing(
-      text: widget.controller.text,
-      style: baseStyle,
-      maxWidth: constraints.maxWidth,
-      direction: Directionality.maybeOf(context) ?? TextDirection.rtl,
-    );
-    if (addedSpacing == null) {
-      return baseStyle;
-    }
-    return baseStyle.copyWith(
-      wordSpacing: (baseStyle.wordSpacing ?? 0) + addedSpacing,
-    );
-  }
+  // الضبط (justify) ليس حالة خاصة في الحقل: `TextField` يرسم بـ
+  // `TextAlign.justify`، وهو يمدّ كل سطر في فقرة متعددة الأسطر ويترك سطرها
+  // الأخير — وهي القاعدة نفسها التي ينفّذها محرك التخطيط القانوني
+  // (`FlutterTextMetrics`: كل سطر ما عدا الأخير يوزّع فائضه على فواصل كلماته).
+  // كان هنا `wordSpacing` مضاف فوق `TextAlign.justify` (توسعة ثانية بحد
+  // 12..60 بكسل لكل فقرة) فصار السطر يُمدّ مرتين، بعرض لا يطابق العمود ولا
+  // PDF. أُزيل: قرار واحد، مصدره المحرك، والدليل في
+  // test/layout/canonical/preview_field_geometry_test.dart.
 
   /// يمرّر تنسيق النطاقات المخزَّن إلى متحكم الحقل، فيرسمه `EditableText` من
   /// `buildTextSpan` نفسها — لا طبقة تجميل فوق الحقل، ولا نصّ ثانٍ.
@@ -321,7 +303,7 @@ class _PaperFieldState extends State<PaperField> {
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        final effectiveStyle = _resolveEffectiveStyle(constraints, context);
+        final effectiveStyle = widget.style;
         final showRendered = _isRenderable && !_editing && !_focusNode.hasFocus;
         if (showRendered) {
           return Tooltip(

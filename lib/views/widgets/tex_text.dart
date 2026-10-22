@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 
 import '../../layout/visual/visual_content.dart';
-import '../../layout/visual/visual_flutter_style.dart';
 import '../../models/exam_font.dart';
 import 'safe_math_tex.dart';
 
@@ -76,26 +75,15 @@ class TexText extends StatelessWidget {
       return Text('', style: style, textAlign: textAlign);
     }
 
-    final measureText = richContent == null ? text : _measurementText(content);
     return LayoutBuilder(
       builder: (context, constraints) {
         final blocks = <Widget>[];
         final inlineSpans = <InlineSpan>[];
 
-        TextStyle? effectiveStyle = style;
-        if (textAlign == TextAlign.justify && constraints.hasBoundedWidth) {
-          final addedSpacing = VisualFlutterStyle.justifyWordSpacing(
-            text: measureText,
-            style: style,
-            maxWidth: constraints.maxWidth,
-            direction: Directionality.maybeOf(context) ?? TextDirection.rtl,
-          );
-          if (addedSpacing != null) {
-            effectiveStyle = (style ?? const TextStyle()).copyWith(
-              wordSpacing: (style?.wordSpacing ?? 0) + addedSpacing,
-            );
-          }
-        }
+        // الضبط قرار المحرك وحده: `TextAlign.justify` يمدّ كل سطر ما عدا
+        // الأخير، بلا توسعة يدوية مضافة (كانت تُمدّ السطر مرتين وتنحرف عن
+        // هندسة العمود/PDF — انظر test/layout/canonical/preview_field_geometry_test.dart).
+        final TextStyle? effectiveStyle = style;
 
         void flushInline() {
           if (inlineSpans.isEmpty) {
