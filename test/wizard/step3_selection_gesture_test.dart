@@ -163,6 +163,51 @@ Future<void> _pickColor(WidgetTester tester, String label) async {
   await tester.pumpAndSettle();
 }
 
+/// مقاطع النصّ التي يرسمها **حقل التحرير نفسه** (`EditableText`)، بأنماطها.
+///
+/// تُبنى من `TextEditingController.buildTextSpan` — وهي الدالة الوحيدة التي
+/// يبني منها `EditableText` ما يرسمه — ويُتحقّق أولاً أن المتحكم المقروء هو
+/// متحكم الحقل في الشجرة، فلا يُقاس كائن منفصل عن الواجهة.
+List<({String text, bool bold, bool italic, bool underline, Color? color})>
+    _renderedRuns(WidgetTester tester, Finder field) {
+  final editable = tester.widget<EditableText>(
+    find.descendant(of: field, matching: find.byType(EditableText)),
+  );
+  final controller = _controllerOf(tester, field);
+  expect(identical(editable.controller, controller), isTrue,
+      reason: 'المتحكم المرسوم ليس متحكم الحقل نفسه — القياس على كائن آخر.');
+  final span = editable.controller.buildTextSpan(
+    context: tester.element(field),
+    style: editable.style,
+    withComposing: false,
+  );
+  final runs =
+      <({String text, bool bold, bool italic, bool underline, Color? color})>[];
+  void walk(InlineSpan current) {
+    if (current is! TextSpan) return;
+    final children = current.children;
+    if (children == null || children.isEmpty) {
+      final text = current.text ?? '';
+      if (text.isEmpty) return;
+      final style = current.style ?? const TextStyle();
+      runs.add((
+        text: text,
+        bold: style.fontWeight == FontWeight.bold,
+        italic: style.fontStyle == FontStyle.italic,
+        underline: style.decoration == TextDecoration.underline,
+        color: style.color,
+      ));
+      return;
+    }
+    for (final child in children) {
+      walk(child);
+    }
+  }
+
+  walk(span);
+  return runs;
+}
+
 LayoutDocument _layout(ExamDocument document) {
   final ir = DocumentIR.fromBlueprint(
     blueprint: ExamBlueprint.from(document),
@@ -611,5 +656,82 @@ void main() {
       isTrue,
       reason: 'الكلمة المنسّقة غابت عن النص المستخرَج: $drawnWords',
     );
+  });
+
+  testWidgets('الحقل نفسه يرسم التعريض على الكلمة المحدَّدة وحدها', (tester) async {
+    final controller = ExamWizardController(document: _document(body: _mixed));
+    addTearDown(controller.dispose);
+    await _pump(tester, controller);
+    final field = _field('body-q1');
+    await _focus(tester, field);
+
+    final text = _controllerOf(tester, field).text;
+    final word = text.indexOf('المعادلات');
+    await _doubleTapAt(tester, _pointAt(tester, field, word + 1));
+    final selection = _controllerOf(tester, field).selection;
+
+    // قبل التنسيق: لا مقطع عريض في الحقل.
+    expect(_renderedRuns(tester, field).where((run) => run.bold), isEmpty,
+        reason: 'الحقل يرسم تعريضاً قبل أي تنسيق.');
+
+    await _tapTool(tester, 'عريض');
+    final runs = _renderedRuns(tester, field);
+    // النصّ المرسوم هو نصّ الحقل نفسه (لا نسخة ثانية ولا حذف محارف).
+    expect(runs.map((run) => run.text).join(), text,
+        reason: 'مقاطع الرسم لا تعيد بناء نصّ الحقل كما هو.');
+    final bold = runs.where((run) => run.bold).toList();
+    expect(bold, hasLength(1),
+        reason: 'الحقل لم يرسم تعريضاً على مقطع واحد: '
+            '${runs.map((run) => '$run.text[bold=$run.bold]').toList()}');
+    expect(bold.single.text.trim(), 'المعادلات',
+        reason: 'المقطع العريض «${bold.single.text}» ليس الكلمة المحدَّدة.');
+    expect(bold.single.text, selection.textInside(text),
+        reason: 'مقطع الرسم «${bold.single.text}» يخالف نطاق التحديد '
+            '«${selection.textInside(text)}».');
+    // والكلمات المجاورة بقيت بلا تعريض.
+    for (final run in runs.where((run) => run.text != bold.single.text)) {
+      expect(run.bold, isFalse,
+          reason: 'التعريض تسرّب إلى «$run.text» في الحقل.');
+    }
+  });
+
+  testWidgets('الحقل يرسم اللون على نطاق أرقام عربي/لاتيني مختلط وحده',
+      (tester) async {
+    final controller = ExamWizardController(document: _document(body: _mixed));
+    addTearDown(controller.dispose);
+    await _pump(tester, controller);
+    final field = _field('body-q1');
+    await _focus(tester, field);
+
+    final text = _controllerOf(tester, field).text;
+    final from = text.indexOf('٢٠');
+    final to = text.indexOf('2026') + '2026'.length;
+    await _dragSelect(
+      tester,
+      _pointAt(tester, field, from),
+      _pointAt(tester, field, to - 1),
+    );
+    final selection = _controllerOf(tester, field).selection;
+    expect(selection.isCollapsed, isFalse);
+
+    await _pickColor(tester, 'خمري');
+    final runs = _renderedRuns(tester, field);
+    expect(runs.map((run) => run.text).join(), text,
+        reason: 'التلوين غيّر نصّ الحقل المرسوم.');
+    final colored = runs
+        .where((run) => run.color == const Color(0xFFB91C1C))
+        .toList();
+    expect(colored, isNotEmpty, reason: 'الحقل لم يرسم اللون على أي مقطع.');
+    final coloredText = colored.map((run) => run.text).join();
+    expect(coloredText.trim(), selection.textInside(text).trim(),
+        reason: 'المقطع الملوَّن «$coloredText» يخالف التحديد '
+            '«${selection.textInside(text)}».');
+    // لا رقم (عربي أو لاتيني) خارج التحديد صُبغ باللون نفسه.
+    expect(coloredText, contains('٢٠'));
+    expect(coloredText, contains('2026'));
+    for (final run in runs.where((run) => run.color == const Color(0xFFB91C1C))) {
+      expect(selection.textInside(text), contains(run.text.trim()),
+          reason: 'اللون تسرّب إلى «$run.text» خارج التحديد.');
+    }
   });
 }

@@ -42,6 +42,7 @@ import '../widgets/floating_element_view.dart';
 import '../widgets/formula_inserter.dart';
 import '../widgets/ltr_numeric_field.dart';
 import '../widgets/paper_field.dart';
+import '../widgets/paper_range_text_controller.dart';
 import '../widgets/pdf_preview_screen.dart';
 import '../widgets/smart_exam_toolbar.dart';
 import '../widgets/tex_text.dart';
@@ -480,7 +481,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     // their stable IDs, but their owners may now occupy different indices.
     _fieldEdits[key] = onEdit;
     return _fields.putIfAbsent(key, () {
-      final field = TextEditingController(text: initial);
+      // متحكم يرسم تنسيق النطاقات داخل الحقل نفسه (لا طبقة فوقه).
+      final field = PaperRangeTextEditingController(text: initial);
       var previousText = initial;
       var previousState = const TextFormatState();
       field.addListener(() {

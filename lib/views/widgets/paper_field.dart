@@ -5,6 +5,7 @@ import '../../layout/visual/visual_flutter_style.dart';
 import '../../models/quran_text.dart';
 import '../../models/tex_content.dart';
 import 'mixed_content_editor.dart';
+import 'paper_range_text_controller.dart';
 
 /// حقل النص على ورقة الورقة: **الشكل النهائي فقط** — لا رموز LaTeX خاماً
 /// (`$...$`) تظهر على الورقة إطلاقاً.
@@ -255,8 +256,52 @@ class _PaperFieldState extends State<PaperField> {
     );
   }
 
+  /// يمرّر تنسيق النطاقات المخزَّن إلى متحكم الحقل، فيرسمه `EditableText` من
+  /// `buildTextSpan` نفسها — لا طبقة تجميل فوق الحقل، ولا نصّ ثانٍ.
+  ///
+  /// المصدر هو `semanticContent` (نفس محتوى الطباعة بعد تطبيق النطاقات)،
+  /// والوسوم المحصورة (`$...$`) لا تُنسَّق لأنها تُعرض مرسومة لا مصدراً.
+  void _syncRangeStyles() {
+    final controller = widget.controller;
+    if (controller is! PaperRangeTextEditingController) {
+      return;
+    }
+    final semantic = widget.semanticContent;
+    if (semantic == null) {
+      controller.setRuns(const <RunStyle>[]);
+      return;
+    }
+    final text = controller.text;
+    final rendered = semantic.legacyText;
+    // `semanticContent` مقتطَع من الطرفين عند بناء الورقة، ونصّ الحقل قد يحمل
+    // فراغات طرفية: تُزاح الإزاحات بمقدار ما قُصّ من البداية لتبقى على المحارف
+    // نفسها (المقارنة على المقتطَع حتى لا تختلط إزاحة بأخرى).
+    var shift = 0;
+    if (rendered.isNotEmpty && text != rendered && text.trim() == rendered.trim()) {
+      shift = text.length - text.trimLeft().length;
+    }
+    final runs = <RunStyle>[];
+    for (final run in semantic.richContent.runs) {
+      if (run.isMath) continue;
+      final style = run.style;
+      if (style == null ||
+          (style.bold == null &&
+              style.italic == null &&
+              style.underline == null &&
+              style.colorArgb == null)) {
+        continue;
+      }
+      final start = (run.sourceStartOffset + shift).clamp(0, text.length).toInt();
+      final end = (run.sourceEndOffset + shift).clamp(start, text.length).toInt();
+      if (end <= start) continue;
+      runs.add(RunStyle(start: start, end: end, style: style));
+    }
+    controller.setRuns(runs);
+  }
+
   @override
   Widget build(BuildContext context) {
+    _syncRangeStyles();
     if (widget.canonicalInteractionOnly) {
       // The canonical painter is the sole visible text renderer. This tiny,
       // transparent editor owns only the IME/controller; tap, caret, selection,
