@@ -7,23 +7,24 @@
 // `wordSpacing` يدوية فوق `TextAlign.justify`. فكان يمكن أن ينجح كل اختبار
 // ويبقى المستخدم يرى أسطراً ممدودة أكثر من العمود ثم تُطبع أسطر أخرى.
 //
-// ما تقيسه البوابة (من المصدر الدلالي نفسه لا من مطابقة صور):
-//   * عدد الأسطر ونقاط الالتفاف (تساوٍ تام، لا تفاوت).
-//   * عرض كل سطر: السطر المضبوط = عرض العمود، والسطر الأخير = عرضه الطبيعي.
-//   * الفقرة من سطر واحد لا تُمَدّ (لا في الحقل ولا في التخطيط).
+// ما تقيسه البوابة (من المصدر الدلالي نفسه، لا من مطابقة صور):
+//   * نصّ كل سطر: نقاط الالتفاف نفسها (تساوٍ بعد تطبيع المسافات).
+//   * عدد الأسطر: تساوٍ تام.
+//   * عرض كل سطر: السطر المضبوط = عرض العمود، وغير المضبوط = عرضه الطبيعي.
 //   * تباعد الأسطر رأسياً (قياس تراكمي، لا إزاحة ثابتة).
-//   * وجود نص عربي مضبوط، ونص إنجليزي LTR، ونص قصير، في المستند نفسه.
+//   * وجود نص عربي مضبوط متعدد الأسطر، ونص قصير أحادي، ونص إنجليزي LTR، في
+//     المستند نفسه، كلٌّ في اختبار مستقل كي تُقاس كل حالة حتى لو فشلت أخرى.
 //
-// حدود القياس: `RenderEditable` يعطي صناديق التحديد لكل سطر (Skia paragraph)،
-// وهي الهندسة المرسومة فعلاً في الحقل؛ ولا يعطي موضع كل محرف منفرداً عبر واجهة
-// عامة، فلا تدّعي البوابة أكثر من: أسطر، حواف، عروض، تباعد.
+// حدود القياس: `RenderEditable` يعطي صناديق التحديد لكل سطر (هندسة Skia
+// المرسومة فعلاً) وحدود كل سطر نصياً، ولا يعطي موضع كل محرف منفرداً عبر واجهة
+// عامة، فلا تدّعي البوابة أكثر من: نصّ السطر، عدده، حوافه، عروضه، تباعده.
 //
-// التفاوت المبرَّر: 0.75pt (≈0.26mm) — نفس الحد الموثَّق في بوابة تطابق
-// الحبر (`pdf_glyph_overlap_test`)، وهو أكبر من تقريب تحويل px→pt (±0.05pt)
-// وأصغر من أصغر مسافة كلمة مقروءة (≈1pt). لا يُؤخذ من نتائج اليوم يإلى
-// المبدأ: بدونه لا يمكن مقارنة محركين يشتركان في Skia ويختلفان في تقريب
-// ارتفاع السطر.
+// التفاوت المبرَّر: 0.75pt (≈0.26mm) — نفس الحد الموثَّق في بوابة تطابق الحبر
+// (`pdf_glyph_overlap_test`)، وهو أكبر من تقريب تحويل px→pt (±0.05pt) وأصغر من
+// أصغر مسافة كلمة مقروءة (≈1pt). لا يُؤخذ من نتائج اليوم: بدونه لا يمكن مقارنة
+// محركين يشتركان في Skia ويختلفان في تقريب ارتفاع السطر وقياس الحافة.
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -117,11 +118,17 @@ RenderEditable _editable(WidgetTester tester, Finder field) => tester
     )
     .renderEditable;
 
-/// أسطر النص كما يرسمها الحقل نفسه (صناديق Skia للتحديد الكامل)، بالنقاط.
-List<({double left, double right, double top, double bottom})> _fieldLines(
-  WidgetTester tester,
-  Finder field,
-) {
+typedef _FieldLine = ({
+  String text,
+  double left,
+  double right,
+  double top,
+  double bottom,
+});
+
+/// أسطر النص كما يرسمها الحقل نفسه (صناديق Skia للتحديد الكامل + حدود الأسطر)،
+/// بالنقاط، مع نصّ كل سطر لاستخراج نقاط الالتفاف.
+List<_FieldLine> _fieldLines(WidgetTester tester, Finder field) {
   final editable = _editable(tester, field);
   final text = tester.widget<TextField>(field).controller!.text;
   expect(text.trim(), isNotEmpty, reason: 'الحقل المقيس فارغ.');
@@ -135,12 +142,12 @@ List<({double left, double right, double top, double bottom})> _fieldLines(
       final dy = a.top.compareTo(b.top);
       return dy != 0 ? dy : a.left.compareTo(b.left);
     });
-  final lines = <({double left, double right, double top, double bottom})>[];
+  final boxesPerLine = <({double left, double right, double top, double bottom})>[];
   for (final box in sorted) {
     final top = box.top;
-    if (lines.isNotEmpty && (lines.last.top - top).abs() <= 1.0) {
-      final previous = lines.removeLast();
-      lines.add((
+    if (boxesPerLine.isNotEmpty && (boxesPerLine.last.top - top).abs() <= 1.0) {
+      final previous = boxesPerLine.removeLast();
+      boxesPerLine.add((
         left: previous.left < box.left ? previous.left : box.left,
         right: previous.right > box.right ? previous.right : box.right,
         top: previous.top,
@@ -148,20 +155,36 @@ List<({double left, double right, double top, double bottom})> _fieldLines(
       ));
       continue;
     }
-    lines.add((
+    boxesPerLine.add((
       left: box.left,
       right: box.right,
       top: top,
       bottom: box.bottom,
     ));
   }
-  return <({double left, double right, double top, double bottom})>[
-    for (final line in lines)
+
+  // حدود الأسطر نصياً: `getLineBoundary` يعطي نهاية كل سطر، فتكون نقاط
+  // الالتفاف نفسها مقروءة لا مستنتجة من العرض.
+  final texts = <String>[];
+  var offset = 0;
+  while (offset < text.length) {
+    final boundary = editable.getLineBoundary(TextPosition(offset: offset));
+    if (boundary.end <= offset) break;
+    texts.add(text.substring(offset, boundary.end));
+    offset = boundary.end;
+  }
+  expect(texts.length, boxesPerLine.length,
+      reason: 'عدد حدود الأسطر النصية (${texts.length}) لا يساوي عدد صناديق '
+          'الأسطر المرسومة (${boxesPerLine.length}): القياس غير موثوق.');
+
+  return <_FieldLine>[
+    for (var index = 0; index < boxesPerLine.length; index++)
       (
-        left: LayoutUnits.pxToPt(line.left),
-        right: LayoutUnits.pxToPt(line.right),
-        top: LayoutUnits.pxToPt(line.top),
-        bottom: LayoutUnits.pxToPt(line.bottom),
+        text: texts[index],
+        left: LayoutUnits.pxToPt(boxesPerLine[index].left),
+        right: LayoutUnits.pxToPt(boxesPerLine[index].right),
+        top: LayoutUnits.pxToPt(boxesPerLine[index].top),
+        bottom: LayoutUnits.pxToPt(boxesPerLine[index].bottom),
       ),
   ];
 }
@@ -186,6 +209,16 @@ List<LayoutLine> _canonicalLines(LayoutDocument layout, String nodePrefix) =>
               line,
     ];
 
+/// نصّ السطر القانوني بالترتيب المنطقي (لا المرئي)، مطبَّعاً.
+String _canonicalLineText(LayoutLine line) {
+  final runs = line.runs.toList()
+    ..sort((a, b) => a.logicalIndex.compareTo(b.logicalIndex));
+  return _normalize(runs.map((run) => run.text).join());
+}
+
+String _normalize(String value) =>
+    value.replaceAll(RegExp(r'[ \t\n\r\u00a0]+'), ' ').trim();
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -193,140 +226,200 @@ void main() {
     await FlutterTextMetrics.ensureFontsLoaded();
   });
 
-  testWidgets('حقل المعاينة يطابق التخطيط القانوني في الأسطر والعروض والتباعد',
-      (tester) async {
+  Future<(ExamDocument, LayoutDocument)> pumpDocument(
+    WidgetTester tester,
+  ) async {
     final document = _document();
     final controller = ExamWizardController(document: document);
     addTearDown(controller.dispose);
     await _pump(tester, controller);
+    return (document, _layout(document));
+  }
 
-    final canonical = _layout(document);
-    const cases = <String, String>{
-      'body-q1': 'q1/body',
-      'body-q2': 'q2/body',
-      'body-q3': 'q3/body',
-    };
-    for (final entry in cases.entries) {
-      final field = _field(entry.key);
-      await tester.ensureVisible(field);
-      await tester.pumpAndSettle();
-      final fieldLines = _fieldLines(tester, field);
-      final canonicalLines = _canonicalLines(canonical, entry.value);
-      if (entry.key == 'body-q1' || entry.key == 'body-q3') {
-        final page = canonical.pages.first;
-        // ignore: avoid_print
-        print('[geom] $entry.key field=${tester.getSize(field).width.toStringAsFixed(1)}px '
-            'editable=${tester.getSize(find.descendant(of: field, matching: find.byType(EditableText))).width.toStringAsFixed(1)}px '
-            'page=${page.pageSize.width.toStringAsFixed(2)}pt body=${page.bodyBounds.width.toStringAsFixed(2)}pt '
-            'fieldLines=${fieldLines.map((l) => '${(l.right - l.left).toStringAsFixed(2)}@${l.left.toStringAsFixed(2)}').toList()} '
-            'canonical=${canonicalLines.map((l) => '${l.naturalWidth.toStringAsFixed(2)}/${l.resolvedWidth.toStringAsFixed(2)}@${l.rect.left.toStringAsFixed(2)}+${l.rect.width.toStringAsFixed(2)}j${l.isJustified}').toList()}');
-      }
-      expect(canonicalLines, isNotEmpty,
-          reason: 'لا أسطر قانونية لـ${entry.value}: القياس بلا مرجع.');
+  /// يطبع تشخيصاً واحداً مكثّفاً لكل حالة كي يظهر الفرق في سجلّ CI نفسه.
+  void diagnose(
+    String key,
+    WidgetTester tester,
+    Finder field,
+    List<_FieldLine> fieldLines,
+    List<LayoutLine> canonicalLines,
+  ) {
+    final style = tester.widget<TextField>(field).style;
+    final firstRun = canonicalLines.first.runs.isEmpty
+        ? null
+        : (canonicalLines.first.runs.toList()
+              ..sort((a, b) => a.logicalIndex.compareTo(b.logicalIndex)))
+            .first
+            .style;
+    // ignore: avoid_print
+    print('[geom] $key | الحقل: fs=${style?.fontSize} family=${style?.fontFamily} '
+        'height=${style?.height} ls=${style?.letterSpacing} '
+        'ws=${style?.wordSpacing} | القانوني: fs=${firstRun?.fontSizePt} '
+        'family=${firstRun?.font.family} lh=${firstRun?.lineHeightFactor} '
+        'ls=${firstRun?.letterSpacingPt}');
+    // ignore: avoid_print
+    print('[geom] $key | سطور الحقل: '
+        '${fieldLines.map((l) => '${(l.right - l.left).toStringAsFixed(2)}pt'
+            '"${_normalize(l.text)}"').toList()}');
+    // ignore: avoid_print
+    print('[geom] $key | سطور قانونية: '
+        '${canonicalLines.map((l) => '${l.naturalWidth.toStringAsFixed(2)}/'
+            '${l.resolvedWidth.toStringAsFixed(2)}pt'
+            'j${l.isJustified}"${_canonicalLineText(l)}"').toList()}');
+  }
 
-      // (1) عدد الأسطر: تساوٍ تام. اختلافه يعني التفافاً مختلفاً، وهو الفرق
-      // الذي لا يجوز أن يبقى بين ما يراه المستخدم وما يُطبع.
+  testWidgets('فقرة عربية مضبوطة: نقاط الالتفاف والعروض والتباعد مطابقة',
+      (tester) async {
+    final (_, canonical) = await pumpDocument(tester);
+    const key = 'body-q1';
+    const node = 'q1/body';
+    final field = _field(key);
+    await tester.ensureVisible(field);
+    await tester.pumpAndSettle();
+
+    final fieldLines = _fieldLines(tester, field);
+    final canonicalLines = _canonicalLines(canonical, node);
+    expect(canonicalLines, isNotEmpty,
+        reason: 'لا أسطر قانونية لـ$node: القياس بلا مرجع.');
+    diagnose(key, tester, field, fieldLines, canonicalLines);
+
+    // (1) عدد الأسطر: تساوٍ تام.
+    expect(fieldLines, hasLength(canonicalLines.length),
+        reason: '$key: ${fieldLines.length} سطراً في الحقل مقابل '
+            '${canonicalLines.length} قانونياً.');
+
+    // (2) نقاط الالتفاف: نصّ كل سطر مطابق بعد تطبيع المسافات.
+    for (var index = 0; index < canonicalLines.length; index++) {
       expect(
-        fieldLines.length,
-        canonicalLines.length,
-          reason: '$entry.key: عدد أسطر الحقل ${fieldLines.length}'
-              ' لا يساوي عدد أسطر التخطيط القانوني ${canonicalLines.length}.\n'
-            'حقل: ${fieldLines.map((l) => '${(l.right - l.left).toStringAsFixed(2)}pt').toList()}\n'
-            'قانوني: ${canonicalLines.map((l) => '${(l.resolvedWidth).toStringAsFixed(2)}pt').toList()}',
+        _normalize(fieldLines[index].text),
+        _canonicalLineText(canonicalLines[index]),
+        reason: '$key: نصّ السطر ${index + 1} مختلف — أي أن الالتفاف انكسر في '
+            'موضع آخر، ولو تساوى عدد الأسطر.',
       );
-
-      // (2) عرض كل سطر: المضبوط = عرض العمود، والأخير = عرضه الطبيعي.
-      for (var index = 0; index < canonicalLines.length; index++) {
-        final line = canonicalLines[index];
-        final isLast = index == canonicalLines.length - 1;
-        final expected =
-            isLast || !line.isJustified ? line.naturalWidth : line.resolvedWidth;
-        final actual = fieldLines[index].right - fieldLines[index].left;
-        expect(
-          (actual - expected).abs(),
-          lessThanOrEqualTo(kGeometryTolerancePt),
-          reason: '$entry.key: عدد أسطر الحقل ${fieldLines.length}'
-              ' لا يساوي عدد أسطر التخطيط القانوني ${canonicalLines.length}.\n'
-              '${expected.toStringAsFixed(2)}pt قانونياً '
-              '(isJustified=${line.isJustified}, natural='
-              '${line.naturalWidth.toStringAsFixed(2)}, '
-              'resolved=${line.resolvedWidth.toStringAsFixed(2)}).',
-        );
-      }
-
-      // (3) التباعد الرأسي: يبدأ السطر التالي بعد ارتفاع السطر السابق نفسه.
-      for (var index = 1; index < canonicalLines.length; index++) {
-        final fieldGap = fieldLines[index].top - fieldLines[index - 1].top;
-        final expectedGap = canonicalLines[index].rect.top -
-            canonicalLines[index - 1].rect.top;
-        expect(
-          (fieldGap - expectedGap).abs(),
-          lessThanOrEqualTo(kVerticalTolerancePt),
-          reason: '$entry.key المسافة بين السطر $index و${index + 1}: '
-              '${fieldGap.toStringAsFixed(2)}pt في الحقل مقابل '
-              '${expectedGap.toStringAsFixed(2)}pt قانونياً.',
-        );
-      }
-
-      // (4) الحافة: السطر مضبوط يعني أنه بلغ عرض العمود، لا عرضاً آخر.
-      final columnWidth = canonicalLines
-          .firstWhere((line) => line.isJustified, orElse: () => canonicalLines.first)
-          .resolvedWidth;
-      for (var index = 0; index < canonicalLines.length - 1; index++) {
-        if (!canonicalLines[index].isJustified) continue;
-        final width = fieldLines[index].right - fieldLines[index].left;
-        expect((width - columnWidth).abs(), lessThanOrEqualTo(kGeometryTolerancePt),
-          reason: '$entry.key المسافة بين السطر $index و${index + 1}: '
-                '${width.toStringAsFixed(2)} مقابل '
-                '${columnWidth.toStringAsFixed(2)}pt');
-      }
     }
+
+    // (3) عرض كل سطر: المضبوط يبلغ العمود، والأخير بلا مدّ.
+    for (var index = 0; index < canonicalLines.length; index++) {
+      final line = canonicalLines[index];
+      final expected =
+          line.isJustified ? line.resolvedWidth : line.naturalWidth;
+      final actual = fieldLines[index].right - fieldLines[index].left;
+      expect(actual, closeTo(expected, kGeometryTolerancePt),
+          reason: '$key: عرض السطر ${index + 1} — ${expected.toStringAsFixed(2)}pt'
+              ' متوقعاً (isJustified=${line.isJustified}, natural='
+              '${line.naturalWidth.toStringAsFixed(2)}, resolved='
+              '${line.resolvedWidth.toStringAsFixed(2)}).');
+    }
+
+    // (4) التباعد الرأسي: قياس تراكمي بين السطور.
+    for (var index = 1; index < canonicalLines.length; index++) {
+      final fieldGap = fieldLines[index].top - fieldLines[index - 1].top;
+      final expectedGap =
+          canonicalLines[index].rect.top - canonicalLines[index - 1].rect.top;
+      expect(fieldGap, closeTo(expectedGap, kVerticalTolerancePt),
+          reason: '$key: المسافة بين السطر $index و${index + 1} — '
+              '${fieldGap.toStringAsFixed(2)}pt مقابل '
+              '${expectedGap.toStringAsFixed(2)}pt.');
+    }
+
+    // (5) الشروط نفسها ليست عمياء: البوابة تحتاج سطراً مضبوطاً وآخر غير مضبوط.
+    expect(canonicalLines.any((line) => line.isJustified), isTrue,
+        reason: '$key: لا سطر مضبوط في المرجع — العيّنة لا تقيس الضبط.');
+    expect(canonicalLines.last.isJustified, isFalse,
+        reason: '$key: السطر الأخير مضبوط — القاعدة تنصّ على عدم مدّه.');
+    final fieldColumn = canonicalLines
+        .firstWhere((line) => line.isJustified)
+        .resolvedWidth;
+    final lastWidth =
+        fieldLines.last.right - fieldLines.last.left;
+    expect(lastWidth, lessThan(fieldColumn - kGeometryTolerancePt),
+        reason: '$key: السطر الأخير في الحقل ممتدّ إلى العمود '
+            '(${lastWidth.toStringAsFixed(2)}pt ≈ $fieldColumn): هذا مدّ سطر '
+            'أخير، وهو ما تمنعه القاعدة.');
   });
 
-  testWidgets('الفقرة من سطر واحد لا تُمَدّ في الحقل ولا في التخطيط',
+  testWidgets('فقرة قصيرة أحادية السطر: لا تُمَدّ في الحقل ولا في التخطيط',
       (tester) async {
-    final document = _document();
-    final controller = ExamWizardController(document: document);
-    addTearDown(controller.dispose);
-    await _pump(tester, controller);
+    final (_, canonical) = await pumpDocument(tester);
+    const key = 'body-q2';
+    const node = 'q2/body';
+    final field = _field(key);
+    await tester.ensureVisible(field);
+    await tester.pumpAndSettle();
 
-    final canonical = _layout(document);
-    final canonicalLines = _canonicalLines(canonical, 'q2/body');
+    final fieldLines = _fieldLines(tester, field);
+    final canonicalLines = _canonicalLines(canonical, node);
     expect(canonicalLines, hasLength(1),
         reason: 'الفقرة القصيرة التُفّت قانونياً إلى '
             '${canonicalLines.length} أسطر: القياس بلا عيّنة.');
+    diagnose(key, tester, field, fieldLines, canonicalLines);
+
+    expect(fieldLines, hasLength(1),
+        reason: '$key: الحقل لفّ الفقرة القصيرة إلى ${fieldLines.length} أسطر.');
     expect(canonicalLines.single.isJustified, isFalse,
         reason: 'التخطيط القانوني مدّ فقرة من سطر واحد.');
-
-    final field = _field('body-q2');
-    await tester.ensureVisible(field);
-    await tester.pumpAndSettle();
-    final fieldLines = _fieldLines(tester, field);
-    expect(fieldLines, hasLength(1));
+    expect(_normalize(fieldLines.single.text),
+        _canonicalLineText(canonicalLines.single),
+        reason: '$key: نصّ السطر مختلف بين الحقل والتخطيط.');
     final width = fieldLines.single.right - fieldLines.single.left;
     expect(
-      (width - canonicalLines.single.naturalWidth).abs(),
-      lessThanOrEqualTo(kGeometryTolerancePt),
-      reason: 'الحقل مدّ فقرة من سطر واحد: ${width.toStringAsFixed(2)}pt مقابل '
-          'عرضها الطبيعي ${canonicalLines.single.naturalWidth.toStringAsFixed(2)}pt.',
+      width,
+      closeTo(canonicalLines.single.naturalWidth, kGeometryTolerancePt),
+      reason: '$key: الفقرة الأحادية عرضها ${width.toStringAsFixed(2)}pt في '
+          'الحقل مقابل ${canonicalLines.single.naturalWidth.toStringAsFixed(2)}pt '
+          'طبيعياً — فرق يعني مدّاً أو قياساً مختلفاً.',
     );
   });
 
-  test('الحقل لا يضيف توسعة كلمات يدوية: الضبط قاعدة واحدة في المحرك', () {
-    // الفحص على السلوك لا على وجود نصّ في الملف: لا حقل ولا `TexText` يمرّر
-    // `wordSpacing` مشتقاً من عرض الفقرة، لأن ذلك يُنتج توسعة ثانية فوق
-    // `TextAlign.justify` (وهو ما قاسته هذه البوابة قبل الإصلاح).
-    const files = <String>[
+  testWidgets('فقرة إنجليزية مضبوطة (LTR): الالتفاف والعروض مطابقة',
+      (tester) async {
+    final (_, canonical) = await pumpDocument(tester);
+    const key = 'body-q3';
+    const node = 'q3/body';
+    final field = _field(key);
+    await tester.ensureVisible(field);
+    await tester.pumpAndSettle();
+
+    final fieldLines = _fieldLines(tester, field);
+    final canonicalLines = _canonicalLines(canonical, node);
+    expect(canonicalLines, isNotEmpty,
+        reason: 'لا أسطر قانونية لـ$node: القياس بلا مرجع.');
+    diagnose(key, tester, field, fieldLines, canonicalLines);
+
+    expect(fieldLines, hasLength(canonicalLines.length),
+        reason: '$key: ${fieldLines.length} سطراً في الحقل مقابل '
+            '${canonicalLines.length} قانونياً (LTR).');
+    for (var index = 0; index < canonicalLines.length; index++) {
+      expect(_normalize(fieldLines[index].text),
+          _canonicalLineText(canonicalLines[index]),
+          reason: '$key: نصّ السطر ${index + 1} مختلف (LTR).');
+      final line = canonicalLines[index];
+      final expected =
+          line.isJustified ? line.resolvedWidth : line.naturalWidth;
+      final actual = fieldLines[index].right - fieldLines[index].left;
+      expect(actual, closeTo(expected, kGeometryTolerancePt),
+          reason: '$key: عرض السطر ${index + 1} (LTR) — '
+              '${expected.toStringAsFixed(2)}pt متوقعاً.');
+      // LTR: بداية السطر عند الحافة اليسرى للحقل، لا اليمنى.
+      expect(fieldLines[index].left, lessThan(1.0),
+          reason: '$key: السطر ${index + 1} لا يبدأ من الحافة اليسرى '
+              '(${fieldLines[index].left.toStringAsFixed(2)}pt) — اتجاه غير LTR.');
+    }
+  });
+
+  test('لا يُعاد إدخال توسعة ضبط يدوية ولا استثناء قياس', () {
+    // البوابة تحرس السبب لا العَرَض: أي عودة إلى `wordSpacing` يدوي أو إلى حدّ
+    // محلي للتوسعة تُفشل البوابة حتى لو بدت الأسطر «مقبولة» بصرياً.
+    for (final path in <String>[
       'lib/views/widgets/paper_field.dart',
       'lib/views/widgets/tex_text.dart',
       'lib/layout/visual/visual_flutter_style.dart',
-    ];
-    for (final path in files) {
+    ]) {
       final source = File(path).readAsStringSync();
       expect(source.contains('justifyWordSpacing'), isFalse,
-          reason: '$path: عادت التوسعة اليدوية للضبط — سطران بعرضين.');
+          reason: '$path: عادت توسعة الضبط اليدوية.');
       expect(source.contains('clamp(12.0, 60.0)'), isFalse,
-          reason: '$path: حدّ توسعة محلي.');
+          reason: '$path: عاد حدّ التوسعة المحلي.');
     }
     final metrics = File('lib/layout/canonical/flutter_text_metrics.dart')
         .readAsStringSync();
@@ -336,7 +429,28 @@ void main() {
       'opportunities > 0',
     ]) {
       expect(metrics.contains(needle), isTrue,
-          reason: 'قاعدة الضبط الواحدة مفقودة من المحرك: $needle');
+          reason: 'قاعدة الضبط الوحيدة مفقودة من المحرك: $needle');
+    }
+  });
+
+  testWidgets('نصّ الحقل هو نصّ المصدر حرفياً (لا مسافات ضبط مُدخلة)',
+      (tester) async {
+    // توزيع الضبط هندسة لا محتوى: ما يُخزَّن ويُرسم هو نصّ المصدر نفسه، فلا
+    // تُحقن مسافات في النموذج لتحقيق عرض سطر.
+    await pumpDocument(tester);
+    for (final entry in <String, String>{
+      'body-q1': _arabicBody,
+      'body-q3': _englishBody,
+    }.entries) {
+      final field = _field(entry.key);
+      await tester.ensureVisible(field);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(field).controller!.text,
+        entry.value,
+        reason: '${entry.key}: نصّ الحقل مختلف عن نصّ المصدر '
+            '(مسافات/محارف مُضافة للضبط).',
+      );
     }
   });
 }
