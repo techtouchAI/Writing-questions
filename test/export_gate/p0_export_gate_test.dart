@@ -1785,18 +1785,68 @@ void main() {
         lessThan(ltrPage.pageWidth - 2 * (15 / 25.4 * 72) - 0.0),
         reason: 'فقرة LTR من سطر واحد تجاوزت عرض المحتوى: لا معنى أصلاً '
             'لتمدّ سطر فقرة وحيد.');
-    // الإصلاح مُثبت (لا تمدّد لسطر وحيد) في الممرّين معاً، وبقي توزيع
-    // التبرير لكل سطر على حدة قراراً لمكتبة pdf في PDF مقابل تقريب بقيمة
-    // واحدة للفقرة في المعاينة: تسويتهما تحتاج طبقة تخطيط واحدة (P1).
-    _matrix.record('justification', P0Path.vectorPdf, P0Status.deferredToP1,
-        evidence: 'سطر واحد مضبوط: span=${span.toStringAsFixed(1)}pt من '
+    // (ب) توزيع التبرير سطراً بسطر: المصدر الواحد هو LayoutDocument (يقرأه
+    //     الراسمان معاً). فقرة البوابة المضبوطة (p0q1/body) تلتف إلى أسطر،
+    //     وكل سطر عدا الأخير يجب أن يُمدّ إلى عرض المحتوى، والسطر الأخير لا
+    //     يُمَدّ. ثم يُقاس السطر الحامل للوسم MIX1 في PDF نفسه مقابل عرضه
+    //     القانوني: تطابق يعني أن PDF لا يوزّع التبرير بطريقته.
+    final bodyLines = _gate.rtl.layout.allLines
+        .where((line) => line.semanticNodeId.startsWith('p0q1/body'))
+        .toList();
+    expect(bodyLines.length, greaterThanOrEqualTo(2),
+        reason: 'فقرة البوابة المضبوطة لم تلتف إلى أسطر: القياس بلا عيّنة.');
+    for (var index = 0; index < bodyLines.length; index++) {
+      final line = bodyLines[index];
+      if (index == bodyLines.length - 1) {
+        expect(line.isJustified, isFalse,
+            reason: 'السطر الأخير من فقرة مضبوطة مُدَّ — '
+                'resolvedWidth=${line.resolvedWidth.toStringAsFixed(2)}pt');
+        continue;
+      }
+      expect(line.isJustified, isTrue,
+          reason: 'سطر ${index + 1} من فقرة مضبوطة لم يُبرَّر في التخطيط '
+              'المشترك بين المعاينة وPDF.');
+      expect(
+        (line.resolvedWidth - contentWidth).abs(),
+        lessThan(1.5),
+        reason: 'سطر ${index + 1} مضبوط بعرض '
+            '${line.resolvedWidth.toStringAsFixed(2)}pt بدل '
+            '${contentWidth.toStringAsFixed(2)}pt',
+      );
+    }
+    final markerLine = bodyLines.firstWhere(
+      (line) => line.runs.any((run) => run.text.contains('MIX1')),
+      orElse: () => bodyLines.first,
+    );
+    final markerPdfLine = report.pages
+        .expand((page) => page.lines)
+        .firstWhere(
+          (line) => line.words.any((word) => word.text.contains('MIX1')),
+          orElse: () => throw StateError(
+              'سطر MIX1 غير موجود في PDF — لا يمكن قياس توزيع التبرير.'),
+        );
+    final markerLeft = markerPdfLine.words
+        .map((word) => word.x)
+        .reduce((a, b) => a < b ? a : b);
+    final markerRight = markerPdfLine.words
+        .map((word) => word.x + word.advanceWidth)
+        .reduce((a, b) => a > b ? a : b);
+    final markerSpan = markerRight - markerLeft;
+    expect(
+      (markerSpan - markerLine.resolvedWidth).abs(),
+      lessThan(2.0),
+      reason: 'عرض سطر MIX1 في PDF (${markerSpan.toStringAsFixed(2)}pt) يخالف '
+          'عرضه القانوني (${markerLine.resolvedWidth.toStringAsFixed(2)}pt): '
+          'PDF يوزّع التبرير بطريقة تختلف عن التخطيط المشترك.',
+    );
+    _matrix.record('justification', P0Path.vectorPdf, P0Status.pass,
+        evidence: 'سطر واحد لا يُمَدّ: ${span.toStringAsFixed(1)}pt من '
             '${contentWidth.toStringAsFixed(1)}pt (عربي) و'
-            '${(ltrRight - ltrLeft).toStringAsFixed(1)}pt (إنجليزي) — لا '
-            'تمدّد؛ أما توزيع التبرير لكل سطر فغير موحَّد المصدر',
-        reason: 'قاعدة «لا يُمَدّ سطر واحد» مقيسة ومُصحَّحة (GATE-05 وGATE-10)؛ '
-            'أما التبرير سطراً بسطر فتُنفّذه مكتبة pdf في PDF وتُقاربه '
-            'المعاينة بقيمة wordSpacing واحدة للفقرة كلها، فلا تطابق مضمون '
-            'لكل سطر. توحيدهما قرار طبقة تخطيط واحدة (P1) ولا يُصلَح في P0.');
+            '${(ltrRight - ltrLeft).toStringAsFixed(1)}pt (إنجليزي)؛ '
+            'وفقرة متعددة الأسطر: ${bodyLines.length} سطراً كلها مضبوطة '
+            'إلا الأخير، وسطر MIX1 في PDF '
+            '${markerSpan.toStringAsFixed(2)}pt مقابل '
+            '${markerLine.resolvedWidth.toStringAsFixed(2)}pt قانونياً');
   });
 
   // ===========================================================================

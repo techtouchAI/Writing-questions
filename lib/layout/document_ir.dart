@@ -529,12 +529,12 @@ class _DocumentIRBuilder {
     final direction = blueprint.direction == DocumentDirection.auto
         ? (document.layout.isLtr ? DocumentDirection.ltr : DocumentDirection.rtl)
         : blueprint.direction;
-    final header = _header(blueprint.header);
+    final header = _header(blueprint.header, direction);
     final questions = <QuestionBlock>[
       for (final question in blueprint.questions)
         _question(question, direction, globalIds),
     ];
-    final footer = _footer(blueprint.footer);
+    final footer = _footer(blueprint.footer, direction);
     final floatingReferences = <FloatingElementReference>[
       for (final element in document.floatingElements)
         _floatingReference(element),
@@ -555,14 +555,17 @@ class _DocumentIRBuilder {
     );
   }
 
-  HeaderBlock _header(HeaderBlueprint source) {
+  /// الترويسة تتبع اتجاه المستند: ورقة إنجليزية (LTR) لا يجوز أن ترسم
+  /// حقولها من اليمين. الاتجاه يُمرَّر من [DocumentIR.direction] لا يُثبَّت هنا،
+  /// فيبقى للعربية سلوكها وللإنجليزية سلوكها من مصدر واحد.
+  HeaderBlock _header(HeaderBlueprint source, DocumentDirection direction) {
     HeaderLineBlock line(HeaderLineBlueprint line, PaperAlign alignment) =>
         HeaderLineBlock(
           field: line.field,
           content: line.content,
           bold: line.bold,
           alignment: alignment,
-          direction: DocumentDirection.rtl,
+          direction: direction,
         );
 
     return HeaderBlock(
@@ -571,7 +574,7 @@ class _DocumentIRBuilder {
         content: source.bismillahContent,
         style: const DocumentStyleReference(role: VisualRole.bismillah),
         alignment: PaperAlign.center,
-        direction: DocumentDirection.rtl,
+        direction: direction,
       ),
       rightColumn: List<HeaderLineBlock>.unmodifiable(
         source.rightSemanticLines.map((entry) => line(entry, PaperAlign.center)),
@@ -583,10 +586,11 @@ class _DocumentIRBuilder {
         source.leftSemanticLines.map((entry) => line(entry, PaperAlign.end)),
       ),
       framed: source.framed,
+      direction: direction,
     );
   }
 
-  FooterBlock _footer(FooterBlueprint source) {
+  FooterBlock _footer(FooterBlueprint source, DocumentDirection direction) {
     ParagraphBlock? phrase;
     final phraseContent = source.closingPhraseContent;
     if (phraseContent != null) {
@@ -594,7 +598,7 @@ class _DocumentIRBuilder {
         content: phraseContent,
         style: const DocumentStyleReference(role: VisualRole.headerBody),
         alignment: PaperAlign.center,
-        direction: DocumentDirection.rtl,
+        direction: direction,
       );
     }
 
@@ -603,17 +607,18 @@ class _DocumentIRBuilder {
               LabelNode.fromSource(
                 entry.title,
                 role: LabelRole.signature,
-                direction: DocumentDirection.rtl,
+                direction: direction,
               ),
           name: entry.nameLineContent,
           nameIsPlaceholder: entry.name.isEmpty,
-          direction: DocumentDirection.rtl,
+          direction: direction,
         );
 
     return FooterBlock(
       closingPhrase: phrase,
       primary: signature(source.primary),
       secondary: source.secondary == null ? null : signature(source.secondary!),
+      direction: direction,
     );
   }
 
