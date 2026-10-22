@@ -36,6 +36,7 @@ import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/canonical/layout_engine.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
+import 'package:writing_questions_app/layout/document_direction.dart';
 import 'package:writing_questions_app/layout/document_ir.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
@@ -248,11 +249,13 @@ void main() {
     return (document, _layout(document));
   }
 
-  /// يطبع تشخيصاً واحداً مكثّفاً لكل حالة كي يظهر الفرق في سجلّ CI نفسه.
+  /// تشخيص مكثّف في سطرين (سجلّ CI يقتطع الرسائل الطويلة): نمط الحقل ونمط
+  /// القانوني، ثم نصّ كل سطر وعرضه على الجانبين.
   void diagnose(
     String key,
     WidgetTester tester,
     Finder field,
+    String source,
     List<_FieldLine> fieldLines,
     List<LayoutLine> canonicalLines,
   ) {
@@ -261,23 +264,38 @@ void main() {
         ? null
         : (canonicalLines.first.runs.toList()
               ..sort((a, b) => a.logicalIndex.compareTo(b.logicalIndex)))
-            .first
-            .style;
+            .first;
+    final canonicalStyle = firstRun?.style;
+    final probe = canonicalStyle == null
+        ? null
+        : const FlutterTextMetrics().measureText(
+            _normalize(source),
+            canonicalStyle,
+            DocumentDirection.rtl,
+          );
+    final painter = TextPainter(
+      text: TextSpan(text: _normalize(source), style: style),
+      textDirection: ui.TextDirection.rtl,
+      textScaler: TextScaler.noScaling,
+    )..layout(maxWidth: double.infinity);
     // ignore: avoid_print
-    print('[geom] $key | الحقل: fs=${style?.fontSize} family=${style?.fontFamily} '
-        'height=${style?.height} ls=${style?.letterSpacing} '
-        'ws=${style?.wordSpacing} | القانوني: fs=${firstRun?.fontSizePt} '
-        'family=${firstRun?.font.family} lh=${firstRun?.lineHeightFactor} '
-        'ls=${firstRun?.letterSpacingPt}');
+    print('[geom] $key | الحقل fs=${style?.fontSize?.toStringAsFixed(3)} '
+        'w=${style?.fontWeight} i=${style?.fontStyle} '
+        'h=${style?.height} | القانوني fs=${canonicalStyle?.fontSizePt} '
+        'b=${canonicalStyle?.bold} i=${canonicalStyle?.italic} '
+        'lh=${canonicalStyle?.lineHeightFactor} | '
+        'قياس المحرك=${probe?.advance.toStringAsFixed(2)}pt '
+        'قياس TextStyle الحقل=${LayoutUnits.pxToPt(painter.width).toStringAsFixed(2)}pt');
+    painter.dispose();
+    String short(String value) =>
+        value.length <= 24 ? value : '${value.substring(0, 24)}…';
     // ignore: avoid_print
-    print('[geom] $key | سطور الحقل: '
-        '${fieldLines.map((l) => '${(l.right - l.left).toStringAsFixed(2)}pt'
-            '"${_normalize(l.text)}"').toList()}');
-    // ignore: avoid_print
-    print('[geom] $key | سطور قانونية: '
+    print('[geom] $key | الحقل: '
+        '${fieldLines.map((l) => '${(l.right - l.left).toStringAsFixed(2)}'
+            '"${short(_normalize(l.text))}"').toList()} | القانوني: '
         '${canonicalLines.map((l) => '${l.naturalWidth.toStringAsFixed(2)}/'
-            '${l.resolvedWidth.toStringAsFixed(2)}pt'
-            'j${l.isJustified}"${_canonicalLineText(l)}"').toList()}');
+            '${l.resolvedWidth.toStringAsFixed(2)}j${l.isJustified}'
+            '"${short(_canonicalLineText(l))}"').toList()}');
   }
 
   testWidgets('فقرة عربية مضبوطة: نقاط الالتفاف والعروض والتباعد مطابقة',
@@ -293,7 +311,7 @@ void main() {
     final canonicalLines = _canonicalLines(canonical, node);
     expect(canonicalLines, isNotEmpty,
         reason: 'لا أسطر قانونية لـ$node: القياس بلا مرجع.');
-    diagnose(key, tester, field, fieldLines, canonicalLines);
+    diagnose(key, tester, field, _arabicBody, fieldLines, canonicalLines);
 
     // (1) عدد الأسطر: تساوٍ تام.
     expect(fieldLines, hasLength(canonicalLines.length),
@@ -364,7 +382,7 @@ void main() {
     expect(canonicalLines, hasLength(1),
         reason: 'الفقرة القصيرة التُفّت قانونياً إلى '
             '${canonicalLines.length} أسطر: القياس بلا عيّنة.');
-    diagnose(key, tester, field, fieldLines, canonicalLines);
+    diagnose(key, tester, field, _shortBody, fieldLines, canonicalLines);
 
     expect(fieldLines, hasLength(1),
         reason: '$key: الحقل لفّ الفقرة القصيرة إلى ${fieldLines.length} أسطر.');
@@ -396,7 +414,7 @@ void main() {
     final canonicalLines = _canonicalLines(canonical, node);
     expect(canonicalLines, isNotEmpty,
         reason: 'لا أسطر قانونية لـ$node: القياس بلا مرجع.');
-    diagnose(key, tester, field, fieldLines, canonicalLines);
+    diagnose(key, tester, field, _englishBody, fieldLines, canonicalLines);
 
     expect(fieldLines, hasLength(canonicalLines.length),
         reason: '$key: ${fieldLines.length} سطراً في الحقل مقابل '

@@ -76,6 +76,17 @@ List<LayoutRun> _runs(LayoutDocument layout, String needle) => <LayoutRun>[
       for (final line in _lines(layout, needle)) ...line.runs,
     ];
 
+/// جريانات عقدة دلالية محدَّدة (مثل `q1/body`): التنسيق والتخطيط يُقاسان على
+/// العقدة نفسها، لا على كتلة السؤال التي تضمّ الترويسة والتسمية أيضاً.
+List<LayoutRun> _nodeRuns(LayoutDocument layout, String nodePrefix) => <LayoutRun>[
+      for (final page in layout.pages)
+        for (final block in page.blocks)
+          for (final line in block.allLines)
+            ...line.runs.where(
+              (run) => run.semanticNodeId.startsWith(nodePrefix),
+            ),
+    ];
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -106,9 +117,14 @@ void main() {
             '+adv=${run.advance.toStringAsFixed(2)}'
             'w=${run.width.toStringAsFixed(2)}'
             '${run.isMath ? ' [math]' : ''}').join(' | ')}');
-    for (var index = 0; index + 1 < lineRuns.length; index++) {
-      final left = lineRuns[index];
-      final right = lineRuns[index + 1];
+    // الجريانات الفارغة (نصّها "") لا حبر لها: عرضها المتقدّم يمثّل مسافة
+    // مصدر يستهلكها الجريان المجاور، فلا تُحسب تراكباً مرئياً.
+    final inkRuns = lineRuns
+        .where((run) => run.text.isNotEmpty && run.text.trim().isNotEmpty)
+        .toList();
+    for (var index = 0; index + 1 < inkRuns.length; index++) {
+      final left = inkRuns[index];
+      final right = inkRuns[index + 1];
       expect(left.x + left.advance, lessThanOrEqualTo(right.x + 0.5),
           reason: 'تراكب أفقي بين «${left.text}» (ينتهي عند '
               '${(left.x + left.advance).toStringAsFixed(2)}) و«${right.text}» '
@@ -178,8 +194,10 @@ void main() {
         ],
       ),
     );
+    expect(_nodeRuns(plain, 'q1/body'), isNotEmpty,
+        reason: 'لا جريانات لعقدة q1/body: القياس بلا عيّنة.');
     String mathStyles(LayoutDocument layout) => <String>[
-          for (final run in _runs(layout, 'قبل'))
+          for (final run in _nodeRuns(layout, 'q1/body'))
             if (run.isMath)
               '${run.text}:${run.style.bold}:${run.style.colorArgb}:'
                   '${run.width.toStringAsFixed(2)}',
@@ -188,12 +206,12 @@ void main() {
         reason: 'تنسيق نصّ عادي غيّر نمط أو قياس جريان المعادلة.');
     // والنص المنسّق نفسه تغيّر (فالبوابة ليست عمياء).
     // ignore: avoid_print
-    print('[math] جريانات «قبل» في النسخة المنسّقة: '
-        '${_runs(formatted, 'قبل').map((run) => run.isMath ? '<math:${run.text}>' : '"${run.text}"${run.style.bold ? '*' : ''}').toList()}');
+    print('[math] جريانات الجسم في النسخة المنسّقة: '
+        '${_nodeRuns(formatted, 'q1/body').map((run) => run.isMath ? '<math:${run.text}>' : '"${run.text}"${run.style.bold ? '*' : ''}').toList()}');
     // ignore: avoid_print
     print('[math] كل الجريانات العريضة: '
         '${[for (final page in formatted.pages) for (final block in page.blocks) for (final line in block.allLines) ...line.runs.where((run) => run.style.bold).map((run) => '"${run.text}"@${run.semanticNodeId}')].toList()}');
-    final formattedText = _runs(formatted, 'قبل')
+    final formattedText = _nodeRuns(formatted, 'q1/body')
         .where((run) => !run.isMath && run.style.bold)
         .toList();
     expect(formattedText, isNotEmpty,
