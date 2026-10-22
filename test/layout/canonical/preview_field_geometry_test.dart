@@ -276,6 +276,9 @@ void main() {
     List<_FieldLine> fieldLines,
     List<LayoutLine> canonicalLines,
   ) {
+    // التشخيص يُشغَّل عند الحاجة فقط (--dart-define=geom_debug=true): يبقى
+    // مفهوم الفرق مقروءاً في سجلّ CI، وحين يُطفأ لا يزاحم رسائل الفشل.
+    if (!const bool.fromEnvironment('geom_debug')) return;
     final style = tester.widget<TextField>(field).style;
     final firstRun = canonicalLines.first.runs.isEmpty
         ? null
