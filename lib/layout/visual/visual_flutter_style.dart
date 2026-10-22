@@ -5,7 +5,6 @@ import 'package:flutter/material.dart'
         FontWeight,
         TextAlign,
         TextDecoration,
-        TextDirection,
         TextStyle;
 
 import '../../models/paper_text_style.dart';

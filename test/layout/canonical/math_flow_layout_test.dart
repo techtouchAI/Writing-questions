@@ -16,11 +16,16 @@ import 'package:writing_questions_app/layout/canonical/exam_document_layout_adap
 import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart';
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/canonical/layout_engine.dart';
+import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/layout/document_ir.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/text_format_span.dart';
+
+/// كتلة المعادلة المنفصلة تحمل هذه العلامة في معرّفاتها (layout_engine.dart:957):
+/// المحرك يفصلها إلى مقطع مستقل ثم يمنحها فقرة/أسطراً خاصة بها.
+bool _isDisplayMathLine(LayoutLine line) => line.id.contains('/block-math/');
 
 ExamDocument _document({List<TextFormatSpan> formats = const <TextFormatSpan>[]}) =>
     ExamDocument(
@@ -52,21 +57,23 @@ LayoutDocument _layout(ExamDocument document) => const LayoutEngine().layout(
       fontMetrics: const FlutterTextMetrics(),
     );
 
-List<LayoutRun> _runs(LayoutDocument layout, String prefix) => <LayoutRun>[
+/// الكتل التي يظهر فيها النص المميّز (يُختار بالمحتوى لا بمعرّف مُفترض، حتى
+/// لا يصير القياس «عينات صفرية» لو تغيّر تكوين المعرّفات).
+List<LayoutBlock> _blocksWith(LayoutDocument layout, String needle) => <LayoutBlock>[
       for (final page in layout.pages)
         for (final block in page.blocks)
-          for (final line in block.allLines)
-            ...line.runs.where(
-              (run) => run.semanticNodeId.startsWith(prefix),
-            ),
+          if (block.allLines.any(
+            (line) => line.runs.any((run) => run.text.contains(needle)),
+          ))
+            block,
     ];
 
-List<LayoutLine> _lines(LayoutDocument layout, String prefix) => <LayoutLine>[
-      for (final page in layout.pages)
-        for (final block in page.blocks)
-          for (final line in block.allLines)
-            if (line.runs.any((run) => run.semanticNodeId.startsWith(prefix)))
-              line,
+List<LayoutLine> _lines(LayoutDocument layout, String needle) => <LayoutLine>[
+      for (final block in _blocksWith(layout, needle)) ...block.allLines,
+    ];
+
+List<LayoutRun> _runs(LayoutDocument layout, String needle) => <LayoutRun>[
+      for (final line in _lines(layout, needle)) ...line.runs,
     ];
 
 void main() {
@@ -78,12 +85,12 @@ void main() {
 
   test('المعادلة السطرية داخل تدفّق السطر، ولا تراكب مع جيرانها', () {
     final layout = _layout(_document());
-    final statementRuns = _runs(layout, 'q1/title');
+    final statementRuns = _runs(layout, 'احسب');
     final mathRuns = statementRuns.where((run) => run.isMath).toList();
     expect(mathRuns, isNotEmpty,
         reason: 'لا جريان رياضي في نص السؤال — القياس بلا عيّنة.');
 
-    final lineOfMath = _lines(layout, 'q1/title')
+    final lineOfMath = _lines(layout, 'احسب')
         .firstWhere((line) => line.runs.any((run) => run.isMath));
     final lineRuns = lineOfMath.runs.toList()
       ..sort((a, b) => a.x.compareTo(b.x));
@@ -110,13 +117,13 @@ void main() {
 
   test('المعادلة المنفصلة تشغل كتلة مستقلة ولا تشارك سطراً نصياً', () {
     final layout = _layout(_document());
-    final bodyLines = _lines(layout, 'q2/body');
+    final bodyLines = _lines(layout, 'مقدمة');
     expect(bodyLines.length, greaterThanOrEqualTo(2),
         reason: 'المعادلة المنفصلة لم تفصل الفقرة إلى مقاطع: '
             '${bodyLines.length} سطر.');
 
     final displayLines = bodyLines
-        .where((line) => line.runs.any((run) => run.isMath && run.isBlockMath))
+        .where((line) => line.runs.any((run) => run.isMath && _isDisplayMathLine(line)))
         .toList();
     expect(displayLines, isNotEmpty,
         reason: 'لا سطر يحمل معادلة منفصلة: القياس بلا عيّنة.');
@@ -133,7 +140,7 @@ void main() {
       for (final page in layout.pages)
         for (final block in page.blocks)
           for (final line in block.allLines)
-            if (line.runs.any((run) => run.isMath && run.isBlockMath))
+            if (line.runs.any((run) => run.isMath && _isDisplayMathLine(line)))
               line.rect,
     ];
     final textRects = <LayoutRect>[
@@ -165,7 +172,7 @@ void main() {
       ),
     );
     String mathStyles(LayoutDocument layout) => <String>[
-          for (final run in _runs(layout, 'q1/body'))
+          for (final run in _runs(layout, 'قبل'))
             if (run.isMath)
               '${run.text}:${run.style.bold}:${run.style.colorArgb}:'
                   '${run.width.toStringAsFixed(2)}',
@@ -173,7 +180,7 @@ void main() {
     expect(mathStyles(formatted), mathStyles(plain),
         reason: 'تنسيق نصّ عادي غيّر نمط أو قياس جريان المعادلة.');
     // والنص المنسّق نفسه تغيّر (فالبوابة ليست عمياء).
-    final formattedText = _runs(formatted, 'q1/body')
+    final formattedText = _runs(formatted, 'قبل')
         .where((run) => !run.isMath && run.style.bold)
         .toList();
     expect(formattedText, isNotEmpty,

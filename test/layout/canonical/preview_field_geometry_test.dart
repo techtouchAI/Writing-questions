@@ -24,7 +24,6 @@
 // المبدأ: بدونه لا يمكن مقارنة محركين يشتركان في Skia ويختلفان في تقريب
 // ارتفاع السطر.
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -128,8 +127,6 @@ List<({double left, double right, double top, double bottom})> _fieldLines(
   expect(text.trim(), isNotEmpty, reason: 'الحقل المقيس فارغ.');
   final boxes = editable.getBoxesForSelection(
     TextSelection(baseOffset: 0, extentOffset: text.length),
-    boxHeightStyle: ui.BoxHeightStyle.strut,
-    boxWidthStyle: ui.BoxWidthStyle.tight,
   );
   expect(boxes, isNotEmpty,
       reason: 'لا صناديق نصّ للحقل: القياس بلا عيّنة.');
@@ -256,7 +253,7 @@ void main() {
         expect(
           (fieldGap - expectedGap).abs(),
           lessThanOrEqualTo(kVerticalTolerancePt),
-          reason: '${entry.key} المسافة بين السطر ${index} و${index + 1}: '
+          reason: '$entry.key المسافة بين السطر ${index} و${index + 1}: '
               '${fieldGap.toStringAsFixed(2)}pt في الحقل مقابل '
               '${expectedGap.toStringAsFixed(2)}pt قانونياً.',
         );

@@ -44,7 +44,6 @@ import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/layout/document_direction.dart';
 import 'package:writing_questions_app/layout/visual/visual_content.dart';
-import 'package:writing_questions_app/layout/visual/visual_flutter_style.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_canvas_geometry.dart';
