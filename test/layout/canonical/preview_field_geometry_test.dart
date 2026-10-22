@@ -212,6 +212,15 @@ void main() {
       await tester.pumpAndSettle();
       final fieldLines = _fieldLines(tester, field);
       final canonicalLines = _canonicalLines(canonical, entry.value);
+      if (entry.key == 'body-q1' || entry.key == 'body-q3') {
+        final page = canonical.pages.first;
+        // ignore: avoid_print
+        print('[geom] $entry.key field=${tester.getSize(field).width.toStringAsFixed(1)}px '
+            'editable=${tester.getSize(find.descendant(of: field, matching: find.byType(EditableText))).width.toStringAsFixed(1)}px '
+            'page=${page.pageSize.width.toStringAsFixed(2)}pt body=${page.bodyBounds.width.toStringAsFixed(2)}pt '
+            'fieldLines=${fieldLines.map((l) => '${(l.right - l.left).toStringAsFixed(2)}@${l.left.toStringAsFixed(2)}').toList()} '
+            'canonical=${canonicalLines.map((l) => '${l.naturalWidth.toStringAsFixed(2)}/${l.resolvedWidth.toStringAsFixed(2)}@${l.rect.left.toStringAsFixed(2)}+${l.rect.width.toStringAsFixed(2)}j${l.isJustified}').toList()}');
+      }
       expect(canonicalLines, isNotEmpty,
           reason: 'لا أسطر قانونية لـ${entry.value}: القياس بلا مرجع.');
 
