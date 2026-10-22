@@ -562,7 +562,9 @@ void main() {
       // والشروط الهندسية الصارمة داخل الحقل نفسه: يسار = حدّ العمود الأيسر،
       // يمين = حدّه الأيمن، وسط = منتصف الفراغ، والضبط لسطر واحد = اليسار.
       final column = LayoutUnits.pxToPt(tester.getSize(field).width);
-      final lineWidth = fieldLine.right - fieldLine.left;
+      // عرض الجريان (لا عرض الحبر) هو ما تُحسب به إزاحة المركز: محرك القياس
+      // يعطي `naturalWidth` بعروض الأجسام والمسافات نفسها التي يزيح بها Skia.
+      final lineWidth = canonicalLine.naturalWidth;
       switch (align) {
         case PaperAlign.left:
         case PaperAlign.justify:
