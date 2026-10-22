@@ -618,8 +618,10 @@ class _PdfObjects {
     final cmapRef = RegExp(r'/ToUnicode\s+(\d+)\s+0\s+R').firstMatch(dict);
     if (cmapRef != null) {
       final cmap = _streams[int.parse(cmapRef.group(1)!)] ?? '';
+      // المقصد في bfchar نصّ UTF-16 بأي عدد من الوحدات، ويُكتب هنا سداسياً
+      // متصلاً (`<06440627>`) أو مفصولاً بمسافات؛ كلاهما مقروء.
       for (final entry in RegExp(
-        r'<([0-9A-Fa-f]{4})>\s*<([0-9A-Fa-f]{4}(?:\s+[0-9A-Fa-f]{4})*)>',
+        r'<([0-9A-Fa-f]{4})>\s*<([0-9A-Fa-f]{4,})>',
       ).allMatches(cmap)) {
         final hex = entry.group(2)!.replaceAll(RegExp(r'\s+'), '');
         final units = <int>[

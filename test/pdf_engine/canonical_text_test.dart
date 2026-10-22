@@ -404,19 +404,25 @@ void main() {
       //    بترتيب المجرى البصري، فيعطي عكسها الكلمة المنطقية.
       final run = shapeRtlRun(entry.key);
       final glyphRunes = entry.value ? run.glyphText.runes.toList() : entry.key.runes.toList();
+      bool baseLetter(int rune) =>
+          (rune >= 0x0621 && rune <= 0x063A) ||
+          (rune >= 0x0641 && rune <= 0x064A);
       if (entry.value) {
-        expect(
-          glyphRunes.every((rune) => rune >= 0xFE70 && rune <= 0xFEFF),
-          isTrue,
-          reason: 'قناة الرسم يجب أن تكون صورًا تقديمية متصلة: $glyphRunes',
-        );
+        // الحروف تُرسم بصور عرض متصلة، والحركات تبقى محارفها (لا تُشكَّل)،
+        // فالمقياس الصحيح: لا حرف أساسي في القناة المرسومة، ووجود شكل واحد
+        // على الأقل يثبت أن التشكيل وقع.
+        expect(glyphRunes.any((rune) => rune >= 0xFE70 && rune <= 0xFEFF),
+            isTrue,
+            reason: 'لم يقع تشكيل في قناة الرسم: $glyphRunes');
+        expect(glyphRunes.where(baseLetter), isEmpty,
+            reason: 'حرف عربي بلا تشكيل في قناة الرسم: $glyphRunes');
       } else {
         expect(glyphRunes, entry.key.runes.toList(),
             reason: 'النصّ اللاتيني يجب ألا يُشكَّل ولا يُقلَب.');
       }
       final unicodeByCid = <int, String>{};
       for (final pair in RegExp(
-        r'<([0-9A-Fa-f]{4})>\s*<([0-9A-Fa-f]{4}(?:\s+[0-9A-Fa-f]{4})*)>',
+        r'<([0-9A-Fa-f]{4})>\s*<([0-9A-Fa-f]{4,})>',
       ).allMatches(raw)) {
         final hex = pair.group(2)!.replaceAll(RegExp(r'\s+'), '');
         unicodeByCid[int.parse(pair.group(1)!, radix: 16)] =
