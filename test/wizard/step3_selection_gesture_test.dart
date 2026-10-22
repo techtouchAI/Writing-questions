@@ -316,7 +316,9 @@ void main() {
 
   testWidgets('تحديد يعبر أكثر من سطر مرئي: التسطير يصل إلى سطرين',
       (tester) async {
-    final controller = ExamWizardController(document: _document());
+    // متن أطول من سطر واحد في التخطيط القانوني نفسه (لا في الودجة وحدها).
+    final controller =
+        ExamWizardController(document: _document(body: '$_body $_body'));
     addTearDown(controller.dispose);
     await _pump(tester, controller);
     final field = _field('body-q1');

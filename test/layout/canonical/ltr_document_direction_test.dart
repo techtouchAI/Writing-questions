@@ -171,11 +171,16 @@ void main() {
       }
     }
 
-    // الأرقام في الورقة الإنجليزية لاتينية، لا مشرقية.
-    final arabicIndic = report.pages
-        .fold<int>(0, (sum, page) => sum + page.arabicIndicDigits);
-    expect(arabicIndic, 0,
-        reason: 'الورقة الإنجليزية تحمل $arabicIndic رقماً مشرقياً.');
+    // الأرقام في الورقة الإنجليزية لاتينية، لا مشرقية. تُطبع الكلمات المخالفة
+    // نفسها في سبب الفشل فتُشخَّص في التشغيل لا بالتخمين.
+    final arabicIndicWords = <String>[
+      for (final page in report.pages)
+        for (final word in page.words)
+          if (word.text.runes.any((rune) => rune >= 0x660 && rune <= 0x669))
+            word.text,
+    ];
+    expect(arabicIndicWords, isEmpty,
+        reason: 'الورقة الإنجليزية تحمل أرقاماً مشرقية: $arabicIndicWords');
 
     // النص ما زال قابل الاستخراج، والتقسيم لم ينكسر.
     final probe = PdfContentProbe.fromBytes(bytes, pageIndex: 0);
