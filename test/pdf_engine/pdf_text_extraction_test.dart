@@ -121,6 +121,31 @@ void main() {
       reason: 'رابطة لام-ألف في «الأول» استُخرجت مقلوبة: $drawn',
     );
 
+    // (2ج) فراغ البسملة: الكلمات الأربع إرسالات مستقلة في الملف نفسها،
+    // والفجوة بين «الله» و«الرحمن» موجبة (المسافة هندسة لا محرف). قارئ PDF
+    // يستنتج الفراغ من الفجوة، وقد يدمج موضعًا في وضع -layout؛ الملف هنا
+    // بيّن، والاختبار يحرس ذلك.
+    final bismillah = <String>['بسم', 'الله', 'الرحمن', 'الرحيم']
+        .map(_visualOrder)
+        .toList();
+    for (final word in bismillah) {
+      expect(drawn, contains(word), reason: 'كلمة البسملة «$word» غابت: $drawn');
+    }
+    expect(
+      probe.lines.any((line) {
+        for (var index = 0; index + 1 < line.words.length; index++) {
+          if (line.words[index].text == bismillah[1] &&
+              line.words[index + 1].text == bismillah[2]) {
+            return line.gapAfter(index) > 0;
+          }
+        }
+        return false;
+      }),
+      isTrue,
+      reason: '«الله» و«الرحمن» ليسا إرسالين متجاورين بفجوة موجبة: '
+          '${probe.lines.map((line) => line.describe()).join(" | ")}',
+    );
+
     // (2ب) حدود الكلمات: كل كلمة تُكتب إرسالًا مستقلًا، فالنصّ المرسوم يحوي
     // الكلمات الثلاث متتابعةً لا مدموجة. أما مسافة الاستخراج فيستنتجها القارئ
     // من الفجوة بين الإرسالين، وهذا حدّ معلن في تقرير الحدود.
