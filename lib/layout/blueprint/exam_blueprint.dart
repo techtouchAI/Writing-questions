@@ -527,6 +527,12 @@ class _BlueprintBuilder {
   }) =>
       HeaderLineBlueprint(field: field, content: content, bold: bold);
 
+  /// تسميات الترويسة العربية ليست اتجاه فقرة: هي **محتوى عربي في ورقة**،
+  /// فالورقة الإنجليزية ترسمها داخل فقرة LTR (والعربية داخل فقرة RTL). تثبيت
+  /// `rtl` عليها يجعل الفقرة الإنجليزية جزيرة معكوسة، فينفصل رقم القيمة عن
+  /// كلماته («90 : الوقت …» بدل «الوقت: 90 …»). لذلك ترث تسميات الترويسة
+  /// اتجاه السطر (المشتق من اتجاه المستند في `DocumentIR`)، وتبقى القيم
+  /// `auto` فتُحسم من نصّها.
   InlineContent _headerValueLine({
     required String label,
     required String value,
@@ -538,10 +544,10 @@ class _BlueprintBuilder {
       LabelNode.fromSource(
         labelText,
         role: LabelRole.headerField,
-        direction: DocumentDirection.rtl,
+        direction: DocumentDirection.inherit,
       ),
-      const SeparatorNode(':', role: SeparatorRole.punctuation, direction: DocumentDirection.rtl),
-      const SeparatorNode(' ', role: SeparatorRole.labelValue, direction: DocumentDirection.rtl),
+      const SeparatorNode(':', role: SeparatorRole.punctuation, direction: DocumentDirection.inherit),
+      const SeparatorNode(' ', role: SeparatorRole.labelValue, direction: DocumentDirection.inherit),
       ...InlineContent.fromSource(valueText, direction: DocumentDirection.auto).nodes,
     ]);
   }
@@ -551,10 +557,10 @@ class _BlueprintBuilder {
         LabelNode.fromSource(
           prefix,
           role: LabelRole.headerField,
-          direction: DocumentDirection.rtl,
+          direction: DocumentDirection.inherit,
         ),
         if (value.isNotEmpty)
-          const SeparatorNode(' ', role: SeparatorRole.labelValue, direction: DocumentDirection.rtl),
+          const SeparatorNode(' ', role: SeparatorRole.labelValue, direction: DocumentDirection.inherit),
         if (value.isNotEmpty)
           ...InlineContent.fromSource(value, direction: DocumentDirection.auto).nodes,
       ]);
@@ -576,7 +582,7 @@ class _BlueprintBuilder {
             LabelNode.fromSource(
               ExamCatalog.administrationLabel,
               role: LabelRole.headerField,
-              direction: DocumentDirection.rtl,
+              direction: DocumentDirection.inherit,
             ),
           ]),
         ),
@@ -588,7 +594,7 @@ class _BlueprintBuilder {
         if (gender.isNotEmpty)
           _headerLine(
             HeaderFieldKind.schoolGender,
-            InlineContent.fromSource(gender, direction: DocumentDirection.rtl),
+            InlineContent.fromSource(gender, direction: DocumentDirection.auto),
           ),
       ],
       centerContentLines: <HeaderLineBlueprint>[
@@ -605,7 +611,7 @@ class _BlueprintBuilder {
         if (session.isNotEmpty)
           _headerLine(
             HeaderFieldKind.session,
-            InlineContent.fromSource(session, direction: DocumentDirection.rtl),
+            InlineContent.fromSource(session, direction: DocumentDirection.auto),
             bold: true,
           ),
       ],
@@ -660,7 +666,7 @@ class _BlueprintBuilder {
           semanticTitle: LabelNode.fromSource(
             title,
             role: LabelRole.signature,
-            direction: DocumentDirection.rtl,
+            direction: DocumentDirection.inherit,
           ),
           semanticName: InlineContent.fromSource(
             name.trim(),
@@ -672,7 +678,7 @@ class _BlueprintBuilder {
     return FooterBlueprint(
       semanticClosingPhrase: phrase.isEmpty
           ? null
-          : InlineContent.fromSource(phrase, direction: DocumentDirection.rtl),
+          : InlineContent.fromSource(phrase, direction: DocumentDirection.auto),
       primary: signature(footer.primary.title.label, footer.primary.name),
       secondary: secondary == null
           ? null
@@ -697,7 +703,7 @@ class _BlueprintBuilder {
       unit: LabelNode.fromSource(
         document.layout.marksUnit,
         role: LabelRole.generic,
-        direction: DocumentDirection.rtl,
+        direction: DocumentDirection.inherit,
       ),
     );
   }
