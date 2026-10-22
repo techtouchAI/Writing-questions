@@ -220,8 +220,8 @@ void main() {
       expect(
         fieldLines.length,
         canonicalLines.length,
-          reason: '$entry.key المسافة بين السطر $index و${index + 1}: '
-            'والتخطيط القانوني على ${canonicalLines.length}.\n'
+          reason: '$entry.key: عدد أسطر الحقل ${fieldLines.length}'
+              ' لا يساوي عدد أسطر التخطيط القانوني ${canonicalLines.length}.\n'
             'حقل: ${fieldLines.map((l) => '${(l.right - l.left).toStringAsFixed(2)}pt').toList()}\n'
             'قانوني: ${canonicalLines.map((l) => '${(l.resolvedWidth).toStringAsFixed(2)}pt').toList()}',
       );
@@ -236,8 +236,8 @@ void main() {
         expect(
           (actual - expected).abs(),
           lessThanOrEqualTo(kGeometryTolerancePt),
-          reason: '$entry.key المسافة بين السطر $index و${index + 1}: '
-              'عرض الحقل ${actual.toStringAsFixed(2)}pt مقابل '
+          reason: '$entry.key: عدد أسطر الحقل ${fieldLines.length}'
+              ' لا يساوي عدد أسطر التخطيط القانوني ${canonicalLines.length}.\n'
               '${expected.toStringAsFixed(2)}pt قانونياً '
               '(isJustified=${line.isJustified}, natural='
               '${line.naturalWidth.toStringAsFixed(2)}, '
