@@ -706,13 +706,18 @@ void main() {
     final text = _controllerOf(tester, field).text;
     final from = text.indexOf('٢٠');
     final to = text.indexOf('2026') + '2026'.length;
+    // الطرف يُسحَب إلى ما بعد آخر رقم (مؤشر بعد المحرف الأخير) لا على المحرف
+    // نفسه، وإلا استُثني آخر رقم من النطاق.
     await _dragSelect(
       tester,
       _pointAt(tester, field, from),
-      _pointAt(tester, field, to - 1),
+      _pointAt(tester, field, to),
     );
     final selection = _controllerOf(tester, field).selection;
     expect(selection.isCollapsed, isFalse);
+    expect(selection.textInside(text), contains('2026'),
+        reason: 'السحب لم يغطِّ آخر رقم في النطاق: '
+            '«${selection.textInside(text)}»');
 
     await _pickColor(tester, 'خمري');
     final runs = _renderedRuns(tester, field);
