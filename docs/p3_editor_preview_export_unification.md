@@ -248,8 +248,11 @@ bodyFormats` و`BranchContent.statementFormats/bodyFormats`. `PaperTextStyle`
    **البصري** (كما ترسمها الأسطر)، لأن الراسم يرسم كل كلمة موضعًا مستقلًا؛
    إعادة الترتيب إلى ترتيب القراءة مسؤولية القارئ (وهو ما تفعله poppler). ما
    لم يُنفَّذ: تسجيل `/ActualText`، ولا كتابة الفراغ كمحرف في المجرى — الفراغ
-   موضع هندسي، والقارئات تستنتجه من الفجوات (وقد تحقّق ذلك في استخراج
-   poppler). البديل المعماري الكامل (ActualText لكل كلمة) قرار مستقل.
+   موضع هندسي، والقارئات تستنتجه من الفجوات. تحقّق ذلك في استخراج poppler في
+   كل المواضع إلا موضعًا واحدًا في وضع `-layout` (انظر §12.1)، وهذا استدلال
+   القارئ لا حرف مفقود في الملف. البديل المعماري الكامل (ActualText لكل كلمة)
+   قرار مستقل. أما **داخل** الشكل الواحد فقد أُصلح ترتيب تفكيكه (§12.1)، فلم
+   يبقَ قلبٌ في لام-ألف.
 3. **التحقق البصري بصور حقيقية**: لم أُصدر PDF ولا رمّزت صفحات في بيئة العمل
    الحالية (لا Flutter/Dart ولا poppler محليًا، والخروج الشبكي محجوب). كل
    التحقق هنا عبر GitHub Actions فقط، ولا أدّعي غيره.
@@ -260,7 +263,7 @@ bodyFormats` و`BranchContent.statementFormats/bodyFormats`. `PaperTextStyle`
 «Analyze, test, and build APK» نجحت، و«Visual regression» نجحت.
 
 - `Analyze`: `No issues found!` (flutter analyze --fatal-infos ضمن الخطوة).
-- `Run required tests`: `passed=743 failed=0 suites=81` (كل ملفات
+- `Run required tests`: `passed=791 failed=0 suites=86` (كل ملفات
   `test/**/*_test.dart` ما عدا المجموعة الموسّعة `iso_*`/`hang_repro`/السيناريو
   الشامل، وهي مجموعة CI المعتمدة).
 - `Canonical gate`: `passed=3 failed=0`.
