@@ -20,6 +20,13 @@ import 'package:writing_questions_app/pdf_engine/pdf_engine.dart';
 
 import 'pdf_content_probe.dart';
 
+/// حرف عربي أساسي (لا حركة ولا علامة ولا شكل عرض): يجب أن يصل مشكَّلاً.
+bool _isArabicBaseLetter(int codePoint) =>
+    (codePoint >= 0x0621 && codePoint <= 0x063F) ||
+    (codePoint >= 0x0641 && codePoint <= 0x064A) ||
+    (codePoint >= 0x066E && codePoint <= 0x06D3) ||
+    (codePoint >= 0x06FA && codePoint <= 0x06FF);
+
 /// النصوص الثلاثة التي أبلغ عنها المستخدم.
 const String _spinningEarth = 'تدور الأرض';
 const String _circularOrbit = 'مدار دائري';
@@ -325,14 +332,15 @@ void main() {
             reason: 'لا يجب أن تُرسم المسافة كمحرف — ${line.describe()}',
           );
 
-          // 3) الحروف وصلت بصيغ العرض العربية (Presentation Forms-B) أي أن
-          //    التشكيل والوصل تمّا فعلاً.
+          // 3) التشكيل وقع فعلاً: لم يبق في الكلمة المرسومة أي حرف عربي
+          //    أساسي. المدى FE70..FEFF ليس تعريفًا (فيه أقواس زخرفية منطقية
+          //    مثل U+FD3E/FD3F)، والحركات لا تُشكَّل فتبقى محارفها.
           for (final codePoint in word.text.codeUnits) {
             expect(
-              codePoint,
-              inInclusiveRange(0xFE70, 0xFEFF),
-              reason: 'الكلمة المرسومة "${word.text}" يجب أن تكون بصيغ العرض '
-                  'العربية المتصلة — ${line.describe()}',
+              _isArabicBaseLetter(codePoint),
+              isFalse,
+              reason: 'بقي حرف عربي غير مشكَّل (${codePoint.toRadixString(16)}) '
+                  'في «${word.text}» — ${line.describe()}',
             );
           }
         }
