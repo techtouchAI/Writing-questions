@@ -107,15 +107,14 @@ class PaperLabels {
     studentName: ExamCatalog.studentNameLabel,
   );
 
-  // TEMP-DEFECT LTR: النصّ العربي داخل ورقة إنجليزية (العطل الأصلي).
   static const PaperLabels english = PaperLabels(
-    administration: ExamCatalog.administrationLabel,
-    examTitlePrefix: ExamCatalog.examTitlePrefix,
-    academicYearPrefix: ExamCatalog.academicYearPrefix,
-    subject: ExamCatalog.subjectLabel,
-    grade: ExamCatalog.gradeLabel,
-    time: ExamCatalog.timeLabel,
-    studentName: ExamCatalog.studentNameLabel,
+    administration: 'Directorate',
+    examTitlePrefix: 'Exam questions',
+    academicYearPrefix: 'Academic year',
+    subject: 'Subject:',
+    grade: 'Grade:',
+    time: 'Time:',
+    studentName: 'Student name:',
   );
 
   static PaperLabels forLtr(bool ltr) => ltr ? english : arabic;
