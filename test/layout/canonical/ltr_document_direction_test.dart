@@ -171,17 +171,29 @@ void main() {
       }
     }
 
-    // الأرقام في الورقة الإنجليزية لاتينية، لا مشرقية. تُطبع الكلمات المخالفة
-    // نفسها في سبب الفشل فتُشخَّص في التشغيل لا بالتخمين.
-    final arabicIndicWords = <String>[
+    // الأرقام التي يولّدها التطبيق (الدرجات والترقيم والعام) لاتينية في ورقة
+    // إنجليزية، ولا تتسرّب أرقام مشرقية إلى سطر لاتيني. أما متن عربي مكتوب في
+    // الورقة الإنجليزية (التركيبة تحمل فقرة عربية للقياس) فأرقامه من المصدر
+    // ولا يجوز «تصحيحها».
+    expect(ltr.formatNumber(20), '20',
+        reason: 'الدالة المركزية لأرقام الورقة تُرجع مشرقياً في ورقة إنجليزية.');
+    final latinLinesWithArabicDigits = <String>[
       for (final page in report.pages)
         for (final line in page.lines)
-          for (final word in line.words)
-            if (word.text.runes.any((rune) => rune >= 0x660 && rune <= 0x669))
-              'ص${page.index + 1}: ${word.text} في سطر [${line.describe()}]',
+          if (line.words.isNotEmpty &&
+              line.words.every((word) =>
+                  !RegExp('[\u0600-\u06FF\uFE70-\uFEFF]')
+                      .hasMatch(word.text)) &&
+              line.words.any((word) => word.text.runes
+                  .any((rune) => rune >= 0x660 && rune <= 0x669)))
+            'ص${page.index + 1}: ${line.describe()}',
     ];
-    expect(arabicIndicWords, isEmpty,
-        reason: 'الورقة الإنجليزية تحمل أرقاماً مشرقية: $arabicIndicWords');
+    expect(latinLinesWithArabicDigits, isEmpty,
+        reason: 'أسطر لاتينية تحمل أرقاماً مشرقية: '
+            '$latinLinesWithArabicDigits');
+    final pageOneWords = report.pages.first.words.map((word) => word.text);
+    expect(pageOneWords, contains('20'),
+        reason: 'درجة السؤال الأول (20) لم تُرسم بالأرقام اللاتينية في PDF.');
 
     // النص ما زال قابل الاستخراج، والتقسيم لم ينكسر.
     final probe = PdfContentProbe.fromBytes(bytes, pageIndex: 0);
