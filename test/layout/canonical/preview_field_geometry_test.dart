@@ -163,24 +163,37 @@ List<_FieldLine> _fieldLines(WidgetTester tester, Finder field) {
     ));
   }
 
-  // حدود الأسطر نصياً: `getLineBoundary` يعطي نهاية كل سطر، فتكون نقاط
-  // الالتفاف نفسها مقروءة لا مستنتجة من العرض.
-  final texts = <String>[];
-  var offset = 0;
-  while (offset < text.length) {
-    final boundary = editable.getLineBoundary(TextPosition(offset: offset));
-    if (boundary.end <= offset) break;
-    texts.add(text.substring(offset, boundary.end));
-    offset = boundary.end;
+  // حدود الأسطر نصياً: `RenderEditable` لا يعطي `getLineBoundary`، فيُستخرج
+  // نصّ كل سطر من صناديق المحارف المفردة (صندوق لكل محرف ← خطّه). هذا يعطي
+  // نقاط الالتفاف نفسها لا استنتاجاً من العرض.
+  final lineTexts = <StringBuffer>[];
+  final lineTops = <double>[];
+  for (var index = 0; index < text.length; index++) {
+    final charBoxes = editable.getBoxesForSelection(
+      TextSelection(baseOffset: index, extentOffset: index + 1),
+    );
+    final top = charBoxes.isEmpty
+        ? (lineTops.isEmpty ? 0.0 : lineTops.last)
+        : charBoxes.first.top;
+    var lineIndex =
+        lineTops.indexWhere((existing) => (existing - top).abs() <= 1.0);
+    if (lineIndex < 0) {
+      lineTops.add(top);
+      lineIndex = lineTops.length - 1;
+    }
+    while (lineTexts.length <= lineIndex) {
+      lineTexts.add(StringBuffer());
+    }
+    lineTexts[lineIndex].write(text[index]);
   }
-  expect(texts.length, boxesPerLine.length,
-      reason: 'عدد حدود الأسطر النصية (${texts.length}) لا يساوي عدد صناديق '
-          'الأسطر المرسومة (${boxesPerLine.length}): القياس غير موثوق.');
+  expect(lineTexts.length, boxesPerLine.length,
+      reason: 'عدد حدود الأسطر النصية (${lineTexts.length}) لا يساوي عدد '
+          'صناديق الأسطر المرسومة (${boxesPerLine.length}): القياس غير موثوق.');
 
   return <_FieldLine>[
     for (var index = 0; index < boxesPerLine.length; index++)
       (
-        text: texts[index],
+        text: lineTexts[index].toString(),
         left: LayoutUnits.pxToPt(boxesPerLine[index].left),
         right: LayoutUnits.pxToPt(boxesPerLine[index].right),
         top: LayoutUnits.pxToPt(boxesPerLine[index].top),

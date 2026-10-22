@@ -99,6 +99,13 @@ void main() {
         isTrue,
         reason: 'المعادلة السطرية أُخرجت من تدفّق النص إلى سطر مستقل: '
             '${lineRuns.map((run) => run.text).toList()}');
+    // تشخيص مقروء في سجلّ CI: أي جريان وأي حدود.
+    // ignore: avoid_print
+    print('[math] سطر المعادلة: '
+        '${lineRuns.map((run) => '"${run.text}":x=${run.x.toStringAsFixed(2)}'
+            '+adv=${run.advance.toStringAsFixed(2)}'
+            'w=${run.width.toStringAsFixed(2)}'
+            '${run.isMath ? ' [math]' : ''}').join(' | ')}');
     for (var index = 0; index + 1 < lineRuns.length; index++) {
       final left = lineRuns[index];
       final right = lineRuns[index + 1];
@@ -180,6 +187,12 @@ void main() {
     expect(mathStyles(formatted), mathStyles(plain),
         reason: 'تنسيق نصّ عادي غيّر نمط أو قياس جريان المعادلة.');
     // والنص المنسّق نفسه تغيّر (فالبوابة ليست عمياء).
+    // ignore: avoid_print
+    print('[math] جريانات «قبل» في النسخة المنسّقة: '
+        '${_runs(formatted, 'قبل').map((run) => run.isMath ? '<math:${run.text}>' : '"${run.text}"${run.style.bold ? '*' : ''}').toList()}');
+    // ignore: avoid_print
+    print('[math] كل الجريانات العريضة: '
+        '${[for (final page in formatted.pages) for (final block in page.blocks) for (final line in block.allLines) ...line.runs.where((run) => run.style.bold).map((run) => '"${run.text}"@${run.semanticNodeId}')].toList()}');
     final formattedText = _runs(formatted, 'قبل')
         .where((run) => !run.isMath && run.style.bold)
         .toList();
