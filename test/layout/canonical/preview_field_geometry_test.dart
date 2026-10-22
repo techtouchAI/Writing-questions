@@ -223,6 +223,22 @@ List<LayoutLine> _canonicalLines(LayoutDocument layout, String nodePrefix) =>
               line,
     ];
 
+/// يسار الكتلة التي تحمل العقدة (أصل الإحداثي الذي تُقاس منه إزاحة المحاذاة).
+/// محاذاة آخر سطر غير مضبوط تتبع اتجاه الفقرة، فتُقارن بإزاحة المحرك لا بافتراض
+/// أن كل فقرة تبدأ من اليسار.
+double _blockLeft(LayoutDocument layout, String nodePrefix) {
+  for (final page in layout.pages) {
+    for (final block in page.blocks) {
+      if (block.allLines.any(
+        (line) => line.runs.any((run) => run.semanticNodeId.startsWith(nodePrefix)),
+      )) {
+        return block.rect.left;
+      }
+    }
+  }
+  fail('لا كتلة تحمل العقدة $nodePrefix.');
+}
+
 /// نصّ السطر القانوني بالترتيب المنطقي (لا المرئي)، مطبَّعاً.
 String _canonicalLineText(LayoutLine line) {
   final runs = line.runs.toList()
@@ -354,7 +370,19 @@ void main() {
               '${line.resolvedWidth.toStringAsFixed(2)}).');
     }
 
-    // (4) التباعد الرأسي: قياس تراكمي بين السطور.
+    // (4) المحاذاة: إزاحة كل سطر داخل العمود كما يقرّرها المحرك نفسه
+    // (المضبوط يبدأ من العمود، والأخير يتبع اتجاه الفقرة).
+    final blockLeft = _blockLeft(canonical, node);
+    for (var index = 0; index < canonicalLines.length; index++) {
+      final expectedLeft = canonicalLines[index].rect.left - blockLeft;
+      expect(fieldLines[index].left, closeTo(expectedLeft, kGeometryTolerancePt),
+          reason: '$key: إزاحة السطر ${index + 1} — '
+              '${fieldLines[index].left.toStringAsFixed(2)}pt في الحقل مقابل '
+              '${expectedLeft.toStringAsFixed(2)}pt (اتجاه السطر '
+              '${canonicalLines[index].direction.name}).');
+    }
+
+    // (5) التباعد الرأسي: قياس تراكمي بين السطور.
     for (var index = 1; index < canonicalLines.length; index++) {
       final fieldGap = fieldLines[index].top - fieldLines[index - 1].top;
       final expectedGap =
@@ -365,7 +393,7 @@ void main() {
               '${expectedGap.toStringAsFixed(2)}pt.');
     }
 
-    // (5) الشروط نفسها ليست عمياء: البوابة تحتاج سطراً مضبوطاً وآخر غير مضبوط.
+    // (6) الشروط نفسها ليست عمياء: البوابة تحتاج سطراً مضبوطاً وآخر غير مضبوط.
     expect(canonicalLines.any((line) => line.isJustified), isTrue,
         reason: '$key: لا سطر مضبوط في المرجع — العيّنة لا تقيس الضبط.');
     expect(canonicalLines.last.isJustified, isFalse,
@@ -459,6 +487,7 @@ void main() {
     expect(fieldLines, hasLength(canonicalLines.length),
         reason: '$key: ${fieldLines.length} سطراً في الحقل مقابل '
             '${canonicalLines.length} قانونياً (LTR).');
+    final blockLeft = _blockLeft(canonical, node);
     for (var index = 0; index < canonicalLines.length; index++) {
       expect(_normalize(fieldLines[index].text),
           _canonicalLineText(canonicalLines[index]),
@@ -470,10 +499,16 @@ void main() {
       expect(actual, closeTo(expected, kGeometryTolerancePt),
           reason: '$key: عرض السطر ${index + 1} (LTR) — '
               '${expected.toStringAsFixed(2)}pt متوقعاً.');
-      // LTR: بداية السطر عند الحافة اليسرى للحقل، لا اليمنى.
-      expect(fieldLines[index].left, lessThan(1.0),
-          reason: '$key: السطر ${index + 1} لا يبدأ من الحافة اليسرى '
-              '(${fieldLines[index].left.toStringAsFixed(2)}pt) — اتجاه غير LTR.');
+      // المحاذاة تتبع قاعدة المحرك للنصّ اللاتيني داخل ورقة عربية: السطر
+      // المضبوط يملأ العمود، والأخير يأخذ إزاحته من اتجاه الفقرة نفسه — لا من
+      // افتراض محلي بأنه يبدأ من اليسار. تطابق الإزاحتين يعني أن الحقل يقرأ
+      // القاعدة نفسها التي يطبعها PDF.
+      final expectedLeft = canonicalLines[index].rect.left - blockLeft;
+      expect(fieldLines[index].left, closeTo(expectedLeft, kGeometryTolerancePt),
+          reason: '$key: إزاحة السطر ${index + 1} — '
+              '${fieldLines[index].left.toStringAsFixed(2)}pt في الحقل مقابل '
+              '${expectedLeft.toStringAsFixed(2)}pt (اتجاه السطر '
+              '${canonicalLines[index].direction.name}).');
     }
   });
 
