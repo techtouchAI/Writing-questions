@@ -183,9 +183,15 @@ RtlShapedRun shapeRtlRun(String input) {
     );
     return RtlShapedRun(
       glyphText: mirroredGlyphs,
-      toUnicodeChars: List<String>.unmodifiable(
-        <String>[for (final rune in shaped.runes) arabicBaseLetters(rune)],
-      ),
+      toUnicodeChars: List<String>.unmodifiable(<String>[
+        for (final rune in shaped.runes)
+          if (arabicBaseLetters(rune).runes.length > 1)
+            String.fromCharCodes(
+              arabicBaseLetters(rune).runes.toList().reversed,
+            )
+          else
+            arabicBaseLetters(rune),
+      ]),
     );
   }
 
@@ -216,7 +222,17 @@ RtlShapedRun shapeRtlRun(String input) {
       }
       // قناة الاستخراج: الشكل المشكَّل يُفكّ إلى حروفه المعجمية كي يجد
       // البحث/النسخ «للعام» لا «ﻟﻠﻌﺎﻡ». الرسم لا يتغيّر: glyphBuffer كما هو.
-      unicodeChars.add(arabicBaseLetters(unicodeRune));
+      //
+      // الترتيب هنا **بصري** كبقية المجرى: الشكل الواحد قد يمثّل حرفين
+      // (لام-ألف: U+FEFB)، فيُكتبان بترتيب المجرى كما يُرسمان كي يعيد القارئ
+      // الكلمة المنطقية كاملة عند إعادة ترتيب السطر — وعكسُ المجرى كله يعطي
+      // النصّ المنطقي حرفًا بحرف.
+      final base = arabicBaseLetters(unicodeRune);
+      unicodeChars.add(
+        base.runes.length > 1
+            ? String.fromCharCodes(base.runes.toList().reversed)
+            : base,
+      );
     }
 
     if (endsWithNewLine) {

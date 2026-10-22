@@ -101,17 +101,13 @@ LayoutDocument _layout(ExamDocument document) {
   );
 }
 
-Iterable<LayoutBlock> _allBlocks(Iterable<LayoutBlock> blocks) sync* {
-  for (final block in blocks) {
-    yield block;
-    yield* _allBlocks(block.children);
-  }
-}
-
 /// كل جريانات الصفحة التي يبدأ معرّفها الدلالي بـ[prefix].
+///
+/// `block.allLines` يجمع الأسطر المتداخلة، فتُقرأ الكتل من مستوى الصفحة فقط
+/// كي لا يُحسب الجريان مرتين.
 List<LayoutRun> _runs(LayoutDocument layout, String prefix) => <LayoutRun>[
       for (final page in layout.pages)
-        for (final block in _allBlocks(page.blocks))
+        for (final block in page.blocks)
           for (final line in block.allLines)
             ...line.runs.where(
               (run) => !run.isMath && run.semanticNodeId.startsWith(prefix),
@@ -356,7 +352,7 @@ void main() {
           TextFormatSpan(start: _onStart, end: _onEnd, bold: true),
         ],
       ));
-      final runs = _runs(layout, 'i1/content');
+      final runs = _runs(layout, 'q1/point/i1/content');
       expect(_joined(runs), _pointText,
           reason: 'تنسيق النقطة غيّر النصّ المرسوم: ${_joined(runs)}');
       final bold = runs.where((run) => run.style.bold == true).toList();
@@ -366,7 +362,7 @@ void main() {
       expect(bold.single.text.trim(), 'عن');
 
       // النقطة الأخرى بقيت بلا تعريض.
-      final other = _runs(layout, 'i2/content');
+      final other = _runs(layout, 'q1/point/i2/content');
       expect(other, isNotEmpty);
       for (final run in other) {
         expect(run.style.bold, isNot(true),
@@ -380,8 +376,9 @@ void main() {
           TextFormatSpan(start: _firstStart, end: _firstEnd, color: _red),
         ],
       ));
-      final optionRuns = _runs(layout, 'i3/').where((run) => run.semanticNodeId
-          .contains('/content')).toList();
+      final optionRuns = _runs(layout, 'q1/point/i3/options/')
+          .where((run) => run.semanticNodeId.contains('/content'))
+          .toList();
       expect(optionRuns, isNotEmpty);
       final colored = optionRuns.where((run) => run.style.colorArgb == _red).toList();
       expect(colored, hasLength(1),

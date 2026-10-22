@@ -20,6 +20,8 @@ import 'dart:io' show File;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:pdf/pdf.dart' show kArabicPresentationFormBase;
+
 import '../pdf_engine/pdf_content_probe.dart';
 
 /// وسوم ASCII تُقرأ من النص المرسوم للبحث عن تسلسل المحتوى.
@@ -191,12 +193,16 @@ class PdfPageStructure {
     return count;
   }
 
-  /// محارف صور تقديمية عربية (Presentation Forms A/B) — يجب أن تكون كلها.
+  /// محارف صور تقديمية عربية **لحروف** في النصّ المستخرَج.
+  ///
+  /// التعريف بالتفكيك لا بالمدى: القوسان الزخرفيان ﴿﴾ ورموز مستقلة أخرى تقع
+  /// داخل كتلتَي العرض لكنها ليست صورًا لحروف، ووجودها في الاستخراج سليم. أما
+  /// ما له تفكيك معجمي (جدول المحرك نفسه) فهو شكل مشكَّل لا يجوز أن يظهر في
+  /// `/ToUnicode` بعد فصل قناة الاستخراج.
   int get presentationFormLetters {
     var count = 0;
     for (final rune in drawnText.runes) {
-      if ((rune >= 0xFB50 && rune <= 0xFDFF) ||
-          (rune >= 0xFE70 && rune <= 0xFEFF)) {
+      if (kArabicPresentationFormBase.containsKey(rune)) {
         count++;
       }
     }
