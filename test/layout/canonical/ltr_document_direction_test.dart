@@ -151,12 +151,24 @@ void main() {
     expectFieldOrder('LTRF1',
         const <String>['End', 'of', 'questions', 'LTRF1']);
 
-    // سطر المتن وسطر عنوان السؤال في عمود واحد، فيُقاس ترتيبهما كاملاً.
+    // سطر المتن وسطر عنوان السؤال في عمود واحد: يُقاس ترتيب الرسم نفسه
+    // (تزايد x بترتيب الإرسال) لا قاعدة تجاور عربية الاتجاه.
+    // (`orderOfLine` يقيس التجاور بفجوة عربية الإشارة، فتُرجع 'single' في سطر
+    // لاتيني — والعطب ليس في الملف بل في المقياس.)
     for (final marker in const <String>['LTROBJ1', 'LTRSTA1']) {
       final line = _pdfLineWith(report, marker);
-      expect(PdfPageStructure.orderOfLine(line), 'ltr',
-          reason: 'السطر الحامل $marker في PDF إنجليزي لا يتقدّم من اليسار: '
+      final words = line.words;
+      expect(words.length, greaterThan(1),
+          reason: 'السطر الحامل $marker بلا كلمات كافية للقياس: '
               '${line.describe()}');
+      for (var index = 0; index + 1 < words.length; index++) {
+        expect(
+          words[index].x,
+          lessThanOrEqualTo(words[index + 1].x + 0.5),
+          reason: 'سطر $marker في PDF إنجليزي لا يتقدّم من اليسار: '
+              '${line.describe()}',
+        );
+      }
     }
 
     // الأرقام في الورقة الإنجليزية لاتينية، لا مشرقية.

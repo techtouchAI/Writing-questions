@@ -610,20 +610,15 @@ class ExamWizardController extends ChangeNotifier {
   void updateQuestionBodyAlign(int index, PaperAlign? align) {
     RangeError.checkValidIndex(index, questions, 'index');
     final question = questions[index];
-    // المحاذاة فقرة لا محارف: تغيير محاذاة النصّ لا يجوز أن يحرّك محاذاة
-    // عنوان السؤال. محاذاة العنوان الفعلية كانت `titleAlign ?? style.align`،
-    // فتُثبَّت صراحةً قبل كتابة `style.align` (كتابة واحدة = خطوة تراجع واحدة).
-    final previousTitleAlign = question.titleAlign ?? question.style.align;
-    if (question.bodyAlign == align && question.style.align == align) {
+    // المحاذاة فقرة لا محارف: `bodyAlign` يخصّ فقرة النصّ وحدها ولا يُكتب في
+    // `style.align`، فمحاذاة العنوان (`titleAlign ?? style.align`) لا تتحرك —
+    // وكانت تتحرك حين كان العقد الحقل الوحيد. كتابة حقل واحد = خطوة تراجع واحدة.
+    if (question.bodyAlign == align) {
       return;
     }
     _commit(_document.withQuestionAt(
       index,
-      question.copyWith(
-        bodyAlign: () => align,
-        titleAlign: () => previousTitleAlign,
-        style: question.style.copyWith(align: () => align),
-      ),
+      question.copyWith(bodyAlign: () => align),
     ));
   }
 
@@ -659,30 +654,31 @@ class ExamWizardController extends ChangeNotifier {
   /// `null` (توافق المستندات المحفوظة قبل الفصل).
   void updateBranchTitleAlign(BranchRef ref, PaperAlign? align) {
     final branch = _document.branchAt(ref);
-    if (branch.titleAlign == align) {
+    if (branch.titleAlign == align && branch.style.align == align) {
       return;
     }
+    // `style.align` يبقى «المحاذاة الافتراضية للفرع» (يقرأها العنوان عبر
+    // `titleAlign ?? style.align`)، ويُكتب مع `titleAlign` في commit واحد.
     _commit(
-      _document.withBranchAt(ref, branch.copyWith(titleAlign: () => align)),
+      _document.withBranchAt(
+        ref,
+        branch.copyWith(
+          titleAlign: () => align,
+          style: branch.style.copyWith(align: () => align),
+        ),
+      ),
     );
   }
 
   /// محاذاة نصّ الفرع وحدها (فقرة النص)، مع تثبيت محاذاة عنوانه الحالية.
   void updateBranchBodyAlign(BranchRef ref, PaperAlign? align) {
     final branch = _document.branchAt(ref);
-    if (branch.bodyAlign == align && branch.style.align == align) {
+    if (branch.bodyAlign == align) {
       return;
     }
-    final previousTitleAlign = branch.titleAlign ?? branch.style.align;
+    // فقرة النصّ وحدها: `style.align` (المشترك مع العنوان) لا يُمسّ.
     _commit(
-      _document.withBranchAt(
-        ref,
-        branch.copyWith(
-          bodyAlign: () => align,
-          titleAlign: () => previousTitleAlign,
-          style: branch.style.copyWith(align: () => align),
-        ),
-      ),
+      _document.withBranchAt(ref, branch.copyWith(bodyAlign: () => align)),
     );
   }
 

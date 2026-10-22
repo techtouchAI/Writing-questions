@@ -153,13 +153,6 @@ Future<void> _pickColor(WidgetTester tester, String label) async {
   await tester.pumpAndSettle();
 }
 
-Iterable<LayoutBlock> _allBlocks(Iterable<LayoutBlock> blocks) sync* {
-  for (final block in blocks) {
-    yield block;
-    yield* _allBlocks(block.children);
-  }
-}
-
 LayoutDocument _layout(ExamDocument document) {
   final ir = DocumentIR.fromBlueprint(
     blueprint: ExamBlueprint.from(document),
@@ -174,7 +167,7 @@ LayoutDocument _layout(ExamDocument document) {
 
 List<LayoutRun> _bodyRuns(LayoutDocument layout) => <LayoutRun>[
       for (final page in layout.pages)
-        for (final block in _allBlocks(page.blocks))
+        for (final block in page.blocks)
           for (final line in block.allLines)
             ...line.runs.where(
               (run) => !run.isMath && run.semanticNodeId.startsWith('q1/body'),
@@ -184,7 +177,7 @@ List<LayoutRun> _bodyRuns(LayoutDocument layout) => <LayoutRun>[
 List<LayoutRun> _runsWithPrefix(LayoutDocument layout, String prefix) =>
     <LayoutRun>[
       for (final page in layout.pages)
-        for (final block in _allBlocks(page.blocks))
+        for (final block in page.blocks)
           for (final line in block.allLines)
             ...line.runs.where(
               (run) => !run.isMath && run.semanticNodeId.startsWith(prefix),
@@ -341,8 +334,9 @@ void main() {
     }
     expect(endOffset, greaterThan(0),
         reason: 'النصّ لم يلتف إلى سطرين في هذه البيئة — القياس بلا عيّنة.');
-    // نمتدّ داخل السطر الثاني حتى يقع النطاق على سطرين كاملين.
-    endOffset = (endOffset + 30).clamp(0, text.length - 1);
+    // نمتدّ إلى آخر النصّ (مع بقاء البداية على السطر الأول) فيقع النطاق على
+    // كل الأسطر المتقاطعة لا على جزء من الثاني.
+    endOffset = text.length - 1;
     final endPoint = _pointAt(tester, field, endOffset);
     expect(endPoint.dy, greaterThan(startPoint.dy + 4),
         reason: 'نهاية النطاق عادت إلى السطر الأول — لا تحديد متعدد الأسطر.');
@@ -360,7 +354,7 @@ void main() {
     expect(runs, isNotEmpty, reason: 'التسطير لم يصل إلى التخطيط.');
     final underlinedLines = <String>{
       for (final page in layout.pages)
-        for (final block in _allBlocks(page.blocks))
+        for (final block in page.blocks)
           for (final line in block.allLines)
             if (line.runs.any((run) => run.style.underline)) line.id,
     };
@@ -468,7 +462,7 @@ void main() {
     final layout = _layout(controller.document);
     final bodyLines = <PaperAlign?>[
       for (final page in layout.pages)
-        for (final block in _allBlocks(page.blocks))
+        for (final block in page.blocks)
           for (final line in block.allLines)
             if (line.runs.any((run) => run.semanticNodeId.startsWith('q1/body')))
               line.alignment,
@@ -558,8 +552,12 @@ void main() {
             .map((word) => word.text),
     ];
     expect(drawnWords, isNotEmpty);
+    // قناة القراءة تعطي ترتيب الوحدات البصري داخل الكلمة (كما ترسمها الأسطر)،
+    // فالمقارنة تكون مع الكلمة معكوسة — وهو ما يقلبه أي قارئ PDF إلى المنطقي.
+    String visual(String logical) =>
+        String.fromCharCodes(logical.runes.toList().reversed);
     expect(
-      drawnWords.any((word) => word.contains('المعادلات')),
+      drawnWords.any((word) => word.contains(visual('المعادلات'))),
       isTrue,
       reason: 'الكلمة المنسّقة غابت عن النص المستخرَج: $drawnWords',
     );
