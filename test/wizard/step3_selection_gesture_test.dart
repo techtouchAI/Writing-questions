@@ -360,9 +360,19 @@ void main() {
           for (final line in block.allLines)
             if (line.runs.any((run) => run.style.underline)) line.id,
     };
+    final layoutDump = <String>[
+      'formats=${controller.document.questions.single.bodyFormats}',
+      'selection=${selection.start}..${selection.end} len=${text.length}',
+      for (final page in layout.pages)
+        for (final block in page.blocks)
+          if (block.allLines.isNotEmpty)
+            '${block.id}: ${block.allLines.map((line) => '${line.id}'
+                '[${line.runs.map((run) => '${run.style.underline ? 'U' : '-'}'
+                    '${run.text.trim()}').join('|')}]').join(' / ')}',
+    ].join('\n');
     expect(underlinedLines.length, greaterThanOrEqualTo(2),
         reason: 'التحديد عبر السطور لم يُسطّر إلا ${underlinedLines.length} '
-            'سطراً — النطاق لم يُقس على كل الأسطر المتقاطعة.');
+            'سطراً — النطاق لم يُقس على كل الأسطر المتقاطعة.\n$layoutDump');
   });
 
   testWidgets('تحديد السؤال كاملًا: التعريض يشمل المتن ولا يمسّ النقاط',
