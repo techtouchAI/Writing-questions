@@ -314,6 +314,18 @@ void main() {
         reason: 'لا أسطر قانونية لـ$node: القياس بلا مرجع.');
     diagnose(key, tester, field, _arabicBody, fieldLines, canonicalLines);
 
+    // (0) العمود نفسه: عرض حقل التحرير = عرض عمود النصّ القانوني. الفرق هنا
+    // يعني أن ما يُرسم على الشاشة يُلفّ في عمود غير العمود المطبوع (كان
+    // `padding: 1` لمؤشّر التحديد يضيّقه 2px ما دام السؤال محدَّداً).
+    expect(
+      LayoutUnits.pxToPt(tester.getSize(field).width),
+      closeTo(canonical.pages.first.bodyBounds.width, kGeometryTolerancePt),
+      reason: '$key: عمود الحقل '
+          '${LayoutUnits.pxToPt(tester.getSize(field).width).toStringAsFixed(2)}pt '
+          'مقابل عمود التخطيط '
+          '${canonical.pages.first.bodyBounds.width.toStringAsFixed(2)}pt.',
+    );
+
     // (1) عدد الأسطر: تساوٍ تام.
     expect(fieldLines, hasLength(canonicalLines.length),
         reason: '$key: ${fieldLines.length} سطراً في الحقل مقابل '

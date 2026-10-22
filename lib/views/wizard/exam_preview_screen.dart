@@ -5355,16 +5355,30 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       ),
       child: block,
     );
-    block = Container(
-      padding: EdgeInsets.all(selected ? 1 : 0),
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: selected ? PaperStyles.primary.withOpacity(0.45) : Colors.transparent,
-          width: selected ? 1 : 0,
-        ),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: block,
+    // مؤشّر التحديد **لا يغيّر الهندسة**: كان `padding: EdgeInsets.all(1)`
+    // عند التحديد يضيّق عمود نصّ السؤال 2px (1.5pt)، فينكسر السطر في موضع
+    // آخر ما دام السؤال محدَّداً/قيد التحرير ثم يعود عند إلغاء التحديد —
+    // وهو بالضبط نوع الاختلاف الذي تُلاحقه بوابة preview_field_geometry.
+    // فيُرسم الإطار كطبقة عليا (بلا حشوة) داخل `Stack` موجود في الحالتين،
+    // فلا تتغيّر سلسلة العناصر التي يعتمد عليها ثبات التركيز والكتابة.
+    block = Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        block,
+        if (selected)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: PaperStyles.primary.withOpacity(0.45),
+                  ),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
 
     // حافظ على حجز المساحة للمرفقات القديمة فقط. العناصر المسجّلة على
