@@ -552,10 +552,36 @@ void main() {
 
       final fieldCenter = (fieldLine.left + fieldLine.right) / 2;
       final canonicalCenter = (runLeft + runRight) / 2 - blockLeft;
-      expect(fieldCenter, closeTo(canonicalCenter, kGeometryTolerancePt),
+      // المركز يُقارن بين محرّكين كلاهما يقيس حبر المحارف، فتُضاف فروق
+      // الحبر غير المتماثلة (2.5pt) ولا يُرخّص العرض ولا نقاط الالتفاف.
+      expect(fieldCenter, closeTo(canonicalCenter, kInkTolerancePt),
           reason: '$key: مركز السطر ${fieldCenter.toStringAsFixed(2)}pt في '
               'الحقل مقابل ${canonicalCenter.toStringAsFixed(2)}pt في '
               'التخطيط القانوني.');
+
+      // والشروط الهندسية الصارمة داخل الحقل نفسه: يسار = حدّ العمود الأيسر،
+      // يمين = حدّه الأيمن، وسط = منتصف الفراغ، والضبط لسطر واحد = اليسار.
+      final column = LayoutUnits.pxToPt(tester.getSize(field).width);
+      final lineWidth = fieldLine.right - fieldLine.left;
+      switch (align) {
+        case PaperAlign.left:
+        case PaperAlign.justify:
+          expect(fieldLine.left,
+              closeTo(0, kGeometryTolerancePt),
+              reason: '$key: السطر لا يبدأ من حدّ العمود الأيسر.');
+        case PaperAlign.right:
+          expect(fieldLine.right, closeTo(column, kGeometryTolerancePt),
+              reason: '$key: السطر لا ينتهي عند حدّ العمود الأيمن '
+                  '(${fieldLine.right.toStringAsFixed(2)} مقابل '
+                  '${column.toStringAsFixed(2)}pt).');
+        case PaperAlign.center:
+          expect(fieldLine.left, closeTo((column - lineWidth) / 2,
+              kGeometryTolerancePt),
+              reason: '$key: السطر غير متمركز في العمود.');
+        case PaperAlign.start:
+        case PaperAlign.end:
+          break;
+      }
 
       if (align == PaperAlign.left || align == PaperAlign.justify) {
         expect(fieldLine.left, closeTo(runLeft - blockLeft, kInkTolerancePt),
