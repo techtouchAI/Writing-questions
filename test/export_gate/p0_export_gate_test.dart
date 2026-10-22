@@ -2159,9 +2159,11 @@ void main() {
     expect(latinLeak, isEmpty,
         reason: 'أسطر لاتينية تحمل صوراً تقديمية عربية (تسرّب تشكيل إلى '
             'LTR): ${latinLeak.take(4).toList()}');
-    // الترويسة/التذييل في الورقة الإنجليزية يُرسمان RTL (جداول المنتج)، وهذا
-    // انحدار قائم بذاته لا يقيسه فحص المتن: يُطبع ويُسجَّل، ولا يُحذف لتبيضّ
-    // البوابة.
+    // الترويسة/التذييل في الورقة الإنجليزية: اتجاههما يُشتق من اتجاه المستند
+    // في `DocumentIR` (لا يُثبَّت في الراسم)، فهما يجب أن يُرسمَا من اليسار.
+    // سطر مختلط يحمل تسمية عربية وقيمة إنجليزية لا يُعدّ انحداراً — الكتلة
+    // العربية داخله تُرسم من اليمين بحكم UAX #9 — لكن السطر كلّه يجب ألا
+    // يُرسَم معكوساً لأنه في مستند إنجليزي.
     final sideLinesRtl = <String>[];
     for (final page in report.pages) {
       for (final line in page.lines) {
@@ -2179,31 +2181,17 @@ void main() {
         break;
       }
     }
-    if (sideLinesRtl.isNotEmpty) {
-      _stage('ورقة LTR: ترويسة/تذييل يُرسمان من اليمين — ${sideLinesRtl.first}');
-      _matrix.record('ltr-document', P0Path.vectorPdf, P0Status.deferredToP1,
-          evidence: 'سطور الترويسة/التذييل في vector_ltr.pdf تُرسم بترتيب '
-              'RTL (مثال مقيس: ${sideLinesRtl.first}) مع أن المستند إنجليزي؛ '
-              'أسطر المتن اللاتينية تُرسم ltr بلا تسرّب',
-          reason: 'اتجاه الترويسة والتذييل لا يُشتق من اتجاه المستند في '
-              'PdfPaperBuilder؛ تصحيحه طبقة اتجاه واحدة لكل كتلة '
-              '(P1 BLOCKERS بند 4) ولا يُصلَح في P0 المغلقة على A–F.');
-    }
-    if (arabicOrdering.isNotEmpty) {
-      _stage('ورقة LTR: أسطر عربية لا تُرسم من اليمين '
-          '(${arabicOrdering.length}): ${arabicOrdering.take(3).toList()}');
-      _matrix.record('ltr-document', P0Path.vectorPdf,
-          P0Status.deferredToP1,
-          evidence: '${arabicOrdering.length} سطراً عربياً في الورقة '
-              'الإنجليزية لا يتقدّم من اليمين (مثال: '
-              '${arabicOrdering.first})',
-          reason: 'اتجاه الفقرة يُستنتج من اتجاه المستند لا من النص نفسه في '
-              'PDF؛ تصحيحه طبقة اتجاه واحدة (P1 BLOCKERS بند 4) لا رقعة هنا.');
-    }
+    expect(sideLinesRtl, isEmpty,
+        reason: 'الورقة الإنجليزية تُرسم ترويستها/تذييلها من اليمين: '
+            '${sideLinesRtl.take(4).toList()}');
+    expect(arabicOrdering, isEmpty,
+        reason: 'أسطر عربية في الورقة الإنجليزية لا تتقدّم من اليمين '
+            '(${arabicOrdering.length}): ${arabicOrdering.take(4).toList()}');
 
     _matrix.record('ltr-document', P0Path.vectorPdf, P0Status.pass,
         evidence: '${report.pageCount} صفحة، ${ltrOrder.length} وسمًا '
-            'بترتيب العقد، ترتيب الكلمات ltr، لا تشكيل/أرقام مشرقية');
+            'بترتيب العقد، ترتيب الكلمات ltr، ترويسة/تذييل ltr، الأسطر '
+            'العربية rtl، لا تشكيل/أرقام مشرقية على سطر لاتيني');
     _matrix.record('ltr-document', P0Path.preview, P0Status.pass,
         evidence: 'المعاينة الإنجليزية: ${_gate.ltrPreviewPageCount} صفحة، '
             'و${_gate.previewLtr.length} كتلة مقاسة');
