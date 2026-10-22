@@ -570,7 +570,6 @@ void main() {
       final lineWidth = canonicalLine.naturalWidth;
       switch (align) {
         case PaperAlign.left:
-        case PaperAlign.justify:
           expect(fieldLine.left, closeTo(0, kInkTolerancePt),
               reason: '$key: السطر لا يبدأ من حدّ العمود الأيسر.');
         case PaperAlign.right:
@@ -582,6 +581,13 @@ void main() {
           expect(fieldLine.left, closeTo((column - lineWidth) / 2,
               kInkTolerancePt),
               reason: '$key: السطر غير متمركز في العمود.');
+        case PaperAlign.justify:
+          // الضبط لا يمدّ فقرة من سطر واحد: السطر يبقى بعرضه الطبيعي، وموضعه
+          // يتبع بداية الفقرة (يمين في RTL) — يقابله فحص المركز أعلاه وفحص
+          // العرض هنا، بلا افتراض أن البداية يسارية.
+          expect(fieldLine.right - fieldLine.left,
+              closeTo(canonicalLine.naturalWidth, kGeometryTolerancePt),
+              reason: '$key: الضبط مدّ فقرة من سطر واحد.');
         case PaperAlign.start:
         case PaperAlign.end:
           break;
@@ -605,10 +611,6 @@ void main() {
     expect(lefts[PaperAlign.center]! + kGeometryTolerancePt,
         lessThan(lefts[PaperAlign.right]!),
         reason: 'محاذاة اليمين لم تُحرّك السطر عن الوسط.');
-    // والفقرة القصيرة لا تُمَدّ في الضبط.
-    expect(lefts[PaperAlign.justify]!,
-        closeTo(lefts[PaperAlign.left]!, kInkTolerancePt),
-        reason: 'الضبط مدّ فقرة من سطر واحد.');
   });
 
   test('لا يُعاد إدخال توسعة ضبط يدوية ولا استثناء قياس', () {
