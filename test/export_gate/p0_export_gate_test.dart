@@ -2228,6 +2228,19 @@ void main() {
     expect(reasonless, isEmpty,
         reason: 'خلايا DEFERRED_TO_P1 بلا سبب مسمّى: ${reasonless.join(", ")}');
 
+    // محاذاة الطرفين والورقة الإنجليزية **ليستا مؤجَّلتين**: هما مطلوبتان في
+    // الإصدار الحالي، فلا يجوز أن تكون خلاياهما `deferredToP1` — التاجيل هنا
+    // يعني إسقاط المتطلب لا تأجيل تحسين.
+    final requiredNow = <String>['justification', 'ltr-document'];
+    final stillDeferred = <String>[
+      for (final key in requiredNow)
+        for (final path in P0Path.values)
+          if (_matrix.cell(key, path)?.status == P0Status.deferredToP1)
+            '$key/${p0PathLabel(path)}',
+    ];
+    expect(stillDeferred, isEmpty,
+        reason: 'خلايا مطلوبة الآن ما زالت مؤجَّلة: ${stillDeferred.join(", ")}');
+
     _writeText('summary.txt', <String>[
       'مصفوفة بوابة P0 — ${kP0Features.length} ميزة × ${P0Path.values.length} ممرّات',
       _matrix.toTextTable(),
