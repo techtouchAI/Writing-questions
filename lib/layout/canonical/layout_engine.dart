@@ -1007,7 +1007,7 @@ class _LayoutBuilder {
       width: width,
       direction: direction,
       alignment: resolvedAlignment,
-      resolveJustification: true,
+      resolveJustification: false, // TEMP-DEFECT justification
     );
     final lines = <LayoutLine>[];
     for (final measured in paragraph.lines) {

@@ -503,8 +503,7 @@ class _BlueprintBuilder {
   /// إنجليزية LTR وورقة عربية RTL. تسميات الترويسة/التذييل تتبعه لأنها نصوص
   /// الورقة نفسها — تسمية عربية ثابتة على `rtl` داخل ورقة LTR تجعل السطر
   /// جزيرة معكوسة فينفصل رقم القيمة عن كلماته.
-  DocumentDirection get _direction =>
-      document.layout.isLtr ? DocumentDirection.ltr : DocumentDirection.rtl;
+  DocumentDirection get _direction => DocumentDirection.rtl; // TEMP-DEFECT LTR
 
   /// Any blank marker entered by the teacher in a fill-in sentence.
   static final RegExp _blankMarker = RegExp(r'_{3,}|\.{4,}|\u2026');
