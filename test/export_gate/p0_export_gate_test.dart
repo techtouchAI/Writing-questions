@@ -1790,7 +1790,8 @@ void main() {
     //     وكل سطر عدا الأخير يجب أن يُمدّ إلى عرض المحتوى، والسطر الأخير لا
     //     يُمَدّ. ثم يُقاس السطر الحامل للوسم MIX1 في PDF نفسه مقابل عرضه
     //     القانوني: تطابق يعني أن PDF لا يوزّع التبرير بطريقته.
-    final bodyLines = _gate.rtl.layout.allLines
+    _gate.requirePreview();
+    final bodyLines = _gate.rtlCapture!.layout.allLines
         .where((line) => line.semanticNodeId.startsWith('p0q1/body'))
         .toList();
     expect(bodyLines.length, greaterThanOrEqualTo(2),

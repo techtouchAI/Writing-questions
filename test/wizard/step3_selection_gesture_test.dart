@@ -18,7 +18,6 @@ import 'package:writing_questions_app/layout/canonical/exam_document_layout_adap
 import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart';
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/canonical/layout_engine.dart';
-import 'package:writing_questions_app/layout/document_direction.dart';
 import 'package:writing_questions_app/layout/document_ir.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
@@ -26,12 +25,10 @@ import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
-import 'package:writing_questions_app/models/text_format_span.dart';
 import 'package:writing_questions_app/pdf_engine/exam_fonts.dart';
 import 'package:writing_questions_app/pdf_engine/paginated_pdf_exam_engine.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
-import 'package:writing_questions_app/views/wizard/preview_toolbar.dart';
 
 import '../pdf_engine/pdf_content_probe.dart';
 
@@ -102,12 +99,8 @@ RenderEditable _editable(WidgetTester tester, Finder field) {
 /// (لا إحداثيات ثابتة)، فتعمل مع أي مقاس خط أو التفاف.
 Offset _pointAt(WidgetTester tester, Finder field, int offset) {
   final editable = _editable(tester, field);
-  final local = editable.getOffsetForCaret(
-    TextPosition(offset: offset),
-    Rect.zero,
-  );
-  final lineHeight = editable.preferredLineHeight;
-  return editable.localToGlobal(local + Offset(2, lineHeight / 2));
+  final caret = editable.getLocalRectForCaret(TextPosition(offset: offset));
+  return editable.localToGlobal(caret.center + const Offset(1, 0));
 }
 
 Future<void> _focus(WidgetTester tester, Finder field) async {
