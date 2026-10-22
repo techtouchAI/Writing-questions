@@ -405,7 +405,7 @@ void main() {
               line.id,
     };
     expect(selectedLineIds.length, greaterThanOrEqualTo(2),
-        reason: 'التخطيط لا يحمل النطاق المحدَّد على سطرين (${selectedLineIds})'
+        reason: 'التخطيط لا يحمل النطاق المحدَّد على سطرين ($selectedLineIds)'
             '\n$layoutDump');
     expect(underlinedLines, containsAll(selectedLineIds),
         reason: 'أسطر داخل التحديد لم تُسطَّر: '
