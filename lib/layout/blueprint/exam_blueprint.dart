@@ -850,7 +850,10 @@ class _BlueprintBuilder {
               SeparatorNode(')', role: SeparatorRole.punctuation),
             ]
           : const <SeparatorNode>[],
-      content: InlineContent.fromSource(option.text.trim()),
+      content: InlineContent.fromSource(
+        option.text.trim(),
+        formats: TextFormatSpans.forTrimmed(option.formats, option.text),
+      ),
     );
   }
 
@@ -884,7 +887,10 @@ class _BlueprintBuilder {
       labelSeparator: manualLabel == null
           ? const SeparatorNode('-', role: SeparatorRole.item)
           : null,
-      content: InlineContent.fromSource(text),
+      content: InlineContent.fromSource(
+        text,
+        formats: TextFormatSpans.forTrimmed(item.textFormats, item.text),
+      ),
       trailerContent: text.isEmpty || _trailer(item, text) == null
           ? null
           : InlineContent.literal(_trailer(item, text)!),

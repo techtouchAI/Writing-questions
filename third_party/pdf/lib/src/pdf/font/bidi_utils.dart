@@ -1,6 +1,7 @@
 import 'package:bidi/bidi.dart' as bidi;
 
 import 'arabic.dart' as arabic;
+import 'arabic_forms.dart';
 /*
  * Copyright (C) 2017, David PHAM-VAN <dev.nfet.net@gmail.com>
  *
@@ -80,24 +81,42 @@ const Map<int, int> basicToIsolatedMappings = {
   0x0629: 0xFE93, // ة
 };
 
-/// Visual glyph sequence paired with its aligned `/ToUnicode` character
-/// sequence for a single right-to-left run.
+/// Visual glyph sequence paired with its aligned `/ToUnicode` text for a
+/// single right-to-left run.
 class RtlShapedRun {
   const RtlShapedRun({
     required this.glyphText,
-    required this.toUnicodeText,
+    required this.toUnicodeChars,
   });
+
+  /// Visual glyph characters paired with `/ToUnicode` by position: one entry
+  /// per glyph, each entry the **logical** text that glyph renders.
+  ///
+  /// The entry is usually one character — the base letter the glyph was shaped
+  /// from, or the original bracket a mirrored glyph stands for (UAX #9 Rule
+  /// L4) — and occasionally several: a lam-alef glyph (U+FE70..U+FEFF) renders
+  /// two base letters, and a few presentation ligatures render a whole word.
+  /// `/ToUnicode` maps one CID to a UTF-16 string, so both cases are exact.
+  ///
+  /// This is the extraction channel only: the glyph outlines, advances and
+  /// subsetting are selected by [glyphText] and stay untouched, so a run's ink
+  /// is identical whether or not this channel is logical.
+  final List<String> toUnicodeChars;
 
   /// Visual-order characters selecting the rendered font glyphs (including
   /// Unicode UAX #9 Rule L4 `Bidi_Mirrored_Glyph` substitutions at odd
   /// embedding levels).
   final String glyphText;
 
-  /// Visual-order Unicode characters written to the PDF `/ToUnicode` CMap so
-  /// text extraction, search, copy/paste, and structural probes preserve the
-  /// exact logical bracket characters (`U+0028` / `U+0029`, etc.) while still
-  /// keeping Arabic Presentation Forms for joined letters.
-  final String toUnicodeText;
+  /// The logical text of the whole run, one string per glyph joined in visual
+  /// order — the legacy single-string view of [toUnicodeChars]. Callers that
+  /// write a single character per CID may use it; the canonical emitter uses
+  /// [toUnicodeChars] so ligatures keep every base letter.
+  String get toUnicodeText => toUnicodeChars.join();
+
+  /// One-character-per-glyph `toUnicodeChars` for plain text (no shaping).
+  static List<String> identityChars(String text) =>
+      <String>[for (final rune in text.runes) String.fromCharCode(rune)];
 }
 
 bool _hasArabicScript(String input) => input.runes.any((rune) =>
@@ -144,7 +163,10 @@ const Map<int, int> _rtlMirroredGlyphPairs = <int, int>{
 ///    even-level LTR sub-runs stay unmirrored automatically.
 RtlShapedRun shapeRtlRun(String input) {
   if (input.isEmpty) {
-    return const RtlShapedRun(glyphText: '', toUnicodeText: '');
+    return const RtlShapedRun(
+      glyphText: '',
+      toUnicodeChars: <String>[],
+    );
   }
 
   final bidi.BidiString bidiText;
@@ -159,11 +181,16 @@ RtlShapedRun shapeRtlRun(String input) {
     final mirroredGlyphs = String.fromCharCodes(
       shaped.runes.map((rune) => _rtlMirroredGlyphPairs[rune] ?? rune),
     );
-    return RtlShapedRun(glyphText: mirroredGlyphs, toUnicodeText: shaped);
+    return RtlShapedRun(
+      glyphText: mirroredGlyphs,
+      toUnicodeChars: List<String>.unmodifiable(
+        <String>[for (final rune in shaped.runes) arabicBaseLetters(rune)],
+      ),
+    );
   }
 
   final glyphBuffer = <int>[];
-  final unicodeBuffer = <int>[];
+  final unicodeChars = <String>[];
   final paragraphs = bidiText.paragraphs;
   for (var pIdx = 0; pIdx < paragraphs.length; pIdx++) {
     final paragraph = paragraphs[pIdx];
@@ -187,18 +214,20 @@ RtlShapedRun shapeRtlRun(String input) {
           }
         }
       }
-      unicodeBuffer.add(unicodeRune);
+      // قناة الاستخراج: الشكل المشكَّل يُفكّ إلى حروفه المعجمية كي يجد
+      // البحث/النسخ «للعام» لا «ﻟﻠﻌﺎﻡ». الرسم لا يتغيّر: glyphBuffer كما هو.
+      unicodeChars.add(arabicBaseLetters(unicodeRune));
     }
 
     if (endsWithNewLine) {
       glyphBuffer.add(10);
-      unicodeBuffer.add(10);
+      unicodeChars.add('\n');
     }
   }
 
   return RtlShapedRun(
     glyphText: String.fromCharCodes(glyphBuffer),
-    toUnicodeText: String.fromCharCodes(unicodeBuffer),
+    toUnicodeChars: List<String>.unmodifiable(unicodeChars),
   );
 }
 

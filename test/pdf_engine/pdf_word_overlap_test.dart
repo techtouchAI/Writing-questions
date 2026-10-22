@@ -20,7 +20,6 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
@@ -78,13 +77,9 @@ void main() {
     pdfBytes = await engine.generate(document: document, fonts: fonts);
   });
 
-  /// الكلمة بشكلها المشكّل كما ستُكتب في PDF: نرسمها وحدها بنفس الخط والاتجاه.
-  Future<String> shaped(String text) async {
-    final probe = PdfContentProbe.fromBytes(await _renderSingleWord(fonts, text));
-    expect(probe.words, isNotEmpty,
-        reason: 'لم تُرسم كلمة القياس "$text" — تعذّر بناء العيّنة.');
-    return probe.words.first.text;
-  }
+  /// الكلمة كما يكتبها المحرك في قناة `/ToUnicode`: حروف معجمية بترتيب بصري.
+  /// هذا ما يقرؤه القارئ منها (وليس الشكل المشكَّل) بعد إصلاح قناة الاستخراج.
+  String shaped(String text) => shapeRtlRun(text).toUnicodeText;
 
   group('نصّ PDF مطابق لعقد الكلمات في التخطيط', () {
     test('لا كلمتان متجاورتان تتراكبان في أي سطر من أي صفحة', () {
@@ -119,10 +114,10 @@ void main() {
         () async {
       final probe = PdfContentProbe.fromBytes(pdfBytes, pageIndex: 0);
       final tokens = <String>[
-        await shaped('بسم'),
-        await shaped('الله'),
-        await shaped('الرحمن'),
-        await shaped('الرحيم'),
+        shaped('بسم'),
+        shaped('الله'),
+        shaped('الرحمن'),
+        shaped('الرحيم'),
       ];
       final line = probe.lineWithWord(tokens.first);
       expect(line, isNotNull,
@@ -233,15 +228,3 @@ int _canonicalWordCount(LayoutDocument layout) {
   return count;
 }
 
-Future<Uint8List> _renderSingleWord(ExamFonts fonts, String text) async {
-  final document = pw.Document();
-  document.addPage(
-    pw.Page(
-      pageFormat: PdfPageFormat.a4,
-      textDirection: pw.TextDirection.rtl,
-      theme: pw.ThemeData.withFont(base: fonts.regular, bold: fonts.bold),
-      build: (context) => pw.Text(text),
-    ),
-  );
-  return document.save();
-}

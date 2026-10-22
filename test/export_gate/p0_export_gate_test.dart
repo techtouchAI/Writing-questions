@@ -848,28 +848,6 @@ List<RenderRepaintBoundary> _pageBoundaries(WidgetTester tester) => tester
         boundary.size.height < ExamCanvasGeometry.height + 1)
     .toList(growable: false);
 
-/// أمثلة على محارف عربية غير مشكَّلة رسُمت في PDF (للتشخيص لا للافتراض).
-List<String> _unshapedSamples(String drawnText) {
-  final samples = <String>[];
-  final buffer = StringBuffer();
-  for (final unit in drawnText.codeUnits) {
-    final unshaped = unit >= 0x0621 && unit <= 0x064A;
-    if (unshaped) {
-      buffer.writeCharCode(unit);
-    } else if (buffer.isNotEmpty) {
-      samples.add(buffer.toString());
-      buffer.clear();
-      if (samples.length >= 4) {
-        return samples;
-      }
-    }
-  }
-  if (buffer.isNotEmpty) {
-    samples.add(buffer.toString());
-  }
-  return samples;
-}
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -1377,26 +1355,36 @@ void main() {
         reason: 'أسطر عربية لا تتقدّم x فيها تنازلياً (ترتيب كلمات غير RTL): '
             '$notRtl');
 
-    // كل محرف عربي مرسوم يجب أن يكون صورة تقديمية (تشكيل) لا محرفاً معجمياً.
-    var shaped = 0;
-    var unshaped = 0;
+    // التشكيل خاصية **رسم**، و`/ToUnicode` قناة **استخراج** — وقد فُصلتا في
+    // هذه الدفعة: القناة تُكتب الآن بحروف معجمية كي يجد البحث/النسخ «الرحمن»
+    // بدل «ﺍﻟﺮﺣﻤﻦ». فالقياس هنا صار على الاستخراج (صفر أشكال عرض، وحروف
+    // معجمية بالقدر المتوقع)، والتشكيل يُقاس حيث يقع فعلًا: قناة الرسم
+    // (`shapeRtlRun(...).glyphText`) في test/pdf_engine/rtl_to_unicode_test.dart،
+    // ومعه بوابتا الهندسة (pdf_glyph_overlap) والتحقق البصري اللتان تثبتان أن
+    // الحبر المُرسَم هو نفسه قبل الإصلاح وبعده.
+    var logical = 0;
+    var presentation = 0;
     for (final p in report.pages) {
-      shaped += p.presentationFormLetters;
-      unshaped += p.unshapedArabicLetters;
+      logical += p.unshapedArabicLetters;
+      presentation += p.presentationFormLetters;
     }
-    final unshapedWords = <ProbedWord>[
+    final presentationWords = <ProbedWord>[
       for (final pdfPage in report.pages)
         for (final word in pdfPage.words)
-          if (word.text.runes.any((rune) => rune >= 0x0621 && rune <= 0x064A))
+          if (word.text.runes.any(
+              (rune) => rune >= 0xFB50 && rune <= 0xFDFF ||
+                  rune >= 0xFE70 && rune <= 0xFEFF))
             word,
     ];
-    _stage('[p0-gate] unshaped words=${unshapedWords.take(12).map((word) =>
+    _stage('[p0-gate] presentation-form words='
+        '${presentationWords.take(12).map((word) =>
         '${word.text}[${word.text.runes.map((rune) => rune.toRadixString(16)).join(",")}]@${word.x.toStringAsFixed(1)},${word.y.toStringAsFixed(1)}:${word.baseFont}').join(' | ')}');
-    expect(shaped, greaterThan(100),
-        reason: 'صور تقديمية عربية أقلّ من المتوقع في الملف كله: $shaped');
-    expect(unshaped, 0,
-        reason: 'محارف عربية معجمية غير مشكَّلة رُسمت (خلل تشكيل لا تراه '
-            'RMSE): $unshaped، أمثلة: ${_unshapedSamples(page.drawnText)}');
+    expect(logical, greaterThan(100),
+        reason: 'حروف عربية معجمية أقلّ من المتوقع في /ToUnicode: $logical — '
+            'القناة يجب أن تحمل الحروف الأساسية القابلة للبحث، لا الشكل فقط.');
+    expect(presentation, 0,
+        reason: 'أشكال عرض عربية بقيت في /ToUnicode (نصّ غير قابل للبحث): '
+            '$presentation، أمثلة: ${presentationWords.take(6).map((word) => word.text).toList()}');
 
     // الفجوات: لا تباعد سحري ولا تراكب.
     //
@@ -1648,7 +1636,7 @@ void main() {
 
     _matrix.record('arabic', P0Path.vectorPdf, P0Status.pass,
         evidence: 'ترتيب الكلمات RTL في ${arabicLines.length} سطراً؛ '
-            'تقديمي=$shaped غيرمشروط=$unshaped');
+            'معجمي=$logical تقديمي=$presentation');
     _matrix.record('latin', P0Path.vectorPdf, P0Status.pass,
         evidence: 'وسوم لاتينية مرسومة داخل ورقة عربية (MIX1/OPT1/OP1A..) '
             'وأرقام لاتينية=$latin');

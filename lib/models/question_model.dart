@@ -199,13 +199,18 @@ class QuestionModel {
     PaperAlign? Function()? bodyAlign,
     PaperAlign? Function()? categoryAlign,
   }) {
+    // إزاحات التنسيق مرساة على محارف النص المخزَّن: أي مسار يغيّر النص —
+    // محرر المعاينة أو محرر الأسئلة — يُعيد تأسيسها هنا، في مكان واحد، بدل
+    // أن يعتمد كل سطح تحرير على تذكّر ذلك.
+    final nextStatement = statement ?? this.statement;
+    final nextBody = body ?? this.body;
     return QuestionModel(
       id: id,
       questionNumber: questionNumber ?? this.questionNumber,
       branches: branches ?? this.branches,
       category: category ?? this.category,
-      statement: statement ?? this.statement,
-      body: body ?? this.body,
+      statement: nextStatement,
+      body: nextBody,
       marksOverride: marksOverride != null ? marksOverride() : this.marksOverride,
       numberOverride: numberOverride != null ? numberOverride() : this.numberOverride,
       spacingAfter: spacingAfter ?? this.spacingAfter,
@@ -213,8 +218,18 @@ class QuestionModel {
       attachments: attachments ?? this.attachments,
       style: style ?? this.style,
       titleColor: titleColor != null ? titleColor() : this.titleColor,
-      statementFormats: statementFormats ?? this.statementFormats,
-      bodyFormats: bodyFormats ?? this.bodyFormats,
+      statementFormats: statementFormats ??
+          TextFormatSpans.rebase(
+            this.statementFormats,
+            previous: this.statement,
+            next: nextStatement,
+          ),
+      bodyFormats:
+          bodyFormats ?? TextFormatSpans.rebase(
+            this.bodyFormats,
+            previous: this.body,
+            next: nextBody,
+          ),
       showFrame: showFrame ?? this.showFrame,
       dividerAfter: dividerAfter != null ? dividerAfter() : this.dividerAfter,
       titleAlign: titleAlign != null ? titleAlign() : this.titleAlign,

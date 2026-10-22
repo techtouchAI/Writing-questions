@@ -351,7 +351,7 @@ See https://github.com/DavBfr/dart_pdf/wiki/Fonts-Management
   void putMirroredText(
     PdfStream stream,
     String glyphText,
-    String toUnicodeText,
+    List<String> toUnicodeChars,
   ) {
     putText(stream, glyphText);
   }

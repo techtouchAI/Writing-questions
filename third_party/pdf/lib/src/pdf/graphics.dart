@@ -516,7 +516,7 @@ class PdfGraphics {
     PdfTextRenderingMode mode = PdfTextRenderingMode.fill,
     double? rise,
     double? trailingTj,
-    String? toUnicode,
+    List<String>? toUnicodeChars,
   }) {
     assert(() {
       if (_page.settings.verbose) {
@@ -566,8 +566,14 @@ class PdfGraphics {
     }());
 
     _buf.putString('[');
-    if (toUnicode != null && toUnicode != s) {
-      font.putMirroredText(_buf, s, toUnicode);
+    // قناة الاستخراج تُمرَّر فقط حين تختلف عن المحارف المرسومة فعلًا (تشكيل
+    // عربي أو قلب قوس)؛ وإلا بقي المسار القديم بايتاً ببايت.
+    final logicalText = toUnicodeChars?.join();
+    if (toUnicodeChars != null &&
+        logicalText != null &&
+        logicalText != s &&
+        toUnicodeChars.length == s.runes.length) {
+      font.putMirroredText(_buf, s, toUnicodeChars);
     } else {
       font.putText(_buf, s);
     }

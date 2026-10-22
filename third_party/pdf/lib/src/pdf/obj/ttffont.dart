@@ -52,10 +52,13 @@ class PdfTtfFont extends PdfFont {
 
   late PdfUnicodeCmap unicodeCMap;
 
-  /// Glyph character code per CID (index 0 = `.notdef`). Matches
-  /// [unicodeCMap.cmap] element-for-element except when Unicode BiDi Rule L4
-  /// renders a mirrored glyph outline while keeping the logical bracket
-  /// character in `/ToUnicode`.
+  /// Glyph character code per CID (index 0 = `.notdef`). Pairs with
+  /// [unicodeCMap.cmap] element-for-element: each CID selects one rendered
+  /// glyph and carries the logical text that glyph stands for, which may be
+  /// several characters (a lam-alef glyph renders two base letters, and a
+  /// presentation ligature can render a word) or a different single character
+  /// (Unicode BiDi Rule L4 mirrored bracket glyphs keep the original logical
+  /// bracket in `/ToUnicode`).
   final List<int> glyphChars = <int>[0];
 
   late PdfFontDescriptor descriptor;
@@ -171,15 +174,15 @@ class PdfTtfFont extends PdfFont {
     }
   }
 
-  int _cidForPair(int glyphRune, int unicodeRune) {
+  int _cidForPair(int glyphRune, String unicodeText) {
     final len = unicodeCMap.cmap.length;
     for (var cid = 0; cid < len; cid++) {
-      if (unicodeCMap.cmap[cid] == unicodeRune && glyphChars[cid] == glyphRune) {
+      if (unicodeCMap.cmap[cid] == unicodeText && glyphChars[cid] == glyphRune) {
         return cid;
       }
     }
     final cid = len;
-    unicodeCMap.cmap.add(unicodeRune);
+    unicodeCMap.cmap.add(unicodeText);
     glyphChars.add(glyphRune);
     return cid;
   }
@@ -195,7 +198,7 @@ class PdfTtfFont extends PdfFont {
 
     stream.putByte(0x3c);
     for (final rune in runes) {
-      final char = _cidForPair(rune, rune);
+      final char = _cidForPair(rune, String.fromCharCode(rune));
       stream.putBytes(latin1.encode(char.toRadixString(16).padLeft(4, '0')));
     }
     stream.putByte(0x3e);
@@ -205,7 +208,7 @@ class PdfTtfFont extends PdfFont {
   void putMirroredText(
     PdfStream stream,
     String glyphText,
-    String toUnicodeText,
+    List<String> toUnicodeChars,
   ) {
     if (!font.unicode) {
       super.putText(stream, glyphText);
@@ -213,15 +216,14 @@ class PdfTtfFont extends PdfFont {
     }
 
     final gRunes = glyphText.runes.toList(growable: false);
-    final uRunes = toUnicodeText.runes.toList(growable: false);
-    if (gRunes.length != uRunes.length) {
+    if (gRunes.length != toUnicodeChars.length) {
       putText(stream, glyphText);
       return;
     }
 
     stream.putByte(0x3c);
     for (var i = 0; i < gRunes.length; i++) {
-      final char = _cidForPair(gRunes[i], uRunes[i]);
+      final char = _cidForPair(gRunes[i], toUnicodeChars[i]);
       stream.putBytes(latin1.encode(char.toRadixString(16).padLeft(4, '0')));
     }
     stream.putByte(0x3e);

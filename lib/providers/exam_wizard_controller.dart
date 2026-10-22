@@ -438,16 +438,10 @@ class ExamWizardController extends ChangeNotifier {
     _commit(
       _document.withQuestionAt(
         index,
-        current.copyWith(
-          statement: statement,
-          // إزاحات التنسيق تتبع النص: تحرير في الوسط لا يمدّ التنسيق إلى نص
-          // جديد، والحذف/الإدخال يُزيح ما بعده بمقداره.
-          statementFormats: TextFormatSpans.rebase(
-            current.statementFormats,
-            previous: current.statement,
-            next: statement,
-          ),
-        ),
+        // إزاحات التنسيق تُعاد تأسيسها في `QuestionModel.copyWith` نفسه:
+        // تحرير في الوسط لا يمدّ التنسيق إلى نص جديد، والحذف/الإدخال يُزيح ما
+        // بعده بمقداره — على أي سطح تحرير.
+        current.copyWith(statement: statement),
       ),
       coalesceKey: 'statement-${questions[index].id}',
     );
@@ -463,14 +457,7 @@ class ExamWizardController extends ChangeNotifier {
     _commit(
       _document.withQuestionAt(
         index,
-        current.copyWith(
-          body: body,
-          bodyFormats: TextFormatSpans.rebase(
-            current.bodyFormats,
-            previous: current.body,
-            next: body,
-          ),
-        ),
+        current.copyWith(body: body),
       ),
       coalesceKey: 'body-${questions[index].id}',
     );
@@ -757,10 +744,65 @@ class ExamWizardController extends ChangeNotifier {
     updatePoint(
       owner,
       pointId,
+      // إعادة تأسيس إزاحات التنسيق تحدث في النموذج نفسه (`copyWith`)، فيسري
+      // ذلك على كل سطح تحرير لا على مسار المعاينة وحده.
       (point) => point.copyWith(text: text),
       coalesceKey: 'item-$pointId',
     );
   }
+
+  /// يحفظ تنسيق نطاقات نصّ النقطة.
+  void updatePointTextFormats(
+    PointsOwner owner,
+    String pointId,
+    List<TextFormatSpan> formats,
+  ) {
+    updatePoint(
+      owner,
+      pointId,
+      (point) {
+        final normalized = TextFormatSpans.normalize(
+          formats,
+          textLength: point.text.length,
+        );
+        if (_sameSpans(point.textFormats, normalized)) {
+          return point;
+        }
+        return point.copyWith(textFormats: normalized);
+      },
+      coalesceKey: 'item-formats-$pointId',
+    );
+  }
+
+  /// تنسيق نطاقات نصّ خيار داخل نقطة.
+  void updatePointOptionFormats(
+    PointsOwner owner,
+    String pointId,
+    int optionIndex,
+    List<TextFormatSpan> formats,
+  ) {
+    _updateOptions(
+      owner,
+      pointId,
+      (options) {
+        if (optionIndex < 0 || optionIndex >= options.length) {
+          return options;
+        }
+        final option = options[optionIndex];
+        final normalized = TextFormatSpans.normalize(
+          formats,
+          textLength: option.text.length,
+        );
+        if (_sameSpans(option.formats, normalized)) {
+          return options;
+        }
+        options[optionIndex] = option.copyWith(formats: normalized);
+        return options;
+      },
+      coalesceKey: 'option-formats-$pointId-$optionIndex',
+    );
+  }
+
 
   /// يغيّر نوع النقطة (نص حر/صح وخطأ/إكمال فراغ/اختيار من متعدد).
   void updatePointKind(PointsOwner owner, String pointId, PointKind kind) {
@@ -965,14 +1007,7 @@ class ExamWizardController extends ChangeNotifier {
       _document.withBranchAt(
         ref,
         branch.copyWith(
-          content: branch.content.copyWith(
-            statement: statement,
-            statementFormats: TextFormatSpans.rebase(
-              branch.content.statementFormats,
-              previous: branch.content.statement,
-              next: statement,
-            ),
-          ),
+          content: branch.content.copyWith(statement: statement),
         ),
       ),
       coalesceKey: 'branch-statement-${branch.id}',
@@ -992,14 +1027,7 @@ class ExamWizardController extends ChangeNotifier {
       _document.withBranchAt(
         ref,
         branch.copyWith(
-          content: branch.content.copyWith(
-            body: body,
-            bodyFormats: TextFormatSpans.rebase(
-              branch.content.bodyFormats,
-              previous: branch.content.body,
-              next: body,
-            ),
-          ),
+          content: branch.content.copyWith(body: body),
         ),
       ),
       coalesceKey: 'branch-body-${branch.id}',

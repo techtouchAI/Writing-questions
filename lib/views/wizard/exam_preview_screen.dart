@@ -482,11 +482,22 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return _fields.putIfAbsent(key, () {
       final field = TextEditingController(text: initial);
       var previousText = initial;
+      var previousState = const TextFormatState();
       field.addListener(() {
         final text = field.text;
-        if (text == previousText) return; // Cursor/focus changes are not edits.
-        previousText = text;
-        if (!_syncingFields) _fieldEdits[key]?.call(text);
+        if (text != previousText) {
+          previousText = text;
+          if (!_syncingFields) _fieldEdits[key]?.call(text);
+          return;
+        }
+        // تغيّر التحديد وحده ليس تحريرًا، لكنه يغيّر حالة أزرار التنسيق:
+        // تُعاد قراءة النطاق، ويحدث البناء فقط إذا تغيّرت الحالة فعلًا
+        // (تنقّل المؤشر داخل الكلمة نفسها لا يهزّ الشاشة).
+        if (_activeFieldKey != key || _multiSelect) return;
+        final state = _selectionFormatState() ?? const TextFormatState();
+        if (state == previousState) return;
+        previousState = state;
+        _refreshSelectionFormatState();
       });
       return field;
     });
@@ -1518,6 +1529,56 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
       return null;
     }
+    // نقاط السؤال وفرعه وخياراتها: نفس نموذج النطاقات، لا مسار تنسيق ثانٍ.
+    if (key.startsWith('item-') || key.startsWith('option-')) {
+      final isOption = key.startsWith('option-');
+      final String pointId;
+      int? optionIndex;
+      if (isOption) {
+        final match = _optionKeyPattern.firstMatch(key);
+        if (match == null) return null;
+        pointId = match.group(1)!;
+        optionIndex = int.parse(match.group(2)!);
+      } else {
+        pointId = key.substring('item-'.length);
+      }
+      // مالك النقطة يُحسم من المستند نفسه (نفس مصدر المحاذاة أعلاه)، فلا
+      // تُنسخ نقاط إلى حالة عرض موازية.
+      final owner = _ownerOfPoint(document, pointId);
+      final point = _findItem(pointId);
+      if (owner == null || point == null) return null;
+      final ownerStyle = owner.branchIndex == null
+          ? document.questions[owner.questionIndex].style
+          : document
+              .branchAt(BranchRef(
+                questionIndex: owner.questionIndex,
+                branchIndex: owner.branchIndex!,
+              ))
+              .style;
+      if (!isOption) {
+        return _RangeFormatTarget(
+          text: point.text,
+          spans: point.textFormats,
+          style: ownerStyle,
+          save: (formats) =>
+              controller.updatePointTextFormats(owner, pointId, formats),
+        );
+      }
+      final index = optionIndex!;
+      if (index < 0 || index >= point.options.length) return null;
+      final option = point.options[index];
+      return _RangeFormatTarget(
+        text: option.text,
+        spans: option.formats,
+        style: ownerStyle,
+        save: (formats) => controller.updatePointOptionFormats(
+          owner,
+          pointId,
+          index,
+          formats,
+        ),
+      );
+    }
     final isStatement = key.startsWith('statement-');
     final isBody = key.startsWith('body-');
     if (!isStatement && !isBody) return null;
@@ -1557,6 +1618,42 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       start: selection.baseOffset,
       end: selection.extentOffset,
     );
+  }
+
+  /// حالة أزرار الشريط من **التحديد الفعلي** لا من نمط العنصر.
+  ///
+  /// `null` = لا تحديد نصّي في حقل قابل للتنسيق، فيبقى العرض على نمط العنصر
+  /// (سلوك المحرر قبل هذه الميزة). وعند وجود تحديد تُقرأ خصائص كل محرف في
+  /// النطاق فوق نمط العنصر: متّفقة ⇒ `true/false`، مختلفة ⇒ `null` (مختلط)،
+  /// وهو ما يعرضه [PreviewToolbar] غير مفعّل بدل ادّعاء حالةٍ واحدة.
+  TextFormatState? _selectionFormatState() {
+    final target = _activeRangeTarget();
+    if (target == null) return null;
+    final range = _selectedRange(target);
+    if (range == null) return null;
+    return TextFormatSpans.stateForRange(
+      target.spans,
+      start: range.start,
+      end: range.end,
+      baseBold: target.style.bold ?? false,
+      baseItalic: target.style.italic ?? false,
+      baseUnderline: target.style.underline ?? false,
+      baseColor: target.style.color,
+    );
+  }
+
+  /// إعادة بناء آمنة عند تغيّر التحديد (قد يصل الإشعار أثناء بناء إطار).
+  void _refreshSelectionFormatState() {
+    if (!mounted) return;
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+      return;
+    }
+    setState(() {});
   }
 
   /// يقلب bold/italic/underline على التحديد وحده.
@@ -3266,6 +3363,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       _trimPageKeysByIndices(canonicalPreview.pages.map((page) => page.index));
     }
     final activeStyle = _activeStyle();
+    final selectionFormat = _selectionFormatState();
 
     return Scaffold(
       appBar: AppBar(
@@ -3326,13 +3424,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               }
               _applyStyle((current) => current.copyWith(fontSize: () => size));
             },
-            isBold: activeStyle.bold,
+            isBold:
+                selectionFormat == null ? activeStyle.bold : selectionFormat.bold,
             onToggleBold: () =>
                 _toggleSelectionFormat(_RangeFormatAttribute.bold),
-            isItalic: activeStyle.italic,
+            isItalic: selectionFormat == null
+                ? activeStyle.italic
+                : selectionFormat.italic,
             onToggleItalic: () =>
                 _toggleSelectionFormat(_RangeFormatAttribute.italic),
-            isUnderline: activeStyle.underline,
+            isUnderline: selectionFormat == null
+                ? activeStyle.underline
+                : selectionFormat.underline,
             onToggleUnderline: () =>
                 _toggleSelectionFormat(_RangeFormatAttribute.underline),
             activeAlign: _activeAlign(),
@@ -3364,7 +3467,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               }
               _applyQuestionSpacing(spacing);
             },
-            activeColor: _activeColor(),
+            activeColor:
+                selectionFormat == null ? _activeColor() : selectionFormat.color,
             colorTooltip: _colorTooltip(),
             onColorChanged: (value) {
               // القيمة المميزة -1 تعني «لون مخصص» (HEX) من قائمة الشريط.

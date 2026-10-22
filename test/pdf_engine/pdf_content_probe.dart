@@ -370,9 +370,9 @@ class PdfContentProbe {
       words.add(ProbedWord(
         text: data == null
             ? ''
-            : String.fromCharCodes(
-                cids.map((cid) => data.cidToUnicode[cid] ?? 0xFFFD),
-              ),
+            : cids
+                .map((cid) => data.cidToUnicode[cid] ?? '\uFFFD')
+                .join(),
         x: x,
         y: y,
         fontSize: fontSize,
@@ -446,8 +446,11 @@ class _FontData {
   /// عرض كل CID بالألف من وحدة النص (كما في /W)، بترتيب الـ CID.
   final List<int> widths;
 
-  /// خريطة CID ← نقطة يونيكود من /ToUnicode.
-  final Map<int, int> cidToUnicode;
+  /// خريطة CID ← نصّ يونيكود من /ToUnicode.
+  ///
+  /// النصّ قد يكون أكثر من محرف واحد: محرك PDF يربط الشكل الواحد (مثل رابطة
+  /// لام-ألف) بحرفيه المعجميين، و`bfchar` يقبل نصاً متعدد الوحدات مقصداً.
+  final Map<int, String> cidToUnicode;
 }
 
 /// تحليل كائنات ملف الـ PDF (بدون أي مكتبة خارجية).
@@ -611,15 +614,20 @@ class _PdfObjects {
       ];
     }
 
-    final cidToUnicode = <int, int>{};
+    final cidToUnicode = <int, String>{};
     final cmapRef = RegExp(r'/ToUnicode\s+(\d+)\s+0\s+R').firstMatch(dict);
     if (cmapRef != null) {
       final cmap = _streams[int.parse(cmapRef.group(1)!)] ?? '';
       for (final entry in RegExp(
-        r'<([0-9A-Fa-f]{4})>\s*<([0-9A-Fa-f]{4})>',
+        r'<([0-9A-Fa-f]{4})>\s*<([0-9A-Fa-f]{4}(?:\s+[0-9A-Fa-f]{4})*)>',
       ).allMatches(cmap)) {
+        final hex = entry.group(2)!.replaceAll(RegExp(r'\s+'), '');
+        final units = <int>[
+          for (var i = 0; i + 4 <= hex.length; i += 4)
+            int.parse(hex.substring(i, i + 4), radix: 16),
+        ];
         cidToUnicode[int.parse(entry.group(1)!, radix: 16)] =
-            int.parse(entry.group(2)!, radix: 16);
+            String.fromCharCodes(units);
       }
     }
 

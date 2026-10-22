@@ -1,6 +1,7 @@
 import 'package:uuid/uuid.dart';
 
 import 'paper_text_style.dart';
+import 'text_format_span.dart';
 
 /// خيار في سؤال «اختيار من متعدد».
 class QuestionOption {
@@ -9,10 +10,17 @@ class QuestionOption {
     required this.text,
     this.labelOverride,
     this.align,
-  }) : id = id ?? const Uuid().v4();
+    List<TextFormatSpan>? formats,
+  })  : id = id ?? const Uuid().v4(),
+        formats = List<TextFormatSpan>.unmodifiable(
+          formats ?? const <TextFormatSpan>[],
+        );
 
   final String id;
   String text;
+
+  /// تنسيق نطاقات نصّ الخيار (محارف محدَّدة داخل [text]).
+  final List<TextFormatSpan> formats;
 
   /// محاذاة هذا الخيار وحده (null = وراثة من محاذاة الفرع).
   ///
@@ -33,6 +41,8 @@ class QuestionOption {
       'text': text,
       if (labelOverride != null) 'labelOverride': labelOverride,
       if (align != null) 'align': align!.name,
+      if (formats.isNotEmpty)
+        'formats': formats.map((span) => span.toMap()).toList(growable: false),
     };
   }
 
@@ -53,6 +63,7 @@ class QuestionOption {
       text: rawText?.toString() ?? '',
       labelOverride: map['labelOverride'] is String ? map['labelOverride'] as String : null,
       align: rawAlign != null ? PaperAlign.parse(rawAlign) : null,
+      formats: TextFormatSpan.listFromValue(map['formats']),
     );
   }
 
@@ -60,12 +71,21 @@ class QuestionOption {
     String? text,
     String? Function()? labelOverride,
     PaperAlign? Function()? align,
+    List<TextFormatSpan>? formats,
   }) {
+    final nextText = text ?? this.text;
     return QuestionOption(
       id: id,
-      text: text ?? this.text,
+      text: nextText,
       labelOverride: labelOverride == null ? this.labelOverride : labelOverride(),
       align: align == null ? this.align : align(),
+      // إزاحات التنسيق تتبع نصّ الخيار، فأي مسار تحرير يُعيد تأسيسها.
+      formats: formats ??
+          TextFormatSpans.rebase(
+            this.formats,
+            previous: this.text,
+            next: nextText,
+          ),
     );
   }
 }

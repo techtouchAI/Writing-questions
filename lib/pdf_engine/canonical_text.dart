@@ -135,7 +135,10 @@ class CanonicalText extends pw.Widget {
   /// bracket extraction simultaneously with pixel-identical Preview parity).
   RtlShapedRun shapedRun() => rtl
       ? shapeRtlRun(text)
-      : RtlShapedRun(glyphText: text, toUnicodeText: text);
+      : RtlShapedRun(
+          glyphText: text,
+          toUnicodeChars: RtlShapedRun.identityChars(text),
+        );
 
   /// Shaped glyph string whose font metrics and outlines are rendered.
   String shapedText() => shapedRun().glyphText;
@@ -259,7 +262,7 @@ class CanonicalText extends pw.Widget {
       // same explicit `0 Tc` is emitted.
       charSpace: 0,
       trailingTj: correction,
-      toUnicode: run.toUnicodeText,
+      toUnicodeChars: run.toUnicodeChars,
     );
     if (shear != 0) {
       canvas.restoreContext();

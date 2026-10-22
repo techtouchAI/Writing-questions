@@ -64,12 +64,26 @@ class BranchContent {
     List<TextFormatSpan>? statementFormats,
     List<TextFormatSpan>? bodyFormats,
   }) {
+    // نفس قاعدة السؤال: النص والتنسيق يملكهما الكائن نفسه، فتغيير النص يُعيد
+    // تأسيس الإزاحات أيًّا كان سطح التحرير الذي كتبه.
+    final nextStatement = statement ?? this.statement;
+    final nextBody = body ?? this.body;
     return BranchContent(
-      statement: statement ?? this.statement,
-      body: body ?? this.body,
+      statement: nextStatement,
+      body: nextBody,
       items: items ?? this.items,
-      statementFormats: statementFormats ?? this.statementFormats,
-      bodyFormats: bodyFormats ?? this.bodyFormats,
+      statementFormats: statementFormats ??
+          TextFormatSpans.rebase(
+            this.statementFormats,
+            previous: this.statement,
+            next: nextStatement,
+          ),
+      bodyFormats: bodyFormats ??
+          TextFormatSpans.rebase(
+            this.bodyFormats,
+            previous: this.body,
+            next: nextBody,
+          ),
     );
   }
 

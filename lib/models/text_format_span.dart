@@ -161,6 +161,54 @@ class TextFormatSpan {
       '${color == null ? '' : ' color=${color!.toRadixString(16)}'})';
 }
 
+/// حالة التنسيق الفعلية لمقطع نصّي — لما تعرضه أزرار الشريط.
+///
+/// كل حقل ثلاثي القيمة: `true`/`false` حين يتّفق كل المحارف على القيمة،
+/// و`null` حين تكون **مختلطة** (بعضها منسّق وبعضها لا). هذا هو السلوك المتّبع
+/// في محررات النصوص المعروفة، و`PreviewToolbar` يقبل `bool?` أصلًا فيعرض
+/// «غير مفعّل» للمختلط بدل أن يدّعي حالة واحدة.
+class TextFormatState {
+  const TextFormatState({
+    this.bold,
+    this.italic,
+    this.underline,
+    this.color,
+    this.colorMixed = false,
+  });
+
+  static const TextFormatState inherit = TextFormatState();
+
+  final bool? bold;
+  final bool? italic;
+  final bool? underline;
+
+  /// اللون الموحّد للمقطع (`null` = لا لون موحّد).
+  final int? color;
+
+  /// هل يحمل المقطع أكثر من لون مختلف؟
+  final bool colorMixed;
+
+  bool get isMixed =>
+      bold == null || italic == null || underline == null || colorMixed;
+
+  @override
+  bool operator ==(Object other) =>
+      other is TextFormatState &&
+      other.bold == bold &&
+      other.italic == italic &&
+      other.underline == underline &&
+      other.color == color &&
+      other.colorMixed == colorMixed;
+
+  @override
+  int get hashCode => Object.hash(bold, italic, underline, color, colorMixed);
+
+  @override
+  String toString() => 'TextFormatState(bold=$bold, italic=$italic, '
+      'underline=$underline, color=${color?.toRadixString(16)}, '
+      'colorMixed=$colorMixed)';
+}
+
 /// عمليات النطاقات: تطبيع، تطبيق، إعادة تأسيس بعد تحرير النص، وتحديد الهدف.
 class TextFormatSpans {
   const TextFormatSpans._();
@@ -488,6 +536,75 @@ class TextFormatSpans {
     if (unit >= 0x066E && unit <= 0x06D3) return true;
     if (unit >= 0x06FA && unit <= 0x06FF) return true;
     return false;
+  }
+
+  /// الحالة الفعلية لكل خاصية داخل `[start, end)` مع وراثة نمط العنصر.
+  ///
+  /// «الفعلية» تعني: ما يراه المستخدم فعلًا، أي خاصية النطاق إن وُجدت وإلا
+  /// خاصية العنصر. فمقطع داخل سؤال عريض بحكم النمط يُعرض «عريضًا» حتى لو لم
+  /// يحمل نطاقًا صريحًا، ومقطع فيه كلمة عريضة وكلمة عادية يُعرض مختلطًا.
+  static TextFormatState stateForRange(
+    List<TextFormatSpan> spans, {
+    required int start,
+    required int end,
+    bool baseBold = false,
+    bool baseItalic = false,
+    bool baseUnderline = false,
+    int? baseColor,
+  }) {
+    final from = start < end ? start : end;
+    final to = start < end ? end : start;
+    if (to <= from) {
+      return TextFormatState(
+        bold: baseBold,
+        italic: baseItalic,
+        underline: baseUnderline,
+        color: baseColor,
+      );
+    }
+    var sawBoldTrue = false;
+    var sawBoldFalse = false;
+    var sawItalicTrue = false;
+    var sawItalicFalse = false;
+    var sawUnderlineTrue = false;
+    var sawUnderlineFalse = false;
+    final colors = <int?>{};
+    for (var offset = from; offset < to; offset++) {
+      var bold = baseBold;
+      var italic = baseItalic;
+      var underline = baseUnderline;
+      int? color = baseColor;
+      for (final span in spans) {
+        if (!span.covers(offset)) continue;
+        bold = span.bold ?? bold;
+        italic = span.italic ?? italic;
+        underline = span.underline ?? underline;
+        color = span.color ?? color;
+      }
+      if (bold) {
+        sawBoldTrue = true;
+      } else {
+        sawBoldFalse = true;
+      }
+      if (italic) {
+        sawItalicTrue = true;
+      } else {
+        sawItalicFalse = true;
+      }
+      if (underline) {
+        sawUnderlineTrue = true;
+      } else {
+        sawUnderlineFalse = true;
+      }
+      colors.add(color);
+    }
+    return TextFormatState(
+      bold: sawBoldTrue && sawBoldFalse ? null : sawBoldTrue,
+      italic: sawItalicTrue && sawItalicFalse ? null : sawItalicTrue,
+      underline: sawUnderlineTrue && sawUnderlineFalse ? null : sawUnderlineTrue,
+      color: colors.length == 1 ? colors.single : null,
+      colorMixed: colors.length > 1,
+    );
   }
 
   /// حزمة الخصائص عند إزاحة معيّنة (لتحديث حالة أزرار الشريط على التحديد).

@@ -22,8 +22,14 @@ class PdfUnicodeCmap extends PdfObjectStream {
   /// Create a Unicode character map object
   PdfUnicodeCmap(PdfDocument pdfDocument, this.protect) : super(pdfDocument);
 
-  /// List of characters
-  final cmap = <int>[0];
+  /// Logical text per CID (index 0 = `.notdef`).
+  ///
+  /// A CMap `bfchar` destination is a UTF-16 string, not a single code point,
+  /// so one CID may stand for several characters: the Arabic shaper renders a
+  /// lam-alef as one glyph, and its `/ToUnicode` entry must still yield the
+  /// two base letters (and a presentation ligature can yield a whole word)
+  /// for search, copy/paste and outline extraction to be correct.
+  final cmap = <String>['\u0000'];
 
   /// Protects the text from being "seen" by the PDF reader.
   final bool protect;
@@ -31,7 +37,7 @@ class PdfUnicodeCmap extends PdfObjectStream {
   @override
   void prepare() {
     if (protect) {
-      cmap.fillRange(1, cmap.length, 0x20);
+      cmap.fillRange(1, cmap.length, ' ');
     }
 
     buf.putString('/CIDInit/ProcSet\nfindresource begin\n'
@@ -50,9 +56,12 @@ class PdfUnicodeCmap extends PdfObjectStream {
         '${cmap.length} beginbfchar\n');
 
     for (var key = 0; key < cmap.length; key++) {
-      final value = cmap[key];
+      final value = cmap[key]
+          .codeUnits
+          .map((unit) => unit.toRadixString(16).toUpperCase().padLeft(4, '0'))
+          .join();
       buf.putString(
-          '<${key.toRadixString(16).toUpperCase().padLeft(4, '0')}> <${value.toRadixString(16).toUpperCase().padLeft(4, '0')}>\n');
+          '<${key.toRadixString(16).toUpperCase().padLeft(4, '0')}> <$value>\n');
     }
 
     buf.putString('endbfchar\n'

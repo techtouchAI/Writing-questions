@@ -26,6 +26,12 @@ export 'src/pdf/font/ttf_parser.dart';
 // bidi internal leaks out.
 export 'src/pdf/font/bidi_utils.dart'
     show RtlShapedRun, logicalToVisual, shapeRtlRun;
+// pdf-to-unicode-logical: presentation form -> base letter table used by the
+// extraction channel; exported so tests can assert the mapping is total and
+// never yields presentation forms in /ToUnicode.
+export 'src/pdf/font/arabic_forms.dart'
+    show arabicBaseLetters, isArabicPresentationForm,
+    kArabicPresentationFormBase;
 export 'src/pdf/format/name.dart';
 export 'src/pdf/format/object_base.dart' show DeflateCallback, PdfVersion;
 export 'src/pdf/graphic_state.dart';
