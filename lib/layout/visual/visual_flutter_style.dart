@@ -27,9 +27,13 @@ abstract final class VisualFlutterStyle {
       decoration:
           style.underline ? TextDecoration.underline : TextDecoration.none,
       height: style.lineHeight,
-      letterSpacing: style.letterSpacingPt == null
-          ? null
-          : PaperMetrics.px(style.letterSpacingPt!),
+      // التباعد يُصرَّح دائماً (صفراً عند غياب قيمة في العقد): `null` يعني
+      // «ورّث»، فيرث حقل الورقة `letterSpacing` من `Theme.textTheme.bodyLarge`
+      // (0.5px في Material 3). أثره المقيس: نصّ أوسع بـ≈11% من قياس المحرك
+      // نفسه، فتنكسر الأسطر في المعاينة في موضع آخر غير PDF — وهو الاختلاف
+      // نفسه الذي كانت تُحاول توسعة `wordSpacing` اليدوية تغطيته.
+      letterSpacing: PaperMetrics.px(style.letterSpacingPt ?? 0),
+      wordSpacing: 0,
       color: style.color != null
           ? Color(style.color!)
           : (defaultColor ?? const Color(0xFF000000)),
@@ -86,9 +90,10 @@ class PaperRoleTextStyle extends TextStyle {
               ? TextDecoration.underline
               : TextDecoration.none,
           height: reference.lineHeight,
-          letterSpacing: reference.letterSpacingPt == null
-              ? null
-              : PaperMetrics.px(reference.letterSpacingPt!),
+          // صفر صريح لا `null`: لا وراثة تباعد محارف من ثيم Material في أي
+          // نصّ ورقة (انظر التعليق في [VisualFlutterStyle.from]).
+          letterSpacing: PaperMetrics.px(reference.letterSpacingPt ?? 0),
+          wordSpacing: 0,
           color: reference.color != null
               ? Color(reference.color!)
               : (defaultColor ?? const Color(0xFF000000)),

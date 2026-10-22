@@ -393,6 +393,33 @@ void main() {
         _canonicalLineText(canonicalLines.single),
         reason: '$key: نصّ السطر مختلف بين الحقل والتخطيط.');
     final width = fieldLines.single.right - fieldLines.single.left;
+
+    // (أ) نمط الحقل يُصرّح بتباعده ولا يرثه من ثيم Material: وراثة
+    // `letterSpacing` (0.5px في bodyLarge) تجعل النصّ المرسوم أوسع من قياس
+    // المحرك نفسه بنحو 11%، فتنكسر الأسطر في موضع آخر غير PDF.
+    final fieldStyle = tester.widget<TextField>(field).style!;
+    expect(fieldStyle.letterSpacing ?? 0, 0,
+        reason: '$key: تباعد محارف موروث/غير صفري في حقل الورقة — '
+            'النصّ سيُرسم أوسع من قياس المحرك.');
+    expect(fieldStyle.wordSpacing ?? 0, 0,
+        reason: '$key: تباعد كلمات غير صفري في حقل الورقة.');
+
+    // (ب) ما يُرسم في الحقل يساوي قياس نمطه المعلن نفسه: يمسك أي خاصية
+    // موروثة أو مضافة لم تُصرَّح.
+    final naturalPainter = TextPainter(
+      text: TextSpan(text: _shortBody, style: fieldStyle),
+      textDirection: ui.TextDirection.rtl,
+      textScaler: TextScaler.noScaling,
+    )..layout(maxWidth: double.infinity);
+    addTearDown(naturalPainter.dispose);
+    expect(
+      width,
+      closeTo(LayoutUnits.pxToPt(naturalPainter.width), kGeometryTolerancePt),
+      reason: '$key: العرض المرسوم ${width.toStringAsFixed(2)}pt لا يساوي قياس '
+          'نمط الحقل نفسه '
+          '${LayoutUnits.pxToPt(naturalPainter.width).toStringAsFixed(2)}pt.',
+    );
+
     expect(
       width,
       closeTo(canonicalLines.single.naturalWidth, kGeometryTolerancePt),
