@@ -98,7 +98,7 @@ void main() {
         reason: 'CID بلا /ToUnicode — استخراج ناقص: $drawn');
 
     // (2) كل كلمة من السؤال موجودة بحروفها المعجمية كاملة.
-    for (final word in <String>[
+    for (final word in const <String>[
       'حل',
       'المعادلات',
       'التالية',
@@ -126,7 +126,7 @@ void main() {
     final probe = PdfContentProbe.fromBytes(pdfBytes, pageIndex: 0);
     final drawn = probe.words.map((word) => word.text).toList();
     final expected = <String>[
-      for (final word in <String>['بسم', 'الله', 'الرحمن', 'الرحيم'])
+      for (final word in const <String>['بسم', 'الله', 'الرحمن', 'الرحيم'])
         _visualOrder(word),
     ];
     for (final token in expected) {

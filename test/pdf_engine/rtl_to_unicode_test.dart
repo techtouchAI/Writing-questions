@@ -77,7 +77,7 @@ void main() {
         expect(entry, isNotEmpty);
         for (final rune in entry.runes) {
           expect(isArabicPresentationForm(rune), isFalse,
-              reason: 'قناة الاستخراج تحمل شكل عرض: ${entry}');
+              reason: 'قناة الاستخراج تحمل شكل عرض: $entry');
         }
       }
 

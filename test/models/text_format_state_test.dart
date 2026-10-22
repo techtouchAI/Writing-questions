@@ -138,8 +138,8 @@ void main() {
   });
 
   group('انتقالات التحديد: لا بقايا بين الحالات', () {
-    final spans = <TextFormatSpan>[
-      const TextFormatSpan(start: 0, end: 4, bold: true),
+    const spans = <TextFormatSpan>[
+      TextFormatSpan(start: 0, end: 4, bold: true),
     ];
     TextFormatState? stateAt(int start, int end) => TextFormatSpans.stateForRange(
           spans,
