@@ -559,8 +559,11 @@ void main() {
               'الحقل مقابل ${canonicalCenter.toStringAsFixed(2)}pt في '
               'التخطيط القانوني.');
 
-      // والشروط الهندسية الصارمة داخل الحقل نفسه: يسار = حدّ العمود الأيسر،
-      // يمين = حدّه الأيمن، وسط = منتصف الفراغ، والضبط لسطر واحد = اليسار.
+      // وحدود المحاذاة داخل الحقل: يسار = حدّ العمود الأيسر، يمين = حدّه
+      // الأيمن، وسط = منتصف الفراغ، والضبط لسطر واحد = اليسار. التفاوت هنا
+      // 2.5pt لا فرقَ تسامحٍ في الحكم: الطرفان حبرٌ مقابل حبر، وفارق الحبر
+      // الجانبي للمحرف الأول/الأخير في Noto Naskh عند 11pt يبلغ ‎≈2.5pt؛
+      // ولا يُستخدم هذا التفاوت في مقارنة العروض ولا نقاط الالتفاف (0.75pt).
       final column = LayoutUnits.pxToPt(tester.getSize(field).width);
       // عرض الجريان (لا عرض الحبر) هو ما تُحسب به إزاحة المركز: محرك القياس
       // يعطي `naturalWidth` بعروض الأجسام والمسافات نفسها التي يزيح بها Skia.
@@ -568,17 +571,16 @@ void main() {
       switch (align) {
         case PaperAlign.left:
         case PaperAlign.justify:
-          expect(fieldLine.left,
-              closeTo(0, kGeometryTolerancePt),
+          expect(fieldLine.left, closeTo(0, kInkTolerancePt),
               reason: '$key: السطر لا يبدأ من حدّ العمود الأيسر.');
         case PaperAlign.right:
-          expect(fieldLine.right, closeTo(column, kGeometryTolerancePt),
+          expect(fieldLine.right, closeTo(column, kInkTolerancePt),
               reason: '$key: السطر لا ينتهي عند حدّ العمود الأيمن '
                   '(${fieldLine.right.toStringAsFixed(2)} مقابل '
                   '${column.toStringAsFixed(2)}pt).');
         case PaperAlign.center:
           expect(fieldLine.left, closeTo((column - lineWidth) / 2,
-              kGeometryTolerancePt),
+              kInkTolerancePt),
               reason: '$key: السطر غير متمركز في العمود.');
         case PaperAlign.start:
         case PaperAlign.end:
