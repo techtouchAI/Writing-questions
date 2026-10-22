@@ -151,6 +151,36 @@ void main() {
     expectFieldOrder('LTRF1',
         const <String>['End', 'of', 'questions', 'LTRF1']);
 
+    // الحقل المختار وحده لا يكفي: مقارنة «الكلمات المتوقعة» تتجاهل موضع
+    // التسمية، فمرّ عليها عطلٌ حقيقي (تسمية عربية مثبَّتة على `rtl` داخل ورقة
+    // إنجليزية) لأن الرقم 90 جاء قبل التسمية في ملف PDF بينما الكلمات
+    // الإنجليزية الثلاث بقيت متزايدة. القياس الكامل: كل كلمات السطر نفسه
+    // تتزايد أفقياً، ولا تسمية عربية في سطر ترويسة/تذييل الورقة الإنجليزية.
+    // (أُثبت أن هذا الشرط يُفشِل الجولة عند إعادة العطل: تشغيل 39780935751.)
+    for (final marker in const <String>['LTRT1', 'LTRF1']) {
+      final line = _pdfLineWith(report, marker);
+      expect(line.words.length, greaterThan(1),
+          reason: 'سطر $marker بلا كلمات كافية لقياس الاتجاه: '
+              '${line.describe()}');
+      for (var index = 0; index + 1 < line.words.length; index++) {
+        expect(
+          line.words[index].x,
+          lessThanOrEqualTo(line.words[index + 1].x + 0.5),
+          reason: 'سطر $marker لا يتقدّم من اليسار كاملاً (كلمة خارج '
+              'ترتيبها): ${line.describe()}',
+        );
+      }
+      final arabicWords = line.words
+          .where((word) =>
+              RegExp('[\u0600-\u06FF\uFE70-\uFEFF]').hasMatch(word.text))
+          .map((word) => word.text)
+          .toList();
+      expect(arabicWords, isEmpty,
+          reason: 'سطر $marker في ورقة إنجليزية يحمل تسمية عربية '
+              '$arabicWords — التسمية يجب أن تكون من حزمة الورقة الإنجليزية '
+              'حتى لا تنفصل الأرقام عن كلماتها: ${line.describe()}');
+    }
+
     // سطر المتن وسطر عنوان السؤال في عمود واحد: يُقاس ترتيب الرسم نفسه
     // (تزايد x بترتيب الإرسال) لا قاعدة تجاور عربية الاتجاه.
     // (`orderOfLine` يقيس التجاور بفجوة عربية الإشارة، فتُرجع 'single' في سطر
