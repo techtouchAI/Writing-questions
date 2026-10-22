@@ -52,6 +52,11 @@ const double kGeometryTolerancePt = 0.75;
 /// التفاوت الرأسي (pt) بين موضعي سطر متقابلين.
 const double kVerticalTolerancePt = 1.0;
 
+/// تفاوت الحافة (pt) حين تُقارن علبة حبر المحرف الأول بموضع الجريان: تُضاف
+/// فروق الحبر/التباعد الجانبي (±2.5pt عند 11pt في Noto Naskh) ولا تُغيّر
+/// القرار المحاسبي — المركز يُقارن بالتفاوت الضيق نفسه.
+const double kInkTolerancePt = 2.5;
+
 const String _arabicBody =
     'هذا متن عربي طويل يقيس الضبط الحقيقي في حقل المعاينة مقابل التخطيط '
     'القانوني الذي يطبعه PDF، ويحمل أرقاماً ٢٠ و 2026 وكلمات متعددة '
@@ -373,19 +378,7 @@ void main() {
               '${line.resolvedWidth.toStringAsFixed(2)}).');
     }
 
-    // (4) المحاذاة: إزاحة كل سطر داخل العمود كما يقرّرها المحرك نفسه
-    // (المضبوط يبدأ من العمود، والأخير يتبع اتجاه الفقرة).
-    final blockLeft = _blockLeft(canonical, node);
-    for (var index = 0; index < canonicalLines.length; index++) {
-      final expectedLeft = canonicalLines[index].rect.left - blockLeft;
-      expect(fieldLines[index].left, closeTo(expectedLeft, kGeometryTolerancePt),
-          reason: '$key: إزاحة السطر ${index + 1} — '
-              '${fieldLines[index].left.toStringAsFixed(2)}pt في الحقل مقابل '
-              '${expectedLeft.toStringAsFixed(2)}pt (اتجاه السطر '
-              '${canonicalLines[index].direction.name}).');
-    }
-
-    // (5) التباعد الرأسي: قياس تراكمي بين السطور.
+    // (4) التباعد الرأسي: قياس تراكمي بين السطور.
     for (var index = 1; index < canonicalLines.length; index++) {
       final fieldGap = fieldLines[index].top - fieldLines[index - 1].top;
       final expectedGap =
@@ -396,7 +389,7 @@ void main() {
               '${expectedGap.toStringAsFixed(2)}pt.');
     }
 
-    // (6) الشروط نفسها ليست عمياء: البوابة تحتاج سطراً مضبوطاً وآخر غير مضبوط.
+    // (5) الشروط نفسها ليست عمياء: البوابة تحتاج سطراً مضبوطاً وآخر غير مضبوط.
     expect(canonicalLines.any((line) => line.isJustified), isTrue,
         reason: '$key: لا سطر مضبوط في المرجع — العيّنة لا تقيس الضبط.');
     expect(canonicalLines.last.isJustified, isFalse,
@@ -490,7 +483,6 @@ void main() {
     expect(fieldLines, hasLength(canonicalLines.length),
         reason: '$key: ${fieldLines.length} سطراً في الحقل مقابل '
             '${canonicalLines.length} قانونياً (LTR).');
-    final blockLeft = _blockLeft(canonical, node);
     for (var index = 0; index < canonicalLines.length; index++) {
       expect(_normalize(fieldLines[index].text),
           _canonicalLineText(canonicalLines[index]),
@@ -502,17 +494,91 @@ void main() {
       expect(actual, closeTo(expected, kGeometryTolerancePt),
           reason: '$key: عرض السطر ${index + 1} (LTR) — '
               '${expected.toStringAsFixed(2)}pt متوقعاً.');
-      // المحاذاة تتبع قاعدة المحرك للنصّ اللاتيني داخل ورقة عربية: السطر
-      // المضبوط يملأ العمود، والأخير يأخذ إزاحته من اتجاه الفقرة نفسه — لا من
-      // افتراض محلي بأنه يبدأ من اليسار. تطابق الإزاحتين يعني أن الحقل يقرأ
-      // القاعدة نفسها التي يطبعها PDF.
-      final expectedLeft = canonicalLines[index].rect.left - blockLeft;
-      expect(fieldLines[index].left, closeTo(expectedLeft, kGeometryTolerancePt),
-          reason: '$key: إزاحة السطر ${index + 1} — '
-              '${fieldLines[index].left.toStringAsFixed(2)}pt في الحقل مقابل '
-              '${expectedLeft.toStringAsFixed(2)}pt (اتجاه السطر '
-              '${canonicalLines[index].direction.name}).');
     }
+  });
+
+  testWidgets('المحاذاة (يسار/وسط/يمين/ضبط) موضعٌ واحد في المعاينة والتخطيط',
+      (tester) async {
+    // فقرة قصيرة واحدة بأربع محاذاة: الموضع الفعلي (لا وجود الخاصية) هو المقيس.
+    // المركز لا يتأثر بـ«حبر» المحرف الأول، فيُقارن به؛ ولليسار/اليمين تُقارن
+    // الحافة الموافقة بتفاوت حبر معلن (2.5pt عند 11pt في Noto Naskh).
+    const text = 'محاذاة قصيرة.';
+    final document = ExamDocument(
+      name: 'محاذاة',
+      header: ExamHeaderModel.initial(subject: 'الرياضيات'),
+      questions: <QuestionModel>[
+        for (final align in <PaperAlign>[
+          PaperAlign.left,
+          PaperAlign.center,
+          PaperAlign.right,
+          PaperAlign.justify,
+        ])
+          QuestionModel(
+            id: 'a-${align.name}',
+            questionNumber: 1 + PaperAlign.values.indexOf(align),
+            statement: 'س',
+            body: text,
+            bodyAlign: align,
+          ),
+      ],
+    );
+    final controller = ExamWizardController(document: document);
+    addTearDown(controller.dispose);
+    await _pump(tester, controller);
+    final canonical = _layout(document);
+
+    final lefts = <PaperAlign, double>{};
+    for (final align in <PaperAlign>[
+      PaperAlign.left,
+      PaperAlign.center,
+      PaperAlign.right,
+      PaperAlign.justify,
+    ]) {
+      final key = 'body-a-${align.name}';
+      final field = _field(key);
+      await tester.ensureVisible(field);
+      await tester.pumpAndSettle();
+      final fieldLine = _fieldLines(tester, field).single;
+      final canonicalLine =
+          _canonicalLines(canonical, 'a-${align.name}/body').single;
+      final blockLeft = _blockLeft(canonical, 'a-${align.name}/body');
+
+      final runLeft = canonicalLine.runs
+          .map((run) => run.x)
+          .reduce((a, b) => a < b ? a : b);
+      final runRight = canonicalLine.runs
+          .map((run) => run.x + run.advance)
+          .reduce((a, b) => a > b ? a : b);
+
+      final fieldCenter = (fieldLine.left + fieldLine.right) / 2;
+      final canonicalCenter = (runLeft + runRight) / 2 - blockLeft;
+      expect(fieldCenter, closeTo(canonicalCenter, kGeometryTolerancePt),
+          reason: '$key: مركز السطر ${fieldCenter.toStringAsFixed(2)}pt في '
+              'الحقل مقابل ${canonicalCenter.toStringAsFixed(2)}pt في '
+              'التخطيط القانوني.');
+
+      if (align == PaperAlign.left || align == PaperAlign.justify) {
+        expect(fieldLine.left, closeTo(runLeft - blockLeft, kInkTolerancePt),
+            reason: '$key: الحافة اليسرى.');
+      }
+      if (align == PaperAlign.right) {
+        expect(fieldLine.right, closeTo(runRight - blockLeft, kInkTolerancePt),
+            reason: '$key: الحافة اليمنى.');
+      }
+      lefts[align] = fieldLine.left;
+    }
+
+    // المحاذاة ليست عمياء: اليسار < الوسط < اليمين في إزاحة السطر نفسه.
+    expect(lefts[PaperAlign.left]! + kGeometryTolerancePt,
+        lessThan(lefts[PaperAlign.center]!),
+        reason: 'محاذاة الوسط لم تُحرّك السطر عن اليسار.');
+    expect(lefts[PaperAlign.center]! + kGeometryTolerancePt,
+        lessThan(lefts[PaperAlign.right]!),
+        reason: 'محاذاة اليمين لم تُحرّك السطر عن الوسط.');
+    // والفقرة القصيرة لا تُمَدّ في الضبط.
+    expect(lefts[PaperAlign.justify]!,
+        closeTo(lefts[PaperAlign.left]!, kInkTolerancePt),
+        reason: 'الضبط مدّ فقرة من سطر واحد.');
   });
 
   test('لا يُعاد إدخال توسعة ضبط يدوية ولا استثناء قياس', () {
