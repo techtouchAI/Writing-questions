@@ -4724,9 +4724,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       // صفحة — فينكسر السطر في موضع آخر (قِيس في preview_field_geometry_test).
       // الحدّ الآن في `foregroundDecoration`: يُرسم ولا يحجز مساحة.
       decoration: showPreviewChrome
-          ? const BoxDecoration(
+          ? BoxDecoration(
               color: Colors.white,
-              boxShadow: <BoxShadow>[
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+              boxShadow: const <BoxShadow>[
                 BoxShadow(
                   color: Color(0x22000000),
                   blurRadius: 12,
@@ -4735,11 +4736,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               ],
             )
           : const BoxDecoration(color: Colors.white),
-      foregroundDecoration: showPreviewChrome
-          ? BoxDecoration(
-              border: Border.all(color: const Color(0xFFE5E7EB)),
-            )
-          : null,
+
       child: KeyedSubtree(
         key: ValueKey<String>('a4-page-${page.index}'),
         child: interactive

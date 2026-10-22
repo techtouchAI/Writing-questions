@@ -32,8 +32,9 @@ abstract final class VisualFlutterStyle {
       // (0.5px في Material 3). أثره المقيس: نصّ أوسع بـ≈11% من قياس المحرك
       // نفسه، فتنكسر الأسطر في المعاينة في موضع آخر غير PDF — وهو الاختلاف
       // نفسه الذي كانت تُحاول توسعة `wordSpacing` اليدوية تغطيته.
-      letterSpacing: PaperMetrics.px(style.letterSpacingPt ?? 0),
-      wordSpacing: 0,
+      letterSpacing: style.letterSpacingPt == null
+          ? null
+          : PaperMetrics.px(style.letterSpacingPt!),
       color: style.color != null
           ? Color(style.color!)
           : (defaultColor ?? const Color(0xFF000000)),
