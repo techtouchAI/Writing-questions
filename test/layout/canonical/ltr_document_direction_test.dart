@@ -175,9 +175,10 @@ void main() {
     // نفسها في سبب الفشل فتُشخَّص في التشغيل لا بالتخمين.
     final arabicIndicWords = <String>[
       for (final page in report.pages)
-        for (final word in page.words)
-          if (word.text.runes.any((rune) => rune >= 0x660 && rune <= 0x669))
-            word.text,
+        for (final line in page.lines)
+          for (final word in line.words)
+            if (word.text.runes.any((rune) => rune >= 0x660 && rune <= 0x669))
+              'ص${page.index + 1}: ${word.text} في سطر [${line.describe()}]',
     ];
     expect(arabicIndicWords, isEmpty,
         reason: 'الورقة الإنجليزية تحمل أرقاماً مشرقية: $arabicIndicWords');
