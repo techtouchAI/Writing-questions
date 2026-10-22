@@ -314,20 +314,6 @@ void main() {
         reason: 'لا أسطر قانونية لـ$node: القياس بلا مرجع.');
     diagnose(key, tester, field, _arabicBody, fieldLines, canonicalLines);
 
-    // تشخيص سلسلة الأحجام: من أين يأتي فرق العمود (2px) إن وُجد.
-    final chain = <String>[];
-    tester.element(field).visitAncestorElements((element) {
-      final render = element.renderObject;
-      if (render is RenderBox && render.hasSize && chain.length < 14) {
-        chain.add('${element.widget.runtimeType}='
-            '${render.size.width.toStringAsFixed(2)}');
-      }
-      return chain.length < 14;
-    });
-    // ignore: avoid_print
-    print('[geom] $key | سلسلة العرض: ${chain.join(' < ')} | عمود التخطيط='
-        '${canonical.pages.first.bodyBounds.width.toStringAsFixed(2)}pt');
-
     // (0) العمود نفسه: عرض حقل التحرير = عرض عمود النصّ القانوني. الفرق هنا
     // يعني أن ما يُرسم على الشاشة يُلفّ في عمود غير العمود المطبوع (كان
     // `padding: 1` لمؤشّر التحديد يضيّقه 2px ما دام السؤال محدَّداً).
