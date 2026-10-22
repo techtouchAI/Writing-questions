@@ -442,8 +442,10 @@ class PdfStructureReport {
         'ص${page.index + 1}: أسطر=${page.lineCount} كلمات=${page.wordCount} '
         'صور=${page.embeddedImageObjects} '
         'خطوط=${page.baseFonts.join(',')} '
+        // «تقديمي» أشكال حروف بقيت في /ToUnicode (يجب أن تكون ٠ بعد فصل
+        // قناة الاستخراج)، و«معجمي» الحروف الأساسية القابلة للبحث.
         'تقديمي=${page.presentationFormLetters} '
-        'مشروط=${page.unshapedArabicLetters} '
+        'معجمي=${page.unshapedArabicLetters} '
         'أرقام-مشرقية=${page.arabicIndicDigits} '
         'أرقام-لاتينية=${page.latinDigits}; ',
       );
