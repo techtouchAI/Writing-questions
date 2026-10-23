@@ -60,7 +60,7 @@ ExamDocument _document({bool ltr = false}) => ExamDocument(
           id: 'fq2',
           questionNumber: 2,
           statement: ltr ? 'Second question' : 'السؤال الثاني',
-          body: '${_paragraph(ltr ? 'LTR-B' : 'ب', repeats: 16)} ZEND2',
+          body: '${_paragraph(ltr ? 'LTR-B' : 'ب', repeats: 46)} ZEND2',
           bodyAlign: PaperAlign.justify,
         ),
         QuestionModel(

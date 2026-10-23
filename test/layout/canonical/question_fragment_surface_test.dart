@@ -71,7 +71,7 @@ ExamDocument _document() => ExamDocument(
           id: 'fq2',
           questionNumber: 2,
           statement: 'السؤال الثاني',
-          body: '${_paragraph('ب', repeats: 16)} $_marker',
+          body: '${_paragraph('ب', repeats: 46)} $_marker',
           bodyAlign: PaperAlign.justify,
         ),
         QuestionModel(
@@ -247,6 +247,8 @@ void main() {
     final controller = await _pumpPreview(tester, document);
     final plan = await _planOf(controller.document);
     final last = plan.fragmentsOfQuestion('fq2').last;
+    expect(last.isContinuation, isTrue,
+        reason: 'آخر مقطع ليس تكملة: المستند لم يُنتج سؤالاً ممتداً.');
 
     final continuationField = find.descendant(
       of: find.byKey(ValueKey<String>('body-fq2/slice${last.fragmentIndex}')),

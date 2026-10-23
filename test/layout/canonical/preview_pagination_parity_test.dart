@@ -71,7 +71,7 @@ ExamDocument _document({bool ltr = false, int questions = 7}) => ExamDocument(
             body: _paragraph(
               ltr ? 'LTR Q${index + 1}' : 'Q${index + 1}',
               // السؤال الرابع يمتدّ على أكثر من صفحة: يفرض سياسة الفصل.
-              repeats: index == 3 ? 14 : 4,
+              repeats: index == 3 ? 46 : 4,
             ),
             bodyAlign: PaperAlign.justify,
           ),
