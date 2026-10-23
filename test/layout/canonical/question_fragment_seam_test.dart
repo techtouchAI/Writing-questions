@@ -166,12 +166,15 @@ Future<ExamWizardController> _pumpPreview(
   return controller;
 }
 
+/// مفتاح مقطع الحقل: البدائي بلا لاحقة، والتكملة بلاحقة فهرسها (تُميّز
+/// مفاتيح الحقول المشتركة في المتحكم نفسه).
+String _sliceSuffix(CanonicalPagePlanFragment fragment) =>
+    fragment.isContinuation ? '/slice${fragment.fragmentIndex}' : '';
+
+/// حقل **متن** السؤال في المقطع (لا حقل المنطوق: الكتلة تحوي حقلين).
 Finder _fieldOf(CanonicalPagePlanFragment fragment) => find.descendant(
       of: find.byKey(
-        ValueKey<String>(
-          'page-slice-${fragment.questionId}'
-          '${fragment.isContinuation ? '/slice${fragment.fragmentIndex}' : ''}',
-        ),
+        ValueKey<String>('body-${fragment.questionId}${_sliceSuffix(fragment)}'),
       ),
       matching: find.byType(TextField),
     );
@@ -239,8 +242,7 @@ Rect _windowOf(WidgetTester tester, CanonicalPagePlanFragment fragment) =>
     tester.getRect(
       find.byKey(
         ValueKey<String>(
-          'page-slice-${fragment.questionId}'
-          '${fragment.isContinuation ? '/slice${fragment.fragmentIndex}' : ''}',
+          'page-slice-${fragment.questionId}${_sliceSuffix(fragment)}',
         ),
       ),
     );
@@ -251,12 +253,23 @@ Rect _windowOf(WidgetTester tester, CanonicalPagePlanFragment fragment) =>
 double _allowedSeamDriftPx(CanonicalPagePlanFragment fragment) =>
     (fragment.sourceTopPt + fragment.heightPt) * kPxPerPtMismatch + 0.5;
 
+/// معرّفات أسطر **متن** السؤال في التخطيط (لا سطر منطوقه): حقل المتن هو ما
+/// يُقاس، ولا يرى سطر المنطوق.
+Set<String> _bodyLineIds(CanonicalPagePlan plan, String questionId) => <String>{
+      for (final page in plan.layout.pages)
+        for (final block in page.blocks)
+          for (final line in block.allLines)
+            if (line.semanticNodeId.startsWith('$questionId/body')) line.id,
+    };
+
 /// أسطر الخطة لسؤال واحد على صفحة مقطع معيّن، بترتيبها.
 List<LayoutLine> _linesOfFragment(
   CanonicalPagePlan plan,
   CanonicalPagePlanFragment fragment,
 ) {
-  final ids = fragment.lineIds.toSet();
+  final ids = fragment.lineIds
+      .where((id) => _bodyLineIds(plan, fragment.questionId).contains(id))
+      .toSet();
   return <LayoutLine>[
     for (final page in plan.layout.pages)
       if (page.index == fragment.pageIndex)
@@ -349,12 +362,17 @@ void main() {
               lines[index].top < window.bottom - 0.5)
             index,
       ];
+      final expected = fragment.lineIds
+          .where((id) => _bodyLineIds(plan, fragment.questionId).contains(id))
+          .length;
+      expect(expected, greaterThan(0),
+          reason: 'مقطع بلا أسطر متن في الخطة: القياس بلا معنى.');
       expect(
         visible.length,
-        fragment.lineIds.length,
-        reason: 'عدد الأسطر المرسومة في المقطع ${fragment.fragmentIndex} '
-            '(${visible.length}) لا يساوي عدد أسطر الخطة '
-            '(${fragment.lineIds.length}): إمّا سطر مقصوص أو سطر دخيل.',
+        expected,
+        reason: 'عدد أسطر المتن المرسومة في المقطع ${fragment.fragmentIndex} '
+            '(${visible.length}) لا يساوي عدد أسطر الخطة ($expected): '
+            'إمّا سطر مقصوص أو سطر دخيل.',
       );
 
       // (أ) الاحتواء: لا سطر يتجاوز النافذة (قصّ أعلى/أسفل).
@@ -376,9 +394,12 @@ void main() {
       final pitch = visible.length > 1
           ? lines[visible[1]].top - first.top
           : last.bottom - first.top;
-      expect((first.top - window.top).abs(), lessThanOrEqualTo(pitch * 0.5 + drift),
-          reason: 'المقطع ${fragment.fragmentIndex} يبدأ بفجوة '
-              '${(first.top - window.top).toStringAsFixed(2)}px فوق أول سطر.');
+      if (fragment.isContinuation) {
+        // التكملة تبدأ عند خطّ القصّ نفسه: أول سطرها عند أعلى نافذتها.
+        expect(first.top - window.top, lessThanOrEqualTo(pitch * 0.5 + drift),
+            reason: 'التكملة ${fragment.fragmentIndex} تبدأ بفجوة '
+                '${(first.top - window.top).toStringAsFixed(2)}px فوق أول سطر.');
+      }
       expect(window.bottom - last.bottom, lessThanOrEqualTo(pitch + 0.5),
           reason: 'المقطع ${fragment.fragmentIndex} ينتهي بفجوة '
               '${(window.bottom - last.bottom).toStringAsFixed(2)}px بعد آخر سطر.');
@@ -650,9 +671,13 @@ void main() {
 
     // كل كلمة حدّ تُطبع مرة واحدة، في صفحة مقطعها بالضبط.
     for (final seam in seamWords) {
+      final reversed = String.fromCharCodes(
+        seam.word.runes.toList().reversed,
+      );
       final occurrences = <int>[
         for (var page = 0; page < pages.length; page++)
-          if (pages[page].contains(seam.word)) page,
+          if (pages[page].any((word) => word == seam.word || word == reversed))
+            page,
       ];
       expect(occurrences, <int>[seam.pageIndex],
           reason: 'الكلمة "${seam.word}" من سطر حدّ المقطع '
@@ -688,7 +713,8 @@ void main() {
         'f${fragment.fragmentIndex}: srcTop=${fragment.sourceTopPt.toStringAsFixed(2)}pt '
         'h=${fragment.heightPt.toStringAsFixed(2)}pt '
         'win=${window.height.toStringAsFixed(2)}px '
-        'أسطر=${visible.length}/${fragment.lineIds.length} '
+        'أسطر=${visible.length}/'
+        '${fragment.lineIds.where((id) => _bodyLineIds(plan, fragment.questionId).contains(id)).length} '
         'topGap=${topGap.toStringAsFixed(2)}px '
         'bottomGap=${bottomGap.toStringAsFixed(2)}px '
         'overflow=${overflow.toStringAsFixed(2)}px '
