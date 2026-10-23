@@ -347,6 +347,8 @@ void main() {
     // كل مقطع يبني الكتلة كاملة، فعدد أسطر السؤال = عدد أسطر أول حقل.
     final totalLines = _lineBoxes(tester, _fieldOf(fragments.first)).length;
     final covered = <int>[];
+    final continuationTopGaps = <double>[];
+    final slacks = <double>[];
     var previousIndex = -1;
 
     for (final fragment in fragments) {
@@ -401,7 +403,9 @@ void main() {
         expect(first.top - window.top, lessThanOrEqualTo(pitch * 0.5 + drift),
             reason: 'التكملة ${fragment.fragmentIndex} تبدأ بفجوة '
                 '${(first.top - window.top).toStringAsFixed(2)}px فوق أول سطر.');
+        continuationTopGaps.add(first.top - window.top);
       }
+      slacks.add(window.bottom - last.bottom);
       expect(window.bottom - last.bottom, lessThanOrEqualTo(pitch + 0.5),
           reason: 'المقطع ${fragment.fragmentIndex} ينتهي بفجوة '
               '${(window.bottom - last.bottom).toStringAsFixed(2)}px بعد آخر سطر.');
@@ -417,6 +421,26 @@ void main() {
     expect(covered, List<int>.generate(totalLines, (index) => index),
         reason: 'الأسطر المغطاة ($covered) ليست كل أسطر السؤال ($totalLines) '
             'بترتيبها: فقد أو تكرار عند الحدّ.');
+
+    // (د) لا تراكم عند الحدود: بقايا الحدّ (فجوة أعلى أول سطر، وفراغ أسفل آخر
+    // سطر) يجب أن تكون **متطابقة** في كل مقطع، لأنها فرق اصطلاح بين صندوق
+    // الحبر وصندوق السطر — لا انزياحاً يتراكم. أي اختلاف بينها يعني أن محتوى
+    // مقطع أزاح نفسه عن الخطة. والفراغ السفلي لا يقلّ عن 1px كي يبقى صفّ
+    // البكسل عند خطّ القصّ خالياً من الحبر (يُقاس بالصورة في الاختبار التالي).
+    expect(continuationTopGaps.length, greaterThanOrEqualTo(1));
+    final topSpread =
+        continuationTopGaps.reduce(math.max) - continuationTopGaps.reduce(math.min);
+    expect(topSpread, lessThanOrEqualTo(0.5),
+        reason: 'فجوة أعلى السطر الأول تختلف بين المقاطع '
+            '(${continuationTopGaps.map((value) => value.toStringAsFixed(2)).toList()}): '
+            'انزياح يتراكم عند الحدود.');
+    final slackSpread = slacks.reduce(math.max) - slacks.reduce(math.min);
+    expect(slackSpread, lessThanOrEqualTo(0.5),
+        reason: 'فراغ أسفل آخر سطر يختلف بين المقاطع '
+            '(${slacks.map((value) => value.toStringAsFixed(2)).toList()}).');
+    expect(slacks.reduce(math.min), greaterThanOrEqualTo(1.0),
+        reason: 'آخر سطر يلامس خطّ القصّ '
+            '(${slacks.reduce(math.min).toStringAsFixed(2)}px): حبر مقطوع.');
   });
 
   testWidgets('حبر الحدّ: آخر سطر ظاهر كاملاً، ولا حبر مقطوع عند خطّ القصّ',
@@ -782,37 +806,6 @@ void main() {
             'أدوات التحرير.');
   });
 
-  // ⚠️ TEMP: أرقام ما بعد الإصلاح (يُزال في الالتزام التالي مباشرة).
-  testWidgets('SEAM-AFTER: أرقام بعد ربط ارتفاع صفّ العنوان بالخطة',
-      (tester) async {
-    final document = _arabicDocument();
-    final controller = await _pumpPreview(tester, document);
-    final plan = await _planOf(controller.document);
-    final fragments = plan.fragmentsOfQuestion('sq2');
-    String f(double value) => value.toStringAsFixed(2);
-    final out = StringBuffer();
-    for (final fragment in fragments) {
-      final window = _windowOf(tester, fragment);
-      final field = _fieldOf(fragment);
-      final lines = _lineBoxes(tester, field);
-      final visible = <int>[
-        for (var index = 0; index < lines.length; index++)
-          if (lines[index].bottom > window.top + 0.5 &&
-              lines[index].top < window.bottom - 0.5)
-            index,
-      ];
-      final expected = fragment.lineIds
-          .where((id) => _bodyLineIds(plan, fragment.questionId).contains(id))
-          .length;
-      out.write('f${fragment.fragmentIndex} '
-          'lines=${visible.length}/$expected '
-          'topGap=${f(lines[visible.first].top - window.top)} '
-          'ovf=${f(lines[visible.last].bottom - window.bottom)} '
-          'slack=${f(window.bottom - lines[visible.last].bottom)} '
-          'lim=${f(_allowedSeamDriftPx(fragment))} | ');
-    }
-    expect(out.toString(), 'PROBE');
-  });
 }
 
 /// مستند بعنوان ومتن ونقاط وفرع: يقيس إزاحات العناصر لا القصّ وحده.
