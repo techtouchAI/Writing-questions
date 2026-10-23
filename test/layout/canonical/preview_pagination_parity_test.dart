@@ -128,6 +128,8 @@ List<List<String>> _renderedFragments(
         matching: find.byKey(ValueKey<String>('question-block-${question.id}')),
       );
       if (starts.evaluate().isNotEmpty) ids.add('${question.id}#0');
+      // كل الفهارس (لا توقّف عند أول غائب): الصفحة قد تحمل المقطع الثاني
+      // لسؤال بلا المقطع الأول، وهذا بالضبط ما يجب أن يُقاس.
       for (var fragment = 1; fragment < 40; fragment++) {
         final continuation = find.descendant(
           of: canvas,
@@ -135,8 +137,7 @@ List<List<String>> _renderedFragments(
             ValueKey<String>('question-block-${question.id}/slice$fragment'),
           ),
         );
-        if (continuation.evaluate().isEmpty) break;
-        ids.add('${question.id}#$fragment');
+        if (continuation.evaluate().isNotEmpty) ids.add('${question.id}#$fragment');
       }
     }
     rendered.add(ids);
