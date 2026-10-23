@@ -5151,7 +5151,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     Widget block,
     String suffix,
   ) {
-    final offsetPx = LayoutUnits.ptToPx(fragment.sourceTopPt);
+    final offsetPx = LayoutUnits.ptToPx(fragment.sourceTopPt + 3); // FAULT INJECTION B
     final heightPx = LayoutUnits.ptToPx(fragment.heightPt);
     return SizedBox(
       key: ValueKey<String>('page-slice-${fragment.questionId}$suffix'),
