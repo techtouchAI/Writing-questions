@@ -3533,6 +3533,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                                     layout,
                                     page,
                                     pagePlan.pageCount,
+                                    pagePlan,
                                   )
                               else if (canonicalAssets != null)
                                 for (final page in pagePlan.layout.pages)
@@ -4418,6 +4419,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     SubjectLayoutTemplate layout,
     CanonicalPagePlanPage page,
     int pageCount,
+    CanonicalPagePlan plan,
   ) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -4434,6 +4436,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               layout,
               page,
               pageCount,
+              plan,
             ),
           ),
         ),
@@ -4494,7 +4497,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
     CanonicalPagePlanPage page,
-    int pageCount, {
+    int pageCount,
+    CanonicalPagePlan plan, {
     bool interactive = true,
     bool showPreviewChrome = true,
   }) {
@@ -4548,6 +4552,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           layout,
           questionData,
           sliceSuffix: suffix,
+          titleHeightPt: plan.titleHeightPtOf(questionData.id),
         );
       } finally {
         _sliceKeySuffix = previousSuffix;
@@ -5119,6 +5124,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
+  /// يقيّد صفّاً في كتلة الورقة بارتفاعه من الخطة حين يكون معروفاً.
+  ///
+  /// الأدوات المضمّنة في الصفّ (أزرار تحرير) لا يجوز أن تحدّد ارتفاع الورقة:
+  /// الخطة وPDF يحسبان ارتفاع الصفّ من أسطره. تقييد الصفّ يترك الأدوات في
+  /// مكانها (وتُقيَّد هي نفسها بالارتفاع) بلا حشوة تعويضية ولا تغيير قياس.
+  Widget _planRowHeight({required Widget child, double? heightPt}) {
+    if (heightPt == null || heightPt <= 0) return child;
+    return SizedBox(height: LayoutUnits.ptToPx(heightPt), child: child);
+  }
+
   /// لاحقة مفاتيح ودجت المقطع الجاري بناؤه (`/sliceN` أو فارغة).
   ///
   /// تُضبط أثناء بناء مقطع التكملة وحده: الحقول تشترك في المتحكمات نفسها (§19.9)
@@ -5162,6 +5177,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     QuestionBlock data, {
     /// لاحقة مفاتيح ودجت مقطع التكملة (`/sliceN`)؛ فارغة في مقطع البداية.
     String sliceSuffix = '',
+
+    /// ارتفاع صفّ العنوان من الخطة (نقاط) — يقود الورقة بدل ارتفاع الأدوات.
+    double? titleHeightPt,
   }) {
     final document = controller.document;
     final question = document.questions[data.index];
@@ -5214,7 +5232,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             semanticContent: data.category!.content,
           ),
         // سطر العنوان: الرقم ← المنطوق ← الدرجة «(٢٠ درجة)» في سطر واحد.
-        GestureDetector(
+        //
+        // ارتفاع الصفّ من **الخطة** لا من أزرار التحرير: الصفّ يحمل أدوات
+        // (سحب، إضافة فرع، نسخ، حذف) بارتفاع 40px لا تُطبع ولا يعرفها المحرك،
+        // فكان يفرض على الورقة ارتفاعاً أكبر من ارتفاع سطره (23.25pt) فينزاح
+        // كل محتوى السؤال بعده 9px عن PDF — وعند التقاطع بين صفحتين يقع خطّ
+        // القصّ داخل آخر سطر (§19.12). الأزرار تبقى في الصف نفسه وتُقيَّد
+        // بارتفاع السطر: لا حشوة تعويضية ولا تغيير في هندسة النصّ.
+        _planRowHeight(
+          heightPt: titleHeightPt,
+          child: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () => _tapQuestion(questionIndex),
           child: _titleRow(
@@ -5310,6 +5337,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                         onPressed: () => _confirmDeleteQuestion(questionIndex),
                       ),
                   ],
+          ),
           ),
         ),
         // نص السؤال: يُحذف كلياً عند فراغه (يظهر للتحرير عند تحديد السؤال).

@@ -156,10 +156,12 @@ class CanonicalPagePlan {
     this.pages,
     this._pageOfBlock,
     this._unplannedByPage,
+    this._titleHeightPt,
   ) : assert(pages.length == layout.pages.length);
 
   factory CanonicalPagePlan.fromLayout(LayoutDocument layout) {
     final pageOfBlock = <String, int>{};
+    final titleHeights = <String, double>{};
     final started = <String>{};
     // المرور الأول: أسئلة البداية/التكملة والمقياس لكل صفحة.
     final drafts = <({
@@ -187,6 +189,11 @@ class CanonicalPagePlan {
           starts.add(id);
           started.add(id);
           pageOfBlock.putIfAbsent(id, () => page.index);
+        }
+        for (final child in block.children) {
+          if (child.kind == LayoutBlockKind.title) {
+            titleHeights.putIfAbsent(id, () => child.rect.height);
+          }
         }
         fragments.add(
           CanonicalPagePlanFragment(
@@ -267,6 +274,7 @@ class CanonicalPagePlan {
       List<CanonicalPagePlanPage>.unmodifiable(pages),
       Map<String, int>.unmodifiable(pageOfBlock),
       Map<int, List<String>>.unmodifiable(unplanned),
+      Map<String, double>.unmodifiable(titleHeights),
     );
   }
 
@@ -276,6 +284,7 @@ class CanonicalPagePlan {
   final List<CanonicalPagePlanPage> pages;
   final Map<String, int> _pageOfBlock;
   final Map<int, List<String>> _unplannedByPage;
+  final Map<String, double> _titleHeightPt;
 
   int get pageCount => pages.length;
 
@@ -323,6 +332,15 @@ class CanonicalPagePlan {
     }
     return null;
   }
+
+  /// ارتفاع **صفّ العنوان** كما حسبه المحرك (نقاط)، أو `null` إن لم يُخطَّط.
+  ///
+  /// يلزم السطح التفاعلي لأن صفّ العنوان يحمل أدوات تحرير (سحب/إضافة فرع/نسخ/
+  /// حذف) لا تُطبع ولا تدخل في حساب المحرك. بلا هذا العرض يحدّد ارتفاع الصفّ
+  /// أكبر زرّ فيه (40px) بدل ارتفاع سطره (23.25pt)، فينزاح كل محتوى السؤال
+  /// بعده 9px عن الخطة — وعند التقاطع بين صفحتين يقع خطّ القصّ داخل آخر سطر
+  /// (§19.12). القيمة من `LayoutDocument` كما هي، بلا قياس في هذا الملف.
+  double? titleHeightPtOf(String questionId) => _titleHeightPt[questionId];
 
   /// هل هناك سؤال بلا محتوى مطبوع (لا يظهر في الورقة/PDF لكنه يُحرَّر)؟
   bool get hasUnplannedQuestions => _unplannedByPage.isNotEmpty;

@@ -33,6 +33,8 @@ import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/layout/paper_metrics.dart';
+import 'package:writing_questions_app/models/branch_item.dart';
+import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/paper_settings.dart';
@@ -686,47 +688,133 @@ void main() {
     }
   });
 
-  // ⚠️ TEMP (يُزال بعد قراءة الأرقام): مصدر فرق الإزاحة داخل الكتلة.
-  testWidgets('SEAM-PROBE: جدول قياس الحدود', (tester) async {
-    final document = _arabicDocument();
+  testWidgets('إزاحة عناصر الكتلة عن الخطة: العنوان والمتن والنقاط والفرع',
+      (tester) async {
+    // نفس السبب الجذري للقصّ (§19.12): صفّ الورقة كان يأخذ ارتفاعه من أدوات
+    // التحرير (أزرار 40px) بدل ارتفاع سطره من الخطة، فينزاح ما بعده. هنا تُقاس
+    // إزاحة كل عنصر مرسوم داخل الكتلة مقابل إزاحته في `LayoutDocument`.
+    final document = _elementsDocument();
     final controller = await _pumpPreview(tester, document);
     final plan = await _planOf(controller.document);
-    final fragment = plan.fragmentsOfQuestion('sq2').first;
-    String f(double value) => value.toStringAsFixed(1);
-    final out = StringBuffer();
+    final layout = plan.layout;
 
-    // المحرك: كتل السؤال على صفحة المقطع.
-    for (final page in plan.layout.pages) {
-      if (page.index != fragment.pageIndex) continue;
-      for (final block in page.blocks) {
-        if (block.kind != LayoutBlockKind.question ||
-            block.semanticNodeId != 'sq2') {
-          continue;
+    LayoutBlock? questionBlock(String id) {
+      for (final page in layout.pages) {
+        for (final block in page.blocks) {
+          if (block.kind == LayoutBlockKind.question &&
+              block.semanticNodeId == id) {
+            return block;
+          }
         }
-        out.write('ENG qTop=${f(block.rect.top)} h=${f(block.rect.height)} | ');
-        for (final child in block.children.take(5)) {
-          out.write('${child.kind.name}:top=${f(child.rect.top)} '
-              'h=${f(child.rect.height)} ');
-        }
-        out.write('| ');
       }
+      return null;
     }
 
-    // الودجات: الكتلة وحقولها داخل المقطع.
-    final window = _windowOf(tester, fragment);
-    final blockRect =
-        tester.getRect(find.byKey(const ValueKey<String>('question-block-sq2')));
-    final titleRect = tester.getRect(
-      find.byKey(const ValueKey<String>('statement-sq2')),
+    final block = questionBlock('eq1');
+    expect(block, isNotNull, reason: 'كتلة السؤال غير موجودة في التخطيط.');
+    final blockTop = block!.rect.top;
+    final renderedTop = tester
+        .getTopLeft(find.byKey(const ValueKey<String>('question-block-eq1')))
+        .dy;
+
+    final checks = <({String label, Finder finder, double planTopPt})>[
+      (
+        label: 'العنوان',
+        finder: find.byKey(const ValueKey<String>('statement-eq1')),
+        planTopPt: <double>[
+          for (final child in block.children)
+            if (child.kind == LayoutBlockKind.title) child.rect.top,
+        ].first,
+      ),
+      (
+        label: 'المتن',
+        finder: find.byKey(const ValueKey<String>('body-eq1')),
+        planTopPt: <double>[
+          for (final child in block.children)
+            if (child.kind == LayoutBlockKind.body) child.rect.top,
+        ].first,
+      ),
+    ];
+
+    for (final check in checks) {
+      expect(check.finder, findsOneWidget,
+          reason: 'عنصر «${check.label}» غير مرسوم.');
+      final renderedOffsetPx =
+          tester.getTopLeft(check.finder).dy - renderedTop;
+      final planOffsetPx = LayoutUnits.ptToPx(check.planTopPt - blockTop);
+      // الحدّ المشتقّ: فرق ثابتَي التحويل على ارتفاع العنصر + تقريب الودجات.
+      final allowed = planOffsetPx * kUnitRatioError.abs() + 0.75;
+      expect(
+        (renderedOffsetPx - planOffsetPx).abs(),
+        lessThanOrEqualTo(allowed),
+        reason: 'إزاحة «${check.label}» داخل الكتلة ${renderedOffsetPx.toStringAsFixed(2)}px '
+            'مقابل ${planOffsetPx.toStringAsFixed(2)}px في الخطة '
+            '(الفرق ${(renderedOffsetPx - planOffsetPx).toStringAsFixed(2)}px، '
+            'الحدّ ${allowed.toStringAsFixed(2)}px).',
+      );
+    }
+
+    // ارتفاع صفّ العنوان = ارتفاعه في الخطة مهما كان ارتفاع أدوات التحرير فيه.
+    final titleRect =
+        tester.getRect(find.byKey(const ValueKey<String>('statement-eq1')));
+    final titleRowRect = tester.getRect(
+      find.ancestor(
+        of: find.byKey(const ValueKey<String>('statement-eq1')),
+        matching: find.byType(Row),
+      ).first,
     );
-    final bodyRect = tester.getRect(find.byKey(const ValueKey<String>('body-sq2')));
-    out.write(
-      'UI win=${f(window.top)}/${f(window.height)} '
-      'block=${f(blockRect.top)}/${f(blockRect.height)} '
-      'title=${f(titleRect.top - window.top)}/${f(titleRect.height)} '
-      'body=${f(bodyRect.top - window.top)}/${f(bodyRect.height)} '
-      'bodyTopInBlock=${f(bodyRect.top - blockRect.top)}',
+    final planTitleHeight = LayoutUnits.ptToPx(
+      <double>[
+        for (final child in block.children)
+          if (child.kind == LayoutBlockKind.title) child.rect.height,
+      ].first,
     );
-    expect(out.toString(), 'PROBE');
+    expect((titleRowRect.height - planTitleHeight).abs(),
+        lessThanOrEqualTo(1.0),
+        reason: 'صفّ العنوان ${titleRowRect.height.toStringAsFixed(2)}px مقابل '
+            '${planTitleHeight.toStringAsFixed(2)}px في الخطة: أدوات التحرير '
+            'تحدّد ارتفاع الورقة.');
+    expect((titleRect.height - planTitleHeight).abs(), lessThanOrEqualTo(1.0),
+        reason: 'حقل العنوان ${titleRect.height.toStringAsFixed(2)}px مقابل '
+            '${planTitleHeight.toStringAsFixed(2)}px: سطر الورقة مضغوط.');
+    expect(plan.titleHeightPtOf('eq1'), isNotNull,
+        reason: 'الخطة لا تُعلن ارتفاع صفّ العنوان: السطح سيعود إلى ارتفاع '
+            'أدوات التحرير.');
   });
 }
+
+/// مستند بعنوان ومتن ونقاط وفرع: يقيس إزاحات العناصر لا القصّ وحده.
+ExamDocument _elementsDocument() => ExamDocument(
+      name: 'إزاحة العناصر',
+      header: ExamHeaderModel.initial(
+        subject: 'الرياضيات',
+        schoolName: 'ثانوية النهوض',
+      ),
+      settings: const PaperSettings(
+        baseFontSize: 11,
+        lineSpacing: 1.7,
+        marginMm: 15,
+      ),
+      questions: <QuestionModel>[
+        QuestionModel(
+          id: 'eq1',
+          questionNumber: 1,
+          statement: 'السؤال الأول',
+          body: _arabicParagraph('هـ', repeats: 3),
+          items: <BranchItem>[
+            BranchItem(id: 'p1', text: 'نقطة أولى'),
+            BranchItem(id: 'p2', text: 'نقطة ثانية'),
+          ],
+          branches: <BranchModel>[
+            BranchModel(
+              content: BranchContent(
+                statement: 'فرع أول',
+                items: <BranchItem>[BranchItem(id: 'p3', text: 'نقطة الفرع')],
+              ),
+              marks: 2,
+            ),
+          ],
+          bodyAlign: PaperAlign.justify,
+        ),
+      ],
+    );
