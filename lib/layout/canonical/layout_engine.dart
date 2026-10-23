@@ -1602,13 +1602,8 @@ class _LayoutBuilder {
   /// نقطة القرار الوحيدة: بلا خطة مُسلَّمة تقسّم كما تقتضي القياسات، ومع خطة
   /// مُسلَّمة تُشتق منها فواصل الأسئلة ثم تُتحقّق النتيجة مقابلها.
   _Pagination _paginate(List<_QuestionFlow> questions) {
-    final forcedBreaks = questionPageAssignments == null
-        ? const <int>[]
-        : _forcedBreakIndices(questions);
-    final plan = _paginateNaturally(questions, forcedBreaks);
-    if (questionPageAssignments != null) {
-      _verifyAssignedPages(questionPageAssignments!, plan);
-    }
+    // FAULT-INJECTION (temporary): الخطة المُسلَّمة تُهمَل ويُعاد التقسيم بصمت.
+    final plan = _paginateNaturally(questions, const <int>[]);
     return plan;
   }
 

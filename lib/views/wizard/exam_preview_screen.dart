@@ -4504,8 +4504,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     // الحقول التركيز). تُرشَّح المعرّفات المحذوفة هنا كي لا يبقى فراغ كتلة.
     final blockIds = <String>[
       if (page.hasHeader && page.index == 0) PaperMetrics.headerBlockId,
+      // FAULT-INJECTION (temporary): الصفحة الأولى تُسقط سؤالها الأخير، فيصير
+      // توزيع المعاينة مختلفاً عن توزيع المحرك.
       ...page.questionIds.where(
-        (id) => documentIr.questionById(id) != null,
+        (id) =>
+            documentIr.questionById(id) != null &&
+            !(page.index == 0 &&
+                page.questionIds.length > 1 &&
+                id == page.questionIds.last),
       ),
       // أسئلة بلا محتوى مطبوع: لا تدخل خطة الورقة ولا PDF، لكنها تبقى قابلة
       // للتحرير هنا (المدرس يكتب من المعاينة). إرساؤها قرار عرض لا قرار تقسيم
