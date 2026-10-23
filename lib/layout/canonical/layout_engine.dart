@@ -1476,7 +1476,6 @@ class _LayoutBuilder {
   /// كانت النسخة السابقة تعيد بناء حساب السعة والفجوات والحجز في هذا الموضع:
   /// أي خوارزمية تقسيم ثانية بجانب `_paginateNaturally` — نفس العيب الذي أُزيل
   /// من طبقة العرض، لكن داخل المحرك.
-  // ignore: unused_element
   List<int> _forcedBreakIndices(List<_QuestionFlow> questions) {
     final requested = questionPageAssignments!;
     if (requested.isEmpty) {
@@ -1561,7 +1560,6 @@ class _LayoutBuilder {
 
   /// يتحقق أن التخطيط الناتج يطابق الخطة المُسلَّمة صفحةً صفحة، أو يسمّي
   /// أول اختلاف.
-  // ignore: unused_element
   void _verifyAssignedPages(List<List<String>> requested, _Pagination plan) {
     final actual = <List<String>>[
       for (final page in plan.pages)
