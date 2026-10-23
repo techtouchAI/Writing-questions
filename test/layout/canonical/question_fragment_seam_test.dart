@@ -686,42 +686,66 @@ void main() {
     }
   });
 
-  // ⚠️ TEMP (يُزال بعد قراءة الأرقام): يطبع جدول الحدود في رسالة فشل، لأن سجلات
-  // التشغيل الكاملة غير قابلة للتنزيل من بيئة التطوير.
+  // ⚠️ TEMP (يُزال بعد قراءة الأرقام): يطبع جدول القياس في رسالة فشل، لأن
+  // سجلات التشغيل الكاملة غير قابلة للتنزيل من بيئة التطوير.
   testWidgets('SEAM-PROBE: جدول قياس الحدود', (tester) async {
     final document = _arabicDocument();
     final controller = await _pumpPreview(tester, document);
     final plan = await _planOf(controller.document);
     final fragments = plan.fragmentsOfQuestion('sq2');
     final buffer = StringBuffer()
-      ..writeln('مستند عربي: ${fragments.length} مقطع، '
-          'فرق النسبة=$kUnitRatioError، انزياح/pt=$kPxPerPtMismatch px');
-    final firstLines = _lineBoxes(tester, _fieldOf(fragments.first));
+      ..writeln('فرق النسبة=$kUnitRatioError انزياح/pt=$kPxPerPtMismatch px');
+    final bodyIds = _bodyLineIds(plan, 'sq2');
     for (final fragment in fragments) {
       final window = _windowOf(tester, fragment);
-      final lines = _lineBoxes(tester, _fieldOf(fragment));
+      final field = _fieldOf(fragment);
+      final lines = _lineBoxes(tester, field);
+      final style = tester.widget<TextField>(field).style!;
       final visible = <int>[
         for (var index = 0; index < lines.length; index++)
           if (lines[index].bottom > window.top + 0.5 &&
               lines[index].top < window.bottom - 0.5)
             index,
       ];
-      final topGap = lines[visible.first].top - window.top;
-      final bottomGap = window.bottom - lines[visible.last].bottom;
-      final overflow = lines[visible.last].bottom - window.bottom;
+      final planned = _linesOfFragment(plan, fragment);
+      final enginePitch = planned.length > 1
+          ? planned[1].rect.top - planned[0].rect.top
+          : 0.0;
+      final widgetPitch = visible.length > 1
+          ? lines[visible[1]].top - lines[visible[0]].top
+          : 0.0;
       buffer.writeln(
-        'f${fragment.fragmentIndex}: srcTop=${fragment.sourceTopPt.toStringAsFixed(2)}pt '
+        'f${fragment.fragmentIndex}: win=${window.height.toStringAsFixed(2)}px '
         'h=${fragment.heightPt.toStringAsFixed(2)}pt '
-        'win=${window.height.toStringAsFixed(2)}px '
-        'أسطر=${visible.length}/'
-        '${fragment.lineIds.where((id) => _bodyLineIds(plan, fragment.questionId).contains(id)).length} '
-        'topGap=${topGap.toStringAsFixed(2)}px '
-        'bottomGap=${bottomGap.toStringAsFixed(2)}px '
-        'overflow=${overflow.toStringAsFixed(2)}px '
-        'الحدّ=${_allowedSeamDriftPx(fragment).toStringAsFixed(2)}px',
+        'srcTop=${fragment.sourceTopPt.toStringAsFixed(2)}pt '
+        'أسطر=${visible.length}/$bodyIds '
+        'topGap=${(lines[visible.first].top - window.top).toStringAsFixed(2)} '
+        'bottomGap=${(window.bottom - lines[visible.last].bottom).toStringAsFixed(2)} '
+        'overflow=${(lines[visible.last].bottom - window.bottom).toStringAsFixed(2)} '
+        'الحدّ=${_allowedSeamDriftPx(fragment).toStringAsFixed(2)}',
       );
+      buffer.writeln(
+        '   pitch: محرك=${enginePitch.toStringAsFixed(3)}pt '
+        '(${(enginePitch * LayoutUnits.ptToPx(1)).toStringAsFixed(3)}px) '
+        'حقل=${widgetPitch.toStringAsFixed(3)}px '
+        'فرق=${(widgetPitch - enginePitch * LayoutUnits.ptToPx(1)).toStringAsFixed(3)}px '
+        'خط=${style.fontFamily} fs=${style.fontSize?.toStringAsFixed(3)} '
+        'h=${style.height?.toStringAsFixed(3)} '
+        'ls=${style.letterSpacing?.toStringAsFixed(3)}',
+      );
+      if (planned.isNotEmpty) {
+        final firstRun = planned.first.runs.firstOrNull;
+        buffer.writeln(
+          '   engine style: fs=${firstRun?.style.fontSizePt} '
+          'lh=${firstRun?.style.lineHeightFactor} '
+          'asc=${planned.first.ascent.toStringAsFixed(3)} '
+          'desc=${planned.first.descent.toStringAsFixed(3)} '
+          'lead=${planned.first.leading.toStringAsFixed(3)} '
+          'h=${planned.first.rect.height.toStringAsFixed(3)} '
+          'box h=${(lines[visible.last].bottom - lines[visible.last].top).toStringAsFixed(3)}px',
+        );
+      }
     }
-    buffer.writeln('إجمالي أسطر السؤال (أول حقل)=${firstLines.length}');
     // فشل مقصود لعرض الجدول في تعليقات CI.
     expect(buffer.toString(), 'PROBE');
   });
