@@ -686,42 +686,47 @@ void main() {
     }
   });
 
-  // ⚠️ TEMP (يُزال بعد قراءة الأرقام): جدول قصير جداً (تعليقات CI تقتطع).
+  // ⚠️ TEMP (يُزال بعد قراءة الأرقام): مصدر فرق الإزاحة داخل الكتلة.
   testWidgets('SEAM-PROBE: جدول قياس الحدود', (tester) async {
     final document = _arabicDocument();
     final controller = await _pumpPreview(tester, document);
     final plan = await _planOf(controller.document);
-    final fragments = plan.fragmentsOfQuestion('sq2');
-    String f(double value) => value.toStringAsFixed(2);
+    final fragment = plan.fragmentsOfQuestion('sq2').first;
+    String f(double value) => value.toStringAsFixed(1);
     final out = StringBuffer();
-    for (final fragment in fragments) {
-      if (fragment.fragmentIndex > 1) break;
-      final window = _windowOf(tester, fragment);
-      final field = _fieldOf(fragment);
-      final lines = _lineBoxes(tester, field);
-      final style = tester.widget<TextField>(field).style!;
-      final visible = <int>[
-        for (var index = 0; index < lines.length; index++)
-          if (lines[index].bottom > window.top + 0.5 &&
-              lines[index].top < window.bottom - 0.5)
-            index,
-      ];
-      final planned = _linesOfFragment(plan, fragment);
-      final engPitch = planned.length > 1 ? planned[1].rect.top - planned[0].rect.top : 0.0;
-      final widPitch = visible.length > 1 ? lines[visible[1]].top - lines[visible[0]].top : 0.0;
-      out.write('f${fragment.fragmentIndex} win=${f(window.height)} '
-          'lines=${visible.length}/${planned.length} '
-          'topGap=${f(lines[visible.first].top - window.top)} '
-          'ovf=${f(lines[visible.last].bottom - window.bottom)} '
-          'lim=${f(_allowedSeamDriftPx(fragment))} '
-          'pitch eng=${f(engPitch)}pt/${f(engPitch * LayoutUnits.ptToPx(1))}px '
-          'field=${f(widPitch)}px '
-          'fs=${f(style.fontSize!)} h=${f(style.height!)} '
-          'engH=${f(planned.first.rect.height)}pt '
-          'asc=${f(planned.first.ascent)} desc=${f(planned.first.descent)} '
-          'lead=${f(planned.first.leading)} '
-          'boxH=${f(lines[visible.last].bottom - lines[visible.last].top)}px | ');
+
+    // المحرك: كتل السؤال على صفحة المقطع.
+    for (final page in plan.layout.pages) {
+      if (page.index != fragment.pageIndex) continue;
+      for (final block in page.blocks) {
+        if (block.kind != LayoutBlockKind.question ||
+            block.semanticNodeId != 'sq2') {
+          continue;
+        }
+        out.write('ENG qTop=${f(block.rect.top)} h=${f(block.rect.height)} | ');
+        for (final child in block.children.take(5)) {
+          out.write('${child.kind.name}:top=${f(child.rect.top)} '
+              'h=${f(child.rect.height)} ');
+        }
+        out.write('| ');
+      }
     }
+
+    // الودجات: الكتلة وحقولها داخل المقطع.
+    final window = _windowOf(tester, fragment);
+    final blockRect =
+        tester.getRect(find.byKey(const ValueKey<String>('question-block-sq2')));
+    final titleRect = tester.getRect(
+      find.byKey(const ValueKey<String>('statement-sq2')),
+    );
+    final bodyRect = tester.getRect(find.byKey(const ValueKey<String>('body-sq2')));
+    out.write(
+      'UI win=${f(window.top)}/${f(window.height)} '
+      'block=${f(blockRect.top)}/${f(blockRect.height)} '
+      'title=${f(titleRect.top - window.top)}/${f(titleRect.height)} '
+      'body=${f(bodyRect.top - window.top)}/${f(bodyRect.height)} '
+      'bodyTopInBlock=${f(bodyRect.top - blockRect.top)}',
+    );
     expect(out.toString(), 'PROBE');
   });
 }
