@@ -220,19 +220,23 @@ void main() {
           id: 'q1',
           questionNumber: 1,
           body: List<String>.filled(100, 'سطر طويل لاختبار تعدد الصفحات').join('\n'),
-          attachments: <FloatingElement>[
-            FloatingElement(
-              id: 'legacy-page-nav-element',
-              type: FloatingElementType.shape,
-              shape: FloatingShapeType.square,
-              dx: 220,
-              dy: 260,
-              width: 60,
-              height: 60,
-            ),
-          ],
         ),
         QuestionModel(id: 'q2', questionNumber: 2, body: 'السؤال الثاني'),
+      ],
+      // عنصر على الصفحة الثانية صريحاً: مرفق السؤال يتبع **صفحة بداية سؤاله**
+      // كما قرّرها المحرك (وهي هنا الصفحة الأولى)، فلم يبقَ مناسباً لاختبار
+      // الانتقال إلى الصفحة السابقة. العنصر الحر يحفظ صفحته بنفسه.
+      floatingElements: <FloatingElement>[
+        FloatingElement(
+          id: 'legacy-page-nav-element',
+          type: FloatingElementType.shape,
+          shape: FloatingShapeType.square,
+          dx: 220,
+          dy: 260,
+          pageIndex: 1,
+          width: 60,
+          height: 60,
+        ),
       ],
     );
     final controller = ExamWizardController(document: document);
@@ -257,7 +261,10 @@ void main() {
     await _tap(tester, find.byKey(const ValueKey('page-element-page-nav-element')));
     await _tap(tester, find.byTooltip('نقل إلى الصفحة التالية'));
 
-    expect(controller.document.floatingElements.single.pageIndex, 1);
+    expect(
+      controller.document.floatingElementById('page-nav-element')!.pageIndex,
+      1,
+    );
 
     await _tap(tester, find.byKey(const ValueKey('page-element-legacy-page-nav-element')));
     await _tap(tester, find.byTooltip('نقل إلى الصفحة السابقة'));

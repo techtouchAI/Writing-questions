@@ -680,7 +680,14 @@ void main() {
       await tester.pumpWidget(_screen(controller));
       debugPrint('[diag] canonical-07: pumped widget');
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      // حسم خطة الصفحات غير متزامن (مهلة + قياس): ننتظر ظهور النصّ بعدد
+      // إطارات محدود بدل إطارين ثابتين.
+      for (var attempt = 0;
+          attempt < 40 &&
+              find.textContaining(_hitMarker).evaluate().isEmpty;
+          attempt++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
       debugPrint('[diag] canonical-07: pumped frames');
 
       // The production default (no injected seams) is the interactive
