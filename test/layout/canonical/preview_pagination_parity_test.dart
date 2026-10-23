@@ -9,16 +9,23 @@
 //
 // المقيس هنا (على الشجرة الفعلية، لا على دوال مساعدة):
 //   * عدد صفحات المعاينة مقابل عدد صفحات `LayoutDocument`.
-//   * مجموعة معرّفات الأسئلة في كل صفحة، وترتيبها.
+//   * الأسئلة التي **تبدأ** في كل صفحة وترتيبها (نفس إسقاط `CanonicalPagePlan`
+//     الذي يقرأه السطح) — لا تُقارن نسخة PDF التي تكرّر سؤال التكملة.
 //   * عدم تكرار سؤال في صفحتين، وعدم فقدان أي سؤال.
-//   * عقد المحرك: خطة مُسلَّمة تُحترم حرفياً أو يُرفَض التسليم صراحةً — لا
-//     إعادة تقسيم صامتة (وهي الثغرة التي تسمح لمحركين باتخاذ القرار نفسه).
+//   * عقد المحرك: خطة مُسلَّمة تُحترم أو يُرفَض التسليم صراحةً — لا إعادة تقسيم
+//     صامتة (وهي الثغرة التي تسمح لمحركين باتخاذ القرار نفسه).
+//
+// قيد معلن (§19.6): سؤال يمتدّ على صفحتين يُرسم على السطح التفاعلي في صفحة
+// بدايته مرة واحدة (مفردةُ تحرير واحدة)، ويُطبع كاملاً في PDF. البوابة تتحقق
+// أن **صفحة البداية** هي نفسها في الحالتين، وأن التكملة معلنة في الخطة، ولا
+// تدّعي أن السطح يرسم التكملة.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
 import 'package:writing_questions_app/layout/blueprint/exam_blueprint.dart';
 import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
+import 'package:writing_questions_app/layout/canonical/canonical_page_plan.dart';
 import 'package:writing_questions_app/layout/canonical/exam_document_layout_adapter.dart';
 import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart';
 import 'package:writing_questions_app/layout/canonical/layout_engine.dart';
@@ -137,7 +144,10 @@ void main() {
       document: controller.document,
       sourceIr: controller.documentIr,
     );
-    final canonicalPlan = canonical.questionPageAssignments;
+    // إسقاط الخطة نفسه الذي يقرأه السطح: أسئلة **البداية** لكل صفحة.
+    final canonicalPlan = CanonicalPagePlan.fromLayout(canonical).pages
+        .map((page) => page.questionIds)
+        .toList();
     final previewPlan = _renderedPlan(tester, controller.questions);
 
     expect(canonical.pageCount, greaterThan(1),
@@ -176,7 +186,9 @@ void main() {
       document: controller.document,
       sourceIr: controller.documentIr,
     );
-    final canonicalPlan = canonical.questionPageAssignments;
+    final canonicalPlan = CanonicalPagePlan.fromLayout(canonical).pages
+        .map((page) => page.questionIds)
+        .toList();
     final previewPlan = _renderedPlan(tester, controller.questions);
 
     expect(canonical.pageCount, greaterThan(1),
@@ -214,6 +226,7 @@ void main() {
       fontMetrics: const FlutterTextMetrics(),
       questionPageAssignments: plan,
     );
+    // الخطة تُطبَّق: نفس عدد الصفحات ونفس أسئلة البداية ونفس التكملات.
     expect(honored.questionPageAssignments, plan,
         reason: 'المحرك أعاد تقسيم خطة صحيحة مُسلَّمة إليه: '
             '${_describe(selfPlanned.questionPageAssignments)} ← '

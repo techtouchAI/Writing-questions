@@ -86,8 +86,8 @@ Future<void> _pumpPreview(WidgetTester tester, ExamWizardController controller) 
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(_preview(controller));
-  await tester.pump();
-  await tester.pump();
+  // خطة الصفحات تُحسم بعد مهل قصيرة، ثم يُبنى الورق: نستقر قبل القياس.
+  await tester.pumpAndSettle();
 }
 
 double _scrollPixels(WidgetTester tester, String scrollerKey) {

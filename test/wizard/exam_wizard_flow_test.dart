@@ -2,14 +2,13 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
-import 'package:writing_questions_app/layout/pagination_engine.dart';
-import 'package:writing_questions_app/layout/paper_metrics.dart';
+import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
+import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_font.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
-import 'package:writing_questions_app/models/paper_settings.dart';
 import 'package:writing_questions_app/models/point_kind.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
@@ -21,9 +20,6 @@ import 'package:writing_questions_app/views/wizard/branch_editor_card.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 import 'package:writing_questions_app/views/wizard/exam_wizard_screen.dart';
 import 'package:writing_questions_app/views/wizard/question_step_screen.dart';
-
-/// ارتفاع صندوق المحتوى للهامش الافتراضي على لوحة المعاينة.
-double get _pageHeight => PaperMetrics.pageContentHeightFor(PaperSettings.defaultMarginMm);
 
 Widget _app(Widget home) {
   return Directionality(
@@ -76,30 +72,55 @@ List<TextSpan> _collectTextSpans(InlineSpan span) {
   return collected;
 }
 
-/// يتحقق أن كل سؤال معروض على صفحة واحدة فقط مع **كل** فروعه (لا فصل).
-void _expectQuestionsUnsplit(ExamWizardController controller) {
-  final pages = controller.pagination.pages;
+/// يتحقق أن كل سؤال معروض على صفحة واحدة مع **كل** فروعه، وأن الصفحات
+/// المعروضة هي صفحات الخطة المشتركة نفسها — لا حساب موازٍ.
+///
+/// قيد معلن (§19.6): إن قرّر المحرك تقسيم سؤال طويل بين صفحتين، يرسمه السطح
+/// التفاعلي في صفحة بدايته (وحدة تحرير واحدة) ويطبع PDF تكملته.
+void _expectQuestionsOnPlannedPages(ExamWizardController controller, LayoutDocument plan) {
+  final renderedPages = _renderedPages(controller);
+  expect(renderedPages.length, plan.pageCount,
+      reason: 'عدد الصفحات المعروضة ${renderedPages.length} مقابل '
+          '${plan.pageCount} في خطة المحرك المشتركة.');
   for (final question in controller.questions) {
-    final pageIndex = controller.pagination.pageIndexOf(question.id);
-    expect(pageIndex, isNotNull, reason: 'كل سؤال يجب أن يُسند إلى صفحة');
-    final owners = pages.where((page) => page.blockIds.contains(question.id));
-    expect(owners, hasLength(1), reason: 'السؤال ${question.id} يظهر في صفحة واحدة فقط');
-    final page = find.byKey(ValueKey<String>('a4-page-$pageIndex'));
+    final owners = <int>[
+      for (final entry in renderedPages.entries)
+        if (entry.value.contains(question.id)) entry.key,
+    ];
+    expect(owners, hasLength(1),
+        reason: 'السؤال ${question.id} يجب أن يظهر في صفحة واحدة، وُجد في $owners');
+    final page = find.byKey(ValueKey<String>('a4-page-${owners.single}'));
     expect(page, findsOneWidget);
     for (final branch in question.branches) {
       expect(
         find.descendant(of: page, matching: find.text(branch.content.statement)),
         findsOneWidget,
-        reason: 'فرع ${branch.id} يجب أن يكون على صفحة سؤاله ($pageIndex)',
+        reason: 'فرع ${branch.id} يجب أن يكون على صفحة سؤاله (${owners.single})',
       );
     }
   }
-  // لا صفحة تتجاوز الارتفاع المتاح إلا إذا كانت كتلة منفردة أطول من الصفحة.
-  for (final page in pages) {
-    if (!page.overflows) {
-      expect(page.usedHeight, lessThanOrEqualTo(_pageHeight + 0.01));
-    }
+}
+
+/// الأسئلة المرسومة في كل صفحة معروضة (من الشجرة الفعلية لا من أي حساب).
+Map<int, List<String>> _renderedPages(ExamWizardController controller) {
+  final pages = <int, List<String>>{};
+  for (var index = 0; index < 40; index++) {
+    final canvas = find.byKey(ValueKey<String>('a4-page-$index'));
+    if (canvas.evaluate().isEmpty) break;
+    pages[index] = <String>[
+      for (final question in controller.questions)
+        if (find
+            .descendant(
+              of: canvas,
+              matching:
+                  find.byKey(ValueKey<String>('question-block-${question.id}')),
+            )
+            .evaluate()
+            .isNotEmpty)
+          question.id,
+    ];
   }
+  return pages;
 }
 
 /// جرد تشخيصي يُطبع مع الفشل فقط: مفتاح كل حقل نصي على الشاشة ونص متحكمه.
@@ -303,8 +324,8 @@ void main() {
 
       // وعلى الورقة (الخطوة 3) خانات الخيارات تُعرض وتُحرَّر في مكانها.
       await tester.pumpWidget(_preview(controller));
-      await tester.pump();
-      await tester.pump();
+      // الخطة تُحسم بعد مهل قصيرة ثم تُعاد إعادة البناء: نستقر قبل القياس.
+      await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey<String>('option-mc-0')),
         findsOneWidget,
@@ -315,7 +336,8 @@ void main() {
   });
 
   group('ExamPreviewScreen', () {
-    testWidgets('measures blocks and paginates whole questions onto pages', (tester) async {
+    testWidgets('places whole questions on the shared canonical page plan',
+        (tester) async {
       tester.view.physicalSize = const Size(1000, 1400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -323,39 +345,25 @@ void main() {
 
       final controller = ExamWizardController(document: _previewDocument(questionCount: 3));
       await tester.pumpWidget(_preview(controller));
-      await tester.pump();
-      await tester.pump();
+      await tester.pumpAndSettle();
 
-      // كل الكتل قيست ديناميكياً عبر MeasureSize.
-      expect(controller.isFullyMeasured, isTrue);
-      expect(controller.blockHeight(PaperMetrics.headerBlockId), greaterThan(0));
-      expect(controller.blockHeight('q1'), greaterThan(0));
-
-      // التوزيع المعروض مطابق لما يحسبه محرك التقسيم من الارتفاعات نفسها.
-      final expected = PaginationEngine.paginate(
-        blocks: <PageBlock>[
-          PageBlock(
-            id: PaperMetrics.headerBlockId,
-            height: controller.blockHeight(PaperMetrics.headerBlockId)!,
-          ),
-          for (final question in controller.questions)
-            PageBlock(id: question.id, height: controller.blockHeight(question.id)!),
-        ],
-        pageHeight: _pageHeight,
-        spacing: PaperMetrics.blockSpacingPx,
-        lastPageReserve: controller.footerReserve,
+      // الخطة تأتي من محرك التخطيط المشترك نفسه الذي يطبع PDF.
+      final plan = await CanonicalLayoutService.resolve(
+        document: controller.document,
+        sourceIr: controller.documentIr,
       );
-      expect(controller.pagination.pageCount, expected.pageCount);
+      expect(plan.pages, isNotEmpty);
       expect(find.byKey(const ValueKey<String>('a4-page-0')), findsOneWidget);
       expect(find.text('السؤال الأول/'), findsOneWidget);
       expect(find.text('السؤال الثالث/'), findsOneWidget);
       // الدرجة تُطبع «(٢ درجة)» في سطر عنوان السؤال الأول (مجموع فرعيه).
       expect(controller.blueprint.questions.first.title.marks, '(٢ درجة)');
       expect(controller.blueprint.questions.last.title.marks, '(٤ درجة)');
-      _expectQuestionsUnsplit(controller);
+      _expectQuestionsOnPlannedPages(controller, plan);
     });
 
-    testWidgets('moves a question that no longer fits to the next page as a whole', (tester) async {
+    testWidgets('never exceeds a page body: a question that does not fit starts '
+        'a page or splits at lines', (tester) async {
       tester.view.physicalSize = const Size(1000, 1400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -366,30 +374,27 @@ void main() {
         document: _previewDocument(questionCount: 3, branchesPerQuestion: <int>[2, 8, 8]),
       );
       await tester.pumpWidget(_preview(controller));
-      await tester.pump();
-      await tester.pump();
-      // قد تُعاد القياسات بعد انتقال كتلة إلى صفحة جديدة؛ نستقر على النتيجة.
-      await tester.pump();
-      await tester.pump();
+      await tester.pumpAndSettle();
 
-      expect(controller.isFullyMeasured, isTrue);
-      final pagination = controller.pagination;
-      expect(pagination.pageCount, greaterThanOrEqualTo(2));
-      expect(pagination.pageIndexOf('q1'), 0);
+      final plan = await CanonicalLayoutService.resolve(
+        document: controller.document,
+        sourceIr: controller.documentIr,
+      );
+      expect(plan.pageCount, greaterThanOrEqualTo(2));
+      expect(plan.pageIndexOf('q1'), 0);
 
-      // أول كتلة في كل صفحة تالية لم تكن لتتسع في الصفحة السابقة — أي أنها
-      // نُقلت كاملة بدل أن تُقسَّم.
-      for (var index = 1; index < pagination.pageCount; index++) {
-        final previous = pagination.pages[index - 1];
-        final movedId = pagination.pages[index].blockIds.first;
-        final movedHeight = controller.blockHeight(movedId)!;
+      // كل صفحة ضمن سعة متنها: أي أن الانتقال حدث لأن السؤال لم يتّسع، لا
+      // لأن ارتفاع ودجت تجاوز الحدّ بعد الرسم.
+      for (final page in plan.pages) {
         expect(
-          previous.usedHeight + PaperMetrics.blockSpacingPx + movedHeight,
-          greaterThan(_pageHeight - (index == pagination.pageCount - 1 ? controller.footerReserve : 0)),
-          reason: 'الكتلة $movedId نُقلت رغم أنها كانت تتسع في الصفحة ${index - 1}',
+          page.usedBodyHeight,
+          lessThanOrEqualTo(page.bodyBounds.height + 0.01),
+          reason: 'الصفحة ${page.index} تتجاوز سعة متنها '
+              '(${page.usedBodyHeight.toStringAsFixed(2)} > '
+              '${page.bodyBounds.height.toStringAsFixed(2)}pt).',
         );
       }
-      _expectQuestionsUnsplit(controller);
+      _expectQuestionsOnPlannedPages(controller, plan);
     });
 
     testWidgets('in-place editing updates the model without leaving the sheet', (tester) async {
@@ -400,7 +405,7 @@ void main() {
 
       final controller = ExamWizardController(document: _previewDocument(questionCount: 1));
       await tester.pumpWidget(_preview(controller));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       await tester.enterText(find.text('محتوى س1 أ'), 'نص معدّل مباشرة');
       await tester.pump();
@@ -419,8 +424,8 @@ void main() {
 
       final controller = ExamWizardController(document: _previewDocument(questionCount: 2));
       await tester.pumpWidget(_preview(controller));
-      await tester.pump();
-      await tester.pump();
+      // الخطة تُحسم بعد مهل قصيرة ثم تُعاد إعادة البناء: نستقر قبل القياس.
+      await tester.pumpAndSettle();
 
       final source = find.byKey(const ValueKey<String>('branch-target-q1a'));
       final target = find.byKey(const ValueKey<String>('branch-target-q2b'));
@@ -499,7 +504,7 @@ void main() {
         ),
       );
       await tester.pumpWidget(_preview(controller));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       // عنوان القسم ونصوص الخيارات: نصوص قابلة للتحرير في مكانها.
       await tester.enterText(find.byKey(const ValueKey<String>('category-q1')), 'الحفظ');
@@ -559,7 +564,7 @@ void main() {
 
       final controller = ExamWizardController(document: _previewDocument(questionCount: 1));
       await tester.pumpWidget(_preview(controller));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       expect(find.byTooltip('عرض نموذج الإجابة'), findsNothing);
       expect(find.byTooltip('عرض ورقة الطالب'), findsNothing);
@@ -596,7 +601,7 @@ void main() {
         ),
       );
       await tester.pumpWidget(_preview(controller));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       final verseText = tester.widget<TexText>(_verseTexText());
       expect(verseText.textAlign, TextAlign.center, reason: 'الآية القائمة بذاتها تُوسَّط');
@@ -649,7 +654,7 @@ void main() {
         ),
       );
       await tester.pumpWidget(_preview(controller));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       final verseText = tester.widget<TexText>(_verseTexText());
       expect(verseText.textAlign, TextAlign.start,
@@ -680,7 +685,7 @@ void main() {
 
       final controller = ExamWizardController(document: _previewDocument(questionCount: 1));
       await tester.pumpWidget(_preview(controller));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       expect(find.text('وسائط'), findsOneWidget);
       expect(find.text('رياضيات'), findsOneWidget);

@@ -21,6 +21,17 @@ import 'layout_units.dart';
 class LayoutEngine {
   const LayoutEngine();
 
+  /// [questionPageAssignments]: خطة صفحات **مُسلَّمة** (من حسم سابق أو من
+  /// مستهلك يريد تجميد التوزيع). تُطبَّق حرفياً أو يُرفض النداء بـ
+  /// [ArgumentError] — لا إعادة تقسيم صامتة.
+  ///
+  /// كيف تُطبَّق: الخطة تحدّد **صفحة بداية كل سؤال** (وسؤال يمتدّ يظهر في كل
+  /// صفحة يغطيها). يُترجم ذلك إلى فواصل إجبارية بين الأسئلة، ثم يشتغل مسار
+  /// التقسيم الوحيد نفسه؛ وبعد التخطيط تُقارن النتيجة بالخطة وتُرفض إن اختلفت.
+  ///
+  /// لماذا الرفض لا السقوط إلى التقسيم الذاتي؟ لأن السقوط الصامت هو ما سمح
+  /// لمحركين باتخاذ القرار نفسه: خطة لا تتسع كانت تُقبل ويُعاد تقسيم المحتوى
+  /// داخلها، فيظنّ المستهلك أن خطته طُبِّقت بينما عُرض توزيع آخر.
   LayoutDocument layout({
     required DocumentIR document,
     required LayoutConfiguration configuration,
@@ -1449,66 +1460,162 @@ class _LayoutBuilder {
     );
   }
 
-  /// Honor a complete preview page assignment only when every assigned page
-  /// fits the canonical point-space capacity. The assignment remains a layout
-  /// input; it never asks the PDF painter to repaginate or move content.
-  _Pagination? _paginateUsingAssignedPages(List<_QuestionFlow> questions) {
-    final requested = questionPageAssignments;
-    if (requested == null || requested.isEmpty) return null;
-    if (questions.isEmpty) {
-      return requested.length == 1 && requested.single.isEmpty
-          ? _Pagination(<_PageState>[_PageState(0, null)])
-          : null;
+  /// يحترم خطة صفحات مُسلَّمة، أو يرفضها بـ[ArgumentError].
+  ///
+  /// العقد (لا قرار تقسيم ثانٍ):
+  ///   * الخطة تحدّد **أين يبدأ كل سؤال** فقط: انتقال السؤال من صفحة إلى
+  ///     أخرى يعني «ابدأ هنا صفحة جديدة».
+  ///   * كل ما عداه يبقى قرار المحرك نفسه: أين ينكسر السطر، وكم سطراً يتسع،
+  ///     وكيف يستمرّ سؤال أطول من صفحة. لذلك لا يوجد في هذا الملف مسار تقسيم
+  ///     موازٍ يخالف `_paginateNaturally`؛ الخطة تُترجم إلى «فواصل إجبارية» ثم
+  ///     يُشغَّل نفس الخوارزمية.
+  ///   * بعد التخطيط تُقارن النتيجة بالخطة المُسلَّمة. أي اختلاف (سؤال لا يتسع
+  ///     في صفحته، أو ترتيب مختلف، أو صفحة فارغة) = [ArgumentError] يسمّي
+  ///     السبب. لا قبول صامت ولا إعادة تقسيم مخفية.
+  ///
+  /// كانت النسخة السابقة تعيد بناء حساب السعة والفجوات والحجز في هذا الموضع:
+  /// أي خوارزمية تقسيم ثانية بجانب `_paginateNaturally` — نفس العيب الذي أُزيل
+  /// من طبقة العرض، لكن داخل المحرك.
+  List<int> _forcedBreakIndices(List<_QuestionFlow> questions) {
+    final requested = questionPageAssignments!;
+    if (requested.isEmpty) {
+      throw ArgumentError.value(
+        requested,
+        'questionPageAssignments',
+        'خطة صفحات فارغة: لا تحتوي أي صفحة.',
+      );
     }
-    if (requested.any((page) => page.isEmpty)) return null;
-
-    final expectedIds = <String>[
+    final expected = <String>[
       for (final question in questions) question.block.semanticNodeId,
     ];
-    final assignedIds = requested.expand((page) => page).toList(growable: false);
-    if (assignedIds.length != expectedIds.length) return null;
-    for (var index = 0; index < expectedIds.length; index++) {
-      if (assignedIds[index] != expectedIds[index]) return null;
-    }
-
-    final byId = <String, _QuestionFlow>{
-      for (final question in questions) question.block.semanticNodeId: question,
-    };
-    final headerReserve = _header.height > 0 ? _header.height + _headerGap : 0.0;
-    final footerReserve = _footer.height > 0 ? _footer.height + _footerGap : 0.0;
-    final pages = <_PageState>[];
-    for (var pageIndex = 0; pageIndex < requested.length; pageIndex++) {
-      final page = _PageState(
-        pageIndex,
-        pageIndex == 0 ? null : PageBreakReason.assignedPageBoundary,
-      );
-      final isFirst = pageIndex == 0;
-      final isLast = pageIndex == requested.length - 1;
-      final capacity = (_contentHeight -
-              (isFirst ? headerReserve : 0) -
-              (isLast ? footerReserve : 0))
-          .clamp(0.0, _contentHeight)
-          .toDouble();
-      for (final id in requested[pageIndex]) {
-        final question = byId[id];
-        if (question == null) return null;
-        final gap = page.questions.isEmpty
-            ? 0.0
-            : page.questions.last.flow.spacingAfterPt;
-        if (page.usedHeight + gap + question.height > capacity + _epsilon) {
-          return null;
-        }
-        page.add(question, gap);
+    if (expected.isEmpty) {
+      // مستند بلا أسئلة قابلة للطباعة: خطة صفحة واحدة فارغة هي خطته الطبيعية.
+      if (requested.length == 1 && requested.single.isEmpty) {
+        return const <int>[];
       }
-      pages.add(page);
+      throw ArgumentError.value(
+        requested,
+        'questionPageAssignments',
+        'المستند بلا أسئلة قابلة للطباعة بينما الخطة تحوي '
+        '${requested.length} صفحة.',
+      );
     }
-    return _Pagination(pages);
+    // تسطيح مع إسقاط تكرار السؤال **في صفحته التالية** فقط (سؤال يمتدّ).
+    final flattened = <String>[];
+    final startPage = <String, int>{};
+    final lastPage = <String, int>{};
+    for (var pageIndex = 0; pageIndex < requested.length; pageIndex++) {
+      final page = requested[pageIndex];
+      if (page.isEmpty) {
+        throw ArgumentError.value(
+          requested,
+          'questionPageAssignments',
+          'الصفحة $pageIndex بلا أسئلة: صفحة فارغة في خطة مُسلَّمة.',
+        );
+      }
+      for (final id in page) {
+        final previousPage = lastPage[id];
+        if (previousPage == null) {
+          flattened.add(id);
+          startPage[id] = pageIndex;
+        } else if (previousPage != pageIndex - 1) {
+          throw ArgumentError.value(
+            requested,
+            'questionPageAssignments',
+            'السؤال «$id» يظهر في الصفحة $previousPage ثم في الصفحة '
+            '$pageIndex: تكرار غير متصل مرفوض.',
+          );
+        }
+        lastPage[id] = pageIndex;
+      }
+    }
+    if (flattened.length != expected.length) {
+      throw ArgumentError.value(
+        requested,
+        'questionPageAssignments',
+        'الخطة تحوي ${flattened.length} سؤالاً بينما المستند فيه '
+        '${expected.length} سؤالاً (الخطة ناقصة أو زائدة).',
+      );
+    }
+    for (var index = 0; index < expected.length; index++) {
+      if (flattened[index] != expected[index]) {
+        throw ArgumentError.value(
+          requested,
+          'questionPageAssignments',
+          'ترتيب الأسئلة في الخطة لا يطابق المستند عند الموضع $index: '
+          '«${flattened[index]}» بدل «${expected[index]}».',
+        );
+      }
+    }
+    // فاصل إجباري قبل السؤال i حين يبدأ في صفحة **بعد** آخر صفحة يبلغها
+    // السؤال السابق. أمّا إذا كان السؤال السابق يمتدّ إلى صفحة البداية نفسها
+    // (سؤال مقطوع ثم التالي على صفحة تكملته) فلا فاصل: المحرك أصلاً يضع
+    // التالي بعد آخر جزء، وأي فاصل مصطنع هنا كان سيضيف صفحة زائدة.
+    return <int>[
+      for (var index = 1; index < expected.length; index++)
+        if (startPage[expected[index]]! > lastPage[expected[index - 1]]!)
+          index,
+    ];
   }
 
-  _Pagination _paginate(List<_QuestionFlow> questions) {
-    final assigned = _paginateUsingAssignedPages(questions);
-    if (assigned != null) return assigned;
+  /// يتحقق أن التخطيط الناتج يطابق الخطة المُسلَّمة صفحةً صفحة، أو يسمّي
+  /// أول اختلاف.
+  void _verifyAssignedPages(List<List<String>> requested, _Pagination plan) {
+    final actual = <List<String>>[
+      for (final page in plan.pages)
+        <String>[
+          for (final item in page.questions)
+            item.flow.block.semanticNodeId,
+        ],
+    ];
+    var matches = actual.length == requested.length;
+    if (matches) {
+      for (var pageIndex = 0; pageIndex < actual.length; pageIndex++) {
+        final a = actual[pageIndex];
+        final b = requested[pageIndex];
+        if (a.length != b.length) {
+          matches = false;
+          break;
+        }
+        for (var index = 0; index < a.length; index++) {
+          if (a[index] != b[index]) {
+            matches = false;
+            break;
+          }
+        }
+        if (!matches) break;
+      }
+    }
+    if (matches) return;
+    String describe(List<List<String>> pages) =>
+        '<${pages.length} صفحة: ${pages.map((page) => page.join(',')).join(' | ')}>';
+    throw ArgumentError.value(
+      requested,
+      'questionPageAssignments',
+      'الخطة المُسلَّمة لا تطابق ما قرّره المحرك — رُفض التسليم بدل إعادة '
+      'التقسيم بصمت. مُسلَّمة=${describe(requested)} '
+      'محسوبة=${describe(actual)}. السبب الأكثر شيوعاً: سؤال لا يتسع في '
+      'الصفحة التي حدّدتها الخطة، أو خطة من قياس/خطوط أخرى.',
+    );
+  }
 
+  /// نقطة القرار الوحيدة: بلا خطة مُسلَّمة تقسّم كما تقتضي القياسات، ومع خطة
+  /// مُسلَّمة تُشتق منها فواصل الأسئلة ثم تُتحقّق النتيجة مقابلها.
+  _Pagination _paginate(List<_QuestionFlow> questions) {
+    final forcedBreaks = questionPageAssignments == null
+        ? const <int>[]
+        : _forcedBreakIndices(questions);
+    final plan = _paginateNaturally(questions, forcedBreaks);
+    if (questionPageAssignments != null) {
+      _verifyAssignedPages(questionPageAssignments!, plan);
+    }
+    return plan;
+  }
+
+  _Pagination _paginateNaturally(
+    List<_QuestionFlow> questions,
+    List<int> forcedBreaks,
+  ) {
     final pages = <_PageState>[_PageState(0, null)];
     final footerReserve = _footer.height > 0 ? _footer.height + _footerGap : 0.0;
     final headerReserve = _header.height > 0 ? _header.height + _headerGap : 0.0;
@@ -1528,8 +1635,11 @@ class _LayoutBuilder {
       final gap = page.questions.isEmpty ? 0.0 : page.questions.last.flow.spacingAfterPt;
       final needed = page.usedHeight + gap + question.height;
       final currentCapacity = isFinalQuestion ? finalCapacity : normalCapacity;
+      // فاصل فرضته خطة مُسلَّمة: السؤال يبدأ صفحة، لكن ما بعد ذلك (هل يتسع؟
+      // هل ينقسم؟ أين؟) يبقى قرار المحرك نفسه أدناه.
+      final mustStartPage = forcedBreaks.contains(index) && page.questions.isNotEmpty;
 
-      if (needed <= currentCapacity + _epsilon) {
+      if (!mustStartPage && needed <= currentCapacity + _epsilon) {
         page.add(question, gap);
         continue;
       }
@@ -1537,16 +1647,25 @@ class _LayoutBuilder {
       final newPageCapacity = _contentHeight - (isFinalQuestion ? footerReserve : 0);
       final canKeepWholeOnFreshPage = question.height <= newPageCapacity + _epsilon;
       if (canKeepWholeOnFreshPage) {
-        final reason = isFinalQuestion
-            ? PageBreakReason.headerFooterReservation
-            : (question.height > normalCapacity ? PageBreakReason.naturalOverflow : PageBreakReason.keepTogether);
+        final reason = mustStartPage
+            ? PageBreakReason.assignedPageBoundary
+            : isFinalQuestion
+                ? PageBreakReason.headerFooterReservation
+                : (question.height > normalCapacity
+                    ? PageBreakReason.naturalOverflow
+                    : PageBreakReason.keepTogether);
         page = _newPage(pages, reason);
         page.add(question, 0);
         continue;
       }
 
       if (page.questions.isNotEmpty) {
-        page = _newPage(pages, PageBreakReason.forcedSplit);
+        page = _newPage(
+          pages,
+          mustStartPage
+              ? PageBreakReason.assignedPageBoundary
+              : PageBreakReason.forcedSplit,
+        );
       }
       _appendSplitQuestion(
         pages,

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 
 import '../layout/blueprint/exam_blueprint.dart';
+import '../layout/canonical/canonical_page_plan.dart';
 import '../layout/document_ir.dart';
 import '../layout/pagination_engine.dart';
 import '../layout/paper_metrics.dart';
@@ -1221,7 +1222,8 @@ class ExamWizardController extends ChangeNotifier {
         : _clampElementToQuestion(element.withOwner(owner));
     final placed = owned.copyWith(
       pageIndex: pageIndex ??
-          (owner == null ? element.pageIndex : _ownerPageIndex(owner)),
+          (owner == null ? element.pageIndex : _ownerPageIndex(owner)) ??
+          element.pageIndex,
     );
     final nextQuestions = List<QuestionModel>.of(questions);
     if (mirrorQuestionIndex != null &&
@@ -1466,43 +1468,41 @@ class ExamWizardController extends ChangeNotifier {
   bool hasOwnedElements(String questionId) => _document.floatingElements
       .any((element) => element.ownerQuestionId == questionId);
 
-  /// مستطيل سؤال على ورقته بإحداثيات اللوحة (بكسل منطقي)، أو `null` قبل قياس
-  /// الكتل. هو المرجع الوحيد لقيد العناصر المرتبطة بالسؤال في كل المسارات.
+  /// خطة الصفحات الوحيدة (من `LayoutEngine`) التي تضع العناصر على الورق.
+  ///
+  /// تُحقن من السطح الذي يحوزها (المعاينة) ولا تُحسب هنا. حين تكون `null`
+  /// (أول إطار، أو سطح لا معاينة فيه) لا يخترع المتحكم هندسة: يعيد `null`
+  /// ويحتفظ العنصر بإحداثياته المحفوظة.
+  CanonicalPagePlan? _layoutPlan;
+  void applyLayoutPlan(CanonicalPagePlan? plan) {
+    if (identical(_layoutPlan, plan)) return;
+    _layoutPlan = plan;
+  }
+
+  /// مستطيل سؤال على ورقته بإحداثيات اللوحة (بكسل منطقي)، من **خطة المحرك**
+  /// نفسها، أو `null` إن لم تُحسم الخطة بعد. هو المرجع الوحيد لقيد العناصر
+  /// المرتبطة بالسؤال في كل المسارات.
+  ///
+  /// كان يُحسب سابقاً من ارتفاعات ودجات مقاسة داخل هذا المتحكم: مصدر هندسة
+  /// ثانٍ يقرّر صفحة السؤال وموضعه. بعد توحيد التخطيط صار الحكم للمحرك وحده؛
+  /// بقاء الحساب القديم هنا كان سيقيد العناصر بصفحة أخرى غير صفحة الورقة.
   QuestionRect? questionRect(String questionId) {
-    final pageIndex = pagination.pageIndexOf(questionId);
-    if (pageIndex == null) {
+    final rect = _layoutPlan?.questionRectPx(questionId);
+    if (rect == null) {
       return null;
-    }
-    final page = pagination.pages[pageIndex];
-    final position = page.blockIds.indexOf(questionId);
-    if (position < 0) {
-      return null;
-    }
-    final margin = ExamCanvasGeometry.marginFor(_document.settings.marginMm);
-    final contentWidth = ExamCanvasGeometry.contentWidthFor(_document.settings.marginMm);
-    var top = margin;
-    for (final id in page.blockIds.take(position)) {
-      if (id == PaperMetrics.headerBlockId) {
-        top += (_blockHeights[id] ?? 0) + PaperMetrics.blockSpacingPx;
-        continue;
-      }
-      final previous = _document.questionById(id);
-      top += (_blockHeights[id] ?? 0) +
-          (previous?.spacingAfter ?? PaperMetrics.blockSpacingPx);
     }
     return QuestionRect(
-      pageIndex: pageIndex,
-      left: margin,
-      top: top,
-      width: contentWidth,
-      height: math.max(
-        _blockHeights[questionId] ?? 0,
-        ExamCanvasGeometry.defaultElementSize,
-      ),
+      pageIndex: rect.pageIndex,
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: math.max(rect.height, ExamCanvasGeometry.defaultElementSize),
     );
   }
 
-  int _ownerPageIndex(String questionId) => pagination.pageIndexOf(questionId) ?? 0;
+  /// صفحة سؤال المالك من الخطة، أو `null` إن لم تُحسم بعد (فيحتفظ العنصر
+  /// بصفحته المحفوظة بدل الصفحة الأولى المخترعة).
+  int? _ownerPageIndex(String questionId) => _layoutPlan?.pageIndexOf(questionId);
 
   /// يحصر عنصراً مملوكاً داخل مستطيل سؤاله: `dx`/`dy` نسبيان لأعلى-يمين
   /// محتوى السؤال، ولا يخرج منه أبداً حتى لو صار السؤال أصغر أو انتقل.
@@ -1626,9 +1626,14 @@ class ExamWizardController extends ChangeNotifier {
 
   /// نتيجة التقسيم الورقي الحالية على لوحة A4 (بكسل منطقي).
   ///
+  /// **ليست مصدر الصفحات في الإنتاج.** منذ توحيد خطة الصفحات، تبني المعاينة
+  /// وPDF صفحاتهما من `LayoutEngine` عبر `CanonicalPagePlan`؛ وهذا الحساب القديم (ارتفاعات ودجات مقاسة) بقي
+  /// لتوافق واجهة الاختبارات فقط، ولا يقرأه أي سطح عرض. سبب بقائه موثّق في
+  /// docs/p3_editor_preview_export_unification.md §19 (إزالته تحذف تغطية
+  /// اختبارات سلوك التقسيم نفسها، وهي تغطية نافعة للخوارزمية لا للعرض).
+  ///
   /// الترويسة كتلة ثابتة في الصفحة الأولى؛ كل سؤال كتلة لا تتجزأ؛ والتذييل
-  /// يحجز مكانه تحت آخر كتلة في آخر صفحة. الكتل غير المقاسة بعد تُعامل
-  /// بارتفاع صفر حتى تُقاس في الإطار التالي.
+  /// يحجز مكانه تحت آخر كتلة في آخر صفحة.
   /// Reproducible input to the legacy paginator, including the actual measured
   /// widget heights used by the interactive editing surface.
   PaginationInput get paginationInput => PaginationInput(

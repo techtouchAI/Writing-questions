@@ -35,11 +35,15 @@ abstract final class CanonicalLayoutService {
       quranFontAvailable: quranFontAvailable,
     );
     const engine = LayoutEngine();
+    // الممرّ الأول **قياس**: تقسيم صفحاته يُهمَل إن جاءت مقاييس المعادلات
+    // بعدها، فلا تُسلَّم إليه خطة قد لا تتسع بقياسات أصغر. الخطة المُسلَّمة
+    // تُطبَّق مرة واحدة على التخطيط النهائي الذي يُعاد للمستهلك.
     var layout = engine.layout(
       document: ir,
       configuration: configuration,
       fontMetrics: fontMetrics,
-      questionPageAssignments: questionPageAssignments,
+      questionPageAssignments:
+          MathSnapshotRenderer.isAvailable ? null : questionPageAssignments,
     );
     if (!MathSnapshotRenderer.isAvailable) return layout;
 

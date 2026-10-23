@@ -13,9 +13,9 @@ import '../../layout/document_ir.dart';
 import '../../layout/canonical/canonical_layout_interaction.dart';
 import '../../layout/canonical/canonical_layout_preview.dart';
 import '../../layout/canonical/canonical_layout_service.dart';
+import '../../layout/canonical/canonical_page_plan.dart';
 import '../../layout/canonical/layout_document.dart';
 import '../../layout/canonical/layout_units.dart';
-import '../../layout/pagination_engine.dart';
 import '../../layout/semantic/inline_nodes.dart';
 import '../../layout/paper_metrics.dart';
 import '../../layout/visual/visual_metrics.dart';
@@ -47,8 +47,8 @@ import '../widgets/pdf_preview_screen.dart';
 import '../widgets/smart_exam_toolbar.dart';
 import '../widgets/tex_text.dart';
 import '../widgets/visual_equation_editor.dart';
+import 'canonical_preview_plan_controller.dart';
 import 'header_footer_forms.dart';
-import 'measure_size.dart';
 import 'paper_header_footer_view.dart';
 import 'paper_styles.dart';
 import 'preview_toolbar.dart';
@@ -367,16 +367,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// جذور اللقط (RepaintBoundary) لكل صفحة في المعاينة الحية.
   final Map<int, GlobalKey> _pageSnapshotKeys = <int, GlobalKey>{};
 
-  /// جذور اللقط (RepaintBoundary) لكل صفحة في المعاينة الحية.
-  /// The live preview uses the same canonical point geometry as PDF. This is
-  /// independent of the legacy controller's measurement-driven pagination.
-  LayoutDocument? _canonicalPreviewLayout;
+  /// **مصدر الحقيقة الوحيد للصفحات**: خطة `LayoutEngine` نفسها التي يطبعها PDF.
+  ///
+  /// كان السطح التفاعلي يبني صفحاته من `controller.pagination` (ارتفاعات
+  /// ودجات مقاسة بالبكسل) بينما PDF يبنيها من `LayoutEngine` (نقاط): قِيس
+  /// الفرق 4 صفحات مقابل 3 على المستند المرجعي نفسه. لم يبقَ في هذا الملف أي
+  /// مسار يقسّم الصفحات بنفسه.
+  late final CanonicalPreviewPlanController _planController;
+  /// صور سطح العرض القانوني (رياضيات/عناصر عائمة): لا تُحمَّل إلا حين يكون
+  /// هذا السطح هو المعروض، وللتخطيط نفسه فقط.
   CanonicalLayoutPreviewAssets? _canonicalPreviewAssets;
-  ExamDocument? _canonicalPreviewSourceDocument;
-  ExamDocument? _canonicalPreviewPendingDocument;
-  ExamDocument? _canonicalPreviewFailedDocument;
-  Timer? _canonicalPreviewDebounce;
-  int _canonicalPreviewRevision = 0;
+  LayoutDocument? _canonicalPreviewAssetsLayout;
+  LayoutDocument? _canonicalPreviewAssetsFailedLayout;
 
   ExamWizardController? _controller;
   _AttachmentRef? _selectedAttachment;
@@ -439,23 +441,37 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   static const double _maxZoom = 2.5;
 
   @override
+  void initState() {
+    super.initState();
+    _planController = CanonicalPreviewPlanController(
+      resolver: widget.canonicalLayoutResolver,
+    )..onChanged = _onPlanChanged;
+  }
+
+  void _onPlanChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final controller = context.read<ExamWizardController>();
     if (!identical(controller, _controller)) {
       _controller?.removeListener(_syncFieldsFromModel);
       _controller = controller..addListener(_syncFieldsFromModel);
-      _ensureCanonicalPreview();
+      _planController.request(controller.document, controller.documentIr);
     }
   }
 
   @override
   void dispose() {
+    _controller?.applyLayoutPlan(null);
     _controller?.removeListener(_syncFieldsFromModel);
-    _canonicalPreviewDebounce?.cancel();
-    _canonicalPreviewRevision++;
-    _canonicalPreviewPendingDocument = null;
+    _planController.onChanged = null;
+    _planController.dispose();
     _canonicalPreviewAssets?.dispose();
+    _canonicalPreviewAssets = null;
     for (final field in _fields.values) {
       field.dispose();
     }
@@ -555,129 +571,116 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       _disposeStaleFields(document);
     } finally {
       _syncingFields = false;
-      _ensureCanonicalPreview();
+      final controller = _controller;
+      if (controller != null) {
+        _planController.request(controller.document, controller.documentIr);
+      }
     }
   }
 
-  /// Canonical surface iff both seams are injected; otherwise the interactive
-  /// paper surface (the seam-free production default).
+  /// السطح القانوني للرسم (اختباري/تشخيصي) يُختار بحقن الوصلتين؛ وإلا فالسطح
+  /// التفاعلي. **الاثنان يقرآن الخطة نفسها** — الاختلاف في آلية الرسم فقط.
   bool get _useCanonicalSurface =>
       widget.canonicalLayoutResolver != null &&
       widget.canonicalPreviewAssetLoader != null;
 
-  /// Makes the visible preview converge on the current document without ever
-  /// showing geometry/assets resolved for an older document. Build calls this
-  /// as a fallback, while model notifications call it after field sync.
-  void _ensureCanonicalPreview([ExamWizardController? owner]) {
-    if (!_useCanonicalSurface) return;
-    final controller = owner ?? _controller;
-    if (controller == null) return;
-    final sourceDocument = controller.document;
-    if (identical(_canonicalPreviewSourceDocument, sourceDocument) &&
-        _canonicalPreviewLayout != null &&
-        _canonicalPreviewAssets != null) {
-      return;
-    }
-    if (identical(_canonicalPreviewFailedDocument, sourceDocument) ||
-        identical(_canonicalPreviewPendingDocument, sourceDocument)) {
-      return;
-    }
-    _scheduleCanonicalPreviewRefresh();
-  }
-
-  void _retryCanonicalPreview() {
-    if (_canonicalPreviewFailedDocument == null) return;
-    setState(() => _canonicalPreviewFailedDocument = null);
-    _ensureCanonicalPreview();
-  }
-
-  void _scheduleCanonicalPreviewRefresh() {
+  /// الخطة الحالية إن كانت تخصّ المستند الحالي بالذات (وإلا فلا هندسة).
+  CanonicalPagePlan? get _pagePlan {
     final controller = _controller;
-    if (controller == null) return;
-    final sourceDocument = controller.document;
-    if (identical(_canonicalPreviewSourceDocument, sourceDocument) &&
-        _canonicalPreviewLayout != null &&
-        _canonicalPreviewAssets != null) {
-      return;
-    }
-    if (identical(_canonicalPreviewPendingDocument, sourceDocument)) return;
-    _canonicalPreviewDebounce?.cancel();
-    final revision = ++_canonicalPreviewRevision;
-    _canonicalPreviewFailedDocument = null;
-    _canonicalPreviewPendingDocument = sourceDocument;
-    _canonicalPreviewDebounce = Timer(const Duration(milliseconds: 70), () async {
-      if (!mounted ||
-          !identical(_controller, controller) ||
-          !identical(controller.document, sourceDocument)) {
-        if (identical(_canonicalPreviewPendingDocument, sourceDocument)) {
-          _canonicalPreviewPendingDocument = null;
-        }
-        return;
-      }
+    final plan = _planController.plan;
+    if (controller == null || plan == null) return null;
+    return _planController.matches(controller.document, controller.documentIr)
+        ? plan
+        : null;
+  }
+
+  /// صفحة السؤال كما قرّرها المحرك (لا كما قاسها ودجت).
+  int? _planPageOfQuestion(String questionId) => _pagePlan?.pageIndexOf(questionId);
+
+  /// أعلى كتلة السؤال داخل صفحتها بالبكسل — من هندسة الخطة نفسها.
+  double? _planBlockTopPx(String questionId) {
+    final plan = _pagePlan;
+    if (plan == null) return null;
+    return plan.blockTopPxOf(questionId);
+  }
+
+  /// حالة «لا خطة بعد»: تخطيط جارٍ، أو فشل حسم مع إعادة محاولة.
+  ///
+  /// لا تُخترع هندسة بديلة هنا: قبل هذه البوابة كان السطح يرسم من ارتفاع
+  /// ودجات مقاسة، فكان يعرض صفحات لا تطابق PDF عند أول إطار. الآن يُعرض ما
+  /// هو صادق: الخطة لم تُحسم بعد.
+  Widget _buildPlanPending({required bool failed}) {
+    return SizedBox(
+      width: ExamCanvasGeometry.width,
+      height: 320,
+      child: Center(
+        child: failed
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Icon(Icons.error_outline, color: Colors.redAccent),
+                  const SizedBox(height: 8),
+                  const Text('تعذّر تجهيز خطة الصفحات.'),
+                  TextButton.icon(
+                    onPressed: _retryCanonicalPreview,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('إعادة المحاولة'),
+                  ),
+                ],
+              )
+            : const CircularProgressIndicator(),
+      ),
+    );
+  }
+
+  /// يحمّل صور السطح القانوني لتخطيط الخطة الحالية وحدها.
+  void _ensureCanonicalAssets(LayoutDocument? planLayout, ExamDocument document) {
+    if (!_useCanonicalSurface || planLayout == null) return;
+    if (identical(_canonicalPreviewAssetsLayout, planLayout)) return;
+    if (identical(_canonicalPreviewAssetsFailedLayout, planLayout)) return;
+    _canonicalPreviewAssetsLayout = planLayout;
+    final loader = widget.canonicalPreviewAssetLoader;
+    unawaited(() async {
       try {
-        final sourceIr = controller.documentIr;
-        final layoutResolver = widget.canonicalLayoutResolver;
-        final layout = layoutResolver == null
-            ? await CanonicalLayoutService.resolve(
-                document: sourceDocument,
-                sourceIr: sourceIr,
-              )
-            : await layoutResolver(
-                document: sourceDocument,
-                sourceIr: sourceIr,
-              );
-        if (!identical(layout.source, sourceIr)) {
-          throw const ExportException(
-            'تعذر عرض المعاينة: التخطيط القانوني لا يخص مصدر المستند الحالي.',
-          );
-        }
-        final assetLoader = widget.canonicalPreviewAssetLoader;
-        final assets = assetLoader == null
+        final assets = loader == null
             ? await CanonicalLayoutPreviewAssets.load(
-                layout: layout,
-                document: sourceDocument,
+                layout: planLayout,
+                document: document,
               )
-            : await assetLoader(
-                layout: layout,
-                document: sourceDocument,
-              );
-        if (!mounted ||
-            revision != _canonicalPreviewRevision ||
-            !identical(_controller, controller) ||
-            !identical(controller.document, sourceDocument)) {
+            : await loader(layout: planLayout, document: document);
+        if (!mounted) {
           assets.dispose();
           return;
         }
-        final oldAssets = _canonicalPreviewAssets;
-        setState(() {
-          _canonicalPreviewLayout = layout;
-          _canonicalPreviewAssets = assets;
-          _canonicalPreviewSourceDocument = sourceDocument;
-          _canonicalPreviewPendingDocument = null;
-          _canonicalPreviewFailedDocument = null;
-        });
-        if (oldAssets != null && !identical(oldAssets, assets)) {
-          SchedulerBinding.instance.addPostFrameCallback((_) => oldAssets.dispose());
-        }
+        final previous = _canonicalPreviewAssets;
+        setState(() => _canonicalPreviewAssets = assets);
+        previous?.dispose();
       } catch (error, stackTrace) {
-        ExportFileService.logError('Canonical preview layout failed', error, stackTrace);
-        if (mounted &&
-            revision == _canonicalPreviewRevision &&
-            identical(_controller, controller) &&
-            identical(controller.document, sourceDocument)) {
-          final oldAssets = _canonicalPreviewAssets;
-          setState(() {
-            _canonicalPreviewLayout = null;
-            _canonicalPreviewAssets = null;
-            _canonicalPreviewSourceDocument = null;
-            _canonicalPreviewPendingDocument = null;
-            _canonicalPreviewFailedDocument = sourceDocument;
-          });
-          if (oldAssets != null) {
-            SchedulerBinding.instance.addPostFrameCallback((_) => oldAssets.dispose());
-          }
-        }
+        ExportFileService.logError(
+          'Canonical preview assets failed',
+          error,
+          stackTrace,
+        );
+        if (!mounted) return;
+        setState(() {
+          _canonicalPreviewAssets = null;
+          _canonicalPreviewAssetsFailedLayout = planLayout;
+        });
       }
+    }());
+  }
+
+  void _retryCanonicalPreview() {
+    final failed = _planController.failedFor;
+    final controller = _controller;
+    if (controller == null) return;
+    if (failed != null) {
+      _planController.retry(controller.document, controller.documentIr);
+      return;
+    }
+    setState(() {
+      _canonicalPreviewAssetsFailedLayout = null;
+      _canonicalPreviewAssetsLayout = null;
     });
   }
 
@@ -1895,7 +1898,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
     final owner = _selectedOwnerQuestionId();
     if (owner != null) {
-      final rect = controller.questionRect(owner);
+      final rect = _pagePlan?.questionRectPx(owner);
       if (rect != null) {
         final maxDx = math.max(0.0, rect.width - element.width);
         final maxDy = math.max(0.0, rect.height - element.height);
@@ -1915,10 +1918,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
     final questionIndex = controller.selectedBranch?.questionIndex ??
         controller.selectedQuestionIndex ?? controller.currentQuestionIndex;
-    final pageIndex = controller.pagination.pageIndexOf(
-          controller.questions[questionIndex].id,
-        ) ??
-        0;
+    final pageIndex = _planPageOfQuestion(controller.questions[questionIndex].id) ?? 0;
     final top = _blockTopOnPage(questionIndex);
     return element.copyWith(
       pageIndex: pageIndex,
@@ -1937,14 +1937,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (owner == null) {
       return (pageIndex: element.pageIndex, dx: element.dx, dy: element.dy);
     }
+    // الحساب نفسه في مكان واحد (المتحكم): لا تُشتق صفحة العنصر وموضعه هنا مرة
+    // ثانية، وإلا اختلفت مع الحصر عند أول تعديل.
     final rect = controller.questionRect(owner);
     if (rect == null) {
       return (pageIndex: element.pageIndex, dx: element.dx, dy: element.dy);
     }
-    final margin = ExamCanvasGeometry.marginFor(controller.document.settings.marginMm);
     return (
       pageIndex: rect.pageIndex,
-      dx: margin + element.dx,
+      dx: rect.left + element.dx,
       dy: rect.top + element.dy,
     );
   }
@@ -1960,25 +1961,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final index = questionIndex < 0 || questionIndex >= questions.length
         ? questions.length - 1
         : questionIndex;
-    final document = controller.document;
-    final margin = ExamCanvasGeometry.marginFor(document.settings.marginMm);
-    final blockId = questions[index].id;
-    final pageIndex = controller.pagination.pageIndexOf(blockId);
-    if (pageIndex == null) {
-      return null;
-    }
-    final page = controller.pagination.pages[pageIndex];
-    final position = page.blockIds.indexOf(blockId);
-    if (position < 0) {
-      return null;
-    }
-    var top = margin;
-    for (final id in page.blockIds.take(position)) {
-      final previousQuestion = document.questionById(id);
-      final spacingAfter = previousQuestion?.spacingAfter ?? PaperMetrics.blockSpacingPx;
-      top += (controller.blockHeight(id) ?? 0) + spacingAfter;
-    }
-    return top;
+    return _planBlockTopPx(questions[index].id);
   }
 
   /// يفتح محرّر المعادلات ثم يُنتج معادلة **حرة** تُحدّد موضعها بنفسك.
@@ -2224,7 +2207,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
     // رفع المرفق المحفوظ بصيغة قديمة عند أول تعديل، مع إبقائه على صفحة
     // سؤاله الحالية ما لم يغيّر المستخدم الصفحة أثناء السحب.
-    final ownerPage = controller.pagination.pageIndexOf(
+    final ownerPage = _planPageOfQuestion(
           controller.questions[ref.questionIndex].id,
         ) ??
         element.pageIndex;
@@ -2482,10 +2465,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
   }
 
-  Future<void> _exportPdf({
-    List<List<String>>? pageAssignments,
-    LayoutDocument? layoutDocument,
-  }) async {
+  /// يصدّر الـPDF من **التخطيط نفسه** المعروض، ولا يمرّر توزيع صفحات منفصلاً:
+  /// تمرير توزيع بجانب التخطيط كان يترك باباً لقرار تقسيم ثانٍ في المسار.
+  Future<void> _exportPdf({LayoutDocument? layoutDocument}) async {
     if (_isBusy) {
       return;
     }
@@ -2502,11 +2484,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
       final bytes = await PdfExportService.buildDocumentPdfBytes(
               document: document,
-              pageAssignments: pageAssignments ??
-                  await PdfExportService.resolvePageAssignments(
-                    document: document,
-                  ),
-              layoutDocument: layoutDocument,
+              // التخطيط المعروض نفسه يُرسم، فلا يُعاد حساب هندسة في PDF.
+              layoutDocument: layoutDocument ?? _pagePlan?.layout,
             );
       if (!mounted) {
         return;
@@ -2880,12 +2859,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     LayoutDocument? canonicalReviewLayout;
     setState(() => _isBusy = true);
     try {
-      // Reuse the live preview object whenever it belongs to this exact source
-      // document; the review/PDF path must not silently create parallel geometry.
-      canonicalReviewLayout =
-          identical(_canonicalPreviewSourceDocument, document)
-              ? _canonicalPreviewLayout
-              : null;
+      // نفس كائن التخطيط المعروض على الشاشة: لا هندسة موازية للمراجعة/التصدير.
+      final livePlan = _pagePlan;
+      canonicalReviewLayout = livePlan?.layout ??
+          (identical(_planController.plan?.layout.source, controller.documentIr)
+              ? _planController.plan?.layout
+              : null);
       canonicalReviewLayout ??= await CanonicalLayoutService.resolve(
         document: document,
         sourceIr: controller.documentIr,
@@ -2978,10 +2957,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           FilledButton.icon(
             onPressed: () {
               Navigator.of(dialogContext).pop();
-              _exportPdf(
-                pageAssignments: pageAssignments,
-                layoutDocument: canonicalReviewLayout,
-              );
+              _exportPdf(layoutDocument: canonicalReviewLayout);
             },
             icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
             label: const Text('تصدير PDF'),
@@ -3358,19 +3334,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final controller = context.watch<ExamWizardController>();
     final document = controller.document;
     final layout = controller.layout;
-    final pagination = controller.pagination;
-    if (!_useCanonicalSurface) {
-      _trimPageKeysByIndices(pagination.pages.map((page) => page.index));
+    // الخطة هي مصدر الصفحات: تُطلب للمستند الحالي وتُعرض كما هي (حتى لو كانت
+    // نسخة اللحظة السابقة أثناء الحسم) كي لا تفقد الحقول التركيز مع كل حرف.
+    _planController.request(document, controller.documentIr);
+    // المتحكم يحصر العناصر المرتبطة بالسؤال داخل مستطيله: يقرأ الخطة نفسها.
+    controller.applyLayoutPlan(_pagePlan);
+    final pagePlan = _planController.plan;
+    if (pagePlan != null) {
+      _trimPageKeysByIndices(pagePlan.pages.map((page) => page.index));
+      if (_useCanonicalSurface) _ensureCanonicalAssets(pagePlan.layout, document);
     }
-    _ensureCanonicalPreview(controller);
-    final canonicalPreview =
-        identical(_canonicalPreviewSourceDocument, document)
-            ? _canonicalPreviewLayout
-            : null;
     final canonicalAssets = _canonicalPreviewAssets;
-    if (canonicalPreview != null) {
-      _trimPageKeysByIndices(canonicalPreview.pages.map((page) => page.index));
-    }
+    final planFailed = identical(_planController.failedFor, document);
     final activeStyle = _activeStyle();
     final selectionFormat = _selectionFormatState();
 
@@ -3521,7 +3496,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               builder: (context, constraints) {
                 _viewportWidth = constraints.maxWidth;
                 SchedulerBinding.instance.addPostFrameCallback((_) => _maybeAutoFit());
-                final pageCanvasWidth = canonicalPreview?.pages.fold<double>(
+                final pageCanvasWidth = pagePlan?.layout.pages.fold<double>(
                       0,
                       (largest, page) => math.max(
                         largest,
@@ -3547,27 +3522,28 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                           width: contentWidth,
                           child: Column(
                             children: <Widget>[
-                              if (!_useCanonicalSurface)
-                                for (final page in pagination.pages)
+                              if (pagePlan == null)
+                                _buildPlanPending(failed: planFailed)
+                              else if (!_useCanonicalSurface)
+                                for (final page in pagePlan.pages)
                                   _buildPaperZoomedPage(
                                     controller,
                                     layout,
                                     page,
-                                    pagination.pageCount,
+                                    pagePlan.pageCount,
                                   )
-                              else if (canonicalPreview != null &&
-                                  canonicalAssets != null)
-                                for (final page in canonicalPreview.pages)
+                              else if (canonicalAssets != null)
+                                for (final page in pagePlan.layout.pages)
                                   _buildCanonicalZoomedPage(
                                     controller,
-                                    canonicalPreview,
+                                    pagePlan.layout,
                                     page,
                                     canonicalAssets,
                                     interactive: true,
                                   )
                               else if (identical(
-                                _canonicalPreviewFailedDocument,
-                                document,
+                                _canonicalPreviewAssetsFailedLayout,
+                                pagePlan.layout,
                               ))
                                 SizedBox(
                                   width: 794,
@@ -4438,7 +4414,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   Widget _buildPaperZoomedPage(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
-    PaginatedPage page,
+    CanonicalPagePlanPage page,
     int pageCount,
   ) {
     return Container(
@@ -4505,10 +4481,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   // سطح الورقة التفاعلي: تُبنى الصفحة كودجات قابلة للتحرير فوق ترقيم
   // المتحكم المقاس (انظر [_buildPaperZoomedPage]).
+  /// صفحة واحدة من **خطة المحرك**: ترتيب الكتل وأسئلتها كما قرّرها
+  /// `LayoutEngine`، لا كما قاسها هذا الودجت. الأسئلة التي تستمرّ من الصفحة
+  /// السابقة لا تُرسم هنا (مفردةُ تحرير واحدة لكل سؤال — انظر §19 في
+  /// docs/p3_editor_preview_export_unification.md).
   Widget _buildPage(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
-    PaginatedPage page,
+    CanonicalPagePlanPage page,
     int pageCount, {
     bool interactive = true,
     bool showPreviewChrome = true,
@@ -4517,7 +4497,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final documentIr = controller.documentIr;
     final blocks = <Widget>[];
     String? previousBlockId;
-    for (final blockId in page.blockIds) {
+    // الترويسة من الخطة نفسها: الصفحة الأولى فقط، وحين يقرّر المحرك وجودها.
+    // الخطة المعروضة قد تكون نسخة اللحظة السابقة أثناء حسم تعديل (كي لا تفقد
+    // الحقول التركيز). تُرشَّح المعرّفات المحذوفة هنا كي لا يبقى فراغ كتلة.
+    final blockIds = <String>[
+      if (page.hasHeader && page.index == 0) PaperMetrics.headerBlockId,
+      ...page.questionIds.where(
+        (id) => documentIr.questionById(id) != null,
+      ),
+    ];
+    for (final blockId in blockIds) {
       if (blocks.isNotEmpty) {
         final previousQuestion = previousBlockId == null
             ? null
@@ -4529,17 +4518,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         );
       }
       if (blockId == PaperMetrics.headerBlockId) {
-        final header = _buildHeaderBlock(controller);
-        blocks.add(
-          interactive
-              ? MeasureSize(
-                  key: const ValueKey<String>('measure-header'),
-                  onChange: (size) =>
-                      controller.reportBlockHeight(blockId, size.height),
-                  child: header,
-                )
-              : header,
-        );
+        blocks.add(_buildHeaderBlock(controller));
         previousBlockId = blockId;
         continue;
       }
@@ -4549,15 +4528,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
       // بحث بالمعرف لا بالهوية: نسخ المستند تستبدل النسخ لا المعرفات.
       final questionIndex = questionData.index;
-      final question = _buildQuestionBlock(controller, layout, questionData);
-      final measuredQuestion = interactive
-          ? MeasureSize(
-              key: ValueKey<String>('measure-$blockId'),
-              onChange: (size) =>
-                  controller.reportBlockHeight(blockId, size.height),
-              child: question,
-            )
-          : question;
+      final measuredQuestion = _buildQuestionBlock(controller, layout, questionData);
       // إفلات سؤال مسحوب هنا يعيد ترتيبه (السؤال وحدة لا تتجزأ). في سطح
       // ليس هناك وضع Exact منفصل؛ كل الصفحات تُرسم بنفس الكتلة.
       blocks.add(
@@ -4591,8 +4562,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: blocks,
     );
-    // كتلة واحدة أطول من الصفحة كاملة: تُصغَّر بتناسق (كما في الـ PDF) بدل قصّها.
-    if (page.overflows) {
+    // كتلة أطول من الصفحة: المحرك هو من قرّر التصغير ومقداره.
+    if (page.scaleFactor < 0.999) {
       content = FittedBox(
         fit: BoxFit.scaleDown,
         alignment: Alignment.topCenter,
@@ -4662,13 +4633,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       final question = documentIr.questionById(blockId);
       if (question != null) collect(question);
     }
-    // Elements whose legacy question height is not measured yet are shown on
-    // page one while pagination measurement catches up, as before.
-    if (!controller.isFullyMeasured && page.index == 0 && pageAttachments.isEmpty) {
-      for (final question in documentIr.questions) {
-        collect(question);
-      }
-    }
+    // لا تعويض بـ«كل العناصر في الصفحة الأولى قبل القياس»: صفحة العنصر تأتي من
+    // الخطة نفسها التي تحكم صفحة سؤاله، فإن لم تُحسم الخطة بعد بقي العنصر في
+    // صفحته المحفوظة فقط (انظر ExamWizardController.questionRect).
 
     Widget buildBody({required bool highlighted}) {
       Widget body = Stack(
@@ -4772,7 +4739,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// كل نقطة في الورقة قابلة للإصابة (والقصّ على حدود الورقة في [Container]).
   Widget _buildPageStack(
     ExamWizardController controller,
-    PaginatedPage page,
+    CanonicalPagePlanPage page,
     int pageCount,
     Widget content,
     ExamDocument document, {
@@ -4781,9 +4748,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   }) {
     final settings = document.settings;
     final margin = ExamCanvasGeometry.marginFor(settings.marginMm);
-    final isLastPage = page.index == pageCount - 1;
-    // التذييل يُطبع في أسفل آخر صفحة فقط، ومساحته محجوزة من آخر كتلة.
-    final footerReserve = isLastPage ? controller.footerReserve : 0.0;
+    // حدّ المتن السفلي من الخطة نفسها (لا من ارتفاع تذييل مقاس هنا).
+    final bodyBottomPt = page.bodyBounds.top + page.bodyBounds.height;
+    final bottomInsetPx = page.scaleFactor < 0.999
+        ? LayoutUnits.ptToPx(page.pageHeightPt - bodyBottomPt)
+        : 0.0;
     // صندوق صفحة كامل ⇒ كل العناصر العائمة قابلة للمس أينما وُضعت.
     Widget stack = Stack(
       clipBehavior: Clip.hardEdge,
@@ -4793,17 +4762,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           Positioned.fill(
             child: IgnorePointer(child: _buildPageFrame(settings, margin)),
           ),
-        // `bottom` يُترك مفتوحاً في الصفحة غير المتجاوزة: المحتوى الأطول من
-        // الصفحة (قياس أولي أو كتلة طويلة) يُقصّ على حدود الورقة بلا خطأ
-        // تجاوز، ويُصغَّر بتناسق حين تُعلَّم الصفحة متجاوزة.
+        // `bottom` يُترك مفتوحاً في الصفحة العادية كي لا يُضغط المحتوى لو
+        // اختلف الحبر عن المتن بطول سطر واحد؛ وفي صفحة التصغير يُربط بحدّ
+        // المتن المحسوب من الخطة.
         Positioned(
           top: margin,
           left: margin,
           right: margin,
-          bottom: page.overflows ? margin + footerReserve : null,
+          bottom: page.scaleFactor < 0.999 ? bottomInsetPx : null,
           child: content,
         ),
-        if (isLastPage)
+        // وجود التذييل قرار الخطة (آخر صفحة لا تُفترض من الفهرس).
+        if (page.hasFooter)
           Positioned(
             left: margin,
             right: margin,
@@ -4844,7 +4814,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// تذييل آخر صفحة (للقراءة فقط): يُقاس ارتفاعه في وضع المعاينة فقط.
+  /// تذييل آخر صفحة (للقراءة فقط). لا يُقاس هنا: موضعه وحجزه قرّرهما المحرك
+  /// في الخطة، وهذا الودجت يرسم النصّ فقط.
   Widget _buildFooterBlock(
     ExamWizardController controller, {
     required bool interactive,
@@ -4868,12 +4839,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       ),
     );
     if (interactive) {
-      footer = MeasureSize(
-        key: const ValueKey<String>('measure-footer'),
-        onChange: (size) =>
-            controller.reportBlockHeight(PaperMetrics.footerBlockId, size.height),
-        child: footer,
-      );
       return GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTap: _tapHeader,
@@ -4956,7 +4921,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       return false;
     }
     final owner = _selectedOwnerQuestionId();
-    final ownerRect = owner == null ? null : controller.questionRect(owner);
+    final ownerRect = owner == null ? null : _pagePlan?.questionRectPx(owner);
     final placed = element.copyWith(
       dx: ownerRect == null ? dx : math.max(0, dx - ExamCanvasGeometry.marginFor(controller.document.settings.marginMm)),
       dy: ownerRect == null ? dy : math.max(0, dy - ownerRect.top),
@@ -6233,12 +6198,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 !ref.isGlobal &&
                 ref.questionIndex >= 0 &&
                 ref.questionIndex < controller.questions.length
-            ? controller.pagination.pageIndexOf(
-                  controller.questions[ref.questionIndex].id,
-                ) ??
+            ? _planPageOfQuestion(controller.questions[ref.questionIndex].id) ??
                 fallbackPage
             : fallbackPage;
-    final pageCount = controller?.pagination.pageCount ?? 1;
+    final pageCount = _pagePlan?.pageCount ?? 1;
     final pageIndex = ownerPage.clamp(0, math.max(0, pageCount - 1)).toInt();
     if (controller == null) {
       return;
@@ -6441,7 +6404,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
     // عنصر مرتبط بسؤال: يُحوَّل الموضع المطلق إلى إحداثيات نسبةً للسؤال،
     // والمراقب (المتحكم) يحصره داخل حدوده — فلا يخرج منه بالسحب أبداً.
-    final rect = controller.questionRect(owner);
+    final rect = _pagePlan?.questionRectPx(owner);
     if (rect == null) {
       _updateAttachmentElement(ref, absolute, preservePageIndex: true);
       return;
@@ -6666,12 +6629,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     const toolbarWidth = 460.0;
     const toolbarHeight = 40.0;
     final controller = _controller!;
-    final pageCount = controller.pagination.pageCount;
+    final pageCount = _pagePlan?.pageCount ?? 1;
     final elementPage = ref.isGlobal
         ? element.pageIndex
-        : controller.pagination.pageIndexOf(
-              controller.questions[ref.questionIndex].id,
-            ) ??
+        : _planPageOfQuestion(controller.questions[ref.questionIndex].id) ??
             element.pageIndex;
     final pageIndex = elementPage.clamp(0, math.max(0, pageCount - 1)).toInt();
     // العنصر المرتبط بسؤال يتبع سؤاله: تُعرض أدوات الشريط عند موضعه الحقيقي
