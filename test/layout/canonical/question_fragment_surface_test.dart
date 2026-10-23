@@ -15,7 +15,10 @@
 //      البداية معه، ويبقى المؤشر صالحاً (لا محرّران يتنازعان الحالة).
 //   5. PDF الناتج من المستند نفسه يضع العلامة في صفحة التكملة نفسها التي
 //      حدّدتها الخطة، ولا صفحة فارغة.
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
@@ -285,6 +288,76 @@ void main() {
 
     // النموذج نفسه تغيّر (لا حالة عرض موازية).
     expect(controller.document.questions[1].body, contains('EDIT9'));
+  });
+
+  testWidgets('حبر نهاية السؤال مرسوم فعلاً داخل صفحة التكملة (فحص بكسل)',
+      (tester) async {
+    final document = _document();
+    final controller = await _pumpPreview(tester, document);
+    final plan = await _planOf(controller.document);
+    final last = plan.fragmentsOfQuestion('fq2').last;
+    expect(last.isContinuation, isTrue,
+        reason: 'آخر مقطع ليس تكملة: القياس بلا عيّنة.');
+
+    final pageKey = find.byKey(ValueKey<String>('a4-page-${last.pageIndex}'));
+    await tester.scrollUntilVisible(
+      pageKey,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    final fieldKey =
+        find.byKey(ValueKey<String>('body-fq2/slice${last.fragmentIndex}'));
+    expect(fieldKey, findsOneWidget,
+        reason: 'حقل التكملة غير موجود: لا محتوى لفحصه.');
+    final marker = _markerRect(tester, fieldKey, _marker);
+    final pageRect = tester.getRect(pageKey);
+    final localMarker = marker.shift(-pageRect.topLeft);
+
+    final boundary = tester.renderObject<RenderRepaintBoundary>(
+      find.ancestor(of: pageKey, matching: find.byType(RepaintBoundary)).first,
+    );
+    final image = (await tester.runAsync(() => boundary.toImage()))!;
+    try {
+      final data = (await tester.runAsync(
+        () => image.toByteData(format: ui.ImageByteFormat.rawRgba),
+      ))!;
+      final pixels = data.buffer.asUint8List();
+      int darkPixels(Rect rect) {
+        var count = 0;
+        final left = rect.left.floor().clamp(0, image.width - 1);
+        final right = rect.right.ceil().clamp(0, image.width);
+        final top = rect.top.floor().clamp(0, image.height - 1);
+        final bottom = rect.bottom.ceil().clamp(0, image.height);
+        for (var y = top; y < bottom; y++) {
+          for (var x = left; x < right; x++) {
+            final offset = (y * image.width + x) * 4;
+            final r = pixels[offset];
+            final g = pixels[offset + 1];
+            final b = pixels[offset + 2];
+            final alpha = pixels[offset + 3];
+            // الحبر داكن على ورق أبيض؛ نتجاهل الشفاف (غير مرسوم).
+            if (alpha > 32 && (r + g + b) / 3 < 140) count++;
+          }
+        }
+        return count;
+      }
+
+      expect(localMarker.top, greaterThanOrEqualTo(0));
+      expect(localMarker.bottom, lessThanOrEqualTo(image.height.toDouble()));
+      expect(
+        darkPixels(localMarker),
+        greaterThan(4),
+        reason: 'لا حبر مرسوم للعلامة "$_marker" داخل صفحة التكملة: '
+            'المستطيل ${localMarker.left.toStringAsFixed(1)},'
+            '${localMarker.top.toStringAsFixed(1)} '
+            '${localMarker.width.toStringAsFixed(1)}×'
+            '${localMarker.height.toStringAsFixed(1)} بلا بكسلات داكنة.',
+      );
+    } finally {
+      image.dispose();
+    }
   });
 
   testWidgets('PDF يضع نهاية السؤال في صفحة تكملته نفسها (عينة حقيقية)',
