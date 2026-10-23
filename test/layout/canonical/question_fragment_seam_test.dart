@@ -781,6 +781,38 @@ void main() {
         reason: 'الخطة لا تُعلن ارتفاع صفّ العنوان: السطح سيعود إلى ارتفاع '
             'أدوات التحرير.');
   });
+
+  // ⚠️ TEMP: أرقام ما بعد الإصلاح (يُزال في الالتزام التالي مباشرة).
+  testWidgets('SEAM-AFTER: أرقام بعد ربط ارتفاع صفّ العنوان بالخطة',
+      (tester) async {
+    final document = _arabicDocument();
+    final controller = await _pumpPreview(tester, document);
+    final plan = await _planOf(controller.document);
+    final fragments = plan.fragmentsOfQuestion('sq2');
+    String f(double value) => value.toStringAsFixed(2);
+    final out = StringBuffer();
+    for (final fragment in fragments) {
+      final window = _windowOf(tester, fragment);
+      final field = _fieldOf(fragment);
+      final lines = _lineBoxes(tester, field);
+      final visible = <int>[
+        for (var index = 0; index < lines.length; index++)
+          if (lines[index].bottom > window.top + 0.5 &&
+              lines[index].top < window.bottom - 0.5)
+            index,
+      ];
+      final expected = fragment.lineIds
+          .where((id) => _bodyLineIds(plan, fragment.questionId).contains(id))
+          .length;
+      out.write('f${fragment.fragmentIndex} '
+          'lines=${visible.length}/$expected '
+          'topGap=${f(lines[visible.first].top - window.top)} '
+          'ovf=${f(lines[visible.last].bottom - window.bottom)} '
+          'slack=${f(window.bottom - lines[visible.last].bottom)} '
+          'lim=${f(_allowedSeamDriftPx(fragment))} | ');
+    }
+    expect(out.toString(), 'PROBE');
+  });
 }
 
 /// مستند بعنوان ومتن ونقاط وفرع: يقيس إزاحات العناصر لا القصّ وحده.
