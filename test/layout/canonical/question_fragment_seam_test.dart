@@ -686,17 +686,16 @@ void main() {
     }
   });
 
-  // ⚠️ TEMP (يُزال بعد قراءة الأرقام): يطبع جدول القياس في رسالة فشل، لأن
-  // سجلات التشغيل الكاملة غير قابلة للتنزيل من بيئة التطوير.
+  // ⚠️ TEMP (يُزال بعد قراءة الأرقام): جدول قصير جداً (تعليقات CI تقتطع).
   testWidgets('SEAM-PROBE: جدول قياس الحدود', (tester) async {
     final document = _arabicDocument();
     final controller = await _pumpPreview(tester, document);
     final plan = await _planOf(controller.document);
     final fragments = plan.fragmentsOfQuestion('sq2');
-    final buffer = StringBuffer()
-      ..writeln('فرق النسبة=$kUnitRatioError انزياح/pt=$kPxPerPtMismatch px');
-    final bodyIds = _bodyLineIds(plan, 'sq2');
+    String f(double value) => value.toStringAsFixed(2);
+    final out = StringBuffer();
     for (final fragment in fragments) {
+      if (fragment.fragmentIndex > 1) break;
       final window = _windowOf(tester, fragment);
       final field = _fieldOf(fragment);
       final lines = _lineBoxes(tester, field);
@@ -708,45 +707,21 @@ void main() {
             index,
       ];
       final planned = _linesOfFragment(plan, fragment);
-      final enginePitch = planned.length > 1
-          ? planned[1].rect.top - planned[0].rect.top
-          : 0.0;
-      final widgetPitch = visible.length > 1
-          ? lines[visible[1]].top - lines[visible[0]].top
-          : 0.0;
-      buffer.writeln(
-        'f${fragment.fragmentIndex}: win=${window.height.toStringAsFixed(2)}px '
-        'h=${fragment.heightPt.toStringAsFixed(2)}pt '
-        'srcTop=${fragment.sourceTopPt.toStringAsFixed(2)}pt '
-        'أسطر=${visible.length}/$bodyIds '
-        'topGap=${(lines[visible.first].top - window.top).toStringAsFixed(2)} '
-        'bottomGap=${(window.bottom - lines[visible.last].bottom).toStringAsFixed(2)} '
-        'overflow=${(lines[visible.last].bottom - window.bottom).toStringAsFixed(2)} '
-        'الحدّ=${_allowedSeamDriftPx(fragment).toStringAsFixed(2)}',
-      );
-      buffer.writeln(
-        '   pitch: محرك=${enginePitch.toStringAsFixed(3)}pt '
-        '(${(enginePitch * LayoutUnits.ptToPx(1)).toStringAsFixed(3)}px) '
-        'حقل=${widgetPitch.toStringAsFixed(3)}px '
-        'فرق=${(widgetPitch - enginePitch * LayoutUnits.ptToPx(1)).toStringAsFixed(3)}px '
-        'خط=${style.fontFamily} fs=${style.fontSize?.toStringAsFixed(3)} '
-        'h=${style.height?.toStringAsFixed(3)} '
-        'ls=${style.letterSpacing?.toStringAsFixed(3)}',
-      );
-      if (planned.isNotEmpty) {
-        final firstRun = planned.first.runs.firstOrNull;
-        buffer.writeln(
-          '   engine style: fs=${firstRun?.style.fontSizePt} '
-          'lh=${firstRun?.style.lineHeightFactor} '
-          'asc=${planned.first.ascent.toStringAsFixed(3)} '
-          'desc=${planned.first.descent.toStringAsFixed(3)} '
-          'lead=${planned.first.leading.toStringAsFixed(3)} '
-          'h=${planned.first.rect.height.toStringAsFixed(3)} '
-          'box h=${(lines[visible.last].bottom - lines[visible.last].top).toStringAsFixed(3)}px',
-        );
-      }
+      final engPitch = planned.length > 1 ? planned[1].rect.top - planned[0].rect.top : 0.0;
+      final widPitch = visible.length > 1 ? lines[visible[1]].top - lines[visible[0]].top : 0.0;
+      out.write('f${fragment.fragmentIndex} win=${f(window.height)} '
+          'lines=${visible.length}/${planned.length} '
+          'topGap=${f(lines[visible.first].top - window.top)} '
+          'ovf=${f(lines[visible.last].bottom - window.bottom)} '
+          'lim=${f(_allowedSeamDriftPx(fragment))} '
+          'pitch eng=${f(engPitch)}pt/${f(engPitch * LayoutUnits.ptToPx(1))}px '
+          'field=${f(widPitch)}px '
+          'fs=${f(style.fontSize!)} h=${f(style.height!)} '
+          'engH=${f(planned.first.rect.height)}pt '
+          'asc=${f(planned.first.ascent)} desc=${f(planned.first.descent)} '
+          'lead=${f(planned.first.leading)} '
+          'boxH=${f(lines[visible.last].bottom - lines[visible.last].top)}px | ');
     }
-    // فشل مقصود لعرض الجدول في تعليقات CI.
-    expect(buffer.toString(), 'PROBE');
+    expect(out.toString(), 'PROBE');
   });
 }
