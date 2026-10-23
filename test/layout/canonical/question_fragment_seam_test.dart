@@ -283,19 +283,34 @@ String _edgeWord(LayoutLine line, {required bool first}) {
   return first ? words.first : words.last;
 }
 
-/// إزاحة مؤشر حقيقية داخل سطر مرئي: نقطة هندسية ← `getPositionForOffset`.
-int _caretOffsetInLine(
+/// إزاحة مؤشر حقيقية عند بداية سطر مرئي، مشتقّة من هندسة المؤشر نفسها.
+///
+/// `RenderEditable` لا يعرّف `getPositionForOffset` في هذه النسخة، فيُعكس
+/// الاتجاه: `getLocalRectForCaret(offset).top` دالة غير متناقصة في الإزاحة،
+/// فبحث ثنائي يعطي أول إزاحة تنتمي إلى السطر المطلوب — وهو المسار نفسه الذي
+/// يستعمله الرسم لوضع المؤشر عند حدّ المقطع.
+int _caretOffsetAtLineStart(
   WidgetTester tester,
   Finder field,
   _LineBox line,
 ) {
   final editable = _renderEditable(tester, field);
   final origin = tester.getTopLeft(_editableOf(field));
-  final local = Offset(
-    (line.left + line.right) / 2 - origin.dx,
-    (line.top + line.bottom) / 2 - origin.dy,
-  );
-  return editable.getPositionForOffset(local).offset;
+  final targetTop = line.top - origin.dy;
+  final text = tester.widget<TextField>(field).controller!.text;
+  var low = 0;
+  var high = text.length;
+  while (low < high) {
+    final middle = (low + high) ~/ 2;
+    final top =
+        editable.getLocalRectForCaret(TextPosition(offset: middle)).top;
+    if (top >= targetTop - 0.5) {
+      high = middle;
+    } else {
+      low = middle + 1;
+    }
+  }
+  return low;
 }
 
 void main() {
@@ -525,8 +540,9 @@ void main() {
     ];
     expect(visibleInFirst, isNotEmpty);
     expect(visibleInLast, isNotEmpty);
-    final from = _caretOffsetInLine(tester, startField, visibleInFirst.last);
-    final to = _caretOffsetInLine(tester, continuationField, visibleInLast.first);
+    final from = _caretOffsetAtLineStart(tester, startField, visibleInFirst.last);
+    final to = _caretOffsetAtLineStart(
+        tester, continuationField, visibleInLast.first);
     expect(to, greaterThan(from),
         reason: 'موضع المؤشر في التكملة ($to) ليس بعد موضعه في المقطع الأول '
             '($from): إسقاط المؤشر على المصدر خاطئ.');
