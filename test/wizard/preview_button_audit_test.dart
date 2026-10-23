@@ -15,6 +15,7 @@ import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/point_kind.dart';
 import 'package:writing_questions_app/models/question_model.dart';
+import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/views/widgets/smart_exam_toolbar.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
@@ -245,7 +246,13 @@ void main() {
       height: 60,
     ));
     await _pump(tester, controller);
-    expect(controller.pagination.pageCount, greaterThan(1));
+    // عدد الصفحات يُقرأ من خطة المحرك (المصدر الوحيد)، لا من محرك التقسيم
+    // القديم الذي كانت ارتفاعات ودجته تُغذّيه من السطح.
+    final plan = await CanonicalLayoutService.resolve(
+      document: controller.document,
+      sourceIr: controller.documentIr,
+    );
+    expect(plan.pageCount, greaterThan(1));
 
     await _tap(tester, find.byKey(const ValueKey('page-element-page-nav-element')));
     await _tap(tester, find.byTooltip('نقل إلى الصفحة التالية'));

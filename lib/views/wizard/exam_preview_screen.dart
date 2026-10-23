@@ -4507,6 +4507,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       ...page.questionIds.where(
         (id) => documentIr.questionById(id) != null,
       ),
+      // أسئلة بلا محتوى مطبوع: لا تدخل خطة الورقة ولا PDF، لكنها تبقى قابلة
+      // للتحرير هنا (المدرس يكتب من المعاينة). إرساؤها قرار عرض لا قرار تقسيم
+      // — انظر §19.7 في docs/p3_editor_preview_export_unification.md.
+      ...page.unplannedQuestionIds.where(
+        (id) => documentIr.questionById(id) != null,
+      ),
     ];
     for (final blockId in blockIds) {
       if (blocks.isNotEmpty) {

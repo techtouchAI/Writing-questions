@@ -67,8 +67,9 @@ Future<void> _pumpPreview(WidgetTester tester, ExamWizardController controller) 
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(_preview(controller));
-  await tester.pump();
-  await tester.pump();
+  // سطح الورقة يرسم من خطة `LayoutEngine` وحسمها غير متزامن (مهلة + قياس).
+  // القياس قبل وصول الخطة يقيس حالة «تخطيط جارٍ» لا الورقة.
+  await tester.pumpAndSettle();
 }
 
 void main() {

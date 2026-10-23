@@ -128,12 +128,22 @@ void main() {
           ),
         ),
       );
-      for (var frame = 0;
-          frame < 40 &&
-              find.byType(CanonicalLayoutPreviewPage).evaluate().isEmpty;
-          frame++) {
+      // الشرط ليس «ظهرت صفحة» بل «ظهرت خطة **هذا المستند**»: السطح يبقي
+      // الخطة السابقة معروضة أثناء حسم التعديل (لاستمرارية التركيز/IME)، فوجود
+      // صفحة لا يعني أنها للمستند الحالي — قِيس في هذه البوابة نفسها (كانت
+      // تقرأ محاذاة المستند السابق في حلقة start/end).
+      bool planMatchesCurrentDocument() {
+        final pages = find.byType(CanonicalLayoutPreviewPage).evaluate();
+        if (pages.isEmpty) return false;
+        final widget = pages.first.widget as CanonicalLayoutPreviewPage;
+        return identical(widget.layoutDocument.source, controller.documentIr);
+      }
+
+      for (var frame = 0; frame < 40 && !planMatchesCurrentDocument(); frame++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
+      expect(planMatchesCurrentDocument(), isTrue,
+          reason: 'لم تُحسم خطة المستند الحالي داخل السطح.');
       final preview = tester.widget<CanonicalLayoutPreviewPage>(
         find.byType(CanonicalLayoutPreviewPage).first,
       );

@@ -28,7 +28,21 @@ Widget _app(Widget home) {
   );
 }
 
-ExamDocument _previewDocument({int questionCount = 2, List<int>? branchesPerQuestion}) {
+/// نصّ فرع طويل: يجعل السؤال يتجاوز سعة المتن فعلاً بقياس المحرك، لا بارتفاع
+/// ودجت. يُستخدم حيث يقيس الاختبار انتقال الصفحات.
+String _longStatement(int question, int branch) => List<String>.generate(
+      6,
+      (index) =>
+          'فرع طويل للسؤال ${question + 1} رقم ${branch + 1} فقرة $index: '
+          'نصّ يقيس انتقال الأسئلة بين صفحات الورقة في المعاينة وPDF، '
+          'ويشمل كلمات متعددة وأرقاماً ٢٠ و2026 حتى يبلغ حدّ الصفحة.',
+    ).join(' ');
+
+ExamDocument _previewDocument({
+  int questionCount = 2,
+  List<int>? branchesPerQuestion,
+  bool longBranchText = false,
+}) {
   return ExamDocument(
     name: 'معاينة',
     header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
@@ -42,7 +56,9 @@ ExamDocument _previewDocument({int questionCount = 2, List<int>? branchesPerQues
               BranchModel(
                 id: 'q${q + 1}${b == 0 ? 'a' : b == 1 ? 'b' : 'x$b'}',
                 content: BranchContent(
-                  statement: 'محتوى س${q + 1} ${b == 0 ? 'أ' : b == 1 ? 'ب' : 'فرع ${b + 1}'}',
+                  statement: longBranchText
+                      ? _longStatement(q, b)
+                      : 'محتوى س${q + 1} ${b == 0 ? 'أ' : b == 1 ? 'ب' : 'فرع ${b + 1}'}',
                 ),
                 marks: b == 0 ? q + 1.0 : 1,
               ),
@@ -369,9 +385,14 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      // سؤال قصير ثم سؤالان طويلان (8 فروع مقالية لكلٍّ منهما) — لا يتّسعان معاً.
+      // سؤال قصير ثم سؤالان طويلان (8 فروع مقالية لكلٍّ منهما) بنصّ فرع طويل:
+      // يتجاوزان سعة المتن بقياس المحرك نفسه، فتنتقل الصفحة أو تنكسر الأسطر.
       final controller = ExamWizardController(
-        document: _previewDocument(questionCount: 3, branchesPerQuestion: <int>[2, 8, 8]),
+        document: _previewDocument(
+          questionCount: 3,
+          branchesPerQuestion: <int>[2, 8, 8],
+          longBranchText: true,
+        ),
       );
       await tester.pumpWidget(_preview(controller));
       await tester.pumpAndSettle();
