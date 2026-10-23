@@ -5131,7 +5131,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// مكانها (وتُقيَّد هي نفسها بالارتفاع) بلا حشوة تعويضية ولا تغيير قياس.
   Widget _planRowHeight({required Widget child, double? heightPt}) {
     if (heightPt == null || heightPt <= 0) return child;
-    return SizedBox(height: 40.0, child: child); // FAULT INJECTION A
+    return SizedBox(height: LayoutUnits.ptToPx(heightPt), child: child);
   }
 
   /// لاحقة مفاتيح ودجت المقطع الجاري بناؤه (`/sliceN` أو فارغة).
@@ -5151,7 +5151,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     Widget block,
     String suffix,
   ) {
-    final offsetPx = LayoutUnits.ptToPx(fragment.sourceTopPt + 3); // FAULT INJECTION B
+    final offsetPx = LayoutUnits.ptToPx(fragment.sourceTopPt);
     final heightPx = LayoutUnits.ptToPx(fragment.heightPt);
     return SizedBox(
       key: ValueKey<String>('page-slice-${fragment.questionId}$suffix'),
