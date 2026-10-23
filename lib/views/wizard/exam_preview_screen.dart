@@ -4515,8 +4515,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     // PDF. الآن كل صفحة ترسم نافذة المقطع التي حدّدها المحرك: الارتفاع
     // والإزاحة من الخطة نفسها، والكتلة المبنية هي الكتلة نفسها بمتحكماتها.
     final entries = <({CanonicalPagePlanFragment? fragment, String questionId})>[
+      // FAULT-INJECTION (مؤقت): إعادة السلوك القديم — رسم السؤال في صفحة
+      // بدايته فقط وإغفال مقاطع التكملة. يُزال في الالتزام التالي.
       for (final fragment in page.fragments)
-        if (documentIr.questionById(fragment.questionId) != null)
+        if (documentIr.questionById(fragment.questionId) != null &&
+            !fragment.isContinuation)
           (fragment: fragment, questionId: fragment.questionId),
       for (final id in page.unplannedQuestionIds)
         if (documentIr.questionById(id) != null &&
