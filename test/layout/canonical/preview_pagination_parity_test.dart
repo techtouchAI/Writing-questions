@@ -15,10 +15,10 @@
 //   * عقد المحرك: خطة مُسلَّمة تُحترم أو يُرفَض التسليم صراحةً — لا إعادة تقسيم
 //     صامتة (وهي الثغرة التي تسمح لمحركين باتخاذ القرار نفسه).
 //
-// قيد معلن (§19.6): سؤال يمتدّ على صفحتين يُرسم على السطح التفاعلي في صفحة
-// بدايته مرة واحدة (مفردةُ تحرير واحدة)، ويُطبع كاملاً في PDF. البوابة تتحقق
-// أن **صفحة البداية** هي نفسها في الحالتين، وأن التكملة معلنة في الخطة، ولا
-// تدّعي أن السطح يرسم التكملة.
+// بعد §19.9 لم يبقَ قيد §19.6: السؤال الممتدّ يُرسم على السطح في **مقاطعه**
+// (نافذة على صفحة البداية ونافذة على صفحة التكملة)، وكلٌّ بهندسة الخطة. لذلك
+// تضاف هنا بوابة توزيع كامل: لكل صفحة، المقاطع المرسومة = مقاطع الخطة بالضبط
+// (لا بدايات فقط، ولا تكملة مفقودة).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -102,6 +102,46 @@ List<List<String>> _renderedPlan(
     plan.add(ids);
   }
   return plan;
+}
+
+/// المقاطع المرسومة فعلاً على كل صفحة: بداية كل سؤال أو تكملته.
+///
+/// مفتاح مقطع البداية هو `question-block-<id>`، ومفتاح التكملة
+/// `question-block-<id>/sliceN` (مفاتيح مميّزة كي لا تتشابه الحقول المشتركة في
+/// المتحكم). تُقرأ الشجرة المرسومة لا دوال مساعدة.
+List<List<String>> _renderedFragments(
+  WidgetTester tester,
+  List<QuestionModel> questions,
+  int pages,
+) {
+  final rendered = <List<String>>[];
+  for (var pageIndex = 0; pageIndex < pages; pageIndex++) {
+    final canvas = find.byKey(ValueKey<String>('a4-page-$pageIndex'));
+    if (canvas.evaluate().isEmpty) {
+      rendered.add(const <String>[]);
+      continue;
+    }
+    final ids = <String>[];
+    for (final question in questions) {
+      final starts = find.descendant(
+        of: canvas,
+        matching: find.byKey(ValueKey<String>('question-block-${question.id}')),
+      );
+      if (starts.evaluate().isNotEmpty) ids.add('${question.id}#0');
+      for (var fragment = 1; fragment < 40; fragment++) {
+        final continuation = find.descendant(
+          of: canvas,
+          matching: find.byKey(
+            ValueKey<String>('question-block-${question.id}/slice$fragment'),
+          ),
+        );
+        if (continuation.evaluate().isEmpty) break;
+        ids.add('${question.id}#$fragment');
+      }
+    }
+    rendered.add(ids);
+  }
+  return rendered;
 }
 
 String _describe(List<List<String>> plan) =>
@@ -249,5 +289,42 @@ void main() {
       reason: 'المحرك قبل خطة تتجاوز سعة الصفحة وأعاد التقسيم صامتاً '
           '(الخطة المُسلَّمة: ${_describe(overflowing)}).',
     );
+  });
+
+  testWidgets('كل مقطع في الخطة مرسوم على صفحته — بما فيه تكملة السؤال الممتدّ',
+      (tester) async {
+    final document = _document();
+    final controller = await _pumpPreview(tester, document);
+    final plan = CanonicalPagePlan.fromLayout(
+      await CanonicalLayoutService.resolve(
+        document: controller.document,
+        sourceIr: controller.documentIr,
+      ),
+    );
+
+    expect(plan.hasContinuations, isTrue,
+        reason: 'المستند المرجعي لم يُنتج سؤالاً ممتداً: القياس بلا عيّنة.');
+
+    final expected = <List<String>>[
+      for (final page in plan.pages)
+        <String>[for (final fragment in page.fragments) '${fragment.questionId}#${fragment.fragmentIndex}'],
+    ];
+    final rendered = _renderedFragments(tester, controller.questions, plan.pageCount);
+
+    expect(rendered, expected,
+        reason: 'المقاطع المرسومة على السطح لا تطابق مقاطع الخطة '
+            '(بدايات وتكملات).\nمرسوم=${_describe(rendered)}\n'
+            'خطة=${_describe(expected)}');
+
+    // ولا مقطع مرسوم على صفحة لا تخصّه.
+    for (final page in plan.pages) {
+      for (final fragment in page.fragments) {
+        expect(fragment.pageIndex, page.index,
+            reason: 'مقطع ${fragment.questionId}#${fragment.fragmentIndex} '
+                'منسوب لصفحتين.');
+        expect(fragment.heightPt, greaterThan(0),
+            reason: 'مقطع بلا ارتفاع في الصفحة ${page.index}.');
+      }
+    }
   });
 }

@@ -1750,6 +1750,10 @@ class _LayoutBuilder {
         groups[fragmentIndex],
         fragmentIndex,
         groups.length,
+        // أصل إزاحة المقاطع: أول سطر في السؤال. المقطع الأول يُرسى على أعلى
+        // المتن، فإزاحته صفر، وما بعده يُقاس من النقطة نفسها (وإلا انزاحت
+        // المقاطع بمقدار ارتفاع السطر الأول).
+        questionTopPt: allLines.first.rect.top,
       );
       page.add(
         fragment,
@@ -1763,8 +1767,9 @@ class _LayoutBuilder {
     _QuestionFlow question,
     List<LayoutLine> lines,
     int fragmentIndex,
-    int fragmentCount,
-  ) {
+    int fragmentCount, {
+    required double questionTopPt,
+  }) {
     final firstTop = lines.first.rect.top;
     final lastBottom = lines.last.rect.bottom;
     final selectedIds = lines.map((line) => line.id).toSet();
@@ -1815,6 +1820,11 @@ class _LayoutBuilder {
           lastLineIndexExclusive: lines.last.lineIndex + 1,
           continuesFromPrevious: fragmentIndex > 0,
           continuesOnNext: fragmentIndex + 1 < fragmentCount,
+          // إزاحة المقطع داخل الكتلة الكاملة، نسبةً إلى أول سطر في السؤال
+          // (أي إلى النافذة التي يرسمها المقطع الأول). لا يُقاس هنا شيء جديد —
+          // القيمة مشتقّة من أسطر المحرك نفسها، وتتساوى مع مجموع ارتفاعات
+          // المقاطع السابقة لأن المقاطع تتجاور بلا فجوة.
+          sourceTopPt: firstTop - questionTopPt,
         ),
         keepTogether: true,
         continuation: fragmentIndex > 0,

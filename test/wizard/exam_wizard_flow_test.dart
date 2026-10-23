@@ -91,8 +91,9 @@ List<TextSpan> _collectTextSpans(InlineSpan span) {
 /// يتحقق أن كل سؤال معروض على صفحة واحدة مع **كل** فروعه، وأن الصفحات
 /// المعروضة هي صفحات الخطة المشتركة نفسها — لا حساب موازٍ.
 ///
-/// قيد معلن (§19.6): إن قرّر المحرك تقسيم سؤال طويل بين صفحتين، يرسمه السطح
-/// التفاعلي في صفحة بدايته (وحدة تحرير واحدة) ويطبع PDF تكملته.
+/// ما تقيسه هذه الدالة: **صفحة بداية** كل سؤال (المفتاح `question-block-<id>`
+/// غير المُلحَق) والخطة نفسها. أما رسم تكملة السؤال الممتدّ على صفحتها فتقيسه
+/// `test/layout/canonical/question_fragment_surface_test.dart` (§19.9).
 void _expectQuestionsOnPlannedPages(ExamWizardController controller, LayoutDocument plan) {
   final renderedPages = _renderedPages(controller);
   expect(renderedPages.length, plan.pageCount,

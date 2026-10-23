@@ -4483,10 +4483,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   // سطح الورقة التفاعلي: تُبنى الصفحة كودجات قابلة للتحرير فوق ترقيم
   // المتحكم المقاس (انظر [_buildPaperZoomedPage]).
-  /// صفحة واحدة من **خطة المحرك**: ترتيب الكتل وأسئلتها كما قرّرها
-  /// `LayoutEngine`، لا كما قاسها هذا الودجت. الأسئلة التي تستمرّ من الصفحة
-  /// السابقة لا تُرسم هنا (مفردةُ تحرير واحدة لكل سؤال — انظر §19 في
-  /// docs/p3_editor_preview_export_unification.md).
+  /// صفحة واحدة من **خطة المحرك**: مقاطع الكتل كما قرّرها `LayoutEngine`، لا
+  /// كما قاسها هذا الودجت.
+  ///
+  /// السؤال الممتدّ يُرسم هنا في **مقاطعه**: نافذة على صفحة بدايته ونافذة على
+  /// صفحة تكملته، بارتفاع المقطع وإزاحته من الخطة. الكتل المبنية هي نفسها في
+  /// المقطعين وبمتحكماتها نفسها، فلا يوجد مصدر نصّي ثانٍ — انظر §19.9 في
+  /// docs/p3_editor_preview_export_unification.md.
   Widget _buildPage(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
@@ -4498,49 +4501,66 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final document = controller.document;
     final documentIr = controller.documentIr;
     final blocks = <Widget>[];
-    String? previousBlockId;
-    // الترويسة من الخطة نفسها: الصفحة الأولى فقط، وحين يقرّر المحرك وجودها.
-    // الخطة المعروضة قد تكون نسخة اللحظة السابقة أثناء حسم تعديل (كي لا تفقد
-    // الحقول التركيز). تُرشَّح المعرّفات المحذوفة هنا كي لا يبقى فراغ كتلة.
-    final blockIds = <String>[
-      if (page.hasHeader && page.index == 0) PaperMetrics.headerBlockId,
-      ...page.questionIds.where(
-        (id) => documentIr.questionById(id) != null,
-      ),
-      // أسئلة بلا محتوى مطبوع: لا تدخل خطة الورقة ولا PDF، لكنها تبقى قابلة
-      // للتحرير هنا (المدرس يكتب من المعاينة). إرساؤها قرار عرض لا قرار تقسيم
-      // — انظر §19.7 في docs/p3_editor_preview_export_unification.md.
-      ...page.unplannedQuestionIds.where(
-        (id) => documentIr.questionById(id) != null,
-      ),
+    // (1) الترويسة من الخطة: الصفحة الأولى فقط، وحين يقرّر المحرك وجودها.
+    // تُرشَّح المعرّفات المحذوفة أثناء حسم تعديل كي لا يبقى فراغ كتلة.
+    if (page.hasHeader && page.index == 0) {
+      blocks.add(_buildHeaderBlock(controller));
+    }
+
+    // (2) محتوى الصفحة = **مقاطع** الخطة بترتيبها (بدايات وتكملات)، ثم
+    // الأسئلة بلا محتوى مطبوع (§19.7) التي لا تدخل الورقة.
+    //
+    // لماذا المقاطع لا `questionIds` فقط؟ لأن السؤال الممتدّ كان يُرسم كاملاً
+    // في صفحة بدايته ويُقصّ عند حدّ الصفحة، فما يراه المدرس ناقص عمّا يطبعه
+    // PDF. الآن كل صفحة ترسم نافذة المقطع التي حدّدها المحرك: الارتفاع
+    // والإزاحة من الخطة نفسها، والكتلة المبنية هي الكتلة نفسها بمتحكماتها.
+    final entries = <({CanonicalPagePlanFragment? fragment, String questionId})>[
+      for (final fragment in page.fragments)
+        if (documentIr.questionById(fragment.questionId) != null)
+          (fragment: fragment, questionId: fragment.questionId),
+      for (final id in page.unplannedQuestionIds)
+        if (documentIr.questionById(id) != null &&
+            !page.fragments.any((fragment) => fragment.questionId == id))
+          (fragment: null, questionId: id),
     ];
-    for (final blockId in blockIds) {
-      if (blocks.isNotEmpty) {
-        final previousQuestion = previousBlockId == null
-            ? null
-            : document.questionById(previousBlockId);
-        blocks.add(
-          SizedBox(
-            height: previousQuestion?.spacingAfter ?? PaperMetrics.blockSpacingPx,
-          ),
-        );
+    double? pendingSpacing;
+    for (final entry in entries) {
+      if (blocks.isNotEmpty && pendingSpacing != null) {
+        blocks.add(SizedBox(height: pendingSpacing));
       }
-      if (blockId == PaperMetrics.headerBlockId) {
-        blocks.add(_buildHeaderBlock(controller));
-        previousBlockId = blockId;
-        continue;
-      }
-      final questionData = documentIr.questionById(blockId);
+      final fragment = entry.fragment;
+      final questionData = documentIr.questionById(entry.questionId);
       if (questionData == null) {
         continue;
       }
       // بحث بالمعرف لا بالهوية: نسخ المستند تستبدل النسخ لا المعرفات.
       final questionIndex = questionData.index;
-      final measuredQuestion = _buildQuestionBlock(controller, layout, questionData);
-      // إفلات سؤال مسحوب هنا يعيد ترتيبه (السؤال وحدة لا تتجزأ). في سطح
-      // ليس هناك وضع Exact منفصل؛ كل الصفحات تُرسم بنفس الكتلة.
+      // مقطع التكملة يأخذ مفاتيح ودجت مميّزة (الحقول تشترك في المتحكم نفسه،
+      // فلا يجوز أن تتشابه مفاتيحها)؛ ومقطع البداية يبقى بمفاتيحه المعتادة.
+      final suffix =
+          fragment != null && fragment.isContinuation ? '/slice${fragment.fragmentIndex}' : '';
+      final previousSuffix = _sliceKeySuffix;
+      _sliceKeySuffix = suffix;
+      Widget measured = const SizedBox.shrink();
+      try {
+        measured = _buildQuestionBlock(
+          controller,
+          layout,
+          questionData,
+          sliceSuffix: suffix,
+        );
+      } finally {
+        _sliceKeySuffix = previousSuffix;
+      }
+      Widget block = measured;
+      if (fragment != null && fragment.isSplit) {
+        block = _buildQuestionFragmentSlice(fragment, block, suffix);
+      }
+      // إفلات سؤال مسحوب هنا يعيد ترتيبه (السؤال وحدة لا تتجزأ). لا يُعرض هدف
+      // إفلات على مقطع التكملة: موضعه ليس «بداية» يمكن الترتيب عندها.
+      final acceptsDrop = interactive && (fragment == null || !fragment.isContinuation);
       blocks.add(
-        interactive
+        acceptsDrop
             ? DragTarget<int>(
                 onWillAcceptWithDetails: (details) =>
                     !_locked && details.data != questionIndex,
@@ -4556,13 +4576,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                             borderRadius: BorderRadius.circular(4),
                           )
                         : null,
-                    child: measuredQuestion,
+                    child: block,
                   );
                 },
               )
-            : measuredQuestion,
+            : block,
       );
-      previousBlockId = blockId;
+      final question = document.questionById(entry.questionId);
+      // فجوة ما بعد المقطع: صفر إن كان السؤال يستمرّ (المقطع يلتصق بحدّ
+      // الصفحة)، وإلا فجوة السؤال من نموذجه كما كانت.
+      pendingSpacing = fragment != null && fragment.continuesOnNext
+          ? 0.0
+          : (question?.spacingAfter ?? PaperMetrics.blockSpacingPx);
     }
 
     Widget content = Column(
@@ -5094,11 +5119,50 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
+  /// لاحقة مفاتيح ودجت المقطع الجاري بناؤه (`/sliceN` أو فارغة).
+  ///
+  /// تُضبط أثناء بناء مقطع التكملة وحده: الحقول تشترك في المتحكمات نفسها (§19.9)
+  /// ولا يجوز أن تتكرّر مفاتيحها في الشجرة. البناء متزامن، وتُعاد القيمة إلى
+  /// سابقتها في `finally` فلا تتسرّب إلى كتلة أخرى.
+  String _sliceKeySuffix = '';
+
+  /// مقطع سؤال على صفحة: **نافذة** من الكتلة الكاملة، بهندسة الخطة.
+  ///
+  /// الارتفاع وإزاحة البداية من الخطة (نقاط ← بكسل)، والكتلة المبنية هي نفسها
+  /// التي تُبنى في صفحة البداية وبنفس المتحكمات: لكل حقل مصدر نصّي واحد،
+  /// والمقاطع عروض متزامنة له — لا محرّر ثانٍ ولا نسخ نصّ.
+  Widget _buildQuestionFragmentSlice(
+    CanonicalPagePlanFragment fragment,
+    Widget block,
+    String suffix,
+  ) {
+    final offsetPx = LayoutUnits.ptToPx(fragment.sourceTopPt);
+    final heightPx = LayoutUnits.ptToPx(fragment.heightPt);
+    return SizedBox(
+      key: ValueKey<String>('page-slice-${fragment.questionId}$suffix'),
+      height: heightPx,
+      child: ClipRect(
+        child: OverflowBox(
+          alignment: Alignment.topCenter,
+          minHeight: 0,
+          maxHeight: double.infinity,
+          child: Transform.translate(
+            key: ValueKey<String>('page-slice-offset-${fragment.questionId}$suffix'),
+            offset: Offset(0, -offsetPx),
+            child: block,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildQuestionBlock(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
-    QuestionBlock data,
-  ) {
+    QuestionBlock data, {
+    /// لاحقة مفاتيح ودجت مقطع التكملة (`/sliceN`)؛ فارغة في مقطع البداية.
+    String sliceSuffix = '',
+  }) {
     final document = controller.document;
     final question = document.questions[data.index];
     final questionIndex = data.index;
@@ -5131,7 +5195,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final bodyKey = _bodyKey(question.id);
 
     Widget block = Column(
-      key: ValueKey<String>('question-block-${question.id}'),
+      key: ValueKey<String>('question-block-${question.id}$sliceSuffix'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         // عنوان قسم السؤال: نص قابل للتحرير مباشرة على الورقة.
@@ -6955,8 +7019,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     VoidCallback? onLongPress,
   }) {
     final layout = _controller!.document.layout;
+    // مفاتيح حقول مقطع التكملة مميّزة: الحقلان (البداية والتكملة) يشتركان في
+    // المتحكم الواحد، ويجب أن يبقى كل مفتاح في الشجرة وحيداً.
     return PaperField(
-      key: ValueKey<String>(fieldKey),
+      key: ValueKey<String>('$fieldKey$_sliceKeySuffix'),
       controller: controller,
       style: style,
       semanticContent: semanticContent,
