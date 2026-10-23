@@ -313,7 +313,7 @@ void main() {
       }
     }
     expect(pagesWithMarker, <int>[last.pageIndex],
-        reason: 'علامة نهاية السؤال ظهرت في صفحات ${pagesWithMarker} مقابل '
+        reason: 'علامة نهاية السؤال ظهرت في صفحات $pagesWithMarker مقابل '
             'صفحة التكملة ${last.pageIndex} في الخطة.');
   });
 }
