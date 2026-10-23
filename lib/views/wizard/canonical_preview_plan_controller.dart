@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../../layout/canonical/canonical_layout_service.dart';
@@ -90,6 +89,10 @@ class CanonicalPreviewPlanController {
                 sourceIr: sourceIr,
               )
             : await resolver(document: document, sourceIr: sourceIr);
+        // حسم أقدم اكتمل بعد حسم أحدث: يُهمَل بالكامل، ولا يُستبدل به ما
+        // تُعرَض صفحاتُه الآن. الفحص قبل النداء لا يكفي لأن النداء غير متزامن
+        // (اختبار «stale layout completion» يقيس هذا بالضبط).
+        if (_disposed || revision != _revision) return;
         if (!identical(layout.source, sourceIr)) {
           throw StateError(
             'التخطيط القانوني لا يخصّ المصدر الدلالي الحالي (نسخة قديمة).',

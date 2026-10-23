@@ -56,7 +56,14 @@ void main() {
     );
     debugPrint('[diag] iso-7: pumped widget');
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    // سطح الورقة يرسم من خطة `LayoutEngine`، وحسمها غير متزامن: ننتظر ظهور
+    // النصّ بعدد إطارات محدود (لا انتظار مفتوح) قبل القياس.
+    for (var attempt = 0;
+        attempt < 40 &&
+            find.textContaining(_hitMarker).evaluate().isEmpty;
+        attempt++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     debugPrint('[diag] iso-7: pumped frames');
 
     expect(find.byType(CanonicalLayoutPreviewPage), findsNothing);
