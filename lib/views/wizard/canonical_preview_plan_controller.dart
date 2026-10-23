@@ -35,10 +35,16 @@ typedef CanonicalPlanResolver = Future<LayoutDocument> Function({
 /// لماذا لا `ChangeNotifier` للمتحكم؟ لأن سطح المعاينة يرسم أصلاً على إشعار
 /// `ExamWizardController`؛ إشعار إضافي هنا كان سيضاعف إعادة البناء بلا داعٍ.
 class CanonicalPreviewPlanController {
-  CanonicalPreviewPlanController({CanonicalPlanResolver? resolver})
-      : _resolver = resolver;
+  CanonicalPreviewPlanController({this.resolver});
 
-  final CanonicalPlanResolver? _resolver;
+  /// مُحوِّل الخطة **الحالي**.
+  ///
+  /// ليس `final`: الحالة تبقى حيّة حين يُستبدل الودجت بآخر (نفس النوع بلا
+  /// مفتاح) بمستند/وصلات مختلفة — وهي الحالة التي تكشفها بوابة P0 حين تبني
+  /// العربية ثم الإنجليزية في الاختبار نفسه. التقاطه مرة واحدة في `initState`
+  /// كان يجعل المستند الثاني يُحسَم بمُحوِّل الأول، فيُرفض ويُعرض «تعذّر تجهيز
+  /// خطة الصفحات» بلا أي صفحة. يُحدَّث في كل بناء من الودجت الحالي.
+  CanonicalPlanResolver? resolver;
 
   /// مهلة الخطة السابقة للارتفاع 70ms: يحسب الاختبار والحسم في كل تعديل
   /// حرف، فيتجنّب هذا العرض المتكرر بلا داعٍ. قرار التقسيم نفسه لا يُخفَّف.
@@ -82,13 +88,13 @@ class CanonicalPreviewPlanController {
     _timer = Timer(debounce, () async {
       if (_disposed || revision != _revision) return;
       try {
-        final resolver = _resolver;
-        final layout = resolver == null
+        final resolve = resolver;
+        final layout = resolve == null
             ? await CanonicalLayoutService.resolve(
                 document: document,
                 sourceIr: sourceIr,
               )
-            : await resolver(document: document, sourceIr: sourceIr);
+            : await resolve(document: document, sourceIr: sourceIr);
         // حسم أقدم اكتمل بعد حسم أحدث: يُهمَل بالكامل، ولا يُستبدل به ما
         // تُعرَض صفحاتُه الآن. الفحص قبل النداء لا يكفي لأن النداء غير متزامن
         // (اختبار «stale layout completion» يقيس هذا بالضبط).

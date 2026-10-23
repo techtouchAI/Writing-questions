@@ -443,9 +443,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   @override
   void initState() {
     super.initState();
-    _planController = CanonicalPreviewPlanController(
-      resolver: widget.canonicalLayoutResolver,
-    )..onChanged = _onPlanChanged;
+    _planController = CanonicalPreviewPlanController()..onChanged = _onPlanChanged;
   }
 
   void _onPlanChanged() {
@@ -3334,6 +3332,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final controller = context.watch<ExamWizardController>();
     final document = controller.document;
     final layout = controller.layout;
+    // الوصلة تُقرأ من الودجت الحالي في كل بناء: الحالة قد تبقى حيّة بعد
+    // استبدال الودجت (مستند/وصلات أخرى)، فالتقاطها مرة واحدة يحسم المستند
+    // الجديد بوصلة القديم.
+    _planController.resolver = widget.canonicalLayoutResolver;
     // الخطة هي مصدر الصفحات: تُطلب للمستند الحالي وتُعرض كما هي (حتى لو كانت
     // نسخة اللحظة السابقة أثناء الحسم) كي لا تفقد الحقول التركيز مع كل حرف.
     _planController.request(document, controller.documentIr);
