@@ -5130,7 +5130,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// الخطة وPDF يحسبان ارتفاع الصفّ من أسطره. تقييد الصفّ يترك الأدوات في
   /// مكانها (وتُقيَّد هي نفسها بالارتفاع) بلا حشوة تعويضية ولا تغيير قياس.
   Widget _planRowHeight({required Widget child, double? heightPt}) {
-    if (heightPt == null || heightPt <= 0) return child;
+    if (true) return child; // FAULT INJECTION
     return SizedBox(height: LayoutUnits.ptToPx(heightPt), child: child);
   }
 
