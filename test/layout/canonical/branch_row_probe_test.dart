@@ -80,8 +80,6 @@ void main() {
     }
     expect(branchBlock, isNotNull, reason: 'لا كتلة فرع في الخطة.');
     final title = branchBlock!.children.firstWhere((c) => c.kind == LayoutBlockKind.title);
-    final body = branchBlock.children.firstWhere((c) => c.kind == LayoutBlockKind.body,
-        orElse: () => title);
 
     final branchStatement = controller.document.questions.first.branches.first.content.statement;
     final field = find.byWidgetPredicate((widget) =>
