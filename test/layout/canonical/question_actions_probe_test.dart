@@ -1,4 +1,6 @@
 // ⚠️ TEMP PROBE — يُزال قبل الالتزام النهائي.
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -106,17 +108,36 @@ void main() {
     ];
     final drag = find.byIcon(Icons.drag_indicator);
 
-    expect(
-      'ROW h=${f(rowRect.height)} planTitle=${f(LayoutUnits.ptToPx(title.rect.height))} | '
-      'STMT w=${f(sRect.width)} planW=${f(LayoutUnits.ptToPx(title.rect.width))} '
-      'left=${f(sRect.left - tester.getRect(find.byKey(const ValueKey<String>('question-block-aq1'))).left)} '
-      'planLeft=${f(LayoutUnits.ptToPx(title.rect.left - block.rect.left))} | '
-      'BODY top=${f(bRect.top - rowRect.top)} | '
-      'GAP=${f(bRect.top - rowRect.bottom)} | '
-      'BTNS=${heights.join(",")} n=${heights.length} | '
-      'DRAG=${drag.evaluate().isEmpty ? "none" : f(tester.getRect(drag.first).height)} | '
-      'PLANGAP=${f(LayoutUnits.ptToPx(body.rect.top - title.rect.bottom))}',
-      'PROBE',
+    // خطوط الخطة لعقدة منطوق السؤال نفسها، ومدى امتدادها الأفقي.
+    final runs = <LayoutRun>[
+      for (final line in block.allLines)
+        ...line.runs.where((run) => run.semanticNodeId == 'aq1/title/statement/1'),
+    ];
+    final planLines = <String>{
+      for (final line in block.allLines)
+        if (line.runs.any((r) => r.semanticNodeId == 'aq1/title/statement/1')) line.id,
+    }.length;
+    final span = runs.isEmpty
+        ? 0.0
+        : runs
+                .map((run) => run.x + run.advance)
+                .reduce(math.max) -
+            runs.map((run) => run.x).reduce(math.min);
+    final editable = tester.state<EditableTextState>(
+      find.descendant(of: statement, matching: find.byType(EditableText)),
     );
+    final boxes = editable.renderEditable.getBoxesForSelection(
+      TextSelection(
+        baseOffset: 0,
+        extentOffset: editable.textEditingValue.text.length,
+      ),
+    );
+    final renderedLines = boxes.length;
+    expect('A row=${f(rowRect.height)}/${f(LayoutUnits.ptToPx(title.rect.height))}', 'P');
+    expect('B stmtW=${f(sRect.width)} planSpan=${f(LayoutUnits.ptToPx(span))}', 'P');
+    expect('C stmtLines=$renderedLines planLines=$planLines', 'P');
+    expect('D gapBody=${f(bRect.top - rowRect.bottom)} planGap=${f(LayoutUnits.ptToPx(body.rect.top - title.rect.bottom))}', 'P');
+    expect('E btns=${heights.join(",")} n=${heights.length}', 'P');
+    expect('F drag=${drag.evaluate().isEmpty ? "none" : f(tester.getRect(drag.first).height)}', 'P');
   });
 }
