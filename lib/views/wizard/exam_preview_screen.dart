@@ -5142,7 +5142,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               child: Text(
                 question == null
                     ? 'حدّد سؤالاً واحداً لتحرير أدواته'
-                    : 'أدوات السؤال ${controller.document.formatNumber(index + 1)}',
+                    : 'أدوات السؤال ${controller.document.formatNumber(index! + 1)}',
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -5200,6 +5200,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     required Widget label,
     required Widget statement,
     required Widget marks,
+    // أدوات الصفّ **للفرع فقط** حالياً. صفّ السؤال لا يمرّر شيئاً: أدواته في
+    // شريط خارج الورقة (§19.15) كي لا تحدّد هندسته.
+    List<Widget> actions = const <Widget>[],
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -5218,6 +5221,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               constraints: BoxConstraints(maxWidth: width * 0.26),
               child: marks,
             ),
+            ...actions,
           ],
         );
       },
