@@ -23,6 +23,7 @@ import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/services/pdf_export_service.dart';
 import 'package:writing_questions_app/views/widgets/paper_field.dart';
+import 'package:writing_questions_app/views/widgets/smart_exam_toolbar.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 
 const _output = 'build/production_fragment_repro';
@@ -72,20 +73,23 @@ Future<LayoutDocument> _layout(ExamDocument document, {bool unsplit = false}) =>
 
 Future<ExamWizardController> _pump(
   WidgetTester tester,
-  ExamDocument document,
-) async {
-  tester.view.physicalSize = const Size(1400, 2400);
+  ExamDocument document, {
+  Size size = const Size(1400, 2400),
+}) async {
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   final controller = ExamWizardController(document: document);
   addTearDown(controller.dispose);
-  await tester.pumpWidget(MaterialApp(
-    home: ChangeNotifierProvider<ExamWizardController>.value(
-      value: controller,
-      // Deliberately no resolver AND no asset-loader injection: this is the
-      // same editable paper that the released application displays.
-      child: ExamPreviewScreen(onBackToQuestions: () {}),
+  await tester.pumpWidget(RepaintBoundary(
+    key: const ValueKey<String>('production-repro-screen'),
+    child: MaterialApp(
+      home: ChangeNotifierProvider<ExamWizardController>.value(
+        value: controller,
+        // No resolver/asset-loader injection: the released editable paper.
+        child: ExamPreviewScreen(onBackToQuestions: () {}),
+      ),
     ),
   ));
   await tester.pumpAndSettle();
@@ -100,13 +104,18 @@ void _record(String name, Object data) {
       .writeAsStringSync(const JsonEncoder.withIndent('  ').convert(data));
 }
 
-Future<void> _capture(WidgetTester tester, String name, int pageIndex) async {
-  final page = _key('a4-page-$pageIndex');
-  await tester.ensureVisible(page);
-  await tester.pumpAndSettle();
+Future<void> _captureScreen(WidgetTester tester, String name) async {
   final boundary = tester.renderObject<RenderRepaintBoundary>(
-    find.ancestor(of: page, matching: find.byType(RepaintBoundary)).first,
+    _key('production-repro-screen'),
   );
+  await _writeImage(tester, name, boundary);
+}
+
+Future<void> _writeImage(
+  WidgetTester tester,
+  String name,
+  RenderRepaintBoundary boundary,
+) async {
   final image = (await tester.runAsync(() => boundary.toImage()))!;
   try {
     final png = (await tester.runAsync(
@@ -117,6 +126,16 @@ Future<void> _capture(WidgetTester tester, String name, int pageIndex) async {
   } finally {
     image.dispose();
   }
+}
+
+Future<void> _capture(WidgetTester tester, String name, int pageIndex) async {
+  final page = _key('a4-page-$pageIndex');
+  await tester.ensureVisible(page);
+  await tester.pumpAndSettle();
+  final boundary = tester.renderObject<RenderRepaintBoundary>(
+    find.ancestor(of: page, matching: find.byType(RepaintBoundary)).first,
+  );
+  await _writeImage(tester, name, boundary);
 }
 
 void main() {
@@ -261,4 +280,105 @@ void main() {
         reason: 'Question-local dy is added to its first fragment, not mapped '
             'to a continuation, so both preview and PDF lose the attachment.');
   });
+
+  testWidgets('R6 continuation branch fields have distinct view keys and one source',
+      (tester) async {
+    final controller = await _pump(tester, _document(long: true));
+    final plan = CanonicalPagePlan.fromLayout(await _layout(controller.document));
+    final fragments = plan.fragmentsOfQuestion('repro-q');
+    expect(fragments.length, greaterThan(1));
+    final fieldKeys = <String>[];
+    final controllers = <TextEditingController>[];
+    for (final fragment in fragments) {
+      final suffix = fragment.isContinuation
+          ? '/slice${fragment.fragmentIndex}'
+          : '';
+      final slice = _key('page-slice-repro-q$suffix');
+      final fields = find.descendant(
+        of: slice,
+        matching: find.byWidgetPredicate((widget) =>
+            widget is PaperField && widget.controller.text.contains('ZEND')),
+      );
+      expect(fields, findsOneWidget);
+      final field = tester.widget<PaperField>(fields);
+      fieldKeys.add(field.key.toString());
+      controllers.add(field.controller);
+    }
+    _record('r6-branch-fields', <String, Object>{
+      'keys': fieldKeys,
+      'uniqueKeys': fieldKeys.toSet().length,
+      'fragments': fragments.length,
+      'sharedController': controllers.every((c) => identical(c, controllers.first)),
+    });
+    expect(controllers.every((c) => identical(c, controllers.first)), isTrue);
+    expect(fieldKeys.toSet().length, fragments.length,
+        reason: 'The delayed DragTarget builder reads the already-reset '
+            '_sliceKeySuffix, so branch views lose their continuation identity.');
+  });
+
+  for (final width in <double>[320, 360]) {
+    testWidgets('R7 specialties are closed initially and insertion is unique at $width dp',
+        (tester) async {
+      final controller = await _pump(
+        tester, _document(), size: Size(width, 900),
+      );
+      final original = controller.document;
+      final initiallyOpen = find.byType(SmartExamToolbar).evaluate().isNotEmpty;
+      await _captureScreen(tester, 'r7-${width.toInt()}-initial');
+      final toggle = find.byTooltip('شريط الصيغ والوسائط');
+      await tester.ensureVisible(toggle);
+      if (!initiallyOpen) {
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+      }
+      expect(find.byType(SmartExamToolbar), findsOneWidget);
+      final media = find.text('وسائط');
+      await tester.ensureVisible(media);
+      await tester.tap(media);
+      await tester.pumpAndSettle();
+      await _captureScreen(tester, 'r7-${width.toInt()}-media');
+      final imageCommands = find.byTooltip('إدراج صورة').evaluate().length +
+          find.text('صورة').evaluate().length;
+      final textBoxCommands = find.byTooltip('مربع نص').evaluate().length +
+          find.text('مربع نص').evaluate().length;
+      _record('r7-${width.toInt()}-toolbar', <String, Object>{
+        'initiallyOpen': initiallyOpen,
+        'imageCommands': imageCommands,
+        'textBoxCommands': textBoxCommands,
+        'sameDocument': identical(original, controller.document),
+      });
+      await tester.ensureVisible(toggle);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      await _captureScreen(tester, 'r7-${width.toInt()}-closed');
+      expect(find.byType(SmartExamToolbar), findsNothing);
+      expect(identical(original, controller.document), isTrue);
+      expect(initiallyOpen, isFalse);
+      expect(imageCommands, 1);
+      expect(textBoxCommands, 1);
+    });
+
+    testWidgets('R8 all primary controls have 48dp touch targets at $width dp',
+        (tester) async {
+      await _pump(tester, _document(), size: Size(width, 900));
+      final sizes = <String, Object>{};
+      var minimumWidth = double.infinity;
+      var minimumHeight = double.infinity;
+      for (final label in <String>[
+        'تكبير', 'تصغير', 'ملاءمة الورقة للشاشة', 'توسيط الورقة',
+        'عريض', 'مائل', 'تحته خط', 'شريط الصيغ والوسائط',
+      ]) {
+        final target = find.descendant(
+          of: find.byTooltip(label), matching: find.byType(InkWell),
+        ).first;
+        final size = tester.getSize(target);
+        sizes[label] = <String, double>{'width': size.width, 'height': size.height};
+        if (size.width < minimumWidth) minimumWidth = size.width;
+        if (size.height < minimumHeight) minimumHeight = size.height;
+      }
+      _record('r8-${width.toInt()}-touch', sizes);
+      expect(minimumWidth, greaterThanOrEqualTo(48));
+      expect(minimumHeight, greaterThanOrEqualTo(48));
+    });
+  }
 }

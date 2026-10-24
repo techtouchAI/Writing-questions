@@ -194,6 +194,24 @@ jobs:
       # build/export_gate؛ تُرفع دائماً لأن الدليل هو غرض البوابة لا رقم
       # الخروج: من راجع الانحدار يريد vector.pdf وexact وخريطة
       # 15×3، لا رسالة «1 test failed». (حُذف editable.docx في C5.)
+      - name: Publish production fragment measurements
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob, json, os
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('## Production paper regression measurements\n')
+              for path in sorted(glob.glob('build/production_fragment_repro/*.json')):
+                  name = os.path.basename(path)
+                  data = json.load(open(path))
+                  text = json.dumps(data, ensure_ascii=False, indent=2)
+                  summary.write(f'### {name}\n```json\n{text}\n```\n')
+                  message = json.dumps(data, ensure_ascii=False)
+                  message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  print(f'::notice title=Production repro {name}::{message}')
+          PY
+
       - name: Upload production fragment reproductions
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
