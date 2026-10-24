@@ -5,6 +5,7 @@ import '../../models/exam_document.dart';
 import '../../models/point_kind.dart';
 import '../../models/question_model.dart';
 import '../../models/question_option.dart';
+import '../../models/text_format_span.dart';
 import '../document_direction.dart';
 import '../semantic/inline_nodes.dart';
 
@@ -498,6 +499,13 @@ class _BlueprintBuilder {
   final ExamDocument document;
   final bool showMarks;
 
+  /// اتجاه فقرات الورقة، مشتق من قالب المادة (لا مثبَّت في الراسم): ورقة
+  /// إنجليزية LTR وورقة عربية RTL. تسميات الترويسة/التذييل تتبعه لأنها نصوص
+  /// الورقة نفسها — تسمية عربية ثابتة على `rtl` داخل ورقة LTR تجعل السطر
+  /// جزيرة معكوسة فينفصل رقم القيمة عن كلماته.
+  DocumentDirection get _direction =>
+      document.layout.isLtr ? DocumentDirection.ltr : DocumentDirection.rtl;
+
   /// Any blank marker entered by the teacher in a fill-in sentence.
   static final RegExp _blankMarker = RegExp(r'_{3,}|\.{4,}|\u2026');
 
@@ -526,6 +534,12 @@ class _BlueprintBuilder {
   }) =>
       HeaderLineBlueprint(field: field, content: content, bold: bold);
 
+  /// تسميات الترويسة العربية ليست اتجاه فقرة: هي **محتوى عربي في ورقة**،
+  /// فالورقة الإنجليزية ترسمها داخل فقرة LTR (والعربية داخل فقرة RTL). تثبيت
+  /// `rtl` عليها يجعل الفقرة الإنجليزية جزيرة معكوسة، فينفصل رقم القيمة عن
+  /// كلماته («90 : الوقت …» بدل «الوقت: 90 …»). لذلك ترث تسميات الترويسة
+  /// اتجاه السطر (المشتق من اتجاه المستند في `DocumentIR`)، وتبقى القيم
+  /// `auto` فتُحسم من نصّها.
   InlineContent _headerValueLine({
     required String label,
     required String value,
@@ -537,10 +551,10 @@ class _BlueprintBuilder {
       LabelNode.fromSource(
         labelText,
         role: LabelRole.headerField,
-        direction: DocumentDirection.rtl,
+        direction: _direction,
       ),
-      const SeparatorNode(':', role: SeparatorRole.punctuation, direction: DocumentDirection.rtl),
-      const SeparatorNode(' ', role: SeparatorRole.labelValue, direction: DocumentDirection.rtl),
+      SeparatorNode(':', role: SeparatorRole.punctuation, direction: _direction),
+      SeparatorNode(' ', role: SeparatorRole.labelValue, direction: _direction),
       ...InlineContent.fromSource(valueText, direction: DocumentDirection.auto).nodes,
     ]);
   }
@@ -550,10 +564,10 @@ class _BlueprintBuilder {
         LabelNode.fromSource(
           prefix,
           role: LabelRole.headerField,
-          direction: DocumentDirection.rtl,
+          direction: _direction,
         ),
         if (value.isNotEmpty)
-          const SeparatorNode(' ', role: SeparatorRole.labelValue, direction: DocumentDirection.rtl),
+          SeparatorNode(' ', role: SeparatorRole.labelValue, direction: _direction),
         if (value.isNotEmpty)
           ...InlineContent.fromSource(value, direction: DocumentDirection.auto).nodes,
       ]);
@@ -563,8 +577,10 @@ class _BlueprintBuilder {
     final school = _value(header.schoolName);
     final examType = _value(header.examType);
     final year = _value(header.academicYear);
-    final gender = header.schoolGender.label;
-    final session = header.session.label;
+    final ltr = document.layout.isLtr;
+    final labels = PaperLabels.forLtr(ltr);
+    final gender = header.schoolGender.labelIn(ltr);
+    final session = header.session.labelIn(ltr);
 
     return HeaderBlueprint(
       showBismillah: header.showBismillah,
@@ -573,9 +589,9 @@ class _BlueprintBuilder {
           HeaderFieldKind.administration,
           InlineContent(<InlineNode>[
             LabelNode.fromSource(
-              ExamCatalog.administrationLabel,
+              labels.administration,
               role: LabelRole.headerField,
-              direction: DocumentDirection.rtl,
+              direction: _direction,
             ),
           ]),
         ),
@@ -587,24 +603,24 @@ class _BlueprintBuilder {
         if (gender.isNotEmpty)
           _headerLine(
             HeaderFieldKind.schoolGender,
-            InlineContent.fromSource(gender, direction: DocumentDirection.rtl),
+            InlineContent.fromSource(gender, direction: DocumentDirection.auto),
           ),
       ],
       centerContentLines: <HeaderLineBlueprint>[
         _headerLine(
           HeaderFieldKind.examType,
-          _headerPrefixValue(ExamCatalog.examTitlePrefix, examType),
+          _headerPrefixValue(labels.examTitlePrefix, examType),
           bold: true,
         ),
         _headerLine(
           HeaderFieldKind.academicYear,
-          _headerPrefixValue(ExamCatalog.academicYearPrefix, year),
+          _headerPrefixValue(labels.academicYearPrefix, year),
           bold: true,
         ),
         if (session.isNotEmpty)
           _headerLine(
             HeaderFieldKind.session,
-            InlineContent.fromSource(session, direction: DocumentDirection.rtl),
+            InlineContent.fromSource(session, direction: DocumentDirection.auto),
             bold: true,
           ),
       ],
@@ -612,7 +628,7 @@ class _BlueprintBuilder {
         _headerLine(
           HeaderFieldKind.subject,
           _headerValueLine(
-            label: ExamCatalog.subjectLabel,
+            label: labels.subject,
             value: _value(header.subject),
             blankWhenEmpty: true,
           ),
@@ -620,7 +636,7 @@ class _BlueprintBuilder {
         _headerLine(
           HeaderFieldKind.grade,
           _headerValueLine(
-            label: ExamCatalog.gradeLabel,
+            label: labels.grade,
             value: _value(header.grade),
             blankWhenEmpty: true,
           ),
@@ -628,7 +644,7 @@ class _BlueprintBuilder {
         _headerLine(
           HeaderFieldKind.time,
           _headerValueLine(
-            label: ExamCatalog.timeLabel,
+            label: labels.time,
             value: _value(header.time),
             blankWhenEmpty: true,
           ),
@@ -636,7 +652,7 @@ class _BlueprintBuilder {
         _headerLine(
           HeaderFieldKind.studentName,
           _headerValueLine(
-            label: ExamCatalog.studentNameLabel,
+            label: labels.studentName,
             value: ExamCatalog.blankLine,
             blankWhenEmpty: false,
           ),
@@ -654,12 +670,13 @@ class _BlueprintBuilder {
 
   FooterBlueprint _footer() {
     final footer = document.footer;
+    final ltr = document.layout.isLtr;
     SignatureBlueprint signature(String title, String name) =>
         SignatureBlueprint.semantic(
           semanticTitle: LabelNode.fromSource(
             title,
             role: LabelRole.signature,
-            direction: DocumentDirection.rtl,
+            direction: _direction,
           ),
           semanticName: InlineContent.fromSource(
             name.trim(),
@@ -671,11 +688,14 @@ class _BlueprintBuilder {
     return FooterBlueprint(
       semanticClosingPhrase: phrase.isEmpty
           ? null
-          : InlineContent.fromSource(phrase, direction: DocumentDirection.rtl),
-      primary: signature(footer.primary.title.label, footer.primary.name),
+          : InlineContent.fromSource(phrase, direction: DocumentDirection.auto),
+      primary: signature(
+        footer.primary.title.labelIn(ltr),
+        footer.primary.name,
+      ),
       secondary: secondary == null
           ? null
-          : signature(secondary.title.label, secondary.name),
+          : signature(secondary.title.labelIn(ltr), secondary.name),
     );
   }
 
@@ -696,14 +716,21 @@ class _BlueprintBuilder {
       unit: LabelNode.fromSource(
         document.layout.marksUnit,
         role: LabelRole.generic,
-        direction: DocumentDirection.rtl,
+        direction: _direction,
       ),
     );
   }
 
-  InlineContent? _nonBlankContent(String raw) {
+  InlineContent? _nonBlankContent(
+    String raw, {
+    List<TextFormatSpan> formats = const <TextFormatSpan>[],
+  }) {
     final trimmed = raw.trim();
-    return trimmed.isEmpty ? null : InlineContent.fromSource(trimmed);
+    if (trimmed.isEmpty) return null;
+    return InlineContent.fromSource(
+      trimmed,
+      formats: TextFormatSpans.forTrimmed(formats, raw),
+    );
   }
 
   QuestionBlueprint _question(int index) {
@@ -739,10 +766,19 @@ class _BlueprintBuilder {
                     ? DocumentDirection.ltr
                     : DocumentDirection.rtl,
               ),
-        statementContent: InlineContent.fromSource(question.statement.trim()),
+        statementContent: InlineContent.fromSource(
+          question.statement.trim(),
+          formats: TextFormatSpans.forTrimmed(
+            question.statementFormats,
+            question.statement,
+          ),
+        ),
         marksNode: _marks(question.marks),
       ),
-      bodyContent: _nonBlankContent(question.body),
+      bodyContent: _nonBlankContent(
+        question.body,
+        formats: question.bodyFormats,
+      ),
       points: _points(question.items),
       branches: <BranchBlueprint>[
         for (var branchIndex = 0;
@@ -774,11 +810,17 @@ class _BlueprintBuilder {
               ? DocumentDirection.ltr
               : DocumentDirection.rtl,
         ),
-        statementContent: InlineContent.fromSource(content.statement.trim()),
+        statementContent: InlineContent.fromSource(
+          content.statement.trim(),
+          formats:
+              TextFormatSpans.forTrimmed(content.statementFormats, content.statement),
+        ),
         marksNode: _marks(branch.marks),
       ),
-      body: _nonBlankContent(content.body)?.legacyText,
-      bodyContent: _nonBlankContent(content.body),
+      body: _nonBlankContent(content.body, formats: content.bodyFormats)
+          ?.legacyText,
+      bodyContent:
+          _nonBlankContent(content.body, formats: content.bodyFormats),
       points: _points(content.items),
     );
   }
@@ -827,7 +869,10 @@ class _BlueprintBuilder {
               SeparatorNode(')', role: SeparatorRole.punctuation),
             ]
           : const <SeparatorNode>[],
-      content: InlineContent.fromSource(option.text.trim()),
+      content: InlineContent.fromSource(
+        option.text.trim(),
+        formats: TextFormatSpans.forTrimmed(option.formats, option.text),
+      ),
     );
   }
 
@@ -861,7 +906,10 @@ class _BlueprintBuilder {
       labelSeparator: manualLabel == null
           ? const SeparatorNode('-', role: SeparatorRole.item)
           : null,
-      content: InlineContent.fromSource(text),
+      content: InlineContent.fromSource(
+        text,
+        formats: TextFormatSpans.forTrimmed(item.textFormats, item.text),
+      ),
       trailerContent: text.isEmpty || _trailer(item, text) == null
           ? null
           : InlineContent.literal(_trailer(item, text)!),

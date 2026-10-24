@@ -71,6 +71,55 @@ abstract final class ExamCatalog {
   static const String defaultClosingPhrase = 'تمنياتنا لكم بالنجاح والتوفيق';
 }
 
+/// تسميات الترويسة والتذييل بحسب **لغة الورقة**.
+///
+/// الورقة العربية تبقى على نصوص الكتالوج حرفياً (لا تغيير بصري)، والورقة
+/// الإنجليزية (قالب `english`، اتجاه LTR كامل) تأخذ تسميات لاتينية: تسمية
+/// عربية في ورقة لاتينية تجعل السطر جزيرة RTL، فينفصل رقم القيمة عن كلماته
+/// («90 : الوقت …») ويُستحال أن يكون السطر LTR سليماً. الاختيار هنا **بيانات**
+/// لا استثناء في الراسم: كل راسم يقرأ التسمية من هذه الحزمة.
+class PaperLabels {
+  const PaperLabels({
+    required this.administration,
+    required this.examTitlePrefix,
+    required this.academicYearPrefix,
+    required this.subject,
+    required this.grade,
+    required this.time,
+    required this.studentName,
+  });
+
+  final String administration;
+  final String examTitlePrefix;
+  final String academicYearPrefix;
+  final String subject;
+  final String grade;
+  final String time;
+  final String studentName;
+
+  static const PaperLabels arabic = PaperLabels(
+    administration: ExamCatalog.administrationLabel,
+    examTitlePrefix: ExamCatalog.examTitlePrefix,
+    academicYearPrefix: ExamCatalog.academicYearPrefix,
+    subject: ExamCatalog.subjectLabel,
+    grade: ExamCatalog.gradeLabel,
+    time: ExamCatalog.timeLabel,
+    studentName: ExamCatalog.studentNameLabel,
+  );
+
+  static const PaperLabels english = PaperLabels(
+    administration: 'Directorate',
+    examTitlePrefix: 'Exam questions',
+    academicYearPrefix: 'Academic year',
+    subject: 'Subject:',
+    grade: 'Grade:',
+    time: 'Time:',
+    studentName: 'Student name:',
+  );
+
+  static PaperLabels forLtr(bool ltr) => ltr ? english : arabic;
+}
+
 /// جنس المدرسة: السطر الثالث من عمود اليمين («للبنين» افتراضياً).
 enum SchoolGender {
   boys,
@@ -84,6 +133,19 @@ enum SchoolGender {
         return 'للبنين';
       case SchoolGender.girls:
         return 'للبنات';
+      case SchoolGender.none:
+        return '';
+    }
+  }
+
+  /// النص المطبوع في ورقة إنجليزية (القالب الإنجليزي ورقة لاتينية كاملة).
+  String labelIn(bool ltr) {
+    if (!ltr) return label;
+    switch (this) {
+      case SchoolGender.boys:
+        return 'Boys';
+      case SchoolGender.girls:
+        return 'Girls';
       case SchoolGender.none:
         return '';
     }
@@ -124,6 +186,21 @@ enum ExamSession {
     }
   }
 
+  /// النص المطبوع في ورقة إنجليزية.
+  String labelIn(bool ltr) {
+    if (!ltr) return label;
+    switch (this) {
+      case ExamSession.none:
+        return '';
+      case ExamSession.first:
+        return 'First session';
+      case ExamSession.second:
+        return 'Second session';
+      case ExamSession.third:
+        return 'Third session';
+    }
+  }
+
   /// التسمية المعروضة في القائمة المنسدلة.
   String get menuLabel => this == ExamSession.none ? 'بدون دور' : label;
 
@@ -155,6 +232,21 @@ enum SignatureTitle {
         return 'مدرسة المادة';
       case SignatureTitle.educatorFemale:
         return 'معلمة المادة';
+    }
+  }
+
+  /// النص المطبوع في ورقة إنجليزية.
+  String labelIn(bool ltr) {
+    if (!ltr) return label;
+    switch (this) {
+      case SignatureTitle.lecturer:
+        return 'Lecturer';
+      case SignatureTitle.educator:
+        return 'Teacher';
+      case SignatureTitle.lecturerFemale:
+        return 'Lecturer';
+      case SignatureTitle.educatorFemale:
+        return 'Teacher';
     }
   }
 

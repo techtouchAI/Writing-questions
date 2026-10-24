@@ -142,6 +142,7 @@ class LayoutSplitMetadata {
     this.lastLineIndexExclusive = 0,
     this.continuesFromPrevious = false,
     this.continuesOnNext = false,
+    this.sourceTopPt = 0,
   });
 
   final int fragmentIndex;
@@ -150,6 +151,16 @@ class LayoutSplitMetadata {
   final int lastLineIndexExclusive;
   final bool continuesFromPrevious;
   final bool continuesOnNext;
+
+  /// موضع أعلى هذا المقطع داخل الكتلة **قبل** تقسيمها (نقاط، من أعلى محتوى
+  /// الكتلة نفسها).
+  ///
+  /// لماذا يلزم تسجيله؟ لأن المقطع ليس كتلةً مستقلة، بل **نافذة** من كتلة واحدة
+  /// كاملة. المستهلك (سطح التحرير) يحتاج معرفة من أي ارتفاعٍ يبدأ هذا المقطع
+  /// كي يرسم النافذة الصحيحة من الكتلة الكاملة، بلا أن يعيد حساب القطع. القيمة
+  /// تُسجَّل مرة واحدة في `_sliceQuestion`، وتساوي مجموع ارتفاعات المقاطع
+  /// السابقة لأن المقاطع تتجاور بلا فجوة.
+  final double sourceTopPt;
 
   bool get isSplit => fragmentCount > 1;
 }

@@ -5,6 +5,7 @@ import 'branch_model.dart';
 import 'floating_element.dart';
 import 'paper_divider.dart';
 import 'paper_text_style.dart';
+import 'text_format_span.dart';
 
 /// السؤال الكامل (QuestionModel): «السؤال الأول» بمنطوقه ونصه ونقاطه وفروعه.
 ///
@@ -36,6 +37,8 @@ class QuestionModel {
     List<FloatingElement>? attachments,
     PaperTextStyle? style,
     this.titleColor,
+    List<TextFormatSpan>? statementFormats,
+    List<TextFormatSpan>? bodyFormats,
     this.showFrame = false,
     this.dividerAfter,
     this.titleAlign,
@@ -53,7 +56,13 @@ class QuestionModel {
         attachments = List<FloatingElement>.unmodifiable(
           attachments ?? const <FloatingElement>[],
         ),
-        style = style ?? PaperTextStyle.empty {
+        style = style ?? PaperTextStyle.empty,
+        statementFormats = List<TextFormatSpan>.unmodifiable(
+          statementFormats ?? const <TextFormatSpan>[],
+        ),
+        bodyFormats = List<TextFormatSpan>.unmodifiable(
+          bodyFormats ?? const <TextFormatSpan>[],
+        ) {
     if (questionNumber < 1) {
       throw ArgumentError.value(questionNumber, 'questionNumber', 'يبدأ الترقيم من 1.');
     }
@@ -102,6 +111,12 @@ class QuestionModel {
 
   /// اللون المعروض للعنوان.
   int? get effectiveTitleColor => titleColor ?? style.color;
+
+  /// تنسيق نطاقات المنطوق (العنوان): محارف محدَّدة داخل [statement] فقط.
+  final List<TextFormatSpan> statementFormats;
+
+  /// تنسيق نطاقات نص السؤال: محارف محدَّدة داخل [body] فقط.
+  final List<TextFormatSpan> bodyFormats;
 
   /// إطار حول السؤال كاملاً.
   final bool showFrame;
@@ -176,19 +191,26 @@ class QuestionModel {
     List<FloatingElement>? attachments,
     PaperTextStyle? style,
     int? Function()? titleColor,
+    List<TextFormatSpan>? statementFormats,
+    List<TextFormatSpan>? bodyFormats,
     bool? showFrame,
     PaperDivider? Function()? dividerAfter,
     PaperAlign? Function()? titleAlign,
     PaperAlign? Function()? bodyAlign,
     PaperAlign? Function()? categoryAlign,
   }) {
+    // إزاحات التنسيق مرساة على محارف النص المخزَّن: أي مسار يغيّر النص —
+    // محرر المعاينة أو محرر الأسئلة — يُعيد تأسيسها هنا، في مكان واحد، بدل
+    // أن يعتمد كل سطح تحرير على تذكّر ذلك.
+    final nextStatement = statement ?? this.statement;
+    final nextBody = body ?? this.body;
     return QuestionModel(
       id: id,
       questionNumber: questionNumber ?? this.questionNumber,
       branches: branches ?? this.branches,
       category: category ?? this.category,
-      statement: statement ?? this.statement,
-      body: body ?? this.body,
+      statement: nextStatement,
+      body: nextBody,
       marksOverride: marksOverride != null ? marksOverride() : this.marksOverride,
       numberOverride: numberOverride != null ? numberOverride() : this.numberOverride,
       spacingAfter: spacingAfter ?? this.spacingAfter,
@@ -196,6 +218,18 @@ class QuestionModel {
       attachments: attachments ?? this.attachments,
       style: style ?? this.style,
       titleColor: titleColor != null ? titleColor() : this.titleColor,
+      statementFormats: statementFormats ??
+          TextFormatSpans.rebase(
+            this.statementFormats,
+            previous: this.statement,
+            next: nextStatement,
+          ),
+      bodyFormats:
+          bodyFormats ?? TextFormatSpans.rebase(
+            this.bodyFormats,
+            previous: this.body,
+            next: nextBody,
+          ),
       showFrame: showFrame ?? this.showFrame,
       dividerAfter: dividerAfter != null ? dividerAfter() : this.dividerAfter,
       titleAlign: titleAlign != null ? titleAlign() : this.titleAlign,
@@ -310,6 +344,8 @@ class QuestionModel {
       attachments: attachments.map((element) => element.duplicated()).toList(),
       style: style,
       titleColor: titleColor,
+      statementFormats: statementFormats,
+      bodyFormats: bodyFormats,
       showFrame: showFrame,
       dividerAfter: dividerAfter,
       titleAlign: titleAlign,
@@ -337,6 +373,12 @@ class QuestionModel {
             attachments.map((element) => element.toMap()).toList(growable: false),
       if (style.isNotEmpty) 'style': style.toMap(),
       if (titleColor != null) 'titleColor': titleColor,
+      if (statementFormats.isNotEmpty)
+        'statementFormats':
+            statementFormats.map((span) => span.toMap()).toList(growable: false),
+      if (bodyFormats.isNotEmpty)
+        'bodyFormats':
+            bodyFormats.map((span) => span.toMap()).toList(growable: false),
       if (showFrame) 'showFrame': true,
       if (dividerAfter != null) 'dividerAfter': dividerAfter!.toMap(),
       if (titleAlign != null) 'titleAlign': titleAlign!.name,
@@ -409,6 +451,8 @@ class QuestionModel {
       attachments: attachments,
       style: PaperTextStyle.fromValue(map['style']),
       titleColor: PaperTextStyle.parseColor(map['titleColor']),
+      statementFormats: TextFormatSpan.listFromValue(map['statementFormats']),
+      bodyFormats: TextFormatSpan.listFromValue(map['bodyFormats']),
       showFrame: map['showFrame'] == true,
       dividerAfter: PaperDivider.fromValue(map['dividerAfter']),
       titleAlign: rawTitleAlign != null ? PaperAlign.parse(rawTitleAlign) : null,

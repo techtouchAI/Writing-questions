@@ -5,10 +5,7 @@ import 'package:flutter/material.dart'
         FontWeight,
         TextAlign,
         TextDecoration,
-        TextDirection,
-        TextPainter,
-        TextStyle,
-        TextSpan;
+        TextStyle;
 
 import '../../models/paper_text_style.dart';
 import '../paper_metrics.dart';
@@ -30,9 +27,13 @@ abstract final class VisualFlutterStyle {
       decoration:
           style.underline ? TextDecoration.underline : TextDecoration.none,
       height: style.lineHeight,
-      letterSpacing: style.letterSpacingPt == null
-          ? null
-          : PaperMetrics.px(style.letterSpacingPt!),
+      // التباعد يُصرَّح دائماً (صفراً عند غياب قيمة في العقد): `null` يعني
+      // «ورّث»، فيرث حقل الورقة `letterSpacing` من `Theme.textTheme.bodyLarge`
+      // (0.5px في Material 3). أثره المقيس: نصّ أوسع بـ≈11% من قياس المحرك
+      // نفسه، فتنكسر الأسطر في المعاينة في موضع آخر غير PDF — وهو الاختلاف
+      // نفسه الذي كانت تُحاول توسعة `wordSpacing` اليدوية تغطيته.
+      letterSpacing: PaperMetrics.px(style.letterSpacingPt ?? 0),
+      wordSpacing: 0,
       color: style.color != null
           ? Color(style.color!)
           : (defaultColor ?? const Color(0xFF000000)),
@@ -62,60 +63,12 @@ abstract final class VisualFlutterStyle {
     }
   }
 
-  /// قاعدة **واحدة** لحساب `wordSpacing` فقرة مضبوطة (`TextAlign.justify`) في
-  /// Flutter، يستعملها كل سطح يعرض نصاً على الورقة: `PaperField` (نص عادي)
-  /// و`TexText` (نص يحوي معادلات) — فلا يختلف قرار «هل تُمَدّ الفقرة؟» بين
-  /// سطحين للفقرة نفسها.
-  ///
-  /// القرار المُوحَّد (ولا شيء غيره):
-  ///  * فقرة من سطر واحد لا تُمَدّ: Word لا يبرّر سطر فقرة وحيدة ولا يُشدّ
-  ///    السطر الأخير من أي فقرة؛
-  ///  * عدد الأسطر يُحسب بعد لفّ النص على [maxWidth] **باتجاه الفقرة نفسه**،
-  ///    فلا يُفترض RTL في سطح ويُهمل في آخر؛
-  ///  * التوسعة = أقلّ فجوة متبقية بين أسطر الفقرة (عدا الأخير) على عدد فواصل
-  ///    الكلمات، بحد أقصى نفس الحد القائم (`12.0..60.0` بكسل لكل كلمة).
-  ///
-  /// يبقى هذا تقريباً على مستوى الفقرة كلها (قيمة واحدة لكل الأسطر) كما كان؛
-  /// التوزيع الحقيقي لكل سطر على حدة، والتسوية مع تبرير محرك PDF (الذي تعتمد
-  /// فيه `pw.TextAlign.justify` على مكتبة `pdf`)، كلاهما قرار طبقة تخطيط
-  /// واحدة (P1) ولا يُصلَح هنا.
-  static double? justifyWordSpacing({
-    required String text,
-    required TextStyle? style,
-    required double maxWidth,
-    required TextDirection direction,
-  }) {
-    final trimmed = text.trim();
-    if (trimmed.isEmpty || !maxWidth.isFinite || maxWidth <= 0) {
-      return null;
-    }
-    final words = trimmed.split(RegExp(r'\s+'));
-    if (words.length <= 1) {
-      return null;
-    }
-    final painter = TextPainter(
-      text: TextSpan(text: trimmed, style: style),
-      textDirection: direction,
-    )..layout(maxWidth: maxWidth);
-    final metrics = painter.computeLineMetrics();
-    if (metrics.length <= 1) {
-      painter.dispose();
-      return null;
-    }
-    var slack = double.infinity;
-    for (var index = 0; index < metrics.length - 1; index++) {
-      final remaining = maxWidth - metrics[index].width;
-      if (remaining < slack) {
-        slack = remaining;
-      }
-    }
-    painter.dispose();
-    if (!(slack > 0)) {
-      return null;
-    }
-    final maxPerWord = (maxWidth / words.length).clamp(12.0, 60.0);
-    return (slack / (words.length - 1)).clamp(0.0, maxPerWord);
-  }
+  // الضبط (justify) لا يُنفَّذ هنا: لا توسعة يدوية لـ`wordSpacing`. القاعدة
+  // الواحدة يعرّفها محرك التخطيط القانوني: كل سطر في فقرة متعددة الأسطر يوزّع
+  // فائضه على فواصله القابلة للكسر، والسطر الأخير لا يُمَدّ، والفقرة من سطر
+  // واحد لا تُمَدّ أبداً. `TextAlign.justify` في Flutter وفي `TextField`
+  // ينفّذ القاعدة نفسها، فإضافة توسعة ثانية كانت تُنتج عرضاً لا يطابق العمود
+  // ولا PDF (أُزيلت، ودليلها بوابة preview_field_geometry_test).
 }
 
 /// نمط نصّي للعرض المباشر **يحمل دوره من العقد البصري** وقيمه المرجعية
@@ -137,9 +90,10 @@ class PaperRoleTextStyle extends TextStyle {
               ? TextDecoration.underline
               : TextDecoration.none,
           height: reference.lineHeight,
-          letterSpacing: reference.letterSpacingPt == null
-              ? null
-              : PaperMetrics.px(reference.letterSpacingPt!),
+          // صفر صريح لا `null`: لا وراثة تباعد محارف من ثيم Material في أي
+          // نصّ ورقة (انظر التعليق في [VisualFlutterStyle.from]).
+          letterSpacing: PaperMetrics.px(reference.letterSpacingPt ?? 0),
+          wordSpacing: 0,
           color: reference.color != null
               ? Color(reference.color!)
               : (defaultColor ?? const Color(0xFF000000)),

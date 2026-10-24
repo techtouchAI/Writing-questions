@@ -398,23 +398,58 @@ void main() {
         ),
       );
       final emission = _parseWordEmission(raw);
-      // The TJ hex decodes through the file's own ToUnicode map to the
-      // shaped runes (presentation forms for RTL, raw ASCII for LTR).
-      final unicodesByCid = <int, int>{
-        for (final pair in RegExp(
-                r'<([0-9A-Fa-f]{4})>\s*<([0-9A-Fa-f]{4})>')
-            .allMatches(raw))
-          int.parse(pair.group(1)!, radix: 16):
-              int.parse(pair.group(2)!, radix: 16),
-      };
+      // قناتان: الرسم مشكَّل، والاستخراج معجمي.
+      //  * الشكل يُقاس على الشارح نفسه: كل محارف RTL صور عرض متصلة، وLTR خام.
+      //  * `/ToUnicode` (ما يقرؤه البحث/النسخ) يُقاس من الملف: حروف أساسية
+      //    بترتيب المجرى البصري، فيعطي عكسها الكلمة المنطقية.
+      final run = shapeRtlRun(entry.key);
+      final glyphRunes = entry.value ? run.glyphText.runes.toList() : entry.key.runes.toList();
+      bool baseLetter(int rune) =>
+          (rune >= 0x0621 && rune <= 0x063A) ||
+          (rune >= 0x0641 && rune <= 0x064A);
+      if (entry.value) {
+        // الحروف تُرسم بصور عرض متصلة، والحركات تبقى محارفها (لا تُشكَّل)،
+        // فالمقياس الصحيح: لا حرف أساسي في القناة المرسومة، ووجود شكل واحد
+        // على الأقل يثبت أن التشكيل وقع.
+        expect(glyphRunes.any((rune) => rune >= 0xFE70 && rune <= 0xFEFF),
+            isTrue,
+            reason: 'لم يقع تشكيل في قناة الرسم: $glyphRunes');
+        expect(glyphRunes.where(baseLetter), isEmpty,
+            reason: 'حرف عربي بلا تشكيل في قناة الرسم: $glyphRunes');
+      } else {
+        expect(glyphRunes, entry.key.runes.toList(),
+            reason: 'النصّ اللاتيني يجب ألا يُشكَّل ولا يُقلَب.');
+      }
+      final unicodeByCid = <int, String>{};
+      for (final pair in RegExp(
+        r'<([0-9A-Fa-f]{4})>\s*<([0-9A-Fa-f]{4,})>',
+      ).allMatches(raw)) {
+        final hex = pair.group(2)!.replaceAll(RegExp(r'\s+'), '');
+        unicodeByCid[int.parse(pair.group(1)!, radix: 16)] =
+            String.fromCharCodes(<int>[
+          for (var index = 0; index + 4 <= hex.length; index += 4)
+            int.parse(hex.substring(index, index + 4), radix: 16),
+        ]);
+      }
       final decoded = <int>[
         for (var index = 0; index < emission.hex.length; index += 4)
-          unicodesByCid[
-              int.parse(emission.hex.substring(index, index + 4), radix: 16)]!,
+          ...unicodeByCid[
+                  int.parse(emission.hex.substring(index, index + 4), radix: 16)]!
+              .runes,
       ];
-      final expected =
-          (entry.value ? logicalToVisual(entry.key) : entry.key).runes.toList();
-      expect(decoded, expected);
+      final expected = entry.value
+          ? entry.key.runes.toList().reversed.toList()
+          : entry.key.runes.toList();
+      expect(decoded, expected,
+          reason: 'قناة الاستخراج يجب أن تحمل الحروف المعجمية بترتيب المجرى '
+              '(عكسها = الكلمة المنطقية)، لا الأشكال المشكَّلة.');
+      if (entry.value) {
+        expect(
+          decoded.every((rune) => !isArabicPresentationForm(rune)),
+          isTrue,
+          reason: 'شكل عرض بقي في /ToUnicode: $decoded',
+        );
+      }
     }
   });
 

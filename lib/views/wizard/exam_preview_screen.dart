@@ -13,9 +13,9 @@ import '../../layout/document_ir.dart';
 import '../../layout/canonical/canonical_layout_interaction.dart';
 import '../../layout/canonical/canonical_layout_preview.dart';
 import '../../layout/canonical/canonical_layout_service.dart';
+import '../../layout/canonical/canonical_page_plan.dart';
 import '../../layout/canonical/layout_document.dart';
 import '../../layout/canonical/layout_units.dart';
-import '../../layout/pagination_engine.dart';
 import '../../layout/semantic/inline_nodes.dart';
 import '../../layout/paper_metrics.dart';
 import '../../layout/visual/visual_metrics.dart';
@@ -32,6 +32,7 @@ import '../../models/point_kind.dart';
 import '../../models/quran_text.dart';
 import '../../models/subject_layout.dart';
 import '../../models/tex_content.dart';
+import '../../models/text_format_span.dart';
 import '../../providers/exam_document_provider.dart';
 import '../../providers/exam_wizard_controller.dart';
 import '../../services/export_file_service.dart';
@@ -41,12 +42,13 @@ import '../widgets/floating_element_view.dart';
 import '../widgets/formula_inserter.dart';
 import '../widgets/ltr_numeric_field.dart';
 import '../widgets/paper_field.dart';
+import '../widgets/paper_range_text_controller.dart';
 import '../widgets/pdf_preview_screen.dart';
 import '../widgets/smart_exam_toolbar.dart';
 import '../widgets/tex_text.dart';
 import '../widgets/visual_equation_editor.dart';
+import 'canonical_preview_plan_controller.dart';
 import 'header_footer_forms.dart';
-import 'measure_size.dart';
 import 'paper_header_footer_view.dart';
 import 'paper_styles.dart';
 import 'preview_toolbar.dart';
@@ -86,6 +88,30 @@ class _CanonicalFieldBinding {
   final InlineContent content;
   final ValueChanged<String> onEdit;
   final VoidCallback onLongPress;
+}
+
+/// خصائص التنسيق التي تُطبَّق على التحديد النصّي وحده.
+enum _RangeFormatAttribute { bold, italic, underline }
+
+/// هدف تنسيق نصّي محدَّد: نص الحقل المخزَّن ونطاقاته وطريقة حفظها.
+///
+/// وجود هذا الهدف يعني أن المدرس **داخل حقل نص**، فتنسيقاته تُطبَّق على
+/// التحديد (أو الجزء الذي عليه المؤشر) لا على السؤال كله.
+class _RangeFormatTarget {
+  const _RangeFormatTarget({
+    required this.text,
+    required this.spans,
+    required this.style,
+    required this.save,
+  });
+
+  final String text;
+  final List<TextFormatSpan> spans;
+
+  /// نمط العنصر الافتراضي: هو مرجع «القيمة الحالية» عند قلب bold/italic/….
+  final PaperTextStyle style;
+
+  final void Function(List<TextFormatSpan> formats) save;
 }
 
 class _CanonicalSelectionPainter extends CustomPainter {
@@ -341,16 +367,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// جذور اللقط (RepaintBoundary) لكل صفحة في المعاينة الحية.
   final Map<int, GlobalKey> _pageSnapshotKeys = <int, GlobalKey>{};
 
-  /// جذور اللقط (RepaintBoundary) لكل صفحة في المعاينة الحية.
-  /// The live preview uses the same canonical point geometry as PDF. This is
-  /// independent of the legacy controller's measurement-driven pagination.
-  LayoutDocument? _canonicalPreviewLayout;
+  /// **مصدر الحقيقة الوحيد للصفحات**: خطة `LayoutEngine` نفسها التي يطبعها PDF.
+  ///
+  /// كان السطح التفاعلي يبني صفحاته من `controller.pagination` (ارتفاعات
+  /// ودجات مقاسة بالبكسل) بينما PDF يبنيها من `LayoutEngine` (نقاط): قِيس
+  /// الفرق 4 صفحات مقابل 3 على المستند المرجعي نفسه. لم يبقَ في هذا الملف أي
+  /// مسار يقسّم الصفحات بنفسه.
+  late final CanonicalPreviewPlanController _planController;
+  /// صور سطح العرض القانوني (رياضيات/عناصر عائمة): لا تُحمَّل إلا حين يكون
+  /// هذا السطح هو المعروض، وللتخطيط نفسه فقط.
   CanonicalLayoutPreviewAssets? _canonicalPreviewAssets;
-  ExamDocument? _canonicalPreviewSourceDocument;
-  ExamDocument? _canonicalPreviewPendingDocument;
-  ExamDocument? _canonicalPreviewFailedDocument;
-  Timer? _canonicalPreviewDebounce;
-  int _canonicalPreviewRevision = 0;
+  LayoutDocument? _canonicalPreviewAssetsLayout;
+  LayoutDocument? _canonicalPreviewAssetsFailedLayout;
 
   ExamWizardController? _controller;
   _AttachmentRef? _selectedAttachment;
@@ -413,23 +441,35 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   static const double _maxZoom = 2.5;
 
   @override
+  void initState() {
+    super.initState();
+    _planController = CanonicalPreviewPlanController()..onChanged = _onPlanChanged;
+  }
+
+  void _onPlanChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final controller = context.read<ExamWizardController>();
     if (!identical(controller, _controller)) {
       _controller?.removeListener(_syncFieldsFromModel);
       _controller = controller..addListener(_syncFieldsFromModel);
-      _ensureCanonicalPreview();
+      _planController.request(controller.document, controller.documentIr);
     }
   }
 
   @override
   void dispose() {
+    _controller?.applyLayoutPlan(null);
     _controller?.removeListener(_syncFieldsFromModel);
-    _canonicalPreviewDebounce?.cancel();
-    _canonicalPreviewRevision++;
-    _canonicalPreviewPendingDocument = null;
+    _planController.onChanged = null;
+    _planController.dispose();
     _canonicalPreviewAssets?.dispose();
+    _canonicalPreviewAssets = null;
     for (final field in _fields.values) {
       field.dispose();
     }
@@ -455,13 +495,25 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     // their stable IDs, but their owners may now occupy different indices.
     _fieldEdits[key] = onEdit;
     return _fields.putIfAbsent(key, () {
-      final field = TextEditingController(text: initial);
+      // متحكم يرسم تنسيق النطاقات داخل الحقل نفسه (لا طبقة فوقه).
+      final field = PaperRangeTextEditingController(text: initial);
       var previousText = initial;
+      var previousState = const TextFormatState();
       field.addListener(() {
         final text = field.text;
-        if (text == previousText) return; // Cursor/focus changes are not edits.
-        previousText = text;
-        if (!_syncingFields) _fieldEdits[key]?.call(text);
+        if (text != previousText) {
+          previousText = text;
+          if (!_syncingFields) _fieldEdits[key]?.call(text);
+          return;
+        }
+        // تغيّر التحديد وحده ليس تحريرًا، لكنه يغيّر حالة أزرار التنسيق:
+        // تُعاد قراءة النطاق، ويحدث البناء فقط إذا تغيّرت الحالة فعلًا
+        // (تنقّل المؤشر داخل الكلمة نفسها لا يهزّ الشاشة).
+        if (_activeFieldKey != key || _multiSelect) return;
+        final state = _selectionFormatState() ?? const TextFormatState();
+        if (state == previousState) return;
+        previousState = state;
+        _refreshSelectionFormatState();
       });
       return field;
     });
@@ -517,129 +569,116 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       _disposeStaleFields(document);
     } finally {
       _syncingFields = false;
-      _ensureCanonicalPreview();
+      final controller = _controller;
+      if (controller != null) {
+        _planController.request(controller.document, controller.documentIr);
+      }
     }
   }
 
-  /// Canonical surface iff both seams are injected; otherwise the interactive
-  /// paper surface (the seam-free production default).
+  /// السطح القانوني للرسم (اختباري/تشخيصي) يُختار بحقن الوصلتين؛ وإلا فالسطح
+  /// التفاعلي. **الاثنان يقرآن الخطة نفسها** — الاختلاف في آلية الرسم فقط.
   bool get _useCanonicalSurface =>
       widget.canonicalLayoutResolver != null &&
       widget.canonicalPreviewAssetLoader != null;
 
-  /// Makes the visible preview converge on the current document without ever
-  /// showing geometry/assets resolved for an older document. Build calls this
-  /// as a fallback, while model notifications call it after field sync.
-  void _ensureCanonicalPreview([ExamWizardController? owner]) {
-    if (!_useCanonicalSurface) return;
-    final controller = owner ?? _controller;
-    if (controller == null) return;
-    final sourceDocument = controller.document;
-    if (identical(_canonicalPreviewSourceDocument, sourceDocument) &&
-        _canonicalPreviewLayout != null &&
-        _canonicalPreviewAssets != null) {
-      return;
-    }
-    if (identical(_canonicalPreviewFailedDocument, sourceDocument) ||
-        identical(_canonicalPreviewPendingDocument, sourceDocument)) {
-      return;
-    }
-    _scheduleCanonicalPreviewRefresh();
-  }
-
-  void _retryCanonicalPreview() {
-    if (_canonicalPreviewFailedDocument == null) return;
-    setState(() => _canonicalPreviewFailedDocument = null);
-    _ensureCanonicalPreview();
-  }
-
-  void _scheduleCanonicalPreviewRefresh() {
+  /// الخطة الحالية إن كانت تخصّ المستند الحالي بالذات (وإلا فلا هندسة).
+  CanonicalPagePlan? get _pagePlan {
     final controller = _controller;
-    if (controller == null) return;
-    final sourceDocument = controller.document;
-    if (identical(_canonicalPreviewSourceDocument, sourceDocument) &&
-        _canonicalPreviewLayout != null &&
-        _canonicalPreviewAssets != null) {
-      return;
-    }
-    if (identical(_canonicalPreviewPendingDocument, sourceDocument)) return;
-    _canonicalPreviewDebounce?.cancel();
-    final revision = ++_canonicalPreviewRevision;
-    _canonicalPreviewFailedDocument = null;
-    _canonicalPreviewPendingDocument = sourceDocument;
-    _canonicalPreviewDebounce = Timer(const Duration(milliseconds: 70), () async {
-      if (!mounted ||
-          !identical(_controller, controller) ||
-          !identical(controller.document, sourceDocument)) {
-        if (identical(_canonicalPreviewPendingDocument, sourceDocument)) {
-          _canonicalPreviewPendingDocument = null;
-        }
-        return;
-      }
+    final plan = _planController.plan;
+    if (controller == null || plan == null) return null;
+    return _planController.matches(controller.document, controller.documentIr)
+        ? plan
+        : null;
+  }
+
+  /// صفحة السؤال كما قرّرها المحرك (لا كما قاسها ودجت).
+  int? _planPageOfQuestion(String questionId) => _pagePlan?.pageIndexOf(questionId);
+
+  /// أعلى كتلة السؤال داخل صفحتها بالبكسل — من هندسة الخطة نفسها.
+  double? _planBlockTopPx(String questionId) {
+    final plan = _pagePlan;
+    if (plan == null) return null;
+    return plan.blockTopPxOf(questionId);
+  }
+
+  /// حالة «لا خطة بعد»: تخطيط جارٍ، أو فشل حسم مع إعادة محاولة.
+  ///
+  /// لا تُخترع هندسة بديلة هنا: قبل هذه البوابة كان السطح يرسم من ارتفاع
+  /// ودجات مقاسة، فكان يعرض صفحات لا تطابق PDF عند أول إطار. الآن يُعرض ما
+  /// هو صادق: الخطة لم تُحسم بعد.
+  Widget _buildPlanPending({required bool failed}) {
+    return SizedBox(
+      width: ExamCanvasGeometry.width,
+      height: 320,
+      child: Center(
+        child: failed
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const Icon(Icons.error_outline, color: Colors.redAccent),
+                  const SizedBox(height: 8),
+                  const Text('تعذّر تجهيز خطة الصفحات.'),
+                  TextButton.icon(
+                    onPressed: _retryCanonicalPreview,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('إعادة المحاولة'),
+                  ),
+                ],
+              )
+            : const CircularProgressIndicator(),
+      ),
+    );
+  }
+
+  /// يحمّل صور السطح القانوني لتخطيط الخطة الحالية وحدها.
+  void _ensureCanonicalAssets(LayoutDocument? planLayout, ExamDocument document) {
+    if (!_useCanonicalSurface || planLayout == null) return;
+    if (identical(_canonicalPreviewAssetsLayout, planLayout)) return;
+    if (identical(_canonicalPreviewAssetsFailedLayout, planLayout)) return;
+    _canonicalPreviewAssetsLayout = planLayout;
+    final loader = widget.canonicalPreviewAssetLoader;
+    unawaited(() async {
       try {
-        final sourceIr = controller.documentIr;
-        final layoutResolver = widget.canonicalLayoutResolver;
-        final layout = layoutResolver == null
-            ? await CanonicalLayoutService.resolve(
-                document: sourceDocument,
-                sourceIr: sourceIr,
-              )
-            : await layoutResolver(
-                document: sourceDocument,
-                sourceIr: sourceIr,
-              );
-        if (!identical(layout.source, sourceIr)) {
-          throw const ExportException(
-            'تعذر عرض المعاينة: التخطيط القانوني لا يخص مصدر المستند الحالي.',
-          );
-        }
-        final assetLoader = widget.canonicalPreviewAssetLoader;
-        final assets = assetLoader == null
+        final assets = loader == null
             ? await CanonicalLayoutPreviewAssets.load(
-                layout: layout,
-                document: sourceDocument,
+                layout: planLayout,
+                document: document,
               )
-            : await assetLoader(
-                layout: layout,
-                document: sourceDocument,
-              );
-        if (!mounted ||
-            revision != _canonicalPreviewRevision ||
-            !identical(_controller, controller) ||
-            !identical(controller.document, sourceDocument)) {
+            : await loader(layout: planLayout, document: document);
+        if (!mounted) {
           assets.dispose();
           return;
         }
-        final oldAssets = _canonicalPreviewAssets;
-        setState(() {
-          _canonicalPreviewLayout = layout;
-          _canonicalPreviewAssets = assets;
-          _canonicalPreviewSourceDocument = sourceDocument;
-          _canonicalPreviewPendingDocument = null;
-          _canonicalPreviewFailedDocument = null;
-        });
-        if (oldAssets != null && !identical(oldAssets, assets)) {
-          SchedulerBinding.instance.addPostFrameCallback((_) => oldAssets.dispose());
-        }
+        final previous = _canonicalPreviewAssets;
+        setState(() => _canonicalPreviewAssets = assets);
+        previous?.dispose();
       } catch (error, stackTrace) {
-        ExportFileService.logError('Canonical preview layout failed', error, stackTrace);
-        if (mounted &&
-            revision == _canonicalPreviewRevision &&
-            identical(_controller, controller) &&
-            identical(controller.document, sourceDocument)) {
-          final oldAssets = _canonicalPreviewAssets;
-          setState(() {
-            _canonicalPreviewLayout = null;
-            _canonicalPreviewAssets = null;
-            _canonicalPreviewSourceDocument = null;
-            _canonicalPreviewPendingDocument = null;
-            _canonicalPreviewFailedDocument = sourceDocument;
-          });
-          if (oldAssets != null) {
-            SchedulerBinding.instance.addPostFrameCallback((_) => oldAssets.dispose());
-          }
-        }
+        ExportFileService.logError(
+          'Canonical preview assets failed',
+          error,
+          stackTrace,
+        );
+        if (!mounted) return;
+        setState(() {
+          _canonicalPreviewAssets = null;
+          _canonicalPreviewAssetsFailedLayout = planLayout;
+        });
       }
+    }());
+  }
+
+  void _retryCanonicalPreview() {
+    final failed = _planController.failedFor;
+    final controller = _controller;
+    if (controller == null) return;
+    if (failed != null) {
+      _planController.retry(controller.document, controller.documentIr);
+      return;
+    }
+    setState(() {
+      _canonicalPreviewAssetsFailedLayout = null;
+      _canonicalPreviewAssetsLayout = null;
     });
   }
 
@@ -1311,7 +1350,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     for (final prefix in const <String>['branch-statement-', 'branch-body-']) {
       if (fieldKey.startsWith(prefix)) {
         final ref = _findBranchRef(doc, fieldKey.substring(prefix.length));
-        return ref == null ? null : doc.branchAt(ref).style.align;
+        if (ref == null) {
+          return null;
+        }
+        final branch = doc.branchAt(ref);
+        return prefix == 'branch-statement-'
+            ? branch.titleAlign ?? branch.style.align
+            : branch.bodyAlign ?? branch.style.align;
       }
     }
     if (fieldKey.startsWith('option-')) {
@@ -1439,20 +1484,262 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       return;
     }
 
-    // 5. منطوق الفرع ونصه: محاذاة نمط الفرع.
+    // 5. منطوق الفرع ونصه: كلٌّ فقرة مستقلة (لا تتبادل المحاذاة مع الأخرى).
     for (final prefix in const <String>['branch-statement-', 'branch-body-']) {
       if (key.startsWith(prefix)) {
         final ref = _findBranchRef(document, key.substring(prefix.length));
         if (ref != null) {
-          controller.updateBranchStyle(
-            ref,
-            document.branchAt(ref).style.copyWith(align: () => align),
-          );
+          if (prefix == 'branch-statement-') {
+            controller.updateBranchTitleAlign(ref, align);
+          } else {
+            controller.updateBranchBodyAlign(ref, align);
+          }
         }
         return;
       }
     }
     // حقل بلا موديل مخصص بعد (مثل قسم السؤال) — يبقى في خريطة الشاشة.
+  }
+
+  /// حقل النص النشط إن كان من حقول النموذج القابلة للتنسيق بالنطاقات.
+  _RangeFormatTarget? _activeRangeTarget() {
+    final controller = _controller;
+    final key = _activeFieldKey;
+    if (controller == null || key == null) return null;
+    final document = controller.document;
+    if (key.startsWith('branch-statement-') || key.startsWith('branch-body-')) {
+      final isStatement = key.startsWith('branch-statement-');
+      final id = key.substring(isStatement ? 17 : 12);
+      for (var questionIndex = 0;
+          questionIndex < document.questions.length;
+          questionIndex++) {
+        final branches = document.questions[questionIndex].branches;
+        for (var branchIndex = 0;
+            branchIndex < branches.length;
+            branchIndex++) {
+          final branch = branches[branchIndex];
+          if (branch.id != id) continue;
+          final ref = BranchRef(
+            questionIndex: questionIndex,
+            branchIndex: branchIndex,
+          );
+          final content = branch.content;
+          return _RangeFormatTarget(
+            text: isStatement ? content.statement : content.body,
+            spans:
+                isStatement ? content.statementFormats : content.bodyFormats,
+            style: branch.style,
+            save: isStatement
+                ? (formats) =>
+                    controller.updateBranchStatementFormats(ref, formats)
+                : (formats) =>
+                    controller.updateBranchBodyFormats(ref, formats),
+          );
+        }
+      }
+      return null;
+    }
+    // نقاط السؤال وفرعه وخياراتها: نفس نموذج النطاقات، لا مسار تنسيق ثانٍ.
+    if (key.startsWith('item-') || key.startsWith('option-')) {
+      final isOption = key.startsWith('option-');
+      final String pointId;
+      int? optionIndex;
+      if (isOption) {
+        final match = _optionKeyPattern.firstMatch(key);
+        if (match == null) return null;
+        pointId = match.group(1)!;
+        optionIndex = int.parse(match.group(2)!);
+      } else {
+        pointId = key.substring('item-'.length);
+      }
+      // مالك النقطة يُحسم من المستند نفسه (نفس مصدر المحاذاة أعلاه)، فلا
+      // تُنسخ نقاط إلى حالة عرض موازية.
+      final owner = _ownerOfPoint(document, pointId);
+      final point = _findItem(pointId);
+      if (owner == null || point == null) return null;
+      final ownerStyle = owner.branchIndex == null
+          ? document.questions[owner.questionIndex].style
+          : document
+              .branchAt(BranchRef(
+                questionIndex: owner.questionIndex,
+                branchIndex: owner.branchIndex!,
+              ))
+              .style;
+      if (!isOption) {
+        return _RangeFormatTarget(
+          text: point.text,
+          spans: point.textFormats,
+          style: ownerStyle,
+          save: (formats) =>
+              controller.updatePointTextFormats(owner, pointId, formats),
+        );
+      }
+      final index = optionIndex!;
+      if (index < 0 || index >= point.options.length) return null;
+      final option = point.options[index];
+      return _RangeFormatTarget(
+        text: option.text,
+        spans: option.formats,
+        style: ownerStyle,
+        save: (formats) => controller.updatePointOptionFormats(
+          owner,
+          pointId,
+          index,
+          formats,
+        ),
+      );
+    }
+    final isStatement = key.startsWith('statement-');
+    final isBody = key.startsWith('body-');
+    if (!isStatement && !isBody) return null;
+    final id = key.substring(isStatement ? 10 : 5);
+    for (var index = 0; index < controller.questions.length; index++) {
+      final question = controller.questions[index];
+      if (question.id != id) continue;
+      return _RangeFormatTarget(
+        text: isStatement ? question.statement : question.body,
+        spans: isStatement ? question.statementFormats : question.bodyFormats,
+        style: question.style,
+        save: isStatement
+            ? (formats) => controller.updateQuestionStatementFormats(
+                  index,
+                  formats,
+                )
+            : (formats) =>
+                controller.updateQuestionBodyFormats(index, formats),
+      );
+    }
+    return null;
+  }
+
+  /// النطاق المحدَّد فعليًّا في الحقل النشط.
+  ///
+  /// القاعدة المعلنة: **لا نطاق بلا تحديد**. المؤشر المطوي (نقرة في حقل)
+  /// يُبقي سلوك التنسيق القديم: تعديل النمط الافتراضي للعنصر. أما تحديد نصّي
+  /// حقيقي فيأخذ مساره الخاص: bold/italic/underline/اللون على المحارف وحدها.
+  TextFormatSpan? _selectedRange(_RangeFormatTarget target) {
+    final field = _fields[_activeFieldKey];
+    final selection = field?.selection;
+    if (selection == null || !selection.isValid || selection.isCollapsed) {
+      return null;
+    }
+    return TextFormatSpans.targetRange(
+      target.text,
+      start: selection.baseOffset,
+      end: selection.extentOffset,
+    );
+  }
+
+  /// حالة أزرار الشريط من **التحديد الفعلي** لا من نمط العنصر.
+  ///
+  /// `null` = لا تحديد نصّي في حقل قابل للتنسيق، فيبقى العرض على نمط العنصر
+  /// (سلوك المحرر قبل هذه الميزة). وعند وجود تحديد تُقرأ خصائص كل محرف في
+  /// النطاق فوق نمط العنصر: متّفقة ⇒ `true/false`، مختلفة ⇒ `null` (مختلط)،
+  /// وهو ما يعرضه [PreviewToolbar] غير مفعّل بدل ادّعاء حالةٍ واحدة.
+  TextFormatState? _selectionFormatState() {
+    final target = _activeRangeTarget();
+    if (target == null) return null;
+    final range = _selectedRange(target);
+    if (range == null) return null;
+    return TextFormatSpans.stateForRange(
+      target.spans,
+      start: range.start,
+      end: range.end,
+      baseBold: target.style.bold ?? false,
+      baseItalic: target.style.italic ?? false,
+      baseUnderline: target.style.underline ?? false,
+      baseColor: target.style.color,
+    );
+  }
+
+  /// إعادة بناء آمنة عند تغيّر التحديد (قد يصل الإشعار أثناء بناء إطار).
+  void _refreshSelectionFormatState() {
+    if (!mounted) return;
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() {});
+      });
+      return;
+    }
+    setState(() {});
+  }
+
+  /// يقلب bold/italic/underline على التحديد وحده.
+  ///
+  /// القاعدة المعلنة: داخل حقل نص لا يوجد «تنسيق للسؤال كله». مؤشر مطوٍ يعني
+  /// الكلمة التي عليه؛ وحقل فارغ يعني رسالة لا تعديل.
+  void _toggleSelectionFormat(_RangeFormatAttribute attribute) {
+    final target = _activeRangeTarget();
+    final range = target == null ? null : _selectedRange(target);
+    if (target == null || range == null) {
+      // لا حقل نصي نشط: يبقى التنسيق نمطًا افتراضيًا للعنصر المحدَّد.
+      _applyStyle((current) => switch (attribute) {
+            _RangeFormatAttribute.bold =>
+              current.copyWith(bold: () => !(current.bold ?? false)),
+            _RangeFormatAttribute.italic =>
+              current.copyWith(italic: () => !(current.italic ?? false)),
+            _RangeFormatAttribute.underline =>
+              current.copyWith(underline: () => !(current.underline ?? false)),
+          });
+      return;
+    }
+    final current = TextFormatSpans.attributeAt(target.spans, range.start);
+    final bool value;
+    switch (attribute) {
+      case _RangeFormatAttribute.bold:
+        value = !(current?.bold ?? target.style.bold ?? false);
+        break;
+      case _RangeFormatAttribute.italic:
+        value = !(current?.italic ?? target.style.italic ?? false);
+        break;
+      case _RangeFormatAttribute.underline:
+        value = !(current?.underline ?? target.style.underline ?? false);
+        break;
+    }
+    target.save(
+      TextFormatSpans.apply(
+        target.spans,
+        TextFormatSpan(
+          start: range.start,
+          end: range.end,
+          bold: attribute == _RangeFormatAttribute.bold ? value : null,
+          italic: attribute == _RangeFormatAttribute.italic ? value : null,
+          underline: attribute == _RangeFormatAttribute.underline ? value : null,
+        ),
+        textLength: target.text.length,
+      ),
+    );
+  }
+
+  /// يطبّق اللون على التحديد وحده؛ `null` = عودة إلى لون العنصر.
+  void _applySelectionColor(int? color) {
+    final target = _activeRangeTarget();
+    final range = target == null ? null : _selectedRange(target);
+    if (target == null || range == null) {
+      _applyColor(color);
+      return;
+    }
+    target.save(
+      color == null
+          ? TextFormatSpans.clear(
+              target.spans,
+              start: range.start,
+              end: range.end,
+              color: true,
+              textLength: target.text.length,
+            )
+          : TextFormatSpans.apply(
+              target.spans,
+              TextFormatSpan(
+                start: range.start,
+                end: range.end,
+                color: color,
+              ),
+              textLength: target.text.length,
+            ),
+    );
   }
 
   void _applyStyle(PaperTextStyle Function(PaperTextStyle current) update) {
@@ -1609,7 +1896,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
     final owner = _selectedOwnerQuestionId();
     if (owner != null) {
-      final rect = controller.questionRect(owner);
+      final rect = _pagePlan?.questionRectPx(owner);
       if (rect != null) {
         final maxDx = math.max(0.0, rect.width - element.width);
         final maxDy = math.max(0.0, rect.height - element.height);
@@ -1629,10 +1916,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
     final questionIndex = controller.selectedBranch?.questionIndex ??
         controller.selectedQuestionIndex ?? controller.currentQuestionIndex;
-    final pageIndex = controller.pagination.pageIndexOf(
-          controller.questions[questionIndex].id,
-        ) ??
-        0;
+    final pageIndex = _planPageOfQuestion(controller.questions[questionIndex].id) ?? 0;
     final top = _blockTopOnPage(questionIndex);
     return element.copyWith(
       pageIndex: pageIndex,
@@ -1651,14 +1935,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (owner == null) {
       return (pageIndex: element.pageIndex, dx: element.dx, dy: element.dy);
     }
+    // الحساب نفسه في مكان واحد (المتحكم): لا تُشتق صفحة العنصر وموضعه هنا مرة
+    // ثانية، وإلا اختلفت مع الحصر عند أول تعديل.
     final rect = controller.questionRect(owner);
     if (rect == null) {
       return (pageIndex: element.pageIndex, dx: element.dx, dy: element.dy);
     }
-    final margin = ExamCanvasGeometry.marginFor(controller.document.settings.marginMm);
     return (
       pageIndex: rect.pageIndex,
-      dx: margin + element.dx,
+      dx: rect.left + element.dx,
       dy: rect.top + element.dy,
     );
   }
@@ -1674,25 +1959,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final index = questionIndex < 0 || questionIndex >= questions.length
         ? questions.length - 1
         : questionIndex;
-    final document = controller.document;
-    final margin = ExamCanvasGeometry.marginFor(document.settings.marginMm);
-    final blockId = questions[index].id;
-    final pageIndex = controller.pagination.pageIndexOf(blockId);
-    if (pageIndex == null) {
-      return null;
-    }
-    final page = controller.pagination.pages[pageIndex];
-    final position = page.blockIds.indexOf(blockId);
-    if (position < 0) {
-      return null;
-    }
-    var top = margin;
-    for (final id in page.blockIds.take(position)) {
-      final previousQuestion = document.questionById(id);
-      final spacingAfter = previousQuestion?.spacingAfter ?? PaperMetrics.blockSpacingPx;
-      top += (controller.blockHeight(id) ?? 0) + spacingAfter;
-    }
-    return top;
+    return _planBlockTopPx(questions[index].id);
   }
 
   /// يفتح محرّر المعادلات ثم يُنتج معادلة **حرة** تُحدّد موضعها بنفسك.
@@ -1938,7 +2205,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
     // رفع المرفق المحفوظ بصيغة قديمة عند أول تعديل، مع إبقائه على صفحة
     // سؤاله الحالية ما لم يغيّر المستخدم الصفحة أثناء السحب.
-    final ownerPage = controller.pagination.pageIndexOf(
+    final ownerPage = _planPageOfQuestion(
           controller.questions[ref.questionIndex].id,
         ) ??
         element.pageIndex;
@@ -2196,10 +2463,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
   }
 
-  Future<void> _exportPdf({
-    List<List<String>>? pageAssignments,
-    LayoutDocument? layoutDocument,
-  }) async {
+  /// يصدّر الـPDF من **التخطيط نفسه** المعروض، ولا يمرّر توزيع صفحات منفصلاً:
+  /// تمرير توزيع بجانب التخطيط كان يترك باباً لقرار تقسيم ثانٍ في المسار.
+  Future<void> _exportPdf({LayoutDocument? layoutDocument}) async {
     if (_isBusy) {
       return;
     }
@@ -2216,11 +2482,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
       final bytes = await PdfExportService.buildDocumentPdfBytes(
               document: document,
-              pageAssignments: pageAssignments ??
-                  await PdfExportService.resolvePageAssignments(
-                    document: document,
-                  ),
-              layoutDocument: layoutDocument,
+              // التخطيط المعروض نفسه يُرسم، فلا يُعاد حساب هندسة في PDF.
+              layoutDocument: layoutDocument ?? _pagePlan?.layout,
             );
       if (!mounted) {
         return;
@@ -2594,12 +2857,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     LayoutDocument? canonicalReviewLayout;
     setState(() => _isBusy = true);
     try {
-      // Reuse the live preview object whenever it belongs to this exact source
-      // document; the review/PDF path must not silently create parallel geometry.
-      canonicalReviewLayout =
-          identical(_canonicalPreviewSourceDocument, document)
-              ? _canonicalPreviewLayout
-              : null;
+      // نفس كائن التخطيط المعروض على الشاشة: لا هندسة موازية للمراجعة/التصدير.
+      final livePlan = _pagePlan;
+      canonicalReviewLayout = livePlan?.layout ??
+          (identical(_planController.plan?.layout.source, controller.documentIr)
+              ? _planController.plan?.layout
+              : null);
       canonicalReviewLayout ??= await CanonicalLayoutService.resolve(
         document: document,
         sourceIr: controller.documentIr,
@@ -2692,10 +2955,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           FilledButton.icon(
             onPressed: () {
               Navigator.of(dialogContext).pop();
-              _exportPdf(
-                pageAssignments: pageAssignments,
-                layoutDocument: canonicalReviewLayout,
-              );
+              _exportPdf(layoutDocument: canonicalReviewLayout);
             },
             icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
             label: const Text('تصدير PDF'),
@@ -3072,20 +3332,24 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final controller = context.watch<ExamWizardController>();
     final document = controller.document;
     final layout = controller.layout;
-    final pagination = controller.pagination;
-    if (!_useCanonicalSurface) {
-      _trimPageKeysByIndices(pagination.pages.map((page) => page.index));
+    // الوصلة تُقرأ من الودجت الحالي في كل بناء: الحالة قد تبقى حيّة بعد
+    // استبدال الودجت (مستند/وصلات أخرى)، فالتقاطها مرة واحدة يحسم المستند
+    // الجديد بوصلة القديم.
+    _planController.resolver = widget.canonicalLayoutResolver;
+    // الخطة هي مصدر الصفحات: تُطلب للمستند الحالي وتُعرض كما هي (حتى لو كانت
+    // نسخة اللحظة السابقة أثناء الحسم) كي لا تفقد الحقول التركيز مع كل حرف.
+    _planController.request(document, controller.documentIr);
+    // المتحكم يحصر العناصر المرتبطة بالسؤال داخل مستطيله: يقرأ الخطة نفسها.
+    controller.applyLayoutPlan(_pagePlan);
+    final pagePlan = _planController.plan;
+    if (pagePlan != null) {
+      _trimPageKeysByIndices(pagePlan.pages.map((page) => page.index));
+      if (_useCanonicalSurface) _ensureCanonicalAssets(pagePlan.layout, document);
     }
-    _ensureCanonicalPreview(controller);
-    final canonicalPreview =
-        identical(_canonicalPreviewSourceDocument, document)
-            ? _canonicalPreviewLayout
-            : null;
     final canonicalAssets = _canonicalPreviewAssets;
-    if (canonicalPreview != null) {
-      _trimPageKeysByIndices(canonicalPreview.pages.map((page) => page.index));
-    }
+    final planFailed = identical(_planController.failedFor, document);
     final activeStyle = _activeStyle();
+    final selectionFormat = _selectionFormatState();
 
     return Scaffold(
       appBar: AppBar(
@@ -3112,6 +3376,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       ),
       body: Column(
         children: <Widget>[
+          // شريط أدوات السؤال: **خارج الورقة**، لا يشارك هندستها ولا يغيّر
+          // مقاساتها (§19.15). مساحة اللمس 48dp كاملة، ويُعطَّل حين لا يكون
+          // سؤال واحد محدَّداً حتى لا يعمل على السؤال الخطأ.
+          _buildQuestionActionsBar(controller),
           PreviewToolbar(
             selectionLabel: _selectionLabel(document),
             canUndo: controller.canUndo,
@@ -3146,19 +3414,20 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               }
               _applyStyle((current) => current.copyWith(fontSize: () => size));
             },
-            isBold: activeStyle.bold,
-            onToggleBold: () => _applyStyle(
-              (current) => current.copyWith(bold: () => !(current.bold ?? false)),
-            ),
-            isItalic: activeStyle.italic,
-            onToggleItalic: () => _applyStyle(
-              (current) => current.copyWith(italic: () => !(current.italic ?? false)),
-            ),
-            isUnderline: activeStyle.underline,
-            onToggleUnderline: () => _applyStyle(
-              (current) =>
-                  current.copyWith(underline: () => !(current.underline ?? false)),
-            ),
+            isBold:
+                selectionFormat == null ? activeStyle.bold : selectionFormat.bold,
+            onToggleBold: () =>
+                _toggleSelectionFormat(_RangeFormatAttribute.bold),
+            isItalic: selectionFormat == null
+                ? activeStyle.italic
+                : selectionFormat.italic,
+            onToggleItalic: () =>
+                _toggleSelectionFormat(_RangeFormatAttribute.italic),
+            isUnderline: selectionFormat == null
+                ? activeStyle.underline
+                : selectionFormat.underline,
+            onToggleUnderline: () =>
+                _toggleSelectionFormat(_RangeFormatAttribute.underline),
             activeAlign: _activeAlign(),
             onAlignChanged: _onAlignChanged,
             activeLineHeight: activeStyle.lineHeight,
@@ -3188,7 +3457,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               }
               _applyQuestionSpacing(spacing);
             },
-            activeColor: _activeColor(),
+            activeColor:
+                selectionFormat == null ? _activeColor() : selectionFormat.color,
             colorTooltip: _colorTooltip(),
             onColorChanged: (value) {
               // القيمة المميزة -1 تعني «لون مخصص» (HEX) من قائمة الشريط.
@@ -3196,7 +3466,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 _showCustomColor();
                 return;
               }
-              _applyColor(value);
+              _applySelectionColor(value);
             },
             hasFrame: _activeFrame(),
             onToggleFrame: _toggleFrame,
@@ -3232,7 +3502,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               builder: (context, constraints) {
                 _viewportWidth = constraints.maxWidth;
                 SchedulerBinding.instance.addPostFrameCallback((_) => _maybeAutoFit());
-                final pageCanvasWidth = canonicalPreview?.pages.fold<double>(
+                final pageCanvasWidth = pagePlan?.layout.pages.fold<double>(
                       0,
                       (largest, page) => math.max(
                         largest,
@@ -3258,27 +3528,29 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                           width: contentWidth,
                           child: Column(
                             children: <Widget>[
-                              if (!_useCanonicalSurface)
-                                for (final page in pagination.pages)
+                              if (pagePlan == null)
+                                _buildPlanPending(failed: planFailed)
+                              else if (!_useCanonicalSurface)
+                                for (final page in pagePlan.pages)
                                   _buildPaperZoomedPage(
                                     controller,
                                     layout,
                                     page,
-                                    pagination.pageCount,
+                                    pagePlan.pageCount,
+                                    pagePlan,
                                   )
-                              else if (canonicalPreview != null &&
-                                  canonicalAssets != null)
-                                for (final page in canonicalPreview.pages)
+                              else if (canonicalAssets != null)
+                                for (final page in pagePlan.layout.pages)
                                   _buildCanonicalZoomedPage(
                                     controller,
-                                    canonicalPreview,
+                                    pagePlan.layout,
                                     page,
                                     canonicalAssets,
                                     interactive: true,
                                   )
                               else if (identical(
-                                _canonicalPreviewFailedDocument,
-                                document,
+                                _canonicalPreviewAssetsFailedLayout,
+                                pagePlan.layout,
                               ))
                                 SizedBox(
                                   width: 794,
@@ -4149,8 +4421,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   Widget _buildPaperZoomedPage(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
-    PaginatedPage page,
+    CanonicalPagePlanPage page,
     int pageCount,
+    CanonicalPagePlan plan,
   ) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -4167,6 +4440,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               layout,
               page,
               pageCount,
+              plan,
             ),
           ),
         ),
@@ -4216,63 +4490,87 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   // سطح الورقة التفاعلي: تُبنى الصفحة كودجات قابلة للتحرير فوق ترقيم
   // المتحكم المقاس (انظر [_buildPaperZoomedPage]).
+  /// صفحة واحدة من **خطة المحرك**: مقاطع الكتل كما قرّرها `LayoutEngine`، لا
+  /// كما قاسها هذا الودجت.
+  ///
+  /// السؤال الممتدّ يُرسم هنا في **مقاطعه**: نافذة على صفحة بدايته ونافذة على
+  /// صفحة تكملته، بارتفاع المقطع وإزاحته من الخطة. الكتل المبنية هي نفسها في
+  /// المقطعين وبمتحكماتها نفسها، فلا يوجد مصدر نصّي ثانٍ — انظر §19.9 في
+  /// docs/p3_editor_preview_export_unification.md.
   Widget _buildPage(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
-    PaginatedPage page,
-    int pageCount, {
+    CanonicalPagePlanPage page,
+    int pageCount,
+    CanonicalPagePlan plan, {
     bool interactive = true,
     bool showPreviewChrome = true,
   }) {
     final document = controller.document;
     final documentIr = controller.documentIr;
     final blocks = <Widget>[];
-    String? previousBlockId;
-    for (final blockId in page.blockIds) {
-      if (blocks.isNotEmpty) {
-        final previousQuestion = previousBlockId == null
-            ? null
-            : document.questionById(previousBlockId);
-        blocks.add(
-          SizedBox(
-            height: previousQuestion?.spacingAfter ?? PaperMetrics.blockSpacingPx,
-          ),
-        );
+    // (1) الترويسة من الخطة: الصفحة الأولى فقط، وحين يقرّر المحرك وجودها.
+    // تُرشَّح المعرّفات المحذوفة أثناء حسم تعديل كي لا يبقى فراغ كتلة.
+    if (page.hasHeader && page.index == 0) {
+      blocks.add(_buildHeaderBlock(controller));
+    }
+
+    // (2) محتوى الصفحة = **مقاطع** الخطة بترتيبها (بدايات وتكملات)، ثم
+    // الأسئلة بلا محتوى مطبوع (§19.7) التي لا تدخل الورقة.
+    //
+    // لماذا المقاطع لا `questionIds` فقط؟ لأن السؤال الممتدّ كان يُرسم كاملاً
+    // في صفحة بدايته ويُقصّ عند حدّ الصفحة، فما يراه المدرس ناقص عمّا يطبعه
+    // PDF. الآن كل صفحة ترسم نافذة المقطع التي حدّدها المحرك: الارتفاع
+    // والإزاحة من الخطة نفسها، والكتلة المبنية هي الكتلة نفسها بمتحكماتها.
+    final entries = <({CanonicalPagePlanFragment? fragment, String questionId})>[
+      for (final fragment in page.fragments)
+        if (documentIr.questionById(fragment.questionId) != null)
+          (fragment: fragment, questionId: fragment.questionId),
+      for (final id in page.unplannedQuestionIds)
+        if (documentIr.questionById(id) != null &&
+            !page.fragments.any((fragment) => fragment.questionId == id))
+          (fragment: null, questionId: id),
+    ];
+    double? pendingSpacing;
+    for (final entry in entries) {
+      if (blocks.isNotEmpty && pendingSpacing != null) {
+        blocks.add(SizedBox(height: pendingSpacing));
       }
-      if (blockId == PaperMetrics.headerBlockId) {
-        final header = _buildHeaderBlock(controller);
-        blocks.add(
-          interactive
-              ? MeasureSize(
-                  key: const ValueKey<String>('measure-header'),
-                  onChange: (size) =>
-                      controller.reportBlockHeight(blockId, size.height),
-                  child: header,
-                )
-              : header,
-        );
-        previousBlockId = blockId;
-        continue;
-      }
-      final questionData = documentIr.questionById(blockId);
+      final fragment = entry.fragment;
+      final questionData = documentIr.questionById(entry.questionId);
       if (questionData == null) {
         continue;
       }
       // بحث بالمعرف لا بالهوية: نسخ المستند تستبدل النسخ لا المعرفات.
       final questionIndex = questionData.index;
-      final question = _buildQuestionBlock(controller, layout, questionData);
-      final measuredQuestion = interactive
-          ? MeasureSize(
-              key: ValueKey<String>('measure-$blockId'),
-              onChange: (size) =>
-                  controller.reportBlockHeight(blockId, size.height),
-              child: question,
-            )
-          : question;
-      // إفلات سؤال مسحوب هنا يعيد ترتيبه (السؤال وحدة لا تتجزأ). في سطح
-      // ليس هناك وضع Exact منفصل؛ كل الصفحات تُرسم بنفس الكتلة.
+      // مقطع التكملة يأخذ مفاتيح ودجت مميّزة (الحقول تشترك في المتحكم نفسه،
+      // فلا يجوز أن تتشابه مفاتيحها)؛ ومقطع البداية يبقى بمفاتيحه المعتادة.
+      final suffix =
+          fragment != null && fragment.isContinuation ? '/slice${fragment.fragmentIndex}' : '';
+      final previousSuffix = _sliceKeySuffix;
+      _sliceKeySuffix = suffix;
+      Widget measured = const SizedBox.shrink();
+      try {
+        measured = _buildQuestionBlock(
+          controller,
+          layout,
+          questionData,
+          sliceSuffix: suffix,
+          titleHeightPt: plan.titleHeightPtOf(questionData.id),
+          plan: plan,
+        );
+      } finally {
+        _sliceKeySuffix = previousSuffix;
+      }
+      Widget block = measured;
+      if (fragment != null && fragment.isSplit) {
+        block = _buildQuestionFragmentSlice(fragment, block, suffix);
+      }
+      // إفلات سؤال مسحوب هنا يعيد ترتيبه (السؤال وحدة لا تتجزأ). لا يُعرض هدف
+      // إفلات على مقطع التكملة: موضعه ليس «بداية» يمكن الترتيب عندها.
+      final acceptsDrop = interactive && (fragment == null || !fragment.isContinuation);
       blocks.add(
-        interactive
+        acceptsDrop
             ? DragTarget<int>(
                 onWillAcceptWithDetails: (details) =>
                     !_locked && details.data != questionIndex,
@@ -4288,13 +4586,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                             borderRadius: BorderRadius.circular(4),
                           )
                         : null,
-                    child: measuredQuestion,
+                    child: block,
                   );
                 },
               )
-            : measuredQuestion,
+            : block,
       );
-      previousBlockId = blockId;
+      final question = document.questionById(entry.questionId);
+      // فجوة ما بعد المقطع: صفر إن كان السؤال يستمرّ (المقطع يلتصق بحدّ
+      // الصفحة)، وإلا فجوة السؤال من نموذجه كما كانت.
+      pendingSpacing = fragment != null && fragment.continuesOnNext
+          ? 0.0
+          : (question?.spacingAfter ?? PaperMetrics.blockSpacingPx);
     }
 
     Widget content = Column(
@@ -4302,8 +4605,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: blocks,
     );
-    // كتلة واحدة أطول من الصفحة كاملة: تُصغَّر بتناسق (كما في الـ PDF) بدل قصّها.
-    if (page.overflows) {
+    // كتلة أطول من الصفحة: المحرك هو من قرّر التصغير ومقداره.
+    if (page.scaleFactor < 0.999) {
       content = FittedBox(
         fit: BoxFit.scaleDown,
         alignment: Alignment.topCenter,
@@ -4373,13 +4676,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       final question = documentIr.questionById(blockId);
       if (question != null) collect(question);
     }
-    // Elements whose legacy question height is not measured yet are shown on
-    // page one while pagination measurement catches up, as before.
-    if (!controller.isFullyMeasured && page.index == 0 && pageAttachments.isEmpty) {
-      for (final question in documentIr.questions) {
-        collect(question);
-      }
-    }
+    // لا تعويض بـ«كل العناصر في الصفحة الأولى قبل القياس»: صفحة العنصر تأتي من
+    // الخطة نفسها التي تحكم صفحة سؤاله، فإن لم تُحسم الخطة بعد بقي العنصر في
+    // صفحته المحفوظة فقط (انظر ExamWizardController.questionRect).
 
     Widget buildBody({required bool highlighted}) {
       Widget body = Stack(
@@ -4429,11 +4728,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       width: ExamCanvasGeometry.width,
       height: ExamCanvasGeometry.height,
       clipBehavior: Clip.antiAlias,
+      // إطار الشاشة (الظل والحدّ الرقيق) زينة عرض لا جزء من الورقة: الحدّ كان
+      // داخل `decoration`، و`Container` يحسب `decoration.padding` (سماكة
+      // الحدّ) حشوةً فعلية، فيضيق عمود النصّ 2px (1.5pt) عن عمود PDF على كل
+      // صفحة — فينكسر السطر في موضع آخر (قِيس في preview_field_geometry_test).
+      // الحدّ الآن في `foregroundDecoration`: يُرسم ولا يحجز مساحة.
       decoration: showPreviewChrome
-          ? BoxDecoration(
+          ? const BoxDecoration(
               color: Colors.white,
-              border: Border.all(color: const Color(0xFFE5E7EB)),
-              boxShadow: const <BoxShadow>[
+              boxShadow: <BoxShadow>[
                 BoxShadow(
                   color: Color(0x22000000),
                   blurRadius: 12,
@@ -4442,6 +4745,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               ],
             )
           : const BoxDecoration(color: Colors.white),
+      foregroundDecoration: showPreviewChrome
+          ? BoxDecoration(
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+            )
+          : null,
       child: KeyedSubtree(
         key: ValueKey<String>('a4-page-${page.index}'),
         child: interactive
@@ -4474,7 +4782,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// كل نقطة في الورقة قابلة للإصابة (والقصّ على حدود الورقة في [Container]).
   Widget _buildPageStack(
     ExamWizardController controller,
-    PaginatedPage page,
+    CanonicalPagePlanPage page,
     int pageCount,
     Widget content,
     ExamDocument document, {
@@ -4483,9 +4791,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   }) {
     final settings = document.settings;
     final margin = ExamCanvasGeometry.marginFor(settings.marginMm);
-    final isLastPage = page.index == pageCount - 1;
-    // التذييل يُطبع في أسفل آخر صفحة فقط، ومساحته محجوزة من آخر كتلة.
-    final footerReserve = isLastPage ? controller.footerReserve : 0.0;
+    // حدّ المتن السفلي من الخطة نفسها (لا من ارتفاع تذييل مقاس هنا).
+    final bodyBottomPt = page.bodyBounds.top + page.bodyBounds.height;
+    final bottomInsetPx = page.scaleFactor < 0.999
+        ? LayoutUnits.ptToPx(page.pageHeightPt - bodyBottomPt)
+        : 0.0;
     // صندوق صفحة كامل ⇒ كل العناصر العائمة قابلة للمس أينما وُضعت.
     Widget stack = Stack(
       clipBehavior: Clip.hardEdge,
@@ -4495,17 +4805,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           Positioned.fill(
             child: IgnorePointer(child: _buildPageFrame(settings, margin)),
           ),
-        // `bottom` يُترك مفتوحاً في الصفحة غير المتجاوزة: المحتوى الأطول من
-        // الصفحة (قياس أولي أو كتلة طويلة) يُقصّ على حدود الورقة بلا خطأ
-        // تجاوز، ويُصغَّر بتناسق حين تُعلَّم الصفحة متجاوزة.
+        // `bottom` يُترك مفتوحاً في الصفحة العادية كي لا يُضغط المحتوى لو
+        // اختلف الحبر عن المتن بطول سطر واحد؛ وفي صفحة التصغير يُربط بحدّ
+        // المتن المحسوب من الخطة.
         Positioned(
           top: margin,
           left: margin,
           right: margin,
-          bottom: page.overflows ? margin + footerReserve : null,
+          bottom: page.scaleFactor < 0.999 ? bottomInsetPx : null,
           child: content,
         ),
-        if (isLastPage)
+        // وجود التذييل قرار الخطة (آخر صفحة لا تُفترض من الفهرس).
+        if (page.hasFooter)
           Positioned(
             left: margin,
             right: margin,
@@ -4546,7 +4857,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// تذييل آخر صفحة (للقراءة فقط): يُقاس ارتفاعه في وضع المعاينة فقط.
+  /// تذييل آخر صفحة (للقراءة فقط). لا يُقاس هنا: موضعه وحجزه قرّرهما المحرك
+  /// في الخطة، وهذا الودجت يرسم النصّ فقط.
   Widget _buildFooterBlock(
     ExamWizardController controller, {
     required bool interactive,
@@ -4570,12 +4882,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       ),
     );
     if (interactive) {
-      footer = MeasureSize(
-        key: const ValueKey<String>('measure-footer'),
-        onChange: (size) =>
-            controller.reportBlockHeight(PaperMetrics.footerBlockId, size.height),
-        child: footer,
-      );
       return GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTap: _tapHeader,
@@ -4658,7 +4964,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       return false;
     }
     final owner = _selectedOwnerQuestionId();
-    final ownerRect = owner == null ? null : controller.questionRect(owner);
+    final ownerRect = owner == null ? null : _pagePlan?.questionRectPx(owner);
     final placed = element.copyWith(
       dx: ownerRect == null ? dx : math.max(0, dx - ExamCanvasGeometry.marginFor(controller.document.settings.marginMm)),
       dy: ownerRect == null ? dy : math.max(0, dy - ownerRect.top),
@@ -4792,12 +5098,196 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// محدودتان بنسبة من عرض السطر فتتلفّفان داخل حدودهما، ويبقى لمنطوق السؤال
   /// وأزرار الإجراءات مكانه. الحد الأقصى لا يغيّر العرض العادي: لا أثر له إلا
   /// إذا تجاوز المحتوى عرض السطر فعلاً.
+  /// الشريط الذي يحمل أدوات السؤال **والفرع** خارج الورقة.
+  ///
+  /// فصل صريح بين هندسة الورق المطبوعة وواجهة التحكم: الشريط لا يدخل
+  /// `_buildQuestionBlock`/`_buildBranchBody` ولا يشارك في قياس أي صفّ، فلا
+  /// يغيّر ارتفاع العنوان ولا عرض المنطوق ولا هوامش الصفحة (ولا يعرف عنه
+  /// المحرك أو PDF شيئاً).
+  ///
+  /// الهدف: مساحة لمس 48dp (الحدّ الأدنى في Material) على شاشة الهاتف، بدل
+  /// أزرار كانت تُسحق إلى 31px/40px داخل صفوف ارتفاعها من الخطة. الشريط
+  /// أفقي قابل للتمرير، فيبقى كل زرّ 48dp حتى على شاشة ضيقة بدل أن يُصغَّر.
+  ///
+  /// كل مجموعة تعمل على هدفها وحده: أدوات السؤال على السؤال المستهدف، وأدوات
+  /// الفرع على فرع واحد محدَّد/نشط (أو الفرع الوحيد في السؤال) — وإلا تُعطَّل
+  /// بدل أن تعمل على عنصر لم يقصده المستخدم.
+  Widget _buildQuestionActionsBar(ExamWizardController controller) {
+    final index = _actionQuestionIndex();
+    final branchRef = _actionBranchRef();
+    final questionEnabled = index != null && !_locked && !_isBusy;
+    final branchEnabled = branchRef != null && !_locked && !_isBusy;
+    final question = index == null ? null : controller.questions[index];
+    final branch = branchRef == null ? null : controller.document.branchAt(branchRef);
+
+    Widget button({
+      required String key,
+      required IconData icon,
+      required String tooltip,
+      required bool enabled,
+      required VoidCallback onPressed,
+    }) {
+      return IconButton(
+        key: ValueKey<String>(key),
+        iconSize: 20,
+        // 48dp صريحة: لا تعتمد على الحشوة الافتراضية ولا على visualDensity.
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+        padding: const EdgeInsets.all(8),
+        tooltip: tooltip,
+        icon: Icon(icon),
+        onPressed: enabled ? onPressed : null,
+      );
+    }
+
+    Widget divider() => const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 4),
+          child: SizedBox(
+            height: 28,
+            width: 1,
+            child: ColoredBox(color: Color(0x22000000)),
+          ),
+        );
+
+    final label = question == null
+        ? 'حدّد سؤالاً واحداً لتحرير أدواته'
+        : branch == null
+            ? 'أدوات السؤال ${controller.document.formatNumber(index! + 1)}'
+            : 'أدوات السؤال ${controller.document.formatNumber(index! + 1)} — الفرع ${branchRef!.branchIndex + 1}';
+
+    return Material(
+      key: const ValueKey<String>('question-actions-bar'),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: SizedBox(
+        height: 52,
+        child: Row(
+          children: <Widget>[
+            const SizedBox(width: 12),
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: <Widget>[
+                    button(
+                      key: 'question-action-add-branch',
+                      icon: Icons.add,
+                      tooltip: 'إضافة فرع',
+                      enabled: questionEnabled,
+                      onPressed: () => controller.addBranch(index!),
+                    ),
+                    button(
+                      key: 'question-action-duplicate',
+                      icon: Icons.copy_outlined,
+                      tooltip: 'نسخ السؤال',
+                      enabled: questionEnabled,
+                      onPressed: () => controller.duplicateQuestion(index!),
+                    ),
+                    if (controller.questions.length > 1)
+                      button(
+                        key: 'question-action-delete',
+                        icon: Icons.delete_outline,
+                        tooltip: 'حذف السؤال',
+                        enabled: questionEnabled,
+                        onPressed: () => _confirmDeleteQuestion(index!),
+                      ),
+                    divider(),
+                    button(
+                      key: 'branch-action-duplicate',
+                      icon: Icons.copy_all_outlined,
+                      tooltip: 'نسخ الفرع',
+                      enabled: branchEnabled,
+                      onPressed: () => controller.duplicateBranch(branchRef!),
+                    ),
+                    button(
+                      key: 'branch-action-equation',
+                      icon: Icons.functions,
+                      tooltip: 'إدراج/تحرير معادلة',
+                      enabled: branchEnabled,
+                      onPressed: () => _editEquationInField(
+                        _branchStatementKey(controller.document
+                            .branchAt(branchRef!)
+                            .id),
+                      ),
+                    ),
+                    button(
+                      key: 'branch-action-delete',
+                      icon: Icons.delete_outline,
+                      tooltip: 'حذف الفرع',
+                      enabled: branchEnabled,
+                      onPressed: () => controller.removeBranch(branchRef!),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// الفرع الذي تعمل عليه أدوات الفرع.
+  ///
+  /// ترتيب الحسم: تحديد صريح لفرع واحد ← الفرع النشط في المتحكم ← الفرع
+  /// الوحيد في السؤال المستهدف (حالته لا تحتمل اللبس). غير ذلك `null`، فتبقى
+  /// الأزرار معطّلة بدل أن تحذف أو تنسخ فرعاً لم يقصده المستخدم.
+  BranchRef? _actionBranchRef() {
+    final controller = _controller;
+    if (controller == null) return null;
+    final document = controller.document;
+    if (_selectedBranches.length == 1) {
+      final ref = _selectedBranches.single;
+      if (document.containsRef(ref)) return ref;
+    }
+    if (_selectedBranches.length > 1) return null;
+    final selected = controller.selectedBranch;
+    if (selected != null && document.containsRef(selected)) return selected;
+    final questionIndex = _actionQuestionIndex();
+    if (questionIndex == null) return null;
+    final branches = controller.questions[questionIndex].branches;
+    if (branches.length == 1) {
+      return BranchRef(questionIndex: questionIndex, branchIndex: 0);
+    }
+    return null;
+  }
+
+  /// السؤال الذي تعمل عليه أدوات الشريط: التحديد الصريح أولاً، ثم سؤال الفرع
+  /// المحدَّد، ثم السؤال النشط (الذي حقلُه محرَّر). يعيد `null` عند التعدد أو
+  /// الغياب — فلا تعمل الأدوات على سؤال لم يقصده المستخدم.
+  int? _actionQuestionIndex() {
+    final controller = _controller;
+    if (controller == null || controller.questions.isEmpty) {
+      return null;
+    }
+    if (_selectedQuestions.length > 1) {
+      return null;
+    }
+    if (_selectedBranches.length > 1) {
+      return null;
+    }
+    final targets = _questionSpacingTargets();
+    if (targets.length != 1) {
+      return null;
+    }
+    final index = targets.single;
+    return index >= 0 && index < controller.questions.length ? index : null;
+  }
+
   Widget _titleRow({
     required Widget dragHandle,
     required Widget label,
     required Widget statement,
     required Widget marks,
-    required List<Widget> actions,
+    // أدوات الصفّ **للفرع فقط** حالياً. صفّ السؤال لا يمرّر شيئاً: أدواته في
+    // شريط خارج الورقة (§19.15) كي لا تحدّد هندسته.
+    List<Widget> actions = const <Widget>[],
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -4823,11 +5313,66 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
+  /// يقيّد صفّاً في كتلة الورقة بارتفاعه من الخطة حين يكون معروفاً.
+  ///
+  /// الأدوات المضمّنة في الصفّ (أزرار تحرير) لا يجوز أن تحدّد ارتفاع الورقة:
+  /// الخطة وPDF يحسبان ارتفاع الصفّ من أسطره. تقييد الصفّ يترك الأدوات في
+  /// مكانها (وتُقيَّد هي نفسها بالارتفاع) بلا حشوة تعويضية ولا تغيير قياس.
+  Widget _planRowHeight({required Widget child, double? heightPt}) {
+    if (heightPt == null || heightPt <= 0) return child;
+    return SizedBox(height: LayoutUnits.ptToPx(heightPt), child: child);
+  }
+
+  /// لاحقة مفاتيح ودجت المقطع الجاري بناؤه (`/sliceN` أو فارغة).
+  ///
+  /// تُضبط أثناء بناء مقطع التكملة وحده: الحقول تشترك في المتحكمات نفسها (§19.9)
+  /// ولا يجوز أن تتكرّر مفاتيحها في الشجرة. البناء متزامن، وتُعاد القيمة إلى
+  /// سابقتها في `finally` فلا تتسرّب إلى كتلة أخرى.
+  String _sliceKeySuffix = '';
+
+  /// مقطع سؤال على صفحة: **نافذة** من الكتلة الكاملة، بهندسة الخطة.
+  ///
+  /// الارتفاع وإزاحة البداية من الخطة (نقاط ← بكسل)، والكتلة المبنية هي نفسها
+  /// التي تُبنى في صفحة البداية وبنفس المتحكمات: لكل حقل مصدر نصّي واحد،
+  /// والمقاطع عروض متزامنة له — لا محرّر ثانٍ ولا نسخ نصّ.
+  Widget _buildQuestionFragmentSlice(
+    CanonicalPagePlanFragment fragment,
+    Widget block,
+    String suffix,
+  ) {
+    final offsetPx = LayoutUnits.ptToPx(fragment.sourceTopPt);
+    final heightPx = LayoutUnits.ptToPx(fragment.heightPt);
+    return SizedBox(
+      key: ValueKey<String>('page-slice-${fragment.questionId}$suffix'),
+      height: heightPx,
+      child: ClipRect(
+        child: OverflowBox(
+          alignment: Alignment.topCenter,
+          minHeight: 0,
+          maxHeight: double.infinity,
+          child: Transform.translate(
+            key: ValueKey<String>('page-slice-offset-${fragment.questionId}$suffix'),
+            offset: Offset(0, -offsetPx),
+            child: block,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildQuestionBlock(
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
-    QuestionBlock data,
-  ) {
+    QuestionBlock data, {
+    /// لاحقة مفاتيح ودجت مقطع التكملة (`/sliceN`)؛ فارغة في مقطع البداية.
+    String sliceSuffix = '',
+
+    /// ارتفاع صفّ العنوان من الخطة (نقاط) — يقود الورقة بدل ارتفاع الأدوات.
+    double? titleHeightPt,
+
+    /// الخطة: تُستعمل لارتفاعات صفوف العناوين (السؤال وفروعه) فقط.
+    CanonicalPagePlan? plan,
+  }) {
     final document = controller.document;
     final question = document.questions[data.index];
     final questionIndex = data.index;
@@ -4860,7 +5405,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final bodyKey = _bodyKey(question.id);
 
     Widget block = Column(
-      key: ValueKey<String>('question-block-${question.id}'),
+      key: ValueKey<String>('question-block-${question.id}$sliceSuffix'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         // عنوان قسم السؤال: نص قابل للتحرير مباشرة على الورقة.
@@ -4879,7 +5424,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             semanticContent: data.category!.content,
           ),
         // سطر العنوان: الرقم ← المنطوق ← الدرجة «(٢٠ درجة)» في سطر واحد.
-        GestureDetector(
+        //
+        // الصفّ **هندسة ورق مطبوعة**: لا يحمل أدوات تحرير إطلاقاً (§19.12،
+        // §19.15). أدوات السؤال (إضافة فرع/نسخ/حذف) انتقلت إلى شريط في واجهة
+        // التطبيق خارج الورقة: داخل الصف كانت تفرض ارتفاعاً 40px على صفّ
+        // ارتفاعه 23.25pt وتأكل ~113px من عرض المنطوق فيلتفّ سطرين بينما
+        // الخطة وPDF يبقيانه سطراً واحداً. ومع ذلك يبقى `_planRowHeight` حدّاً
+        // حارساً: ارتفاع الصفّ من الخطة لا من أطول ودجة فيه.
+        _planRowHeight(
+          heightPt: titleHeightPt,
+          child: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () => _tapQuestion(questionIndex),
           child: _titleRow(
@@ -4954,27 +5508,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               style: titleStyle,
               onEdit: () => _editQuestionMarks(questionIndex),
             ),
-            actions: <Widget>[
-                    IconButton(
-                      tooltip: 'إضافة فرع',
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.add, size: 16),
-                      onPressed: () => controller.addBranch(questionIndex),
-                    ),
-                    IconButton(
-                      tooltip: 'نسخ السؤال',
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.copy_outlined, size: 16),
-                      onPressed: () => controller.duplicateQuestion(questionIndex),
-                    ),
-                    if (controller.questions.length > 1)
-                      IconButton(
-                        tooltip: 'حذف السؤال',
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.delete_outline, size: 16),
-                        onPressed: () => _confirmDeleteQuestion(questionIndex),
-                      ),
-                  ],
+          ),
           ),
         ),
         // نص السؤال: يُحذف كلياً عند فراغه (يظهر للتحرير عند تحديد السؤال).
@@ -5027,7 +5561,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
         for (final branch in data.branches) ...<Widget>[
           if (blockSpacing > 0) SizedBox(height: blockSpacing),
-          _buildBranchBlock(controller, layout, branch),
+          _buildBranchBlock(controller, layout, branch, plan),
         ],
         if (question.dividerAfter != null)
           _buildDividerWidget(
@@ -5066,16 +5600,30 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       ),
       child: block,
     );
-    block = Container(
-      padding: EdgeInsets.all(selected ? 1 : 0),
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: selected ? PaperStyles.primary.withOpacity(0.45) : Colors.transparent,
-          width: selected ? 1 : 0,
-        ),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: block,
+    // مؤشّر التحديد **لا يغيّر الهندسة**: كان `padding: EdgeInsets.all(1)`
+    // عند التحديد يضيّق عمود نصّ السؤال 2px (1.5pt)، فينكسر السطر في موضع
+    // آخر ما دام السؤال محدَّداً/قيد التحرير ثم يعود عند إلغاء التحديد —
+    // وهو بالضبط نوع الاختلاف الذي تُلاحقه بوابة preview_field_geometry.
+    // فيُرسم الإطار كطبقة عليا (بلا حشوة) داخل `Stack` موجود في الحالتين،
+    // فلا تتغيّر سلسلة العناصر التي يعتمد عليها ثبات التركيز والكتابة.
+    block = Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        block,
+        if (selected)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: PaperStyles.primary.withOpacity(0.45),
+                  ),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
 
     // حافظ على حجز المساحة للمرفقات القديمة فقط. العناصر المسجّلة على
@@ -5246,6 +5794,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
     BranchBlock data,
+    CanonicalPagePlan? plan,
   ) {
     final ref = BranchRef(
       questionIndex: data.questionIndex,
@@ -5350,6 +5899,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               data,
               dragHandle,
               isSelected: selected,
+              plan: plan,
             ),
           ),
         );
@@ -5381,6 +5931,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     BranchBlock data,
     Widget dragHandle, {
     required bool isSelected,
+    CanonicalPagePlan? plan,
   }) {
     final document = controller.document;
     final branch = document.branchAt(ref);
@@ -5402,7 +5953,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final column = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        _titleRow(
+        // صفّ عنوان الفرع هندسة ورق مثل صفّ السؤال: ارتفاعه من الخطة، وأدواته
+        // (نسخ/معادلة/حذف) في الشريط خارج الورقة (§19.15).
+        _planRowHeight(
+          heightPt: plan?.branchTitleHeightPtOf(data.questionId, data.id),
+          child: _titleRow(
           dragHandle: Padding(
             padding: const EdgeInsets.only(top: 2),
             child: dragHandle,
@@ -5437,27 +5992,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             style: bodyStyle,
             onEdit: () => _editBranchMarks(ref),
           ),
-          actions: <Widget>[
-                  IconButton(
-                    tooltip: 'نسخ الفرع',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.copy_outlined, size: 14),
-                    onPressed: () => controller.duplicateBranch(ref),
-                  ),
-                  IconButton(
-                    tooltip: 'إدراج/تحرير معادلة',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.functions, size: 14),
-                    onPressed: () => _editEquationInField(statementKey),
-                  ),
-                  // لا حد أدنى للفروع: يُحذف الأخير أيضاً ويبقى السؤال فارغاً.
-                  IconButton(
-                    tooltip: 'حذف الفرع',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.delete_outline, size: 14),
-                    onPressed: () => controller.removeBranch(ref),
-                  ),
-                ],
+        ),
         ),
         // نص الفرع: يُحذف كلياً عند فراغه (يظهر للتحرير عند تحديد الفرع).
         if (data.body != null || isSelected)
@@ -5921,12 +6456,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 !ref.isGlobal &&
                 ref.questionIndex >= 0 &&
                 ref.questionIndex < controller.questions.length
-            ? controller.pagination.pageIndexOf(
-                  controller.questions[ref.questionIndex].id,
-                ) ??
+            ? _planPageOfQuestion(controller.questions[ref.questionIndex].id) ??
                 fallbackPage
             : fallbackPage;
-    final pageCount = controller?.pagination.pageCount ?? 1;
+    final pageCount = _pagePlan?.pageCount ?? 1;
     final pageIndex = ownerPage.clamp(0, math.max(0, pageCount - 1)).toInt();
     if (controller == null) {
       return;
@@ -6129,7 +6662,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
     // عنصر مرتبط بسؤال: يُحوَّل الموضع المطلق إلى إحداثيات نسبةً للسؤال،
     // والمراقب (المتحكم) يحصره داخل حدوده — فلا يخرج منه بالسحب أبداً.
-    final rect = controller.questionRect(owner);
+    final rect = _pagePlan?.questionRectPx(owner);
     if (rect == null) {
       _updateAttachmentElement(ref, absolute, preservePageIndex: true);
       return;
@@ -6354,12 +6887,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     const toolbarWidth = 460.0;
     const toolbarHeight = 40.0;
     final controller = _controller!;
-    final pageCount = controller.pagination.pageCount;
+    final pageCount = _pagePlan?.pageCount ?? 1;
     final elementPage = ref.isGlobal
         ? element.pageIndex
-        : controller.pagination.pageIndexOf(
-              controller.questions[ref.questionIndex].id,
-            ) ??
+        : _planPageOfQuestion(controller.questions[ref.questionIndex].id) ??
             element.pageIndex;
     final pageIndex = elementPage.clamp(0, math.max(0, pageCount - 1)).toInt();
     // العنصر المرتبط بسؤال يتبع سؤاله: تُعرض أدوات الشريط عند موضعه الحقيقي
@@ -6674,8 +7205,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     VoidCallback? onLongPress,
   }) {
     final layout = _controller!.document.layout;
+    // مفاتيح حقول مقطع التكملة مميّزة: الحقلان (البداية والتكملة) يشتركان في
+    // المتحكم الواحد، ويجب أن يبقى كل مفتاح في الشجرة وحيداً.
     return PaperField(
-      key: ValueKey<String>(fieldKey),
+      key: ValueKey<String>('$fieldKey$_sliceKeySuffix'),
       controller: controller,
       style: style,
       semanticContent: semanticContent,

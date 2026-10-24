@@ -44,7 +44,6 @@ import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/layout/document_direction.dart';
 import 'package:writing_questions_app/layout/visual/visual_content.dart';
-import 'package:writing_questions_app/layout/visual/visual_flutter_style.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_canvas_geometry.dart';
@@ -848,28 +847,6 @@ List<RenderRepaintBoundary> _pageBoundaries(WidgetTester tester) => tester
         boundary.size.height < ExamCanvasGeometry.height + 1)
     .toList(growable: false);
 
-/// أمثلة على محارف عربية غير مشكَّلة رسُمت في PDF (للتشخيص لا للافتراض).
-List<String> _unshapedSamples(String drawnText) {
-  final samples = <String>[];
-  final buffer = StringBuffer();
-  for (final unit in drawnText.codeUnits) {
-    final unshaped = unit >= 0x0621 && unit <= 0x064A;
-    if (unshaped) {
-      buffer.writeCharCode(unit);
-    } else if (buffer.isNotEmpty) {
-      samples.add(buffer.toString());
-      buffer.clear();
-      if (samples.length >= 4) {
-        return samples;
-      }
-    }
-  }
-  if (buffer.isNotEmpty) {
-    samples.add(buffer.toString());
-  }
-  return samples;
-}
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -1377,26 +1354,36 @@ void main() {
         reason: 'أسطر عربية لا تتقدّم x فيها تنازلياً (ترتيب كلمات غير RTL): '
             '$notRtl');
 
-    // كل محرف عربي مرسوم يجب أن يكون صورة تقديمية (تشكيل) لا محرفاً معجمياً.
-    var shaped = 0;
-    var unshaped = 0;
+    // التشكيل خاصية **رسم**، و`/ToUnicode` قناة **استخراج** — وقد فُصلتا في
+    // هذه الدفعة: القناة تُكتب الآن بحروف معجمية كي يجد البحث/النسخ «الرحمن»
+    // بدل «ﺍﻟﺮﺣﻤﻦ». فالقياس هنا صار على الاستخراج (صفر أشكال عرض، وحروف
+    // معجمية بالقدر المتوقع)، والتشكيل يُقاس حيث يقع فعلًا: قناة الرسم
+    // (`shapeRtlRun(...).glyphText`) في test/pdf_engine/rtl_to_unicode_test.dart،
+    // ومعه بوابتا الهندسة (pdf_glyph_overlap) والتحقق البصري اللتان تثبتان أن
+    // الحبر المُرسَم هو نفسه قبل الإصلاح وبعده.
+    var logical = 0;
+    var presentation = 0;
     for (final p in report.pages) {
-      shaped += p.presentationFormLetters;
-      unshaped += p.unshapedArabicLetters;
+      logical += p.unshapedArabicLetters;
+      presentation += p.presentationFormLetters;
     }
-    final unshapedWords = <ProbedWord>[
+    final presentationWords = <ProbedWord>[
       for (final pdfPage in report.pages)
         for (final word in pdfPage.words)
-          if (word.text.runes.any((rune) => rune >= 0x0621 && rune <= 0x064A))
+          if (word.text.runes.any(
+              (rune) => rune >= 0xFB50 && rune <= 0xFDFF ||
+                  rune >= 0xFE70 && rune <= 0xFEFF))
             word,
     ];
-    _stage('[p0-gate] unshaped words=${unshapedWords.take(12).map((word) =>
+    _stage('[p0-gate] presentation-form words='
+        '${presentationWords.take(12).map((word) =>
         '${word.text}[${word.text.runes.map((rune) => rune.toRadixString(16)).join(",")}]@${word.x.toStringAsFixed(1)},${word.y.toStringAsFixed(1)}:${word.baseFont}').join(' | ')}');
-    expect(shaped, greaterThan(100),
-        reason: 'صور تقديمية عربية أقلّ من المتوقع في الملف كله: $shaped');
-    expect(unshaped, 0,
-        reason: 'محارف عربية معجمية غير مشكَّلة رُسمت (خلل تشكيل لا تراه '
-            'RMSE): $unshaped، أمثلة: ${_unshapedSamples(page.drawnText)}');
+    expect(logical, greaterThan(100),
+        reason: 'حروف عربية معجمية أقلّ من المتوقع في /ToUnicode: $logical — '
+            'القناة يجب أن تحمل الحروف الأساسية القابلة للبحث، لا الشكل فقط.');
+    expect(presentation, 0,
+        reason: 'أشكال عرض عربية بقيت في /ToUnicode (نصّ غير قابل للبحث): '
+            '$presentation، أمثلة: ${presentationWords.take(6).map((word) => word.text).toList()}');
 
     // الفجوات: لا تباعد سحري ولا تراكب.
     //
@@ -1648,7 +1635,7 @@ void main() {
 
     _matrix.record('arabic', P0Path.vectorPdf, P0Status.pass,
         evidence: 'ترتيب الكلمات RTL في ${arabicLines.length} سطراً؛ '
-            'تقديمي=$shaped غيرمشروط=$unshaped');
+            'معجمي=$logical تقديمي=$presentation');
     _matrix.record('latin', P0Path.vectorPdf, P0Status.pass,
         evidence: 'وسوم لاتينية مرسومة داخل ورقة عربية (MIX1/OPT1/OP1A..) '
             'وأرقام لاتينية=$latin');
@@ -1797,18 +1784,69 @@ void main() {
         lessThan(ltrPage.pageWidth - 2 * (15 / 25.4 * 72) - 0.0),
         reason: 'فقرة LTR من سطر واحد تجاوزت عرض المحتوى: لا معنى أصلاً '
             'لتمدّ سطر فقرة وحيد.');
-    // الإصلاح مُثبت (لا تمدّد لسطر وحيد) في الممرّين معاً، وبقي توزيع
-    // التبرير لكل سطر على حدة قراراً لمكتبة pdf في PDF مقابل تقريب بقيمة
-    // واحدة للفقرة في المعاينة: تسويتهما تحتاج طبقة تخطيط واحدة (P1).
-    _matrix.record('justification', P0Path.vectorPdf, P0Status.deferredToP1,
-        evidence: 'سطر واحد مضبوط: span=${span.toStringAsFixed(1)}pt من '
+    // (ب) توزيع التبرير سطراً بسطر: المصدر الواحد هو LayoutDocument (يقرأه
+    //     الراسمان معاً). فقرة البوابة المضبوطة (p0q1/body) تلتف إلى أسطر،
+    //     وكل سطر عدا الأخير يجب أن يُمدّ إلى عرض المحتوى، والسطر الأخير لا
+    //     يُمَدّ. ثم يُقاس السطر الحامل للوسم MIX1 في PDF نفسه مقابل عرضه
+    //     القانوني: تطابق يعني أن PDF لا يوزّع التبرير بطريقته.
+    _gate.requirePreview();
+    final bodyLines = _gate.rtlCapture!.layout.allLines
+        .where((line) => line.semanticNodeId.startsWith('p0q1/body'))
+        .toList();
+    expect(bodyLines.length, greaterThanOrEqualTo(2),
+        reason: 'فقرة البوابة المضبوطة لم تلتف إلى أسطر: القياس بلا عيّنة.');
+    for (var index = 0; index < bodyLines.length; index++) {
+      final line = bodyLines[index];
+      if (index == bodyLines.length - 1) {
+        expect(line.isJustified, isFalse,
+            reason: 'السطر الأخير من فقرة مضبوطة مُدَّ — '
+                'resolvedWidth=${line.resolvedWidth.toStringAsFixed(2)}pt');
+        continue;
+      }
+      expect(line.isJustified, isTrue,
+          reason: 'سطر ${index + 1} من فقرة مضبوطة لم يُبرَّر في التخطيط '
+              'المشترك بين المعاينة وPDF.');
+      expect(
+        (line.resolvedWidth - contentWidth).abs(),
+        lessThan(1.5),
+        reason: 'سطر ${index + 1} مضبوط بعرض '
+            '${line.resolvedWidth.toStringAsFixed(2)}pt بدل '
+            '${contentWidth.toStringAsFixed(2)}pt',
+      );
+    }
+    final markerLine = bodyLines.firstWhere(
+      (line) => line.runs.any((run) => run.text.contains('MIX1')),
+      orElse: () => bodyLines.first,
+    );
+    final markerPdfLine = report.pages
+        .expand((page) => page.lines)
+        .firstWhere(
+          (line) => line.words.any((word) => word.text.contains('MIX1')),
+          orElse: () => throw StateError(
+              'سطر MIX1 غير موجود في PDF — لا يمكن قياس توزيع التبرير.'),
+        );
+    final markerLeft = markerPdfLine.words
+        .map((word) => word.x)
+        .reduce((a, b) => a < b ? a : b);
+    final markerRight = markerPdfLine.words
+        .map((word) => word.x + word.advanceWidth)
+        .reduce((a, b) => a > b ? a : b);
+    final markerSpan = markerRight - markerLeft;
+    expect(
+      (markerSpan - markerLine.resolvedWidth).abs(),
+      lessThan(2.0),
+      reason: 'عرض سطر MIX1 في PDF (${markerSpan.toStringAsFixed(2)}pt) يخالف '
+          'عرضه القانوني (${markerLine.resolvedWidth.toStringAsFixed(2)}pt): '
+          'PDF يوزّع التبرير بطريقة تختلف عن التخطيط المشترك.',
+    );
+    _matrix.record('justification', P0Path.vectorPdf, P0Status.pass,
+        evidence: 'سطر واحد لا يُمَدّ: ${span.toStringAsFixed(1)}pt من '
             '${contentWidth.toStringAsFixed(1)}pt (عربي) و'
-            '${(ltrRight - ltrLeft).toStringAsFixed(1)}pt (إنجليزي) — لا '
-            'تمدّد؛ أما توزيع التبرير لكل سطر فغير موحَّد المصدر',
-        reason: 'قاعدة «لا يُمَدّ سطر واحد» مقيسة ومُصحَّحة (GATE-05 وGATE-10)؛ '
-            'أما التبرير سطراً بسطر فتُنفّذه مكتبة pdf في PDF وتُقاربه '
-            'المعاينة بقيمة wordSpacing واحدة للفقرة كلها، فلا تطابق مضمون '
-            'لكل سطر. توحيدهما قرار طبقة تخطيط واحدة (P1) ولا يُصلَح في P0.');
+            '${(ltrRight - ltrLeft).toStringAsFixed(1)}pt (إنجليزي)؛ '
+            'وفقرة متعددة الأسطر: ${bodyLines.length} سطراً كلها مضبوطة '
+            'إلا الأخير، وسطر MIX1 في PDF '
+            '${markerSpan.toStringAsFixed(2)}pt مقابل '
+            '${markerLine.resolvedWidth.toStringAsFixed(2)}pt قانونياً');
   });
 
   // ===========================================================================
@@ -1895,84 +1933,61 @@ void main() {
   });
 
   // ===========================================================================
-  // P0.5-F — قاعدة واحدة لسطر واحد في الضبط (justify) لكل أسطح المعاينة.
+  // P0.5-F — الضبط (justify) قاعدة واحدة: المحرك، بلا توسعة يدوية.
   // ===========================================================================
-  test('P0-GATE-10: قرار الضبط مشترك بين PaperField وTexText', () {
-    const single = 'كلمة أولى وكلمة ثانية وثالثة';
-    final many = List<String>.filled(
-      40,
-      'نصٌّ طويلٌ يقيس التفاف الفقرة المضبوطة داخل صندوق العرض',
-    ).join(' ');
-    const style = TextStyle(fontFamily: 'NotoNaskhArabic', fontSize: 14);
-
-    // (1) سطر واحد لا يُمَدّ (مهما اتّسع الصندوق)، وفقرة ملتفّة تُمَدّ.
-    expect(
-      VisualFlutterStyle.justifyWordSpacing(
-        text: single,
-        style: style,
-        maxWidth: 3000,
-        direction: TextDirection.rtl,
-      ),
-      isNull,
-      reason: 'فقرة من سطر واحد نالت توسعة كلمات: القرار ما زال سطحاً سطحاً.',
-    );
-    final narrow = VisualFlutterStyle.justifyWordSpacing(
-      text: single,
-      style: style,
-      maxWidth: 40,
-      direction: TextDirection.rtl,
-    );
-    expect(narrow, isNotNull,
-        reason: 'فقرة مُلتفّة على عرض ضيّق بلا توسعة: القاعدة لا تعمل.');
-    final spread = VisualFlutterStyle.justifyWordSpacing(
-      text: many,
-      style: style,
-      maxWidth: 520,
-      direction: TextDirection.rtl,
-    );
-    expect(spread, isNotNull, reason: 'فقرة متعددة الأسطر بلا توسعة.');
-    expect(spread! <= 60, isTrue,
-        reason: 'التوسعة تجاوزت الحدّ الأقصى القائم (60px لكل كلمة): $spread');
-    expect(spread >= 0, isTrue,
-        reason: 'توسعة سالبة (انضغاط كلمات): $spread');
-
-    // (2) حَسم «من أين يُقرأ القرار»: لا إعادة تنفيذ للمنطق في السطحين.
-    for (final entry in <String, String>{
-      'lib/views/widgets/paper_field.dart':
-          File('lib/views/widgets/paper_field.dart').readAsStringSync(),
-      'lib/views/widgets/tex_text.dart':
-          File('lib/views/widgets/tex_text.dart').readAsStringSync(),
-    }.entries) {
-      expect(entry.value, contains('VisualFlutterStyle.justifyWordSpacing'),
-          reason: '${entry.key} لا يستعمل القاعدة المشتركة للضبط.');
-      expect(entry.value.contains('clamp(12.0, 60.0)'), isFalse,
-          reason: '${entry.key} أعاد تنفيذ حدّ التوسعة محلياً: منطقان '
-              'يفترقان مع الزمن.');
-      expect(entry.value.contains('computeLineMetrics'), isFalse,
-          reason: '${entry.key} يعُدّ الأسطر خارج القاعدة المشتركة.');
+  test('P0-GATE-10: الضبط يُقرأ من المحرك وحده، ولا توسعة كلمات في الأسطح', () {
+    // القاعدة (موثَّقة في flutter_text_metrics): كل سطر في فقرة متعددة الأسطر
+    // يوزّع فائضه على فواصله القابلة للكسر، والسطر الأخير لا يُمَدّ، والفقرة من
+    // سطر واحد لا تُمَدّ. أي توسعة `wordSpacing` فوق `TextAlign.justify` تُنتج
+    // سطراً بعرضين (حقل ≠ عمود ≠ PDF)، وقد أُزيلت من `PaperField` و`TexText`.
+    for (final path in <String>[
+      'lib/views/widgets/paper_field.dart',
+      'lib/views/widgets/tex_text.dart',
+      'lib/layout/visual/visual_flutter_style.dart',
+    ]) {
+      final source = File(path).readAsStringSync();
+      expect(source.contains('justifyWordSpacing'), isFalse,
+          reason: '$path: توسعة ضبط يدوية (منطق ثانٍ للقاعدة نفسها).');
+      expect(source.contains('clamp(12.0, 60.0)'), isFalse,
+          reason: '$path: حدّ توسعة محلي بدل قاعدة المحرك.');
     }
-    expect(
-      File('lib/layout/visual/visual_flutter_style.dart')
-          .readAsStringSync()
-          .contains('computeLineMetrics'),
-      isTrue,
-      reason: 'القاعدة المشتركة لا تعدّ الأسطر: شرط «سطر واحد» مفقود.',
-    );
-
-    // (3) القرار نفسه في الشجرة: فقرة LTR وRTL من سطر واحد بلا توسعة.
-    final rtlJust = _gate.previewRtl['JUSTS1'];
-    final ltrJust = _gate.previewLtr['JUSTL1'];
-    if (rtlJust != null) {
-      expect(rtlJust.lines, 1,
-          reason: 'متن Q4 (سطر واحد) التُفّ في المعاينة: ${rtlJust.text}');
-      expect(rtlJust.wordSpacing ?? 0, 0,
-          reason: 'فقرة سطر واحد مُدت في المعاينة: '
-              '${rtlJust.wordSpacing}');
+    final metrics = File('lib/layout/canonical/flutter_text_metrics.dart')
+        .readAsStringSync();
+    for (final needle in <String>[
+      'eligibleForJustification',
+      'index < lineMetrics.length - 1',
+      'opportunities > 0',
+    ]) {
+      expect(metrics.contains(needle), isTrue,
+          reason: 'قاعدة الضبط الواحدة مفقودة من المحرك: $needle');
     }
-    if (ltrJust != null) {
-      expect(ltrJust.wordSpacing ?? 0, 0,
-          reason: 'فقرة LTR من سطر واحد مُدت في المعاينة: '
-              '${ltrJust.wordSpacing}');
+
+    // والقاعدة مقيسة على التخطيط نفسه: فقرة مضبوطة متعددة الأسطر تُمدّ كلها
+    // إلا الأخير، والفقرة القصيرة لا تُمَدّ (GATE-05 يقيس أثرها في PDF).
+    _gate.requirePreview();
+    final justLines = _gate.rtlCapture!.layout.allLines
+        .where((line) => line.semanticNodeId.startsWith('p0q1/body'))
+        .toList();
+    expect(justLines.length, greaterThanOrEqualTo(2),
+        reason: 'الفقرة المضبوطة لم تلتف: القياس بلا عيّنة.');
+    for (var index = 0; index < justLines.length; index++) {
+      final line = justLines[index];
+      final isLast = index == justLines.length - 1;
+      expect(line.isJustified, isNot(isLast),
+          reason: 'سطر ${index + 1}/${justLines.length} من فقرة مضبوطة: '
+              'isJustified=${line.isJustified} (القاعدة: كل الأسطر إلا الأخير).');
+      if (isLast) continue;
+      expect(
+        (line.resolvedWidth - line.naturalWidth),
+        greaterThan(0),
+        reason: 'سطر مضبوط بلا فائض موزَّع: ${line.resolvedWidth} مقابل '
+            '${line.naturalWidth}',
+      );
+    }
+    final shortLine = _gate.previewRtl['JUSTS1'];
+    if (shortLine != null) {
+      expect(shortLine.lines, 1,
+          reason: 'الفقرة القصيرة التُفّت في المعاينة: ${shortLine.text}');
     }
   });
 
@@ -2120,9 +2135,11 @@ void main() {
     expect(latinLeak, isEmpty,
         reason: 'أسطر لاتينية تحمل صوراً تقديمية عربية (تسرّب تشكيل إلى '
             'LTR): ${latinLeak.take(4).toList()}');
-    // الترويسة/التذييل في الورقة الإنجليزية يُرسمان RTL (جداول المنتج)، وهذا
-    // انحدار قائم بذاته لا يقيسه فحص المتن: يُطبع ويُسجَّل، ولا يُحذف لتبيضّ
-    // البوابة.
+    // الترويسة/التذييل في الورقة الإنجليزية: اتجاههما يُشتق من اتجاه المستند
+    // في `DocumentIR` (لا يُثبَّت في الراسم)، فهما يجب أن يُرسمَا من اليسار.
+    // سطر مختلط يحمل تسمية عربية وقيمة إنجليزية لا يُعدّ انحداراً — الكتلة
+    // العربية داخله تُرسم من اليمين بحكم UAX #9 — لكن السطر كلّه يجب ألا
+    // يُرسَم معكوساً لأنه في مستند إنجليزي.
     final sideLinesRtl = <String>[];
     for (final page in report.pages) {
       for (final line in page.lines) {
@@ -2140,31 +2157,17 @@ void main() {
         break;
       }
     }
-    if (sideLinesRtl.isNotEmpty) {
-      _stage('ورقة LTR: ترويسة/تذييل يُرسمان من اليمين — ${sideLinesRtl.first}');
-      _matrix.record('ltr-document', P0Path.vectorPdf, P0Status.deferredToP1,
-          evidence: 'سطور الترويسة/التذييل في vector_ltr.pdf تُرسم بترتيب '
-              'RTL (مثال مقيس: ${sideLinesRtl.first}) مع أن المستند إنجليزي؛ '
-              'أسطر المتن اللاتينية تُرسم ltr بلا تسرّب',
-          reason: 'اتجاه الترويسة والتذييل لا يُشتق من اتجاه المستند في '
-              'PdfPaperBuilder؛ تصحيحه طبقة اتجاه واحدة لكل كتلة '
-              '(P1 BLOCKERS بند 4) ولا يُصلَح في P0 المغلقة على A–F.');
-    }
-    if (arabicOrdering.isNotEmpty) {
-      _stage('ورقة LTR: أسطر عربية لا تُرسم من اليمين '
-          '(${arabicOrdering.length}): ${arabicOrdering.take(3).toList()}');
-      _matrix.record('ltr-document', P0Path.vectorPdf,
-          P0Status.deferredToP1,
-          evidence: '${arabicOrdering.length} سطراً عربياً في الورقة '
-              'الإنجليزية لا يتقدّم من اليمين (مثال: '
-              '${arabicOrdering.first})',
-          reason: 'اتجاه الفقرة يُستنتج من اتجاه المستند لا من النص نفسه في '
-              'PDF؛ تصحيحه طبقة اتجاه واحدة (P1 BLOCKERS بند 4) لا رقعة هنا.');
-    }
+    expect(sideLinesRtl, isEmpty,
+        reason: 'الورقة الإنجليزية تُرسم ترويستها/تذييلها من اليمين: '
+            '${sideLinesRtl.take(4).toList()}');
+    expect(arabicOrdering, isEmpty,
+        reason: 'أسطر عربية في الورقة الإنجليزية لا تتقدّم من اليمين '
+            '(${arabicOrdering.length}): ${arabicOrdering.take(4).toList()}');
 
     _matrix.record('ltr-document', P0Path.vectorPdf, P0Status.pass,
         evidence: '${report.pageCount} صفحة، ${ltrOrder.length} وسمًا '
-            'بترتيب العقد، ترتيب الكلمات ltr، لا تشكيل/أرقام مشرقية');
+            'بترتيب العقد، ترتيب الكلمات ltr، ترويسة/تذييل ltr، الأسطر '
+            'العربية rtl، لا تشكيل/أرقام مشرقية على سطر لاتيني');
     _matrix.record('ltr-document', P0Path.preview, P0Status.pass,
         evidence: 'المعاينة الإنجليزية: ${_gate.ltrPreviewPageCount} صفحة، '
             'و${_gate.previewLtr.length} كتلة مقاسة');
@@ -2200,6 +2203,19 @@ void main() {
         reason: 'خلايا PASS بلا دليل مقاس: ${emptyEvidence.join(", ")}');
     expect(reasonless, isEmpty,
         reason: 'خلايا DEFERRED_TO_P1 بلا سبب مسمّى: ${reasonless.join(", ")}');
+
+    // محاذاة الطرفين والورقة الإنجليزية **ليستا مؤجَّلتين**: هما مطلوبتان في
+    // الإصدار الحالي، فلا يجوز أن تكون خلاياهما `deferredToP1` — التاجيل هنا
+    // يعني إسقاط المتطلب لا تأجيل تحسين.
+    final requiredNow = <String>['justification', 'ltr-document'];
+    final stillDeferred = <String>[
+      for (final key in requiredNow)
+        for (final path in P0Path.values)
+          if (_matrix.cell(key, path)?.status == P0Status.deferredToP1)
+            '$key/${p0PathLabel(path)}',
+    ];
+    expect(stillDeferred, isEmpty,
+        reason: 'خلايا مطلوبة الآن ما زالت مؤجَّلة: ${stillDeferred.join(", ")}');
 
     _writeText('summary.txt', <String>[
       'مصفوفة بوابة P0 — ${kP0Features.length} ميزة × ${P0Path.values.length} ممرّات',

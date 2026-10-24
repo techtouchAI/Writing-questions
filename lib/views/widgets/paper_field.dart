@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../layout/semantic/inline_nodes.dart';
-import '../../layout/visual/visual_flutter_style.dart';
 import '../../models/quran_text.dart';
 import '../../models/tex_content.dart';
 import 'mixed_content_editor.dart';
+import 'paper_range_text_controller.dart';
 
 /// حقل النص على ورقة الورقة: **الشكل النهائي فقط** — لا رموز LaTeX خاماً
 /// (`$...$`) تظهر على الورقة إطلاقاً.
@@ -229,34 +229,61 @@ class _PaperFieldState extends State<PaperField> {
     _focusNode.requestFocus();
   }
 
-  /// نمط الفقرة بعد قرار **الضبط** (justify) — بقاعدة واحدة مع `TexText`:
-  /// تُحسب التوسعة في `VisualFlutterStyle.justifyWordSpacing` ولا يكرّر أي
-  /// سطح منطق «متى يُمَدّ السطر».
-  TextStyle _resolveEffectiveStyle(
-    BoxConstraints constraints,
-    BuildContext context,
-  ) {
-    final baseStyle = widget.style;
-    if (widget.textAlign != TextAlign.justify ||
-        !constraints.hasBoundedWidth) {
-      return baseStyle;
+  // الضبط (justify) ليس حالة خاصة في الحقل: `TextField` يرسم بـ
+  // `TextAlign.justify`، وهو يمدّ كل سطر في فقرة متعددة الأسطر ويترك سطرها
+  // الأخير — وهي القاعدة نفسها التي ينفّذها محرك التخطيط القانوني
+  // (`FlutterTextMetrics`: كل سطر ما عدا الأخير يوزّع فائضه على فواصل كلماته).
+  // كان هنا `wordSpacing` مضاف فوق `TextAlign.justify` (توسعة ثانية بحد
+  // 12..60 بكسل لكل فقرة) فصار السطر يُمدّ مرتين، بعرض لا يطابق العمود ولا
+  // PDF. أُزيل: قرار واحد، مصدره المحرك، والدليل في
+  // test/layout/canonical/preview_field_geometry_test.dart.
+
+  /// يمرّر تنسيق النطاقات المخزَّن إلى متحكم الحقل، فيرسمه `EditableText` من
+  /// `buildTextSpan` نفسها — لا طبقة تجميل فوق الحقل، ولا نصّ ثانٍ.
+  ///
+  /// المصدر هو `semanticContent` (نفس محتوى الطباعة بعد تطبيق النطاقات)،
+  /// والوسوم المحصورة (`$...$`) لا تُنسَّق لأنها تُعرض مرسومة لا مصدراً.
+  void _syncRangeStyles() {
+    final controller = widget.controller;
+    if (controller is! PaperRangeTextEditingController) {
+      return;
     }
-    final addedSpacing = VisualFlutterStyle.justifyWordSpacing(
-      text: widget.controller.text,
-      style: baseStyle,
-      maxWidth: constraints.maxWidth,
-      direction: Directionality.maybeOf(context) ?? TextDirection.rtl,
-    );
-    if (addedSpacing == null) {
-      return baseStyle;
+    final semantic = widget.semanticContent;
+    if (semantic == null) {
+      controller.setRuns(const <RunStyle>[]);
+      return;
     }
-    return baseStyle.copyWith(
-      wordSpacing: (baseStyle.wordSpacing ?? 0) + addedSpacing,
-    );
+    final text = controller.text;
+    final rendered = semantic.legacyText;
+    // `semanticContent` مقتطَع من الطرفين عند بناء الورقة، ونصّ الحقل قد يحمل
+    // فراغات طرفية: تُزاح الإزاحات بمقدار ما قُصّ من البداية لتبقى على المحارف
+    // نفسها (المقارنة على المقتطَع حتى لا تختلط إزاحة بأخرى).
+    var shift = 0;
+    if (rendered.isNotEmpty && text != rendered && text.trim() == rendered.trim()) {
+      shift = text.length - text.trimLeft().length;
+    }
+    final runs = <RunStyle>[];
+    for (final run in semantic.richContent.runs) {
+      if (run.isMath) continue;
+      final style = run.style;
+      if (style == null ||
+          (style.bold == null &&
+              style.italic == null &&
+              style.underline == null &&
+              style.colorArgb == null)) {
+        continue;
+      }
+      final start = (run.sourceStartOffset + shift).clamp(0, text.length).toInt();
+      final end = (run.sourceEndOffset + shift).clamp(start, text.length).toInt();
+      if (end <= start) continue;
+      runs.add(RunStyle(start: start, end: end, style: style));
+    }
+    controller.setRuns(runs);
   }
 
   @override
   Widget build(BuildContext context) {
+    _syncRangeStyles();
     if (widget.canonicalInteractionOnly) {
       // The canonical painter is the sole visible text renderer. This tiny,
       // transparent editor owns only the IME/controller; tap, caret, selection,
@@ -276,7 +303,7 @@ class _PaperFieldState extends State<PaperField> {
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        final effectiveStyle = _resolveEffectiveStyle(constraints, context);
+        final effectiveStyle = widget.style;
         final showRendered = _isRenderable && !_editing && !_focusNode.hasFocus;
         if (showRendered) {
           return Tooltip(

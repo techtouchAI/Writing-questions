@@ -109,13 +109,20 @@ void main() {
         document.questions.map((question) => question.id),
         contains('empty-branch'),
       );
-      // توزيع قديم يتضمن السؤال الفارغ يُعاد حسابه، لا يُطبع كصفحة أو فراغ.
-      final bytes = await engine.generate(
-        document: document,
-        pageAssignments: const <List<String>>[
-          <String>['blank', 'student', 'empty-branch'],
-        ],
+      // توزيع يذكر سؤالاً غير قابل للطباعة يُرفض صراحةً (لا إعادة تقسيم صامتة).
+      await expectLater(
+        engine.generate(
+          document: document,
+          pageAssignments: const <List<String>>[
+            <String>['blank', 'student', 'empty-branch'],
+          ],
+        ),
+        throwsA(isA<ArgumentError>()),
+        reason: 'الخطة تشير إلى أسئلة لا تدخل التخطيط: يجب أن يُرفض النداء '
+            'بدل تجاهلها وإعادة التقسيم بصمت.',
       );
+      // وبلا خطة مُسلَّمة: يُطبع السؤال القابل للطباعة وحده، في صفحة واحدة.
+      final bytes = await engine.generate(document: document);
       expect(_countPages(bytes), 1);
 
       final globalMirror = FloatingElement(
@@ -162,16 +169,23 @@ void main() {
       expect(_countPages(bytes), 3);
     });
 
-    test('falls back to its own measurement when assignments are incomplete', () async {
+    test('rejects incomplete assignments instead of repaginating silently',
+        () async {
       final document = _document(questionCount: 2, branchesPerQuestion: 1);
-      final bytes = await PaginatedPdfExamEngine().generate(
-        document: document,
-        pageAssignments: const <List<String>>[
-          <String>['q1'],
-        ],
+      // خطة ناقصة (سؤال واحد من سؤالين): كانت تُكمل بالتقسيم الذاتي بصمت،
+      // فيظنّ المستهلك أن خطته طُبِّقت. الآن تُرفض ويُسمّى سببها.
+      await expectLater(
+        PaginatedPdfExamEngine().generate(
+          document: document,
+          pageAssignments: const <List<String>>[
+            <String>['q1'],
+          ],
+        ),
+        throwsA(isA<ArgumentError>()),
       );
-
-      expect(_countPages(bytes), 1);
+      // وبلا خطة: يقسّم المحرك بنفسه كما في أي تصدير عادي.
+      final bytes = await PaginatedPdfExamEngine().generate(document: document);
+      expect(_countPages(bytes), greaterThanOrEqualTo(1));
     });
 
     test('renders the English (LTR) layout', () async {

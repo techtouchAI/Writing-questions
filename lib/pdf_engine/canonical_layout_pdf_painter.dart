@@ -122,7 +122,11 @@ class CanonicalLayoutPdfPainter {
   bool _isSpacerRun(LayoutRun run) {
     if (run.text.isEmpty) return true;
     if (run.isMath) return false;
-    return run.text.runes.every((rune) => rune == 0x20);
+    // Whitespace-only runs carry advance but no ink: the canonical engine
+    // already positioned every neighbouring run, so nothing must be drawn.
+    // U+00A0 is included because the engine now uses measured no-break glue
+    // inside/locating marks groups (grade placement rule).
+    return run.text.runes.every((rune) => rune == 0x20 || rune == 0xA0);
   }
 
   /// One spaceless text emission: a canonical word, a math fallback, or a

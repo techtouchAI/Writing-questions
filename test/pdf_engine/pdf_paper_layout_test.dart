@@ -2,14 +2,14 @@
 // أعمدة، التذييل في آخر صفحة وحدها، ولا ترقيم للصفحات، والإطار.
 //
 // المنهج: لا نفحص الشيفرة الداخلية، بل نقرأ ملف PDF الناتج عبر
-// [PdfContentProbe]. طبقة النص العربية مخزَّنة مشكّلة (أشكال عرض)، لذلك
-// تُحسب الصيغة المشكّلة لكل كلمة بترسيمها منفردة بنفس الخط ثم تُطابَق.
+// [PdfContentProbe]. قناة /ToUnicode صارت معجمية (حروف أساسية بترتيب بصري)،
+// فتُحسب لكل كلمة بصمتها نفسها من الشارح (`shapeRtlRun`) الذي يكتبها المحرك،
+// ثم تُطابَق بالكلمة المرسومة.
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_catalog.dart';
@@ -64,19 +64,14 @@ void main() {
     fonts = await ExamFonts.load();
   });
 
-  /// الكلمات المشكّلة كما ستظهر في ملف PDF (نص منفرد بنفس خط الورقة).
-  Future<List<String>> shaped(String text) async {
-    final document = pw.Document();
-    document.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        textDirection: pw.TextDirection.rtl,
-        theme: pw.ThemeData.withFont(base: fonts.regular, bold: fonts.bold),
-        build: (context) => pw.Text(text),
-      ),
-    );
-    return PdfContentProbe.fromBytes(await document.save()).words.map((word) => word.text).toList();
-  }
+  /// الكلمة كما يكتبها محرك PDF القانوني في قناة `/ToUnicode`: حروف معجمية
+  /// بترتيب بصري (رابطة لام-ألف تُفكّ إلى حرفيها). لم يعد النص المشكَّل هو
+  /// المستخرَج بعد إصلاح قناة الاستخراج، فالبحث عن الكلمة المرسومة يجري على
+  /// نفس ما يقرؤه القارئ منها.
+  Future<List<String>> shaped(String text) async => <String>[
+        for (final word in text.split(RegExp(r'\s+')))
+          if (word.isNotEmpty) shapeRtlRun(word).toUnicodeText,
+      ];
 
   Future<String> firstShaped(String word) async => (await shaped(word)).first;
 

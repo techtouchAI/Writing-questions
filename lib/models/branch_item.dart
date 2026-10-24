@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 import 'paper_text_style.dart';
 import 'point_kind.dart';
 import 'question_option.dart';
+import 'text_format_span.dart';
 
 /// نقطة واحدة مرقّمة (١-، ٢-، ٣-...) داخل سؤال أو فرع.
 ///
@@ -21,9 +22,13 @@ class BranchItem {
     this.marks = 0.0,
     this.labelOverride,
     this.align,
+    List<TextFormatSpan>? textFormats,
   })  : id = id ?? const Uuid().v4(),
         options = List<QuestionOption>.unmodifiable(
           _normalizedOptions(kind, options),
+        ),
+        textFormats = List<TextFormatSpan>.unmodifiable(
+          textFormats ?? const <TextFormatSpan>[],
         ) {
     if (!marks.isFinite || marks < 0) {
       throw ArgumentError.value(marks, 'marks', 'درجة النقطة يجب أن تكون رقماً موجباً.');
@@ -72,6 +77,10 @@ class BranchItem {
   /// محاذاة خاصة بهذه النقطة (null = وراثة من الفرع/السؤال).
   final PaperAlign? align;
 
+  /// تنسيق نطاقات نصّ النقطة (محارف محدَّدة داخل [text]) — نفس نموذج
+  /// السؤال والفرع، فلا يوجد مسار تنسيق ثانٍ للنقاط.
+  final List<TextFormatSpan> textFormats;
+
   /// هل للنقطة خيارات تُطبع (اختيار من متعدد وفيه خيار مكتوب)؟
   bool get hasVisibleOptions =>
       kind == PointKind.multipleChoice &&
@@ -99,6 +108,7 @@ class BranchItem {
     double? marks,
     String? Function()? labelOverride,
     PaperAlign? Function()? align,
+    List<TextFormatSpan>? textFormats,
   }) {
     // تبديل النوع إلى «اختيار من متعدد» بنقطة بلا خيارات يمنحها الخيارات
     // الافتراضية الأربعة ليبدأ المدرس الكتابة فوراً؛ أما القائمة الفارغة
@@ -109,15 +119,24 @@ class BranchItem {
             this.options.isEmpty)
         ? blankOptions()
         : (options ?? this.options);
+    final nextText = text ?? this.text;
     return BranchItem(
       id: id,
-      text: text ?? this.text,
+      text: nextText,
       kind: kind ?? this.kind,
       options: nextOptions,
       marks: marks ?? this.marks,
       labelOverride:
           labelOverride == null ? this.labelOverride : labelOverride(),
       align: align == null ? this.align : align(),
+      // القاعدة نفسها في السؤال والفرع: تغيير النص يُعيد تأسيس إزاحات
+      // التنسيق، فأي محرر (المعاينة أو محرر النقاط) لا يُفسد النطاقات.
+      textFormats: textFormats ??
+          TextFormatSpans.rebase(
+            this.textFormats,
+            previous: this.text,
+            next: nextText,
+          ),
     );
   }
 
@@ -132,11 +151,13 @@ class BranchItem {
             text: option.text,
             labelOverride: option.labelOverride,
             align: option.align,
+            formats: option.formats,
           ),
       ],
       marks: marks,
       labelOverride: labelOverride,
       align: align,
+      textFormats: textFormats,
     );
   }
 
@@ -148,6 +169,7 @@ class BranchItem {
         marks != other.marks ||
         labelOverride != other.labelOverride ||
         align != other.align ||
+        !_sameFormats(textFormats, other.textFormats) ||
         options.length != other.options.length) {
       return false;
     }
@@ -157,7 +179,8 @@ class BranchItem {
       if (a.id != b.id ||
           a.text != b.text ||
           a.labelOverride != b.labelOverride ||
-          a.align != b.align) {
+          a.align != b.align ||
+          !_sameFormats(a.formats, b.formats)) {
         return false;
       }
     }
@@ -176,6 +199,9 @@ class BranchItem {
       'marks': marks,
       if (labelOverride != null) 'labelOverride': labelOverride,
       if (align != null) 'align': align!.name,
+      if (textFormats.isNotEmpty)
+        'textFormats':
+            textFormats.map((span) => span.toMap()).toList(growable: false),
     };
   }
 
@@ -213,7 +239,20 @@ class BranchItem {
       marks: marks == null || !marks.isFinite || marks < 0 ? 0.0 : marks,
       labelOverride: rawLabel is String ? rawLabel : null,
       align: rawAlign != null ? PaperAlign.parse(rawAlign) : null,
+      textFormats: TextFormatSpan.listFromValue(map['textFormats']),
     );
+  }
+
+  /// مقارنة نطاقات التنسيق بالقيَم (لا بالهوية).
+  static bool _sameFormats(
+    List<TextFormatSpan> a,
+    List<TextFormatSpan> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (var index = 0; index < a.length; index++) {
+      if (a[index] != b[index]) return false;
+    }
+    return true;
   }
 
   /// يقرأ قائمة نقاط من قيمة مخزنة؛ العناصر التالفة تُتجاهل فرادى.

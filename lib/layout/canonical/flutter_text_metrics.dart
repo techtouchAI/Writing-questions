@@ -327,7 +327,18 @@ class FlutterTextMetrics implements FontMetricsProvider {
       for (final range in spanRanges) {
         final span = spans[range.spanIndex];
         if (range.end <= range.start) continue;
-        final ranges = span.isMath || span.isFixedAdvance
+        // A text island with no Arabic letters (digits, Latin, `٢٠٢٦/٢٠٢٧`,
+        // `2 + 3 = 5`) is ONE visual unit laid out left-to-right even inside
+        // an RTL line. Splitting it into per-word ranges made every word a
+        // separate fragment whose caret fallback was the union box, so
+        // `٢٠٢٦` and `٢٠٢٧` landed on the same x and one covered the other.
+        // The island is kept whole only while it stays on one line; a wrapped
+        // island keeps the per-word ranges.
+        final islandCandidate = !span.isMath &&
+            !span.isFixedAdvance &&
+            _isInteriorNumberToken(span.text) &&
+            _isSingleLineRange(painter, range.start, range.end);
+        final ranges = span.isMath || span.isFixedAdvance || islandCandidate
             ? <({int start, int end})>[(start: range.start, end: range.end)]
             : _wordRanges(painter, range.start, range.end);
         for (final textRange in ranges) {
@@ -340,11 +351,17 @@ class FlutterTextMetrics implements FontMetricsProvider {
             );
             if (boxes.isEmpty) continue;
             final sourceText = _textForRange(span, range, textRange);
-            final splitVisualRuns = boxes.length != 1 ||
-                (boxes.single.direction == ui.TextDirection.ltr &&
-                    _containsArabic(sourceText));
+            final islandLine = _lineForBox(boxes.first, lineMetrics);
+            // «عربية» هنا تعني حروفًا عربية لا أرقامًا هندية: ٢٠٢٦ يقع في
+            // U+0600..U+08FF لكنه جزيرة رقمية LTR.
+            final isSingleLineNonArabicIsland = _isInteriorNumberToken(sourceText) &&
+                boxes.every((box) => _lineForBox(box, lineMetrics) == islandLine);
+            final splitVisualRuns = !isSingleLineNonArabicIsland &&
+                (boxes.length != 1 ||
+                    (boxes.single.direction == ui.TextDirection.ltr &&
+                        _containsArabic(sourceText)));
             if (!splitVisualRuns) {
-              final box = boxes.single;
+              final box = boxes.length == 1 ? boxes.single : _unionBox(boxes);
               final lineIndex = _lineForBox(box, lineMetrics);
               final runBounds = _caretBounds(
                 painter,
@@ -717,11 +734,87 @@ class FlutterTextMetrics implements FontMetricsProvider {
   // flipped auto-direction RTL lines containing digits + brackets/equations
   // without Arabic letters (such as `'1 )'`, `'(1)'`, or `'1 ) $5^2+6^2=$'`)
   // to LTR in Preview/PDF/DOCX while the RTL editor displayed them as RTL.
-  bool _containsStrongLtr(String text) => text.runes.any((rune) =>
+  bool _containsStrongLtr(String text) => text.runes.any(_isStrongLtrRune);
+
+  bool _isStrongLtrRune(int rune) =>
       (rune >= 0x0041 && rune <= 0x005A) ||
       (rune >= 0x0061 && rune <= 0x007A) ||
       (rune >= 0x00C0 && rune <= 0x02FF) ||
-      (rune >= 0x0370 && rune <= 0x058F));
+      (rune >= 0x0370 && rune <= 0x058F);
+
+  /// هل يقع النطاق كله على سطر واحد في الفقرة المقيسة؟
+  bool _isSingleLineRange(TextPainter painter, int start, int end) {
+    final boxes = painter.getBoxesForSelection(
+      TextSelection(baseOffset: start, extentOffset: end),
+      boxHeightStyle: ui.BoxHeightStyle.strut,
+      boxWidthStyle: ui.BoxWidthStyle.tight,
+    );
+    if (boxes.length <= 1) return true;
+    final top = boxes.first.top;
+    final bottom = boxes.first.bottom;
+    for (final box in boxes.skip(1)) {
+      if ((box.top - top).abs() > 0.5 || (box.bottom - bottom).abs() > 0.5) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// «جزيرة رقمية»: رمز واحد بلا فراغات، ولا حرف عربي فيه، وفواصله داخلية
+  /// بين رقمين/حرفين لاتينيين (`٢٠٢٦/٢٠٢٧`، `12:30`، `1-2`).
+  ///
+  /// هذا تعريف دلالي لا استثناء لحالة: الفاصل الداخلي يجعل الرمز وحدة LTR
+  /// واحدة بحكم UAX #9 (EN/CS/EN أو L/CS/L)، فقياسه قطعةً واحدة يمنع تراكب
+  /// مجموعتيه. أما الفاصل الطرفي (`١-` في تسمية عنصر، أو `-1`) فليس فاصلًا
+  /// داخليًا، ويبقى على مسار RTL القائم (الرقم ثم الفاصل).
+  bool _isInteriorNumberToken(String text) {
+    if (text.isEmpty || text.trim() != text) return false;
+    if (text.runes.any(_isWhitespaceRune)) return false;
+    if (_containsArabicLetter(text)) return false;
+    var sawContent = false;
+    var sawInteriorSeparator = false;
+    final runes = text.runes.toList(growable: false);
+    for (var index = 0; index < runes.length; index++) {
+      final rune = runes[index];
+      if (_isNumberOrLtrRune(rune)) {
+        sawContent = true;
+        continue;
+      }
+      // فاصل: لا بد أن يكون بين محتوى ومحتوى.
+      if (index == 0 || index + 1 >= runes.length) return false;
+      if (!_isNumberOrLtrRune(runes[index - 1]) ||
+          !_isNumberOrLtrRune(runes[index + 1])) {
+        return false;
+      }
+      sawInteriorSeparator = true;
+    }
+    return sawContent && sawInteriorSeparator;
+  }
+
+  bool _isWhitespaceRune(int rune) =>
+      rune == 0x20 || rune == 0x09 || rune == 0x0A || rune == 0x0D ||
+      rune == 0x0C || rune == 0x0B || rune == 0xA0 || rune == 0x202F;
+
+  bool _isNumberOrLtrRune(int rune) =>
+      (rune >= 0x30 && rune <= 0x39) ||
+      (rune >= 0x0660 && rune <= 0x0669) ||
+      (rune >= 0x06F0 && rune <= 0x06F9) ||
+      (rune >= 0xFF10 && rune <= 0xFF19) ||
+      _isStrongLtrRune(rune);
+
+  /// حروف عربية فقط (بلا الأرقام الهندية ٠-٩ ولا علامات الترقيم العربية).
+  ///
+  /// الأرقام الهندية تقع في النطاق نفسه (U+0660..U+0669)، فعدّها «عربية» كان
+  /// يُبقي «٢٠٢٦/٢٠٢٧» على مسار التقسيم لكل محرف، فتتراكب مجموعتاها.
+  bool _containsArabicLetter(String text) => text.runes.any((rune) =>
+      (rune >= 0x0621 && rune <= 0x063A) ||
+      (rune >= 0x0641 && rune <= 0x064A) ||
+      (rune >= 0x066E && rune <= 0x06D3) ||
+      (rune >= 0x06FA && rune <= 0x06FF) ||
+      (rune >= 0x0750 && rune <= 0x077F) ||
+      (rune >= 0x08A0 && rune <= 0x08FF) ||
+      (rune >= 0xFB50 && rune <= 0xFDFF) ||
+      (rune >= 0xFE70 && rune <= 0xFEFF));
 
   bool _containsArabic(String text) => text.runes.any((rune) =>
       (rune >= 0x0590 && rune <= 0x05FF) ||
@@ -846,15 +939,40 @@ class FlutterTextMetrics implements FontMetricsProvider {
     final textPx = List<double>.filled(matches.length, 0);
     for (var index = 0; index < matches.length; index++) {
       final match = matches[index];
-      final bounds = _caretBounds(
+      final start = baseOffset + match.start;
+      final end = baseOffset + match.end;
+      final caret = _caretBoundsDetailed(
         painter,
-        baseOffset + match.start,
-        baseOffset + match.end,
+        start,
+        end,
         fallbackLeft: fragmentLeftPx,
         fallbackRight: fragmentRightPx,
       );
-      startsPx[index] = bounds.left;
-      textPx[index] = bounds.right - bounds.left;
+      var left = caret.left;
+      var right = caret.right;
+      if (caret.fellBack) {
+        // صندوق الكلمة نفسه (حدود الحبر) داخل المقطع، بشرط أن يقع داخل حدوده
+        // الأفقيّة وعلى السطر نفسه — وإلا بقي صندوق المقطع كما كان.
+        var boxLeft = double.infinity;
+        var boxRight = double.negativeInfinity;
+        for (final box in painter.getBoxesForSelection(
+          TextSelection(baseOffset: start, extentOffset: end),
+          boxHeightStyle: ui.BoxHeightStyle.strut,
+          boxWidthStyle: ui.BoxWidthStyle.tight,
+        )) {
+          if (box.right < fragmentLeftPx - 1 || box.left > fragmentRightPx + 1) {
+            continue;
+          }
+          if (box.left < boxLeft) boxLeft = box.left;
+          if (box.right > boxRight) boxRight = box.right;
+        }
+        if (boxRight - boxLeft > 0.5) {
+          left = boxLeft;
+          right = boxRight;
+        }
+      }
+      startsPx[index] = left;
+      textPx[index] = right - left;
     }
     final trailingPx =
         direction == DocumentDirection.ltr ? fragmentRightPx : fragmentLeftPx;
@@ -883,7 +1001,47 @@ class FlutterTextMetrics implements FontMetricsProvider {
     required double fallbackLeft,
     required double fallbackRight,
   }) {
-    if (end <= start) return (left: fallbackLeft, right: fallbackRight);
+    final bounds = _caretBoundsDetailed(
+      painter,
+      start,
+      end,
+      fallbackLeft: fallbackLeft,
+      fallbackRight: fallbackRight,
+    );
+    return (left: bounds.left, right: bounds.right);
+  }
+
+  /// مثل [_caretBounds] لكنه يُبلّغ هل سقطنا إلى صندوق المقطع.
+  ///
+  /// السقوط يعني أن المؤشرين أعطيا فاصلًا غير معقول (فارغًا أو أوسع من الحبر
+  /// نفسه) — وهي الحالة التي تظهر في جزر الأرقام داخل سياق RTL. حينها يعود
+  /// [_measureWords] إلى صندوق الكلمة نفسه بدل أن يُسقط كل كلمة على حدّ
+  /// المقطع، وإلا اشتركت كلمتان في الموضع نفسه ورُسمت إحداهما فوق الأخرى.
+  /// أقل مستطيل يحيط بعدة صناديق بصرية (نفس السطر).
+  ui.TextBox _unionBox(List<ui.TextBox> boxes) {
+    var left = double.infinity;
+    var top = double.infinity;
+    var right = double.negativeInfinity;
+    var bottom = double.negativeInfinity;
+    for (final box in boxes) {
+      if (box.left < left) left = box.left;
+      if (box.top < top) top = box.top;
+      if (box.right > right) right = box.right;
+      if (box.bottom > bottom) bottom = box.bottom;
+    }
+    return ui.TextBox.fromLTRBD(left, top, right, bottom, boxes.first.direction);
+  }
+
+  ({double left, double right, bool fellBack}) _caretBoundsDetailed(
+    TextPainter painter,
+    int start,
+    int end, {
+    required double fallbackLeft,
+    required double fallbackRight,
+  }) {
+    if (end <= start) {
+      return (left: fallbackLeft, right: fallbackRight, fellBack: true);
+    }
     final startCaret = painter.getOffsetForCaret(
       TextPosition(offset: start),
       ui.Rect.zero,
@@ -905,9 +1063,9 @@ class FlutterTextMetrics implements FontMetricsProvider {
     if (!advance.isFinite ||
         advance <= 0.001 ||
         (selectionWidth > 0.001 && advance > maximumPlausibleAdvance)) {
-      return (left: fallbackLeft, right: fallbackRight);
+      return (left: fallbackLeft, right: fallbackRight, fellBack: true);
     }
-    return (left: left, right: right);
+    return (left: left, right: right, fellBack: false);
   }
 
   List<MeasuredRunFragment> _resolveInlineMathDirection(

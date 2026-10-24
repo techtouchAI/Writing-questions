@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 
 import '../layout/blueprint/exam_blueprint.dart';
+import '../layout/canonical/canonical_page_plan.dart';
 import '../layout/document_ir.dart';
 import '../layout/pagination_engine.dart';
 import '../layout/paper_metrics.dart';
@@ -21,6 +22,7 @@ import '../models/point_kind.dart';
 import '../models/question_model.dart';
 import '../models/question_option.dart';
 import '../models/subject_layout.dart';
+import '../models/text_format_span.dart';
 
 /// حالة منشئ ورقة الأسئلة ومعاينة A4.
 ///
@@ -433,8 +435,15 @@ class ExamWizardController extends ChangeNotifier {
     if (questions[index].statement == statement) {
       return;
     }
+    final current = questions[index];
     _commit(
-      _document.withQuestionAt(index, questions[index].copyWith(statement: statement)),
+      _document.withQuestionAt(
+        index,
+        // إزاحات التنسيق تُعاد تأسيسها في `QuestionModel.copyWith` نفسه:
+        // تحرير في الوسط لا يمدّ التنسيق إلى نص جديد، والحذف/الإدخال يُزيح ما
+        // بعده بمقداره — على أي سطح تحرير.
+        current.copyWith(statement: statement),
+      ),
       coalesceKey: 'statement-${questions[index].id}',
     );
   }
@@ -445,9 +454,54 @@ class ExamWizardController extends ChangeNotifier {
     if (questions[index].body == body) {
       return;
     }
+    final current = questions[index];
     _commit(
-      _document.withQuestionAt(index, questions[index].copyWith(body: body)),
+      _document.withQuestionAt(
+        index,
+        current.copyWith(body: body),
+      ),
       coalesceKey: 'body-${questions[index].id}',
+    );
+  }
+
+  /// يحفظ تنسيق نطاقات منطوق السؤال (العنوان) بعد تطبيقه على التحديد.
+  void updateQuestionStatementFormats(
+    int index,
+    List<TextFormatSpan> formats,
+  ) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    final normalized = TextFormatSpans.normalize(
+      formats,
+      textLength: questions[index].statement.length,
+    );
+    if (_sameSpans(questions[index].statementFormats, normalized)) {
+      return;
+    }
+    _commit(
+      _document.withQuestionAt(
+        index,
+        questions[index].copyWith(statementFormats: normalized),
+      ),
+      coalesceKey: 'statement-formats-${questions[index].id}',
+    );
+  }
+
+  /// يحفظ تنسيق نطاقات نص السؤال.
+  void updateQuestionBodyFormats(int index, List<TextFormatSpan> formats) {
+    RangeError.checkValidIndex(index, questions, 'index');
+    final normalized = TextFormatSpans.normalize(
+      formats,
+      textLength: questions[index].body.length,
+    );
+    if (_sameSpans(questions[index].bodyFormats, normalized)) {
+      return;
+    }
+    _commit(
+      _document.withQuestionAt(
+        index,
+        questions[index].copyWith(bodyFormats: normalized),
+      ),
+      coalesceKey: 'body-formats-${questions[index].id}',
     );
   }
 
@@ -557,18 +611,15 @@ class ExamWizardController extends ChangeNotifier {
   void updateQuestionBodyAlign(int index, PaperAlign? align) {
     RangeError.checkValidIndex(index, questions, 'index');
     final question = questions[index];
-    if (question.bodyAlign == align && question.style.align == align) {
+    // المحاذاة فقرة لا محارف: `bodyAlign` يخصّ فقرة النصّ وحدها ولا يُكتب في
+    // `style.align`، فمحاذاة العنوان (`titleAlign ?? style.align`) لا تتحرك —
+    // وكانت تتحرك حين كان العقد الحقل الوحيد. كتابة حقل واحد = خطوة تراجع واحدة.
+    if (question.bodyAlign == align) {
       return;
     }
-    // نقرة محاذاة واحدة = خطوة تراجع واحدة (سلوك Word): تُكتب محاذاة النص
-    // ومحاذاة نمط السؤال (الذي يشترك في عرض العنوان/النص) في commit واحد،
-    // وإلا بقي أحد الاثنين بعد التراجع وظهر الشكل متحيزاً.
     _commit(_document.withQuestionAt(
       index,
-      question.copyWith(
-        bodyAlign: () => align,
-        style: question.style.copyWith(align: () => align),
-      ),
+      question.copyWith(bodyAlign: () => align),
     ));
   }
 
@@ -594,6 +645,42 @@ class ExamWizardController extends ChangeNotifier {
       index,
       questions[index].copyWith(titleAlign: () => align),
     ));
+  }
+
+  /// محاذاة سطر عنوان الفرع وحدها (فقرة العنوان).
+  ///
+  /// كانت المحاذاة الوحيدة في `BranchModel.style` المشترك بين سطر العنوان
+  /// ونصّ الفرع، فتغيير أحدهما يحرّك الآخر. الفصل هنا يطابق نموذج السؤال:
+  /// `titleAlign` للعنوان و`bodyAlign` للنصّ، وكلاهما يرجع إلى `style` إن كان
+  /// `null` (توافق المستندات المحفوظة قبل الفصل).
+  void updateBranchTitleAlign(BranchRef ref, PaperAlign? align) {
+    final branch = _document.branchAt(ref);
+    if (branch.titleAlign == align && branch.style.align == align) {
+      return;
+    }
+    // `style.align` يبقى «المحاذاة الافتراضية للفرع» (يقرأها العنوان عبر
+    // `titleAlign ?? style.align`)، ويُكتب مع `titleAlign` في commit واحد.
+    _commit(
+      _document.withBranchAt(
+        ref,
+        branch.copyWith(
+          titleAlign: () => align,
+          style: branch.style.copyWith(align: () => align),
+        ),
+      ),
+    );
+  }
+
+  /// محاذاة نصّ الفرع وحدها (فقرة النص)، مع تثبيت محاذاة عنوانه الحالية.
+  void updateBranchBodyAlign(BranchRef ref, PaperAlign? align) {
+    final branch = _document.branchAt(ref);
+    if (branch.bodyAlign == align) {
+      return;
+    }
+    // فقرة النصّ وحدها: `style.align` (المشترك مع العنوان) لا يُمسّ.
+    _commit(
+      _document.withBranchAt(ref, branch.copyWith(bodyAlign: () => align)),
+    );
   }
 
   void toggleQuestionFrame(int index) {
@@ -691,10 +778,65 @@ class ExamWizardController extends ChangeNotifier {
     updatePoint(
       owner,
       pointId,
+      // إعادة تأسيس إزاحات التنسيق تحدث في النموذج نفسه (`copyWith`)، فيسري
+      // ذلك على كل سطح تحرير لا على مسار المعاينة وحده.
       (point) => point.copyWith(text: text),
       coalesceKey: 'item-$pointId',
     );
   }
+
+  /// يحفظ تنسيق نطاقات نصّ النقطة.
+  void updatePointTextFormats(
+    PointsOwner owner,
+    String pointId,
+    List<TextFormatSpan> formats,
+  ) {
+    updatePoint(
+      owner,
+      pointId,
+      (point) {
+        final normalized = TextFormatSpans.normalize(
+          formats,
+          textLength: point.text.length,
+        );
+        if (_sameSpans(point.textFormats, normalized)) {
+          return point;
+        }
+        return point.copyWith(textFormats: normalized);
+      },
+      coalesceKey: 'item-formats-$pointId',
+    );
+  }
+
+  /// تنسيق نطاقات نصّ خيار داخل نقطة.
+  void updatePointOptionFormats(
+    PointsOwner owner,
+    String pointId,
+    int optionIndex,
+    List<TextFormatSpan> formats,
+  ) {
+    _updateOptions(
+      owner,
+      pointId,
+      (options) {
+        if (optionIndex < 0 || optionIndex >= options.length) {
+          return options;
+        }
+        final option = options[optionIndex];
+        final normalized = TextFormatSpans.normalize(
+          formats,
+          textLength: option.text.length,
+        );
+        if (_sameSpans(option.formats, normalized)) {
+          return options;
+        }
+        options[optionIndex] = option.copyWith(formats: normalized);
+        return options;
+      },
+      coalesceKey: 'option-formats-$pointId-$optionIndex',
+    );
+  }
+
 
   /// يغيّر نوع النقطة (نص حر/صح وخطأ/إكمال فراغ/اختيار من متعدد).
   void updatePointKind(PointsOwner owner, String pointId, PointKind kind) {
@@ -898,7 +1040,9 @@ class ExamWizardController extends ChangeNotifier {
     _commit(
       _document.withBranchAt(
         ref,
-        branch.copyWith(content: branch.content.copyWith(statement: statement)),
+        branch.copyWith(
+          content: branch.content.copyWith(statement: statement),
+        ),
       ),
       coalesceKey: 'branch-statement-${branch.id}',
     );
@@ -916,10 +1060,51 @@ class ExamWizardController extends ChangeNotifier {
     _commit(
       _document.withBranchAt(
         ref,
-        branch.copyWith(content: branch.content.copyWith(body: body)),
+        branch.copyWith(
+          content: branch.content.copyWith(body: body),
+        ),
       ),
       coalesceKey: 'branch-body-${branch.id}',
     );
+  }
+
+  /// يحفظ تنسيق نطاقات منطوق الفرع.
+  void updateBranchStatementFormats(
+    BranchRef ref,
+    List<TextFormatSpan> formats,
+  ) {
+    if (!_document.containsRef(ref)) return;
+    final branch = _document.branchAt(ref);
+    final normalized = TextFormatSpans.normalize(
+      formats,
+      textLength: branch.content.statement.length,
+    );
+    if (_sameSpans(branch.content.statementFormats, normalized)) {
+      return;
+    }
+    _commit(_document.withBranchAt(
+      ref,
+      branch.copyWith(
+        content: branch.content.copyWith(statementFormats: normalized),
+      ),
+    ));
+  }
+
+  /// يحفظ تنسيق نطاقات نص الفرع.
+  void updateBranchBodyFormats(BranchRef ref, List<TextFormatSpan> formats) {
+    if (!_document.containsRef(ref)) return;
+    final branch = _document.branchAt(ref);
+    final normalized = TextFormatSpans.normalize(
+      formats,
+      textLength: branch.content.body.length,
+    );
+    if (_sameSpans(branch.content.bodyFormats, normalized)) {
+      return;
+    }
+    _commit(_document.withBranchAt(
+      ref,
+      branch.copyWith(content: branch.content.copyWith(bodyFormats: normalized)),
+    ));
   }
 
   void updateBranchMarks(BranchRef ref, double marks) {
@@ -1037,7 +1222,8 @@ class ExamWizardController extends ChangeNotifier {
         : _clampElementToQuestion(element.withOwner(owner));
     final placed = owned.copyWith(
       pageIndex: pageIndex ??
-          (owner == null ? element.pageIndex : _ownerPageIndex(owner)),
+          (owner == null ? element.pageIndex : _ownerPageIndex(owner)) ??
+          element.pageIndex,
     );
     final nextQuestions = List<QuestionModel>.of(questions);
     if (mirrorQuestionIndex != null &&
@@ -1282,43 +1468,41 @@ class ExamWizardController extends ChangeNotifier {
   bool hasOwnedElements(String questionId) => _document.floatingElements
       .any((element) => element.ownerQuestionId == questionId);
 
-  /// مستطيل سؤال على ورقته بإحداثيات اللوحة (بكسل منطقي)، أو `null` قبل قياس
-  /// الكتل. هو المرجع الوحيد لقيد العناصر المرتبطة بالسؤال في كل المسارات.
+  /// خطة الصفحات الوحيدة (من `LayoutEngine`) التي تضع العناصر على الورق.
+  ///
+  /// تُحقن من السطح الذي يحوزها (المعاينة) ولا تُحسب هنا. حين تكون `null`
+  /// (أول إطار، أو سطح لا معاينة فيه) لا يخترع المتحكم هندسة: يعيد `null`
+  /// ويحتفظ العنصر بإحداثياته المحفوظة.
+  CanonicalPagePlan? _layoutPlan;
+  void applyLayoutPlan(CanonicalPagePlan? plan) {
+    if (identical(_layoutPlan, plan)) return;
+    _layoutPlan = plan;
+  }
+
+  /// مستطيل سؤال على ورقته بإحداثيات اللوحة (بكسل منطقي)، من **خطة المحرك**
+  /// نفسها، أو `null` إن لم تُحسم الخطة بعد. هو المرجع الوحيد لقيد العناصر
+  /// المرتبطة بالسؤال في كل المسارات.
+  ///
+  /// كان يُحسب سابقاً من ارتفاعات ودجات مقاسة داخل هذا المتحكم: مصدر هندسة
+  /// ثانٍ يقرّر صفحة السؤال وموضعه. بعد توحيد التخطيط صار الحكم للمحرك وحده؛
+  /// بقاء الحساب القديم هنا كان سيقيد العناصر بصفحة أخرى غير صفحة الورقة.
   QuestionRect? questionRect(String questionId) {
-    final pageIndex = pagination.pageIndexOf(questionId);
-    if (pageIndex == null) {
+    final rect = _layoutPlan?.questionRectPx(questionId);
+    if (rect == null) {
       return null;
-    }
-    final page = pagination.pages[pageIndex];
-    final position = page.blockIds.indexOf(questionId);
-    if (position < 0) {
-      return null;
-    }
-    final margin = ExamCanvasGeometry.marginFor(_document.settings.marginMm);
-    final contentWidth = ExamCanvasGeometry.contentWidthFor(_document.settings.marginMm);
-    var top = margin;
-    for (final id in page.blockIds.take(position)) {
-      if (id == PaperMetrics.headerBlockId) {
-        top += (_blockHeights[id] ?? 0) + PaperMetrics.blockSpacingPx;
-        continue;
-      }
-      final previous = _document.questionById(id);
-      top += (_blockHeights[id] ?? 0) +
-          (previous?.spacingAfter ?? PaperMetrics.blockSpacingPx);
     }
     return QuestionRect(
-      pageIndex: pageIndex,
-      left: margin,
-      top: top,
-      width: contentWidth,
-      height: math.max(
-        _blockHeights[questionId] ?? 0,
-        ExamCanvasGeometry.defaultElementSize,
-      ),
+      pageIndex: rect.pageIndex,
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: math.max(rect.height, ExamCanvasGeometry.defaultElementSize),
     );
   }
 
-  int _ownerPageIndex(String questionId) => pagination.pageIndexOf(questionId) ?? 0;
+  /// صفحة سؤال المالك من الخطة، أو `null` إن لم تُحسم بعد (فيحتفظ العنصر
+  /// بصفحته المحفوظة بدل الصفحة الأولى المخترعة).
+  int? _ownerPageIndex(String questionId) => _layoutPlan?.pageIndexOf(questionId);
 
   /// يحصر عنصراً مملوكاً داخل مستطيل سؤاله: `dx`/`dy` نسبيان لأعلى-يمين
   /// محتوى السؤال، ولا يخرج منه أبداً حتى لو صار السؤال أصغر أو انتقل.
@@ -1442,9 +1626,14 @@ class ExamWizardController extends ChangeNotifier {
 
   /// نتيجة التقسيم الورقي الحالية على لوحة A4 (بكسل منطقي).
   ///
+  /// **ليست مصدر الصفحات في الإنتاج.** منذ توحيد خطة الصفحات، تبني المعاينة
+  /// وPDF صفحاتهما من `LayoutEngine` عبر `CanonicalPagePlan`؛ وهذا الحساب القديم (ارتفاعات ودجات مقاسة) بقي
+  /// لتوافق واجهة الاختبارات فقط، ولا يقرأه أي سطح عرض. سبب بقائه موثّق في
+  /// docs/p3_editor_preview_export_unification.md §19 (إزالته تحذف تغطية
+  /// اختبارات سلوك التقسيم نفسها، وهي تغطية نافعة للخوارزمية لا للعرض).
+  ///
   /// الترويسة كتلة ثابتة في الصفحة الأولى؛ كل سؤال كتلة لا تتجزأ؛ والتذييل
-  /// يحجز مكانه تحت آخر كتلة في آخر صفحة. الكتل غير المقاسة بعد تُعامل
-  /// بارتفاع صفر حتى تُقاس في الإطار التالي.
+  /// يحجز مكانه تحت آخر كتلة في آخر صفحة.
   /// Reproducible input to the legacy paginator, including the actual measured
   /// widget heights used by the interactive editing surface.
   PaginationInput get paginationInput => PaginationInput(
@@ -1522,5 +1711,16 @@ class ExamWizardController extends ChangeNotifier {
     _autoSaveTimer?.cancel();
     _autoSaveTimer = null;
     super.dispose();
+  }
+
+  static bool _sameSpans(
+    List<TextFormatSpan> a,
+    List<TextFormatSpan> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (var index = 0; index < a.length; index++) {
+      if (a[index] != b[index]) return false;
+    }
+    return true;
   }
 }

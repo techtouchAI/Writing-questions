@@ -2,6 +2,7 @@ import '../../models/paper_font.dart';
 import '../../models/quran_text.dart';
 import '../../models/tex_content.dart';
 import '../document_direction.dart';
+import '../../models/text_format_span.dart';
 import '../visual/visual_content.dart';
 
 /// Semantic purpose of a generated or manually supplied label.
@@ -303,9 +304,12 @@ class InlineContent {
   factory InlineContent.fromSource(
     String source, {
     DocumentDirection direction = DocumentDirection.auto,
+    List<TextFormatSpan> formats = const <TextFormatSpan>[],
   }) =>
       InlineContent.fromRichContent(
-        RichContent.parse(source),
+        formats.isEmpty
+            ? RichContent.parse(source)
+            : RichContent.parseFormatted(source, formats),
         direction: direction,
       );
 

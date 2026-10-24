@@ -15,6 +15,7 @@ import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 import 'package:writing_questions_app/models/point_kind.dart';
 import 'package:writing_questions_app/models/question_model.dart';
+import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/views/widgets/smart_exam_toolbar.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
@@ -219,19 +220,23 @@ void main() {
           id: 'q1',
           questionNumber: 1,
           body: List<String>.filled(100, 'سطر طويل لاختبار تعدد الصفحات').join('\n'),
-          attachments: <FloatingElement>[
-            FloatingElement(
-              id: 'legacy-page-nav-element',
-              type: FloatingElementType.shape,
-              shape: FloatingShapeType.square,
-              dx: 220,
-              dy: 260,
-              width: 60,
-              height: 60,
-            ),
-          ],
         ),
         QuestionModel(id: 'q2', questionNumber: 2, body: 'السؤال الثاني'),
+      ],
+      // عنصر على الصفحة الثانية صريحاً: مرفق السؤال يتبع **صفحة بداية سؤاله**
+      // كما قرّرها المحرك (وهي هنا الصفحة الأولى)، فلم يبقَ مناسباً لاختبار
+      // الانتقال إلى الصفحة السابقة. العنصر الحر يحفظ صفحته بنفسه.
+      floatingElements: <FloatingElement>[
+        FloatingElement(
+          id: 'legacy-page-nav-element',
+          type: FloatingElementType.shape,
+          shape: FloatingShapeType.square,
+          dx: 220,
+          dy: 260,
+          pageIndex: 1,
+          width: 60,
+          height: 60,
+        ),
       ],
     );
     final controller = ExamWizardController(document: document);
@@ -245,12 +250,21 @@ void main() {
       height: 60,
     ));
     await _pump(tester, controller);
-    expect(controller.pagination.pageCount, greaterThan(1));
+    // عدد الصفحات يُقرأ من خطة المحرك (المصدر الوحيد)، لا من محرك التقسيم
+    // القديم الذي كانت ارتفاعات ودجته تُغذّيه من السطح.
+    final plan = await CanonicalLayoutService.resolve(
+      document: controller.document,
+      sourceIr: controller.documentIr,
+    );
+    expect(plan.pageCount, greaterThan(1));
 
     await _tap(tester, find.byKey(const ValueKey('page-element-page-nav-element')));
     await _tap(tester, find.byTooltip('نقل إلى الصفحة التالية'));
 
-    expect(controller.document.floatingElements.single.pageIndex, 1);
+    expect(
+      controller.document.floatingElementById('page-nav-element')!.pageIndex,
+      1,
+    );
 
     await _tap(tester, find.byKey(const ValueKey('page-element-legacy-page-nav-element')));
     await _tap(tester, find.byTooltip('نقل إلى الصفحة السابقة'));
@@ -389,6 +403,16 @@ void main() {
     await _tap(tester, find.text('فرع جديد'));
     expect(controller.questions.first.branches, hasLength(2));
     expect(controller.questions[1].branches, isEmpty);
+    // أدوات الفرع صارت في شريط خارج الورقة وتعمل على فرع **محدَّد** (§19.15)؛
+    // فالتحديد يحدث بالنقر داخل منطوق الفرع نفسه — كما يفعل المستخدم.
+    await _tap(
+      tester,
+      find.byKey(
+        ValueKey<String>(
+          'branch-statement-${controller.questions.first.branches.last.id}',
+        ),
+      ),
+    );
     await _tap(tester, find.byTooltip('نسخ الفرع').first);
     expect(controller.questions.first.branches, hasLength(3));
     await _tap(tester, find.byTooltip('انقر لتعديل رقم الفرع').first);

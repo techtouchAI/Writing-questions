@@ -79,6 +79,40 @@ class _HeaderFormState extends State<HeaderForm> {
         !SubjectCatalog.knownSubjects.contains(_header.subject);
   }
 
+  /// مزامنة الحقول مع النموذج عند تغيّره من الخارج (تحميل مستند، تراجع،
+  /// استيراد نسخة احتياطية، تبديل الدور...).
+  ///
+  /// بلا هذه المزامنة تبقى `TextEditingController`s على القيم القديمة، فيرى
+  /// المدرس عامًا دراسيًا قديمًا ويُعيد كتابته في النموذج عند أول تحرير لأي
+  /// حقل — وهو عطل «العام الدراسي لا يتحدّث» في المعاينة وPDF.
+  ///
+  /// الحقل الذي عليه المؤشر لا يُلمس كي لا يُمحى ما يكتبه المدرس.
+  @override
+  void didUpdateWidget(covariant HeaderForm oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (identical(widget.initial, oldWidget.initial) ||
+        widget.initial == oldWidget.initial) {
+      return;
+    }
+    _header = widget.initial;
+    _syncController(_school, widget.initial.schoolName);
+    _syncController(_examType, widget.initial.examType);
+    _syncController(_year, widget.initial.academicYear);
+    _syncController(_grade, widget.initial.grade);
+    _syncController(_time, widget.initial.time);
+    _syncController(_subject, widget.initial.subject);
+    _customMode = widget.initial.subject.isNotEmpty &&
+        !SubjectCatalog.knownSubjects.contains(widget.initial.subject);
+  }
+
+  void _syncController(TextEditingController controller, String value) {
+    if (controller.text == value) return;
+    controller.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+  }
+
   @override
   void dispose() {
     _school.dispose();
