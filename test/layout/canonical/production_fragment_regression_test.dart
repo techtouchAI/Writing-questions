@@ -343,9 +343,14 @@ void main() {
       final mediaList = find.ancestor(
         of: find.text('صورة'), matching: find.byType(ListView),
       ).first;
-      final mediaScrollable = find.descendant(
+      final mediaScrollElement = find.descendant(
         of: mediaList, matching: find.byType(Scrollable),
-      ).first;
+      ).first.evaluate().single;
+      // Do not keep a finder rooted in the image chip: that chip may be
+      // disposed when it scrolls off this lazy list's viewport.
+      final mediaScrollable = find.byElementPredicate(
+        (element) => identical(element, mediaScrollElement),
+      );
       await tester.scrollUntilVisible(
         find.text('مربع نص'), 160, scrollable: mediaScrollable,
       );
