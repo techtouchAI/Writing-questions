@@ -5437,14 +5437,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           behavior: HitTestBehavior.translucent,
           onTap: () => _tapQuestion(questionIndex),
           child: _titleRow(
-            actions: <Widget>[
-              IconButton(
-                tooltip: 'إضافة فرع',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.add, size: 16),
-                onPressed: () => controller.addBranch(questionIndex),
-              ),
-            ],
             dragHandle: _locked
                     ? Icon(
                         Icons.drag_indicator,
