@@ -111,11 +111,11 @@ void main() {
     // خطوط الخطة لعقدة منطوق السؤال نفسها، ومدى امتدادها الأفقي.
     final runs = <LayoutRun>[
       for (final line in block.allLines)
-        ...line.runs.where((run) => run.semanticNodeId == 'aq1/title/statement/1'),
+        ...line.runs.where((run) => run.semanticNodeId.contains('/statement')),
     ];
     final planLines = <String>{
       for (final line in block.allLines)
-        if (line.runs.any((r) => r.semanticNodeId == 'aq1/title/statement/1')) line.id,
+        if (line.runs.any((r) => r.semanticNodeId.contains('/statement'))) line.id,
     }.length;
     final span = runs.isEmpty
         ? 0.0
