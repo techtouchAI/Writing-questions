@@ -409,14 +409,15 @@ void main() {
     );
 
     // أدوات الفرع في الشريط، 48dp، وتعمل على الفرع الصحيح.
-    for (final name in <String>['branch-action-duplicate', 'branch-action-delete']) {
-      final rect = tester.getRect(_action(name));
+    for (final key in <String>['branch-action-duplicate', 'branch-action-delete']) {
+      final finder = find.byKey(ValueKey<String>(key));
+      final rect = tester.getRect(finder);
       expect(rect.height, greaterThanOrEqualTo(kMinTouchTarget - 0.01),
-          reason: 'هدف «$name» ${rect.height.toStringAsFixed(2)}px < 48dp.');
-      expect(tester.widget<IconButton>(_action(name)).onPressed, isNotNull,
-          reason: 'أداة الفرع «$name» معطّلة والفرع محدَّد.');
+          reason: 'هدف «$key» ${rect.height.toStringAsFixed(2)}px < 48dp.');
+      expect(tester.widget<IconButton>(finder).onPressed, isNotNull,
+          reason: 'أداة الفرع «$key» معطّلة والفرع محدَّد.');
     }
-    await tester.tap(_action('branch-action-duplicate'));
+    await tester.tap(find.byKey(const ValueKey<String>('branch-action-duplicate')));
     await tester.pumpAndSettle();
     expect(controller.questions.first.branches, hasLength(2),
         reason: 'لم يُنسخ الفرع.');

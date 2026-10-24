@@ -403,6 +403,16 @@ void main() {
     await _tap(tester, find.text('فرع جديد'));
     expect(controller.questions.first.branches, hasLength(2));
     expect(controller.questions[1].branches, isEmpty);
+    // أدوات الفرع صارت في شريط خارج الورقة وتعمل على فرع **محدَّد** (§19.15)؛
+    // فالتحديد يحدث بالنقر داخل منطوق الفرع نفسه — كما يفعل المستخدم.
+    await _tap(
+      tester,
+      find.byKey(
+        ValueKey<String>(
+          'branch-statement-${controller.questions.first.branches.last.id}',
+        ),
+      ),
+    );
     await _tap(tester, find.byTooltip('نسخ الفرع').first);
     expect(controller.questions.first.branches, hasLength(3));
     await _tap(tester, find.byTooltip('انقر لتعديل رقم الفرع').first);
