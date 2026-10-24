@@ -86,7 +86,8 @@ void main() {
       }
     }
     expect(branchBlock, isNotNull, reason: 'لا كتلة فرع في الخطة.');
-    final title = branchBlock!.children.firstWhere((c) => c.kind == LayoutBlockKind.title);
+    final branch = branchBlock!;
+    final title = branch.children.firstWhere((c) => c.kind == LayoutBlockKind.title);
 
     final branchStatement = controller.document.questions.first.branches.first.content.statement;
     final field = find.byWidgetPredicate((widget) =>
@@ -116,7 +117,7 @@ void main() {
         ))
         .length;
     final runs = <LayoutRun>[
-      for (final line in branchBlock.allLines)
+      for (final line in branch.allLines)
         ...line.runs.where((run) => run.semanticNodeId.contains('/statement')),
     ];
     final span = runs.isEmpty
@@ -124,7 +125,7 @@ void main() {
         : runs.map((r) => r.x + r.advance).reduce(math.max) -
             runs.map((r) => r.x).reduce(math.min);
     final planLines = <String>{
-      for (final line in branchBlock.allLines)
+      for (final line in branch.allLines)
         if (line.runs.any((r) => r.semanticNodeId.contains('/statement'))) line.id,
     }.length;
 
