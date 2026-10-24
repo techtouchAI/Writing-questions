@@ -138,14 +138,6 @@ void main() {
       );
       expect(_isDisplayMathLine(line.first), isFalse,
           reason: 'المعادلة المضمّنة عوملت كمنفصلة (سطر مستقل).');
-      final all = <LayoutLine>[
-        for (final page in layout.pages)
-          for (final block in page.blocks) ...block.allLines,
-      ];
-      final t = all.firstWhere((l) => l.runs.any((r) => r.text.contains('DMTOP'))).rect;
-      final b = all.firstWhere((l) => l.runs.any((r) => r.text.contains('DMBOTTOM'))).rect;
-      final d = all.firstWhere(_isDisplayMathLine).rect;
-      expect('LAY t=${t.bottom.toStringAsFixed(2)} d=${d.top.toStringAsFixed(2)}..${d.bottom.toStringAsFixed(2)} b=${b.top.toStringAsFixed(2)} h=${d.height.toStringAsFixed(2)}', 'PROBE');
     });
   });
 
@@ -216,7 +208,6 @@ void main() {
       expect(math.y + math.height,
           lessThanOrEqualTo(_pageHeightPt - _marginPt + 0.5),
           reason: 'المعادلة تخرج من أعلى منطقة المحتوى.');
-      expect('PDF top=${topY.toStringAsFixed(2)} img=${math.y.toStringAsFixed(2)}..${(math.y + math.height).toStringAsFixed(2)} bot=${bottomY.toStringAsFixed(2)} above=${above.toStringAsFixed(2)} below=${below.toStringAsFixed(2)} w=${math.width.toStringAsFixed(2)} x=${math.x.toStringAsFixed(2)} n=${probe.images.length}', 'PROBE');
     });
 
     test('المضمّنة تبقى داخل سطرها: صورتُها بين علامتي السطر نفسه', () async {
@@ -252,7 +243,6 @@ void main() {
           reason: 'المعادلة المضمّنة خارج نطاق السطر من اليسار.');
       expect(image.x + image.width, lessThanOrEqualTo(rightEdge + 1.0),
           reason: 'المعادلة المضمّنة خارج نطاق السطر من اليمين.');
-      expect('INL y=${immark.y.toStringAsFixed(2)}/${inmark.y.toStringAsFixed(2)} img=${image.x.toStringAsFixed(2)}..${(image.x + image.width).toStringAsFixed(2)} span=${left.toStringAsFixed(2)}..${rightEdge.toStringAsFixed(2)} n=${probe.images.length}', 'PROBE');
     });
   });
 }
