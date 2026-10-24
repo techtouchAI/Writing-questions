@@ -133,11 +133,15 @@ void main() {
       ),
     );
     final renderedLines = boxes.length;
-    expect('A row=${f(rowRect.height)}/${f(LayoutUnits.ptToPx(title.rect.height))}', 'P');
-    expect('B stmtW=${f(sRect.width)} planSpan=${f(LayoutUnits.ptToPx(span))}', 'P');
-    expect('C stmtLines=$renderedLines planLines=$planLines', 'P');
-    expect('D gapBody=${f(bRect.top - rowRect.bottom)} planGap=${f(LayoutUnits.ptToPx(body.rect.top - title.rect.bottom))}', 'P');
-    expect('E btns=${heights.join(",")} n=${heights.length}', 'P');
-    expect('F drag=${drag.evaluate().isEmpty ? "none" : f(tester.getRect(drag.first).height)}', 'P');
+    final dragH = drag.evaluate().isEmpty ? -1.0 : tester.getRect(drag.first).height;
+    expect(
+      'A${f(rowRect.height)}/${f(LayoutUnits.ptToPx(title.rect.height))}'
+      ' B${f(sRect.width)}/${f(LayoutUnits.ptToPx(span))}'
+      ' C$renderedLines/$planLines'
+      ' D${f(bRect.top - rowRect.bottom)}/${f(LayoutUnits.ptToPx(body.rect.top - title.rect.bottom))}'
+      ' E${heights.join("/")} F${f(dragH)}'
+      ' G${f(bRect.top - rowRect.top)}',
+      'P',
+    );
   });
 }
