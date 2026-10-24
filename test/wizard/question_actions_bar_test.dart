@@ -28,6 +28,8 @@ import 'package:writing_questions_app/layout/canonical/canonical_page_plan.dart'
 import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart';
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
+import 'package:writing_questions_app/models/branch_item.dart';
+import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/paper_settings.dart';
@@ -117,12 +119,57 @@ Future<ExamWizardController> _pump(
   return controller;
 }
 
+/// مستند فيه فرع واحد: لقياس صفّ عنوان الفرع وأدواته.
+ExamDocument _branchDocument() => ExamDocument(
+      name: 'أدوات الفرع',
+      header: ExamHeaderModel.initial(subject: 'الرياضيات'),
+      settings: const PaperSettings(
+        baseFontSize: 11,
+        lineSpacing: 1.7,
+        marginMm: 15,
+      ),
+      questions: <QuestionModel>[
+        QuestionModel(
+          id: 'cq1',
+          questionNumber: 1,
+          statement: 'السؤال الأول',
+          branches: <BranchModel>[
+            BranchModel(
+              content: BranchContent(
+                statement: 'منطوق الفرع الأول ليقيس ارتفاع صفّه وعرض منطقه',
+                items: <BranchItem>[BranchItem(id: 'ci1', text: 'نقطة')],
+              ),
+              marks: 2,
+            ),
+          ],
+        ),
+      ],
+    );
+
+/// كتلة الفرع داخل كتلة سؤاله (ليست كتلة عليا في الصفحة).
+LayoutBlock? _branchBlockOf(CanonicalPagePlan plan, String questionId) {
+  LayoutBlock? found;
+  void scan(LayoutBlock block) {
+    if (block.kind == LayoutBlockKind.branch) found ??= block;
+    for (final child in block.children) {
+      scan(child);
+    }
+  }
+
+  for (final page in plan.layout.pages) {
+    for (final block in page.blocks) {
+      if (block.semanticNodeId == questionId) scan(block);
+    }
+  }
+  return found;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async => FlutterTextMetrics.ensureFontsLoaded());
 
   testWidgets('هدف اللمس: 48×48px على الأقل، والنقر يعمل', (tester) async {
-    final controller = await _pump(tester, _document());
+    await _pump(tester, _document());
     await tester.tap(_statement('aq1'));
     await tester.pumpAndSettle();
 
@@ -324,5 +371,54 @@ void main() {
         reason: 'تأثّر السؤال الآخر بأداة السؤال الممتد.');
     // الشريط ما زال واحداً بعد التحرير (لم يُبنَ لكل مقطع).
     expect(_bar, findsOneWidget);
+  });
+
+  testWidgets('صفّ عنوان الفرع أيضاً هندسة خطة، وأدواته خارج الورقة بـ48dp',
+      (tester) async {
+    final controller = await _pump(tester, _branchDocument());
+    final plan = await _planOf(controller.document);
+    final branchBlock = _branchBlockOf(plan, 'cq1');
+    expect(branchBlock, isNotNull, reason: 'لا كتلة فرع في الخطة.');
+    final title = branchBlock!.children
+        .firstWhere((child) => child.kind == LayoutBlockKind.title);
+
+    // الحقل المرسوم لمنطوق الفرع: يُطابق نصّه (لا مفاتيح مفترضة).
+    final statementText =
+        controller.document.questions.first.branches.first.content.statement;
+    final field = find.byWidgetPredicate(
+      (widget) => widget is TextField && widget.controller?.text == statementText,
+    );
+    expect(field, findsOneWidget, reason: 'حقل منطوق الفرع غير موجود.');
+    final rowRect = tester.getRect(
+      find.ancestor(of: field, matching: find.byType(Row)).first,
+    );
+    expect(
+      rowRect.height,
+      closeTo(LayoutUnits.ptToPx(title.rect.height), 0.5),
+      reason: 'ارتفاع صفّ الفرع ${rowRect.height.toStringAsFixed(2)}px مقابل '
+          '${LayoutUnits.ptToPx(title.rect.height).toStringAsFixed(2)}px في '
+          'الخطة: أدوات الصفّ تقود الورقة.',
+    );
+    expect(
+      find.descendant(
+        of: find.ancestor(of: field, matching: find.byType(Row)).first,
+        matching: find.byType(IconButton),
+      ),
+      findsNothing,
+      reason: 'بقي في صفّ الفرع زرّ يحدّد ارتفاعه.',
+    );
+
+    // أدوات الفرع في الشريط، 48dp، وتعمل على الفرع الصحيح.
+    for (final name in <String>['branch-action-duplicate', 'branch-action-delete']) {
+      final rect = tester.getRect(_action(name));
+      expect(rect.height, greaterThanOrEqualTo(kMinTouchTarget - 0.01),
+          reason: 'هدف «$name» ${rect.height.toStringAsFixed(2)}px < 48dp.');
+      expect(tester.widget<IconButton>(_action(name)).onPressed, isNotNull,
+          reason: 'أداة الفرع «$name» معطّلة والفرع محدَّد.');
+    }
+    await tester.tap(_action('branch-action-duplicate'));
+    await tester.pumpAndSettle();
+    expect(controller.questions.first.branches, hasLength(2),
+        reason: 'لم يُنسخ الفرع.');
   });
 }

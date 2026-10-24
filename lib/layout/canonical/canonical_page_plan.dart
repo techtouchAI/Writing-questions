@@ -190,9 +190,22 @@ class CanonicalPagePlan {
           started.add(id);
           pageOfBlock.putIfAbsent(id, () => page.index);
         }
+        // ارتفاع صفوف العناوين (السؤال وكل فرع) كما حسبها المحرك: صفوف
+        // الورق هندسة مطبوعة، فلا يجوز أن يقود ارتفاعَها أطولُ ودجة تفاعلية
+        // فيها (§19.12 للسؤال، §19.15 للفرع).
         for (final child in block.children) {
           if (child.kind == LayoutBlockKind.title) {
             titleHeights.putIfAbsent(id, () => child.rect.height);
+            continue;
+          }
+          if (child.kind != LayoutBlockKind.branch) continue;
+          for (final grandchild in child.children) {
+            if (grandchild.kind == LayoutBlockKind.title) {
+              titleHeights.putIfAbsent(
+                child.semanticNodeId,
+                () => grandchild.rect.height,
+              );
+            }
           }
         }
         fragments.add(
@@ -342,6 +355,13 @@ class CanonicalPagePlan {
   /// ويبقى هذا العرض يثبّت الصفّ على ارتفاعه من المحرك. القيمة من
   /// `LayoutDocument` كما هي، بلا قياس في هذا الملف.
   double? titleHeightPtOf(String questionId) => _titleHeightPt[questionId];
+
+  /// ارتفاع **صفّ عنوان الفرع** كما حسبه المحرك (نقاط)، أو `null` إن لم يُخطَّط.
+  ///
+  /// المفتاح هو مُعرِّف الفرع الدلالي في `LayoutDocument`
+  /// (`<questionId>/branch/<branchId>`) — لا قياس ولا تخمين.
+  double? branchTitleHeightPtOf(String questionId, String branchId) =>
+      _titleHeightPt['$questionId/branch/$branchId'];
 
   /// هل هناك سؤال بلا محتوى مطبوع (لا يظهر في الورقة/PDF لكنه يُحرَّر)؟
   bool get hasUnplannedQuestions => _unplannedByPage.isNotEmpty;

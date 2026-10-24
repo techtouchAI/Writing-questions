@@ -4557,6 +4557,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           questionData,
           sliceSuffix: suffix,
           titleHeightPt: plan.titleHeightPtOf(questionData.id),
+          plan: plan,
         );
       } finally {
         _sliceKeySuffix = previousSuffix;
@@ -5097,26 +5098,33 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// محدودتان بنسبة من عرض السطر فتتلفّفان داخل حدودهما، ويبقى لمنطوق السؤال
   /// وأزرار الإجراءات مكانه. الحد الأقصى لا يغيّر العرض العادي: لا أثر له إلا
   /// إذا تجاوز المحتوى عرض السطر فعلاً.
-  /// الشريط الذي يحمل أدوات السؤال (إضافة فرع/نسخ/حذف) **خارج** الورقة.
+  /// الشريط الذي يحمل أدوات السؤال **والفرع** خارج الورقة.
   ///
   /// فصل صريح بين هندسة الورق المطبوعة وواجهة التحكم: الشريط لا يدخل
-  /// `_buildQuestionBlock` ولا يشارك في قياس أي صفّ، فلا يغيّر ارتفاع العنوان
-  /// ولا عرض المنطوق ولا هوامش الصفحة (ولا يعرف عنه المحرك أو PDF شيئاً).
+  /// `_buildQuestionBlock`/`_buildBranchBody` ولا يشارك في قياس أي صفّ، فلا
+  /// يغيّر ارتفاع العنوان ولا عرض المنطوق ولا هوامش الصفحة (ولا يعرف عنه
+  /// المحرك أو PDF شيئاً).
   ///
   /// الهدف: مساحة لمس 48dp (الحدّ الأدنى في Material) على شاشة الهاتف، بدل
-  /// أزرار كانت تُسحق إلى 31px داخل صفّ بارتفاع سطر العنوان.
+  /// أزرار كانت تُسحق إلى 31px/40px داخل صفوف ارتفاعها من الخطة. الشريط
+  /// أفقي قابل للتمرير، فيبقى كل زرّ 48dp حتى على شاشة ضيقة بدل أن يُصغَّر.
   ///
-  /// يعمل على **سؤال واحد محدَّد** فحسب ([_actionQuestionIndex])؛ ومع تحديد
-  /// متعدد أو بلا تحديد تبقى الأزرار معطّلة ويظهر تلميح. الأزرار تحمل
-  /// التلميحات نفسها التي كانت في الصفّ كي يبقى البحث عنها والاختبار عليها.
+  /// كل مجموعة تعمل على هدفها وحده: أدوات السؤال على السؤال المستهدف، وأدوات
+  /// الفرع على فرع واحد محدَّد/نشط (أو الفرع الوحيد في السؤال) — وإلا تُعطَّل
+  /// بدل أن تعمل على عنصر لم يقصده المستخدم.
   Widget _buildQuestionActionsBar(ExamWizardController controller) {
     final index = _actionQuestionIndex();
-    final enabled = index != null && !_locked && !_isBusy;
+    final branchRef = _actionBranchRef();
+    final questionEnabled = index != null && !_locked && !_isBusy;
+    final branchEnabled = branchRef != null && !_locked && !_isBusy;
     final question = index == null ? null : controller.questions[index];
+    final branch = branchRef == null ? null : controller.document.branchAt(branchRef);
+
     Widget button({
       required String key,
       required IconData icon,
       required String tooltip,
+      required bool enabled,
       required VoidCallback onPressed,
     }) {
       return IconButton(
@@ -5131,46 +5139,123 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       );
     }
 
+    Widget divider() => const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 4),
+          child: SizedBox(
+            height: 28,
+            width: 1,
+            child: ColoredBox(color: Color(0x22000000)),
+          ),
+        );
+
+    final label = question == null
+        ? 'حدّد سؤالاً واحداً لتحرير أدواته'
+        : branch == null
+            ? 'أدوات السؤال ${controller.document.formatNumber(index! + 1)}'
+            : 'أدوات السؤال ${controller.document.formatNumber(index! + 1)} — الفرع ${branchRef!.branchIndex + 1}';
+
     return Material(
       key: const ValueKey<String>('question-actions-bar'),
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: SizedBox(
+        height: 52,
         child: Row(
           children: <Widget>[
+            const SizedBox(width: 12),
             Flexible(
               child: Text(
-                question == null
-                    ? 'حدّد سؤالاً واحداً لتحرير أدواته'
-                    : 'أدوات السؤال ${controller.document.formatNumber(index! + 1)}',
+                label,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
-            const Spacer(),
-            button(
-              key: 'question-action-add-branch',
-              icon: Icons.add,
-              tooltip: 'إضافة فرع',
-              onPressed: () => controller.addBranch(index!),
-            ),
-            button(
-              key: 'question-action-duplicate',
-              icon: Icons.copy_outlined,
-              tooltip: 'نسخ السؤال',
-              onPressed: () => controller.duplicateQuestion(index!),
-            ),
-            if (controller.questions.length > 1)
-              button(
-                key: 'question-action-delete',
-                icon: Icons.delete_outline,
-                tooltip: 'حذف السؤال',
-                onPressed: () => _confirmDeleteQuestion(index!),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: <Widget>[
+                    button(
+                      key: 'question-action-add-branch',
+                      icon: Icons.add,
+                      tooltip: 'إضافة فرع',
+                      enabled: questionEnabled,
+                      onPressed: () => controller.addBranch(index!),
+                    ),
+                    button(
+                      key: 'question-action-duplicate',
+                      icon: Icons.copy_outlined,
+                      tooltip: 'نسخ السؤال',
+                      enabled: questionEnabled,
+                      onPressed: () => controller.duplicateQuestion(index!),
+                    ),
+                    if (controller.questions.length > 1)
+                      button(
+                        key: 'question-action-delete',
+                        icon: Icons.delete_outline,
+                        tooltip: 'حذف السؤال',
+                        enabled: questionEnabled,
+                        onPressed: () => _confirmDeleteQuestion(index!),
+                      ),
+                    divider(),
+                    button(
+                      key: 'branch-action-duplicate',
+                      icon: Icons.copy_all_outlined,
+                      tooltip: 'نسخ الفرع',
+                      enabled: branchEnabled,
+                      onPressed: () => controller.duplicateBranch(branchRef!),
+                    ),
+                    button(
+                      key: 'branch-action-equation',
+                      icon: Icons.functions,
+                      tooltip: 'إدراج/تحرير معادلة',
+                      enabled: branchEnabled,
+                      onPressed: () => _editEquationInField(
+                        _branchStatementKey(controller.document
+                            .branchAt(branchRef!)
+                            .id),
+                      ),
+                    ),
+                    button(
+                      key: 'branch-action-delete',
+                      icon: Icons.delete_outline,
+                      tooltip: 'حذف الفرع',
+                      enabled: branchEnabled,
+                      onPressed: () => controller.removeBranch(branchRef!),
+                    ),
+                  ],
+                ),
               ),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  /// الفرع الذي تعمل عليه أدوات الفرع.
+  ///
+  /// ترتيب الحسم: تحديد صريح لفرع واحد ← الفرع النشط في المتحكم ← الفرع
+  /// الوحيد في السؤال المستهدف (حالته لا تحتمل اللبس). غير ذلك `null`، فتبقى
+  /// الأزرار معطّلة بدل أن تحذف أو تنسخ فرعاً لم يقصده المستخدم.
+  BranchRef? _actionBranchRef() {
+    final controller = _controller;
+    if (controller == null) return null;
+    final document = controller.document;
+    if (_selectedBranches.length == 1) {
+      final ref = _selectedBranches.single;
+      if (document.containsRef(ref)) return ref;
+    }
+    if (_selectedBranches.length > 1) return null;
+    final selected = controller.selectedBranch;
+    if (selected != null && document.containsRef(selected)) return selected;
+    final questionIndex = _actionQuestionIndex();
+    if (questionIndex == null) return null;
+    final branches = controller.questions[questionIndex].branches;
+    if (branches.length == 1) {
+      return BranchRef(questionIndex: questionIndex, branchIndex: 0);
+    }
+    return null;
   }
 
   /// السؤال الذي تعمل عليه أدوات الشريط: التحديد الصريح أولاً، ثم سؤال الفرع
@@ -5284,6 +5369,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
     /// ارتفاع صفّ العنوان من الخطة (نقاط) — يقود الورقة بدل ارتفاع الأدوات.
     double? titleHeightPt,
+
+    /// الخطة: تُستعمل لارتفاعات صفوف العناوين (السؤال وفروعه) فقط.
+    CanonicalPagePlan? plan,
   }) {
     final document = controller.document;
     final question = document.questions[data.index];
@@ -5473,7 +5561,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
         for (final branch in data.branches) ...<Widget>[
           if (blockSpacing > 0) SizedBox(height: blockSpacing),
-          _buildBranchBlock(controller, layout, branch),
+          _buildBranchBlock(controller, layout, branch, plan),
         ],
         if (question.dividerAfter != null)
           _buildDividerWidget(
@@ -5706,6 +5794,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     ExamWizardController controller,
     SubjectLayoutTemplate layout,
     BranchBlock data,
+    CanonicalPagePlan? plan,
   ) {
     final ref = BranchRef(
       questionIndex: data.questionIndex,
@@ -5810,6 +5899,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               data,
               dragHandle,
               isSelected: selected,
+              plan: plan,
             ),
           ),
         );
@@ -5841,6 +5931,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     BranchBlock data,
     Widget dragHandle, {
     required bool isSelected,
+    CanonicalPagePlan? plan,
   }) {
     final document = controller.document;
     final branch = document.branchAt(ref);
@@ -5862,7 +5953,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final column = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        _titleRow(
+        // صفّ عنوان الفرع هندسة ورق مثل صفّ السؤال: ارتفاعه من الخطة، وأدواته
+        // (نسخ/معادلة/حذف) في الشريط خارج الورقة (§19.15).
+        _planRowHeight(
+          heightPt: plan?.branchTitleHeightPtOf(data.questionId, data.id),
+          child: _titleRow(
           dragHandle: Padding(
             padding: const EdgeInsets.only(top: 2),
             child: dragHandle,
@@ -5897,27 +5992,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             style: bodyStyle,
             onEdit: () => _editBranchMarks(ref),
           ),
-          actions: <Widget>[
-                  IconButton(
-                    tooltip: 'نسخ الفرع',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.copy_outlined, size: 14),
-                    onPressed: () => controller.duplicateBranch(ref),
-                  ),
-                  IconButton(
-                    tooltip: 'إدراج/تحرير معادلة',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.functions, size: 14),
-                    onPressed: () => _editEquationInField(statementKey),
-                  ),
-                  // لا حد أدنى للفروع: يُحذف الأخير أيضاً ويبقى السؤال فارغاً.
-                  IconButton(
-                    tooltip: 'حذف الفرع',
-                    visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.delete_outline, size: 14),
-                    onPressed: () => controller.removeBranch(ref),
-                  ),
-                ],
+        ),
         ),
         // نص الفرع: يُحذف كلياً عند فراغه (يظهر للتحرير عند تحديد الفرع).
         if (data.body != null || isSelected)
