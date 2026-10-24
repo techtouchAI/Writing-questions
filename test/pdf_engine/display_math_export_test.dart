@@ -71,12 +71,6 @@ double _wordY(PdfContentProbe probe, String marker) {
   return words.single.y;
 }
 
-double _wordX(PdfContentProbe probe, String marker) {
-  final words = probe.words.where((word) => word.text.trim() == marker).toList();
-  expect(words, hasLength(1), reason: 'العلامة $marker مفقودة أو مكرّرة.');
-  return words.single.x;
-}
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
