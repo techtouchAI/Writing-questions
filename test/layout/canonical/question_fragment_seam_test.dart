@@ -805,25 +805,19 @@ void main() {
         reason: 'الخطة لا تُعلن ارتفاع صفّ العنوان: السطح سيعود إلى ارتفاع '
             'أدوات التحرير.');
 
-    // أدوات التحرير تُقيَّد داخل الصفّ ولا تتجاوزه على النصّ: كل زرّ داخل حدود
-    // الصفّ، وارتفاعه كافٍ للنقر (لا يُسحق إلى صفر).
-    final buttons = find.descendant(
-      of: find.ancestor(
-        of: find.byKey(const ValueKey<String>('statement-eq1')),
-        matching: find.byType(Row),
-      ).first,
-      matching: find.byType(IconButton),
+    // صفّ العنوان **هندسة ورق**: لا يحمل أي أداة تحرير. أدوات السؤال صارت في
+    // شريط خارج الورقة بمساحة لمس 48dp (§19.15)، فلا شيء في الصفّ يمكن أن
+    // يحدّد ارتفاعه أو يأكل من عرض منطقه. (تُقاس الأزرار نفسها في
+    // test/wizard/question_actions_bar_test.dart.)
+    final rowOfTitle = find.ancestor(
+      of: find.byKey(const ValueKey<String>('statement-eq1')),
+      matching: find.byType(Row),
+    ).first;
+    expect(
+      find.descendant(of: rowOfTitle, matching: find.byType(IconButton)),
+      findsNothing,
+      reason: 'عادت أداة تحرير إلى صفّ العنوان: ارتفاع الورقة سيتبع الودجات.',
     );
-    expect(buttons, findsWidgets, reason: 'أدوات التحرير غابت عن صفّ العنوان.');
-    for (var index = 0; index < tester.widgetList(buttons).length; index++) {
-      final rect = tester.getRect(buttons.at(index));
-      expect(rect.top, greaterThanOrEqualTo(titleRowRect.top - 0.5),
-          reason: 'الزرّ $index يتجاوز صفّ العنوان من أعلى.');
-      expect(rect.bottom, lessThanOrEqualTo(titleRowRect.bottom + 0.5),
-          reason: 'الزرّ $index يتجاوز صفّ العنوان من أسفل (سيرسم على النصّ).');
-      expect(rect.height, greaterThanOrEqualTo(24.0),
-          reason: 'الزرّ $index سُحق إلى ${rect.height.toStringAsFixed(2)}px.');
-    }
   });
 
 }

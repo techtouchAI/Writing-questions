@@ -73,9 +73,16 @@ void main() {
     String f(double v) => v.toStringAsFixed(2);
 
     LayoutBlock? branchBlock;
+    void scan(LayoutBlock block) {
+      if (block.kind == LayoutBlockKind.branch) branchBlock ??= block;
+      for (final child in block.children) {
+        scan(child);
+      }
+    }
+
     for (final page in plan.layout.pages) {
       for (final block in page.blocks) {
-        if (block.kind == LayoutBlockKind.branch) branchBlock = block;
+        scan(block);
       }
     }
     expect(branchBlock, isNotNull, reason: 'لا كتلة فرع في الخطة.');
