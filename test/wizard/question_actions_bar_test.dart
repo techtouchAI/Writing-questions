@@ -169,7 +169,7 @@ void main() {
   setUpAll(() async => FlutterTextMetrics.ensureFontsLoaded());
 
   testWidgets('هدف اللمس: 48×48px على الأقل، والنقر يعمل', (tester) async {
-    await _pump(tester, _document());
+    final controller = await _pump(tester, _document());
     await tester.tap(_statement('aq1'));
     await tester.pumpAndSettle();
 
