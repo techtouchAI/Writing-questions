@@ -3376,6 +3376,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       ),
       body: Column(
         children: <Widget>[
+          // شريط أدوات السؤال: **خارج الورقة**، لا يشارك هندستها ولا يغيّر
+          // مقاساتها (§19.15). مساحة اللمس 48dp كاملة، ويُعطَّل حين لا يكون
+          // سؤال واحد محدَّداً حتى لا يعمل على السؤال الخطأ.
+          _buildQuestionActionsBar(controller),
           PreviewToolbar(
             selectionLabel: _selectionLabel(document),
             canUndo: controller.canUndo,
@@ -5093,12 +5097,109 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// محدودتان بنسبة من عرض السطر فتتلفّفان داخل حدودهما، ويبقى لمنطوق السؤال
   /// وأزرار الإجراءات مكانه. الحد الأقصى لا يغيّر العرض العادي: لا أثر له إلا
   /// إذا تجاوز المحتوى عرض السطر فعلاً.
+  /// الشريط الذي يحمل أدوات السؤال (إضافة فرع/نسخ/حذف) **خارج** الورقة.
+  ///
+  /// فصل صريح بين هندسة الورق المطبوعة وواجهة التحكم: الشريط لا يدخل
+  /// `_buildQuestionBlock` ولا يشارك في قياس أي صفّ، فلا يغيّر ارتفاع العنوان
+  /// ولا عرض المنطوق ولا هوامش الصفحة (ولا يعرف عنه المحرك أو PDF شيئاً).
+  ///
+  /// الهدف: مساحة لمس 48dp (الحدّ الأدنى في Material) على شاشة الهاتف، بدل
+  /// أزرار كانت تُسحق إلى 31px داخل صفّ بارتفاع سطر العنوان.
+  ///
+  /// يعمل على **سؤال واحد محدَّد** فحسب ([_actionQuestionIndex])؛ ومع تحديد
+  /// متعدد أو بلا تحديد تبقى الأزرار معطّلة ويظهر تلميح. الأزرار تحمل
+  /// التلميحات نفسها التي كانت في الصفّ كي يبقى البحث عنها والاختبار عليها.
+  Widget _buildQuestionActionsBar(ExamWizardController controller) {
+    final index = _actionQuestionIndex();
+    final enabled = index != null && !_locked && !_isBusy;
+    final question = index == null ? null : controller.questions[index];
+    Widget button({
+      required String key,
+      required IconData icon,
+      required String tooltip,
+      required VoidCallback onPressed,
+    }) {
+      return IconButton(
+        key: ValueKey<String>(key),
+        iconSize: 20,
+        // 48dp صريحة: لا تعتمد على الحشوة الافتراضية ولا على visualDensity.
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+        padding: const EdgeInsets.all(8),
+        tooltip: tooltip,
+        icon: Icon(icon),
+        onPressed: enabled ? onPressed : null,
+      );
+    }
+
+    return Material(
+      key: const ValueKey<String>('question-actions-bar'),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+        child: Row(
+          children: <Widget>[
+            Flexible(
+              child: Text(
+                question == null
+                    ? 'حدّد سؤالاً واحداً لتحرير أدواته'
+                    : 'أدوات السؤال ${controller.document.formatNumber(index + 1)}',
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+            const Spacer(),
+            button(
+              key: 'question-action-add-branch',
+              icon: Icons.add,
+              tooltip: 'إضافة فرع',
+              onPressed: () => controller.addBranch(index!),
+            ),
+            button(
+              key: 'question-action-duplicate',
+              icon: Icons.copy_outlined,
+              tooltip: 'نسخ السؤال',
+              onPressed: () => controller.duplicateQuestion(index!),
+            ),
+            if (controller.questions.length > 1)
+              button(
+                key: 'question-action-delete',
+                icon: Icons.delete_outline,
+                tooltip: 'حذف السؤال',
+                onPressed: () => _confirmDeleteQuestion(index!),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// السؤال الذي تعمل عليه أدوات الشريط: التحديد الصريح أولاً، ثم سؤال الفرع
+  /// المحدَّد، ثم السؤال النشط (الذي حقلُه محرَّر). يعيد `null` عند التعدد أو
+  /// الغياب — فلا تعمل الأدوات على سؤال لم يقصده المستخدم.
+  int? _actionQuestionIndex() {
+    final controller = _controller;
+    if (controller == null || controller.questions.isEmpty) {
+      return null;
+    }
+    if (_selectedQuestions.length > 1) {
+      return null;
+    }
+    if (_selectedBranches.length > 1) {
+      return null;
+    }
+    final targets = _questionSpacingTargets();
+    if (targets.length != 1) {
+      return null;
+    }
+    final index = targets.single;
+    return index >= 0 && index < controller.questions.length ? index : null;
+  }
+
   Widget _titleRow({
     required Widget dragHandle,
     required Widget label,
     required Widget statement,
     required Widget marks,
-    required List<Widget> actions,
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -5117,7 +5218,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               constraints: BoxConstraints(maxWidth: width * 0.26),
               child: marks,
             ),
-            ...actions,
           ],
         );
       },
@@ -5233,12 +5333,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
         // سطر العنوان: الرقم ← المنطوق ← الدرجة «(٢٠ درجة)» في سطر واحد.
         //
-        // ارتفاع الصفّ من **الخطة** لا من أزرار التحرير: الصفّ يحمل أدوات
-        // (سحب، إضافة فرع، نسخ، حذف) بارتفاع 40px لا تُطبع ولا يعرفها المحرك،
-        // فكان يفرض على الورقة ارتفاعاً أكبر من ارتفاع سطره (23.25pt) فينزاح
-        // كل محتوى السؤال بعده 9px عن PDF — وعند التقاطع بين صفحتين يقع خطّ
-        // القصّ داخل آخر سطر (§19.12). الأزرار تبقى في الصف نفسه وتُقيَّد
-        // بارتفاع السطر: لا حشوة تعويضية ولا تغيير في هندسة النصّ.
+        // الصفّ **هندسة ورق مطبوعة**: لا يحمل أدوات تحرير إطلاقاً (§19.12،
+        // §19.15). أدوات السؤال (إضافة فرع/نسخ/حذف) انتقلت إلى شريط في واجهة
+        // التطبيق خارج الورقة: داخل الصف كانت تفرض ارتفاعاً 40px على صفّ
+        // ارتفاعه 23.25pt وتأكل ~113px من عرض المنطوق فيلتفّ سطرين بينما
+        // الخطة وPDF يبقيانه سطراً واحداً. ومع ذلك يبقى `_planRowHeight` حدّاً
+        // حارساً: ارتفاع الصفّ من الخطة لا من أطول ودجة فيه.
         _planRowHeight(
           heightPt: titleHeightPt,
           child: GestureDetector(
@@ -5316,27 +5416,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               style: titleStyle,
               onEdit: () => _editQuestionMarks(questionIndex),
             ),
-            actions: <Widget>[
-                    IconButton(
-                      tooltip: 'إضافة فرع',
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.add, size: 16),
-                      onPressed: () => controller.addBranch(questionIndex),
-                    ),
-                    IconButton(
-                      tooltip: 'نسخ السؤال',
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.copy_outlined, size: 16),
-                      onPressed: () => controller.duplicateQuestion(questionIndex),
-                    ),
-                    if (controller.questions.length > 1)
-                      IconButton(
-                        tooltip: 'حذف السؤال',
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.delete_outline, size: 16),
-                        onPressed: () => _confirmDeleteQuestion(questionIndex),
-                      ),
-                  ],
           ),
           ),
         ),
