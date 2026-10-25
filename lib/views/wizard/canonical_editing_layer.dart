@@ -126,9 +126,18 @@ class _EditorPlacement extends SingleChildLayoutDelegate {
     final maxLeft = math.max(inset, size.width - inset - childSize.width);
     final maxTop = math.max(inset, size.height - inset - childSize.height);
     final below = anchor.bottom + 8;
-    final top = below + childSize.height <= size.height - inset
-        ? below
-        : anchor.top - childSize.height - 8;
+    // When the old fragment scrolls out above the viewport, top-clamping
+    // would cover a short continuation immediately below it. Keep the SAME
+    // editor at the opposite edge until the next actual printed hit reanchors
+    // it. Likewise leave the bottom free for an anchor not yet scrolled in.
+    // Only contextual chrome moves; no print coordinates or focus change.
+    final top = anchor.bottom < inset
+        ? maxTop
+        : anchor.top > size.height - inset
+            ? inset
+            : below + childSize.height <= size.height - inset
+                ? below
+                : anchor.top - childSize.height - 8;
     return Offset(
       (anchor.right - childSize.width).clamp(inset, maxLeft).toDouble(),
       top.clamp(inset, maxTop).toDouble(),

@@ -112,8 +112,12 @@ void _expectAnchor(WidgetTester tester, _HarnessState state) {
   final actual = tester.getRect(find.byKey(const ValueKey<String>('native-editor')))
       .shift(-viewport.localToGlobal(Offset.zero));
   final below = anchor.bottom + 8;
-  final top = below + actual.height <= viewport.size.height - 8
-      ? below : anchor.top - actual.height - 8;
+  final top = anchor.bottom < 8
+      ? viewport.size.height - 8 - actual.height
+      : anchor.top > viewport.size.height - 8
+          ? 8.0
+          : below + actual.height <= viewport.size.height - 8
+              ? below : anchor.top - actual.height - 8;
   expect(actual.left, closeTo((anchor.right - actual.width)
       .clamp(8.0, viewport.size.width - 8 - actual.width), 1e-6));
   expect(actual.top, closeTo(top.clamp(8.0, viewport.size.height - 8 - actual.height), 1e-6));
@@ -141,6 +145,29 @@ void main() {
       state.change(show: true);
       await tester.pumpAndSettle();
       expect(tester.getRect(find.byKey(state.pages.first)), before);
+      _expectAnchor(tester, state);
+      final native = tester.state<EditableTextState>(find.byType(EditableText));
+      const composing = TextEditingValue(text: 'م',
+        selection: TextSelection.collapsed(offset: 1),
+        composing: TextRange(start: 0, end: 1));
+      tester.testTextInput.updateEditingValue(composing);
+      await tester.pumpAndSettle();
+      final connections = tester.testTextInput.log.where((call) => call.method == 'TextInput.setClient').length;
+      state.vertical.jumpTo(600);
+      await tester.pumpAndSettle();
+      final firstPage = state.pages.first.currentContext!.findRenderObject()! as RenderBox;
+      expect(firstPage.localToGlobal(Offset(0, LayoutUnits.ptToPx(_anchor.bottom))).dy, lessThan(0),
+        reason: 'The prior fragment anchor must actually be offscreen.');
+      final continuationPage = state.pages.last.currentContext!.findRenderObject()! as RenderBox;
+      final continuation = continuationPage.localToGlobal(Offset(
+        LayoutUnits.ptToPx(_anchor.left), LayoutUnits.ptToPx(_anchor.top)));
+      expect((Offset.zero & Size(width, 900)).contains(continuation), isTrue);
+      expect(tester.getRect(find.byKey(const ValueKey<String>('native-editor'))).contains(continuation), isFalse,
+        reason: 'An offscreen prior anchor must not occlude the visible continuation-paper region.');
+      expect(tester.state<EditableTextState>(find.byType(EditableText)), same(native));
+      expect(state.focus.hasFocus, isTrue);
+      expect(state.field.value, composing);
+      expect(tester.testTextInput.log.where((call) => call.method == 'TextInput.setClient').length, connections);
       _expectAnchor(tester, state);
       state.vertical.jumpTo(100);
       await tester.pumpAndSettle();

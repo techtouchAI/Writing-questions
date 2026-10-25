@@ -206,8 +206,8 @@ void main() {
         final before = controller.document;
         final lines = [for (final page in layout.pages) for (final block in page.blocks) for (final line in block.allLines) line.rect];
         expect([for (final page in layout.pages) ..._runs(page, '${entry.value}/body')], isEmpty);
-        final page = layout.pages.firstWhere((page) => _runs(page, '${entry.value}/statement').isNotEmpty);
-        await _tapPrintedFragment(tester, page, '${entry.value}/statement');
+        final page = layout.pages.firstWhere((page) => _runs(page, '${entry.value}/title/statement').isNotEmpty);
+        await _tapPrintedFragment(tester, page, '${entry.value}/title/statement');
         final action = find.byKey(const ValueKey<String>('question-action-edit-body'));
         expect(tester.getSize(action).height, greaterThanOrEqualTo(48));
         expect(tester.getSize(action).width, greaterThanOrEqualTo(48));

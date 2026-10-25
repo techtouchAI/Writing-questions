@@ -155,3 +155,13 @@ PaperField تحت شجرة الورقة، وبقاء كائن الخطة نفس�
   downstream visual jobs or be hidden by full-suite output truncation.
 - All previous missing-parity rows remain missing until individually proved;
   this does **not** approve or enable the candidate in production.
+
+- `703909d` targeted results: production 8/0; native candidate 7/4 (load/setup
+  included), so full tests and APK correctly did not run. Extended passed.
+  Actual-transform hits reached pages 0/1, but short question continuation on
+  page 2 remained occluded by the old editor anchor. Placement now docks to
+  the opposite viewport edge only when the actual prior anchor is offscreen;
+  the same native child/focus/composing/IME connection is retained. Component
+  regression measures the offscreen anchor and visible continuation region.
+  Empty-body test selectors corrected to the real `/title/statement` IDs.
+  These follow-up fixes are pending CI, not yet acceptance evidence.
