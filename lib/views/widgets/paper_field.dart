@@ -330,6 +330,7 @@ class _PaperFieldState extends State<PaperField> {
         final field = TextField(
           controller: widget.controller,
           focusNode: _focusNode,
+          autofocus: widget.autofocus,
           maxLines: null,
           // Flutter 3.22.3 RenderEditable._adjustConstraints subtracts
           // _kCaretGap (1px) + cursorWidth. Keep a visible, normal 2px caret;

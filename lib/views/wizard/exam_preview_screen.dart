@@ -48,6 +48,7 @@ import '../widgets/smart_exam_toolbar.dart';
 import '../widgets/tex_text.dart';
 import '../widgets/visual_equation_editor.dart';
 import 'canonical_preview_plan_controller.dart';
+import 'canonical_editing_layer.dart';
 import 'header_footer_forms.dart';
 import 'paper_header_footer_view.dart';
 import 'paper_styles.dart';
@@ -79,6 +80,7 @@ class _CanonicalFieldBinding {
     required this.fieldKey,
     required this.sourceText,
     required this.content,
+    required this.style,
     required this.onEdit,
     required this.onLongPress,
   });
@@ -86,6 +88,7 @@ class _CanonicalFieldBinding {
   final String fieldKey;
   final String sourceText;
   final InlineContent content;
+  final TextStyle style;
   final ValueChanged<String> onEdit;
   final VoidCallback onLongPress;
 }
@@ -347,11 +350,16 @@ class ExamPreviewScreen extends StatefulWidget {
     required this.onBackToQuestions,
     this.canonicalLayoutResolver,
     this.canonicalPreviewAssetLoader,
+    this.enableSeparateEditorCandidate = false,
   });
 
   final VoidCallback onBackToQuestions;
   final CanonicalPreviewLayoutResolver? canonicalLayoutResolver;
   final CanonicalPreviewAssetLoader? canonicalPreviewAssetLoader;
+
+  /// Integration candidate only. Requires BOTH injected canonical adapters;
+  /// production remains on its repaired surface until the coverage gate passes.
+  final bool enableSeparateEditorCandidate;
 
   @override
   State<ExamPreviewScreen> createState() => _ExamPreviewScreenState();
@@ -363,6 +371,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   final ScrollController _vScroll = ScrollController();
   final ScrollController _hScroll = ScrollController();
   final Map<int, GlobalKey> _pageCanvasKeys = <int, GlobalKey>{};
+  final GlobalKey _canonicalEditorViewport = GlobalKey(debugLabel: 'canonical-editor-viewport');
+  late final Listenable _canonicalEditorScroll = Listenable.merge(<Listenable>[_vScroll, _hScroll]);
+  bool _canonicalEditorOpen = false;
+  int? _canonicalEditorPageHint;
 
   /// جذور اللقط (RepaintBoundary) لكل صفحة في المعاينة الحية.
   final Map<int, GlobalKey> _pageSnapshotKeys = <int, GlobalKey>{};
@@ -499,6 +511,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       final field = PaperRangeTextEditingController(text: initial);
       var previousText = initial;
       var previousState = const TextFormatState();
+      var previousSelection = field.selection;
       field.addListener(() {
         final text = field.text;
         if (text != previousText) {
@@ -510,8 +523,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         // تُعاد قراءة النطاق، ويحدث البناء فقط إذا تغيّرت الحالة فعلًا
         // (تنقّل المؤشر داخل الكلمة نفسها لا يهزّ الشاشة).
         if (_activeFieldKey != key || _multiSelect) return;
+        final selectionChanged = field.selection != previousSelection;
+        previousSelection = field.selection;
         final state = _selectionFormatState() ?? const TextFormatState();
-        if (state == previousState) return;
+        if (state == previousState && !(_separateEditorCandidate && selectionChanged)) return;
         previousState = state;
         _refreshSelectionFormatState();
       });
@@ -582,6 +597,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       widget.canonicalLayoutResolver != null &&
       widget.canonicalPreviewAssetLoader != null;
 
+  bool get _separateEditorCandidate =>
+      _useCanonicalSurface && widget.enableSeparateEditorCandidate;
+
   /// الخطة الحالية إن كانت تخصّ المستند الحالي بالذات (وإلا فلا هندسة).
   CanonicalPagePlan? get _pagePlan {
     final controller = _controller;
@@ -646,7 +664,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 document: document,
               )
             : await loader(layout: planLayout, document: document);
-        if (!mounted) {
+        if (!mounted || !identical(_canonicalPreviewAssetsLayout, planLayout)) {
           assets.dispose();
           return;
         }
@@ -659,7 +677,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           error,
           stackTrace,
         );
-        if (!mounted) return;
+        if (!mounted || !identical(_canonicalPreviewAssetsLayout, planLayout)) return;
         setState(() {
           _canonicalPreviewAssets = null;
           _canonicalPreviewAssetsFailedLayout = planLayout;
@@ -3515,6 +3533,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   pageCanvasWidth * _zoom + 24,
                 );
                 return Stack(
+                  key: _canonicalEditorViewport,
                   children: <Widget>[
                     SingleChildScrollView(
                       key: const ValueKey<String>('paper-v-scroll'),
@@ -3587,6 +3606,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                         ),
                       ),
                     ),
+                    if (_separateEditorCandidate && pagePlan != null && _canonicalEditorOpen && !_locked)
+                      Positioned.fill(child: _buildSeparateCanonicalEditor(controller, pagePlan.layout)),
                       if (_isBusy)
                         const Positioned.fill(
                           child: AbsorbPointer(
@@ -3613,10 +3634,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     DocumentIR source,
   ) {
     final result = <InlineNode, _CanonicalFieldBinding>{};
+    TextStyle fieldStyle(TextStyle role, PaperTextStyle override) => PaperStyles.resolve(
+      role, override, defaultFont: controller.document.settings.defaultFont,
+      fontScale: _fontScale, heightScale: _heightScale,
+    );
     void bind(
       InlineContent content, {
       required String fieldKey,
       required String sourceText,
+      required TextStyle style,
       required ValueChanged<String> onEdit,
       required VoidCallback onLongPress,
     }) {
@@ -3624,6 +3650,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         fieldKey: fieldKey,
         sourceText: sourceText,
         content: content,
+        style: style,
         onEdit: onEdit,
         onLongPress: onLongPress,
       );
@@ -3638,14 +3665,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
 
     for (final question in source.questions) {
-      if (question.index < 0 || question.index >= controller.questions.length) continue;
-      final model = controller.questions[question.index];
-      final questionIndex = question.index;
+      final questionIndex = controller.questions.indexWhere((model) => model.id == question.id);
+      if (questionIndex < 0) continue;
+      final model = controller.questions[questionIndex];
       void questionLongPress() => _longPressQuestion(questionIndex);
       bind(
         question.content,
         fieldKey: _statementKey(model.id),
         sourceText: model.statement,
+        style: fieldStyle(PaperStyles.question, model.style.copyWith(color: () => model.effectiveTitleColor)),
         onEdit: (value) => controller.updateQuestionStatement(questionIndex, value),
         onLongPress: questionLongPress,
       );
@@ -3655,6 +3683,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           body.content,
           fieldKey: _bodyKey(model.id),
           sourceText: model.body,
+          style: fieldStyle(PaperStyles.prompt, model.style.copyWith(color: () => null)),
           onEdit: (value) => controller.updateQuestionBody(questionIndex, value),
           onLongPress: questionLongPress,
         );
@@ -3665,6 +3694,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           category.content,
           fieldKey: _categoryKey(model.id),
           sourceText: model.category,
+          style: _scaled(PaperStyles.category),
           onEdit: (value) => controller.updateQuestionCategory(questionIndex, value),
           onLongPress: questionLongPress,
         );
@@ -3678,6 +3708,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           point.content,
           fieldKey: _itemKey(item.id),
           sourceText: item.text,
+          style: fieldStyle(PaperStyles.item, model.style.copyWith(color: () => null)),
           onEdit: (value) => controller.updatePointText(questionOwner, item.id, value),
           onLongPress: questionLongPress,
         );
@@ -3688,6 +3719,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             option.content,
             fieldKey: _optionKey(item.id, option.index),
             sourceText: item.options[option.index].text,
+            style: fieldStyle(PaperStyles.option, model.style.copyWith(color: () => null)),
             onEdit: (value) => controller.updatePointOptionText(
               questionOwner,
               item.id,
@@ -3700,17 +3732,19 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
 
       for (final branch in question.branches) {
-        if (branch.index < 0 || branch.index >= model.branches.length) continue;
-        final branchModel = model.branches[branch.index];
+        final branchIndex = model.branches.indexWhere((model) => model.id == branch.id);
+        if (branchIndex < 0) continue;
+        final branchModel = model.branches[branchIndex];
         final branchRef = BranchRef(
           questionIndex: questionIndex,
-          branchIndex: branch.index,
+          branchIndex: branchIndex,
         );
         void branchLongPress() => _longPressBranch(branchRef);
         bind(
           branch.content,
           fieldKey: _branchStatementKey(branch.id),
           sourceText: branchModel.content.statement,
+          style: fieldStyle(PaperStyles.body(controller.document.layout), branchModel.style),
           onEdit: (value) => controller.updateBranchStatement(branchRef, value),
           onLongPress: branchLongPress,
         );
@@ -3720,6 +3754,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             branchBody.content,
             fieldKey: _branchBodyKey(branch.id),
             sourceText: branchModel.content.body,
+            style: fieldStyle(PaperStyles.body(controller.document.layout), branchModel.style),
             onEdit: (value) => controller.updateBranchBody(branchRef, value),
             onLongPress: branchLongPress,
           );
@@ -3734,6 +3769,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             point.content,
             fieldKey: _itemKey(item.id),
             sourceText: item.text,
+            style: fieldStyle(PaperStyles.item, branchModel.style),
             onEdit: (value) => controller.updatePointText(branchOwner, item.id, value),
             onLongPress: branchLongPress,
           );
@@ -3743,6 +3779,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               option.content,
               fieldKey: _optionKey(item.id, option.index),
               sourceText: item.options[option.index].text,
+              style: fieldStyle(PaperStyles.option, branchModel.style),
               onEdit: (value) => controller.updatePointOptionText(
                 branchOwner,
                 item.id,
@@ -3793,6 +3830,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final run = _canonicalRunById(page, hit.runId);
     final binding = run?.semanticNode == null ? null : bindings[run!.semanticNode];
     if (binding != null && run != null) {
+      if (_separateEditorCandidate) {
+        _canonicalEditorOpen = true;
+        _canonicalEditorPageHint = page.index;
+      }
       final field = _field(binding.fieldKey, binding.sourceText, binding.onEdit);
       final offset = (hit.sourceOffset ?? 0).clamp(0, field.text.length).toInt();
       field.selection = TextSelection.collapsed(offset: offset);
@@ -3933,6 +3974,72 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return null;
   }
 
+  Widget _buildSeparateCanonicalEditor(ExamWizardController controller, LayoutDocument layout) {
+    final bindings = _canonicalFieldBindings(controller, layout.source);
+    ({LayoutPage page, LayoutLine line, _CanonicalFieldBinding binding})? target;
+    var bestDistance = double.infinity;
+    final source = _activeFieldKey == null ? null : _fields[_activeFieldKey];
+    final selection = source?.selection;
+    final offset = selection != null && selection.isValid ? selection.extentOffset : 0;
+    for (final page in layout.pages) {
+      for (final block in page.blocks) {
+        for (final line in block.allLines) {
+          for (final run in line.runs) {
+            final binding = bindings[run.semanticNode];
+            if (binding == null || binding.fieldKey != _activeFieldKey) continue;
+            final end = run.sourceEndOffset;
+            final distance = offset < run.sourceStartOffset ? (run.sourceStartOffset - offset).toDouble()
+                : offset > end ? (offset - end).toDouble() : 0.0;
+            if (distance > bestDistance) continue;
+            if (distance == bestDistance &&
+                (target?.page.index == _canonicalEditorPageHint || page.index != _canonicalEditorPageHint)) continue;
+            bestDistance = distance;
+            target = (page: page, line: line, binding: binding);
+          }
+        }
+      }
+    }
+    if (target == null) return const SizedBox.shrink();
+    final binding = target.binding;
+    final pageKey = _pageCanvasKeys.putIfAbsent(target.page.index, () => GlobalKey());
+    return CanonicalEditingLayer(
+      key: const ValueKey<String>('canonical-native-editing-layer'),
+      viewportKey: _canonicalEditorViewport,
+      pageKey: pageKey,
+      anchorPt: target.line.rect,
+      scrollChanges: _canonicalEditorScroll,
+      child: Material(
+        elevation: 6,
+        borderRadius: BorderRadius.circular(8),
+        clipBehavior: Clip.antiAlias,
+        child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+          Row(children: <Widget>[
+            const Expanded(child: Padding(padding: EdgeInsetsDirectional.only(start: 12), child: Text('تحرير المحتوى'))),
+            IconButton(
+              tooltip: 'إغلاق محرر المحتوى',
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              onPressed: () { FocusManager.instance.primaryFocus?.unfocus(); setState(() => _canonicalEditorOpen = false); },
+              icon: const Icon(Icons.close),
+            ),
+          ]),
+          Flexible(child: SingleChildScrollView(
+            key: const ValueKey<String>('canonical-native-editor-scroll'),
+            padding: const EdgeInsets.all(12),
+            child: _paperField(
+              fieldKey: binding.fieldKey,
+              controller: _field(binding.fieldKey, binding.sourceText, binding.onEdit),
+              style: binding.style,
+              semanticContent: binding.content,
+              autofocus: true,
+              matchPrintedTextWidth: false,
+              onLongPress: binding.onLongPress,
+            ),
+          )),
+        ]),
+      ),
+    );
+  }
+
   Widget _buildCanonicalPage(
     ExamWizardController controller,
     LayoutDocument layout,
@@ -4055,6 +4162,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               placement,
             ),
       if (interactive &&
+          !_separateEditorCandidate &&
           currentBinding != null &&
           pageHasActiveNode &&
           page.index == activePageIndex)
@@ -7261,6 +7369,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     String? hint,
     bool mushafStyle = false,
     bool matchPrintedTextWidth = true,
+    bool autofocus = false,
     InlineContent? semanticContent,
     VoidCallback? onLongPress,
   }) {
@@ -7270,6 +7379,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return PaperField(
       key: ValueKey<String>('$fieldKey$_sliceKeySuffix'),
       controller: controller,
+      autofocus: autofocus,
       style: style,
       matchPrintedTextWidth: matchPrintedTextWidth,
       semanticContent: semanticContent,
