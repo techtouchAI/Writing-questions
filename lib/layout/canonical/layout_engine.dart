@@ -1137,7 +1137,15 @@ class _LayoutBuilder {
       semanticNodeId: id,
       semanticNode: semanticNode,
       kind: kind,
-      rect: LayoutRect.fromLTWH(x, 0, width, paragraph.height),
+      // TextPainter.height and the final rounded LineMetrics box need not
+      // share an identical bottom (notably at fractional line spacing).
+      // A paragraph must contain BOTH measurements: otherwise the terminal
+      // line falls outside the source interval before pagination even starts.
+      // This changes no baseline, run position, font or wrapping decision.
+      rect: LayoutRect.fromLTWH(x, 0, width, lines.fold<double>(
+        paragraph.height,
+        (bottom, line) => line.rect.bottom > bottom ? line.rect.bottom : bottom,
+      )),
       lines: List<LayoutLine>.unmodifiable(lines),
     );
   }
@@ -1762,8 +1770,11 @@ class _LayoutBuilder {
         if (end <= sourceTop + _epsilon) {
           // Preserve the existing oversized-atom policy: never loop or drop
           // the atom. Ordinary lines/dividers/floats are kept whole above.
-          end = atoms.where((atom) => atom.bottom > sourceTop + _epsilon)
-              .first.bottom;
+          final remaining = atoms.where((atom) => atom.bottom > sourceTop + _epsilon);
+          // Geometry-only trailing padding is still owned source, even when
+          // an artificially tiny page has no positive footer capacity. There
+          // is no next atom to dereference and no content may be discarded.
+          end = remaining.isEmpty ? question.height : remaining.first.bottom;
         }
       }
       windows.add((top: sourceTop, bottom: end));

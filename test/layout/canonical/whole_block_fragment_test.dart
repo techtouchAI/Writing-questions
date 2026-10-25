@@ -10,6 +10,7 @@ import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/floating_element.dart';
 import 'package:writing_questions_app/models/paper_divider.dart';
+import 'package:writing_questions_app/models/paper_settings.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 
 ExamDocument _document({double? floatTopPx, bool longTitle = false}) => ExamDocument(
@@ -78,6 +79,36 @@ void main() {
       expect(rules.length, 2);
     });
   }
+
+  test('fractional spacing keeps the unframed terminal line exactly once', () async {
+    final source = ExamDocument(
+      name: 'Fractional terminal line',
+      header: ExamHeaderModel.initial(subject: 'الرياضيات'),
+      settings: const PaperSettings(baseFontSize: 11, lineSpacing: 1.7, marginMm: 15),
+      questions: <QuestionModel>[
+        QuestionModel(id: 'terminal-q', questionNumber: 1,
+          statement: 'السؤال الثاني',
+          body: '${List.filled(46, 'فقرة عربية تقيس امتداد السؤال عبر الصفحات في سطح المعاينة وتصدير PDF، وتحمل كلمات متعددة وأرقاماً ٢٠ و2026 وفواصل، حتى يبلغ النصّ حدّ الصفحة ويقرّر المحرك موضع الفصل بين الأسطر.').join(' ')} ZEND2'),
+      ],
+    );
+    final reference = await _layout(source, tall: true);
+    final layout = await _layout(source);
+    final original = reference.allBlocks.singleWhere((b) => b.id == 'terminal-q');
+    final wanted = original.allLines.map((line) => line.id).toList()..sort();
+    final actual = layout.allLines.where((line) => line.semanticNodeId.startsWith('terminal-q/'))
+        .map((line) => line.id).toList()..sort();
+    expect(actual, wanted, reason: 'Unsplit final line: '
+        '${original.allLines.last.rect.top}..${original.allLines.last.rect.bottom}; '
+        'question bottom=${original.rect.bottom}');
+    for (final block in reference.allBlocks) {
+      for (final line in block.allLines) {
+        expect(line.rect.bottom, lessThanOrEqualTo(block.rect.bottom + 0.01),
+            reason: '${block.id} must contain measured line ${line.id}.');
+      }
+    }
+    final marker = layout.allLines.where((line) => line.runs.any((run) => run.text.contains('ZEND2')));
+    expect(marker, hasLength(1));
+  });
 
   test('an owned attachment crossing a prospective seam stays whole on its page', () async {
     final initial = CanonicalPagePlan.fromLayout(await _layout(_document()));
