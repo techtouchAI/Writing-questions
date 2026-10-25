@@ -37,6 +37,7 @@ class SmartExamToolbar extends StatelessWidget {
     required this.onInsertText,
     required this.onAddImage,
     required this.onAddShape,
+    this.onPickImage,
     this.onAddQuestion,
     this.onAddBranch,
     this.onAddTextBox,
@@ -52,6 +53,7 @@ class SmartExamToolbar extends StatelessWidget {
   final ValueChanged<String> onInsertText;
   final ValueChanged<List<int>> onAddImage;
   final ValueChanged<FloatingShapeType> onAddShape;
+  final Future<void> Function()? onPickImage;
   final VoidCallback? onAddQuestion;
   final VoidCallback? onAddBranch;
   final VoidCallback? onAddTextBox;
@@ -104,7 +106,7 @@ class SmartExamToolbar extends StatelessWidget {
               ],
             ),
             SizedBox(
-              height: 56,
+              height: 64,
               child: TabBarView(
                 children: <Widget>[
                   _TextTab(
@@ -130,6 +132,7 @@ class SmartExamToolbar extends StatelessWidget {
                   ),
                   _MediaTab(
                     onAddImage: onAddImage,
+                    onPickImage: onPickImage,
                     onAddShape: onAddShape,
                     onAddTextBox: onAddTextBox,
                     onAddDivider: onAddDivider,
@@ -199,6 +202,7 @@ class _TextTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
+      key: const ValueKey<String>('smart-text-commands'),
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       children: <Widget>[
@@ -260,6 +264,7 @@ class _FormulaTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final editor = onEquationEditor;
     return ListView(
+      key: ValueKey<String>('smart-formula-commands-${formulas.first.label}'),
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       children: <Widget>[
@@ -379,18 +384,25 @@ class _MediaTab extends StatelessWidget {
   const _MediaTab({
     required this.onAddImage,
     required this.onAddShape,
+    this.onPickImage,
     required this.onAddTextBox,
     required this.onAddDivider,
     this.onAddFormula,
   });
 
   final ValueChanged<List<int>> onAddImage;
+  final Future<void> Function()? onPickImage;
   final ValueChanged<FloatingShapeType> onAddShape;
   final VoidCallback? onAddTextBox;
   final VoidCallback? onAddDivider;
   final VoidCallback? onAddFormula;
 
   Future<void> _pickImage(BuildContext context) async {
+    final picker = onPickImage;
+    if (picker != null) {
+      await picker();
+      return;
+    }
     final bytes = await pickImageBytes(onError: () {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -405,6 +417,7 @@ class _MediaTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
+      key: const ValueKey<String>('smart-media-commands'),
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       children: <Widget>[
@@ -489,6 +502,7 @@ class _ChipButton extends StatelessWidget {
         onTap: onTap,
         onLongPress: onLongPress,
         child: Container(
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: colorScheme.surface,

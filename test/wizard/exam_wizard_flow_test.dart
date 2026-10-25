@@ -21,6 +21,8 @@ import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 import 'package:writing_questions_app/views/wizard/exam_wizard_screen.dart';
 import 'package:writing_questions_app/views/wizard/question_step_screen.dart';
 
+import 'preview_test_gestures.dart';
+
 Widget _app(Widget home) {
   return Directionality(
     textDirection: TextDirection.rtl,
@@ -709,14 +711,11 @@ void main() {
       await tester.pumpWidget(_preview(controller));
       await tester.pumpAndSettle();
 
-      expect(find.text('وسائط'), findsOneWidget);
-      expect(find.text('رياضيات'), findsOneWidget);
+      expect(find.text('وسائط'), findsNothing);
+      expect(find.text('رياضيات'), findsNothing);
 
       // عناصر الوسائط مستقلة عن السؤال والفرع حتى عند وجود تحديد نشط.
-      await tester.tap(find.text('وسائط'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('مربع'));
-      await tester.pump();
+      await tapPreviewMedia(tester, 'مربع');
       expect(controller.document.floatingElements, hasLength(1));
       expect(controller.questions.first.attachments, isEmpty);
 

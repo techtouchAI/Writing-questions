@@ -25,6 +25,9 @@ import 'package:writing_questions_app/services/pdf_export_service.dart';
 import 'package:writing_questions_app/views/widgets/paper_field.dart';
 import 'package:writing_questions_app/views/widgets/smart_exam_toolbar.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
+import 'package:writing_questions_app/views/wizard/preview_toolbar.dart';
+
+import '../../wizard/preview_test_gestures.dart';
 
 const _output = 'build/production_fragment_repro';
 
@@ -375,6 +378,54 @@ void main() {
       expect(textBoxCommands, 1);
     });
 
+    testWidgets('R8 all five specialty tabs and every command retain 48dp targets at $width dp',
+        (tester) async {
+      final controller = await _pump(tester, _document(), size: Size(width, 900));
+      final original = controller.document;
+      const commands = <String, List<String>>{
+        'نص': <String>['سؤال جديد', 'فرع جديد', 'سطر جديد', 'ملاحظة للمعلم', 'آية قرآنية'],
+        'رياضيات': <String>['محرر المعادلات', 'تحرير معادلة', 'كسر', 'جذر', 'أس', 'فرعي', 'متكامل', 'مجموع', 'نهاية', 'معادلة'],
+        'كيمياء': <String>['محرر المعادلات', 'تحرير معادلة', 'ماء', 'ثاني أكسيد الكربون', 'حمض الكبريتيك', 'الأمونيا', 'سهم تفاعل', 'تفاعل عكوس', 'معادلة أيونية'],
+        'فيزياء': <String>['محرر المعادلات', 'تحرير معادلة', 'قوانين نيوتن', 'نسبية', 'قانون أوم', 'الشغل', 'سرعة', 'متغير'],
+        'وسائط': <String>['صورة', 'معادلة حرة', 'مثلث', 'دائرة', 'مربع', 'مستطيل', 'خط', 'سهم', 'مربع نص', 'فاصل'],
+      };
+      const listKeys = <String, String>{
+        'نص': 'smart-text-commands',
+        'رياضيات': 'smart-formula-commands-كسر',
+        'كيمياء': 'smart-formula-commands-ماء',
+        'فيزياء': 'smart-formula-commands-قوانين نيوتن',
+        'وسائط': 'smart-media-commands',
+      };
+      final sizes = <String, Object>{};
+      for (final entry in commands.entries) {
+        await openPreviewSpecialty(tester, entry.key);
+        final tab = find.ancestor(of: find.descendant(of: find.byType(TabBar),
+            matching: find.text(entry.key)),
+            matching: find.byType(InkWell)).first;
+        expect(tester.getSize(tab).width, greaterThanOrEqualTo(48));
+        expect(tester.getSize(tab).height, greaterThanOrEqualTo(48));
+        final list = find.byKey(ValueKey<String>(listKeys[entry.key]!));
+        final element = find.descendant(of: list, matching: find.byType(Scrollable))
+            .first.evaluate().single;
+        final scrollable = find.byElementPredicate((candidate) => identical(candidate, element));
+        for (final label in entry.value) {
+          final text = find.descendant(of: list, matching: find.text(label));
+          await tester.scrollUntilVisible(text, 120, scrollable: scrollable);
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(text);
+          await tester.pumpAndSettle();
+          final target = find.ancestor(of: text, matching: find.byType(InkWell)).first;
+          final size = tester.getSize(target);
+          sizes['${entry.key}/$label'] = <String, double>{'width': size.width, 'height': size.height};
+          expect(size.width, greaterThanOrEqualTo(48), reason: '${entry.key}/$label width');
+          expect(size.height, greaterThanOrEqualTo(48), reason: '${entry.key}/$label height');
+        }
+      }
+      _record('r8-${width.toInt()}-specialty-touch', sizes);
+      expect(identical(original, controller.document), isTrue);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('R8 all primary controls have 48dp touch targets at $width dp',
         (tester) async {
       await _pump(tester, _document(), size: Size(width, 900));
@@ -392,6 +443,23 @@ void main() {
         sizes[label] = <String, double>{'width': size.width, 'height': size.height};
         if (size.width < minimumWidth) minimumWidth = size.width;
         if (size.height < minimumHeight) minimumHeight = size.height;
+      }
+      // Cover every primary popup/button as well, not only the eight
+      // originally reproduced failures. InkResponse includes IconButton's
+      // response as well as InkWell's response for text-based popup menus.
+      final controls = find.descendant(of: find.byType(PreviewToolbar),
+          matching: find.byWidgetPredicate((widget) => widget is InkResponse))
+          .evaluate().toList();
+      expect(controls.length, greaterThan(20));
+      for (var index = 0; index < controls.length; index++) {
+        final element = controls[index];
+        final target = find.byElementPredicate((candidate) => identical(candidate, element));
+        await tester.ensureVisible(target);
+        await tester.pumpAndSettle();
+        final size = tester.getSize(target);
+        sizes['primary-$index'] = <String, double>{'width': size.width, 'height': size.height};
+        expect(size.width, greaterThanOrEqualTo(48), reason: 'primary-$index width');
+        expect(size.height, greaterThanOrEqualTo(48), reason: 'primary-$index height');
       }
       _record('r8-${width.toInt()}-touch', sizes);
       expect(minimumWidth, greaterThanOrEqualTo(48));

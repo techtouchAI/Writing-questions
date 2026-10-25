@@ -431,7 +431,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// تلميح «أنت الآن في وضع التحديد» يُعرض مرة واحدة في الجلسة عند الدخول
   /// بالضغط المطوّل (لا مع كل ضغطة فيزعج المستخدم).
   bool _selectionHintShown = false;
-  bool _showFormulas = true;
+  bool _showFormulas = false;
 
   double _zoom = 1.0;
   double _viewportWidth = 0;
@@ -3470,10 +3470,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             },
             hasFrame: _activeFrame(),
             onToggleFrame: _toggleFrame,
-            onAddImage: _pickImageToSelection,
-            onAddShape: _addShapeToSelection,
-            onAddTextBox: _addTextBox,
-            onAddDivider: _addDividerToSelection,
             showFormulas: _showFormulas,
             onToggleFormulas: () => setState(() => _showFormulas = !_showFormulas),
             onSave: _save,
@@ -3485,6 +3481,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               inserter: _inserter,
               onInsertText: _insertText,
               onAddImage: _addImageToSelection,
+              onPickImage: _pickImageToSelection,
               onAddShape: _addShapeToSelection,
               onAddQuestion: controller.addQuestion,
               onAddBranch: _addBranchToSelected,

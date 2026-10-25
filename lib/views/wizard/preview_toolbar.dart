@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 
-import '../../models/floating_element.dart';
 import '../../models/paper_font.dart';
 import '../../models/paper_text_style.dart';
 
 /// شريط أدوات المعاينة — يظهر **فقط** في مرحلة المعاينة.
 ///
 /// شريط شفاف مدمج بأسلوب Word المبسّط: عرض (تكبير/تصغير/ملاءمة/توسيط/قفل)
-/// وتنسيق نص (خط/حجم/عريض/مائل/تحته خط/محاذاة/إطار) وإدراج (صورة/شكل/
-/// مربع نص/فاصل) وتصدير (PDF/Word) — بواجهة عربية واضحة.
+/// وتنسيق نص (خط/حجم/عريض/مائل/تحته خط/محاذاة/إطار) وتصدير PDF.
+/// الإدراج موجود مرة واحدة في تبويب «وسائط» من شريط التخصصات.
 class PreviewToolbar extends StatelessWidget {
   const PreviewToolbar({
     super.key,
@@ -55,10 +54,6 @@ class PreviewToolbar extends StatelessWidget {
     required this.onColorChanged,
     required this.hasFrame,
     required this.onToggleFrame,
-    required this.onAddImage,
-    required this.onAddShape,
-    required this.onAddTextBox,
-    required this.onAddDivider,
     required this.showFormulas,
     required this.onToggleFormulas,
     required this.onSave,
@@ -133,11 +128,6 @@ class PreviewToolbar extends StatelessWidget {
   final bool? hasFrame;
   final VoidCallback onToggleFrame;
 
-  final VoidCallback onAddImage;
-  final ValueChanged<FloatingShapeType> onAddShape;
-  final VoidCallback onAddTextBox;
-  final VoidCallback onAddDivider;
-
   final bool showFormulas;
   final VoidCallback onToggleFormulas;
 
@@ -180,7 +170,7 @@ class PreviewToolbar extends StatelessWidget {
       color: colorScheme.surface.withOpacity(0.94),
       elevation: 2,
       child: SizedBox(
-        height: 52,
+        height: 60,
         // SingleChildScrollView + Row (لا ListView): كل أزرار الشريط
         // مبنية دائماً فيبقى كل زر موجوداً في الشجرة وقابلاً للنقر
         // والوصول (ensureVisible) مهما كان موضع التمرير الأفقي.
@@ -308,18 +298,8 @@ class PreviewToolbar extends StatelessWidget {
               selected: hasFrame == true,
             ),
             const _Divider(),
-            _ToolButton(icon: Icons.image, tooltip: 'إدراج صورة', onTap: isBusy ? null : onAddImage),
-            _ShapeMenu(onAddShape: onAddShape, enabled: !isBusy),
-            _ToolButton(
-              icon: Icons.text_fields,
-              tooltip: 'مربع نص',
-              onTap: isBusy ? null : onAddTextBox,
-            ),
-            _ToolButton(
-              icon: Icons.horizontal_rule,
-              tooltip: 'إضافة فاصل',
-              onTap: isBusy ? null : onAddDivider,
-            ),
+            // Insertion lives only in the existing specialty Media tab.
+            // It calls the same screen handlers; navigation/formatting stay here.
             _ToolButton(
               icon: Icons.functions,
               tooltip: 'شريط الصيغ والوسائط',
@@ -373,7 +353,8 @@ class _ToolButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         onTap: onTap,
         child: Container(
-          width: 38,
+          width: 48,
+          height: 48,
           alignment: Alignment.center,
           decoration: selected
               ? BoxDecoration(
@@ -410,7 +391,7 @@ class _ZoomLabel extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         onTap: onTap,
         child: Container(
-          constraints: const BoxConstraints(minWidth: 52),
+          constraints: const BoxConstraints(minWidth: 52, minHeight: 48),
           alignment: Alignment.center,
           child: Text(
             '${(zoom * 100).round()}%',
@@ -507,7 +488,7 @@ class _FontSizeMenu extends StatelessWidget {
           ),
         ],
         child: Container(
-          constraints: const BoxConstraints(minWidth: 44),
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Text(
@@ -561,7 +542,7 @@ class _LineSpacingMenu extends StatelessWidget {
         ),
       ],
       child: Container(
-        constraints: const BoxConstraints(minWidth: 44),
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Text(
@@ -618,7 +599,7 @@ class _ParagraphSpacingMenu extends StatelessWidget {
         ),
       ],
       child: Container(
-        constraints: const BoxConstraints(minWidth: 52),
+        constraints: const BoxConstraints(minWidth: 52, minHeight: 48),
         alignment: Alignment.center,
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Row(
@@ -758,49 +739,6 @@ class _ColorMenu extends StatelessWidget {
   }
 }
 
-class _ShapeMenu extends StatelessWidget {
-  const _ShapeMenu({required this.onAddShape, required this.enabled});
-
-  final ValueChanged<FloatingShapeType> onAddShape;
-  final bool enabled;
-
-  static const List<(FloatingShapeType, IconData, String)> _shapes =
-      <(FloatingShapeType, IconData, String)>[
-    (FloatingShapeType.rectangle, Icons.rectangle_outlined, 'مستطيل'),
-    (FloatingShapeType.square, Icons.crop_square, 'مربع'),
-    (FloatingShapeType.circle, Icons.circle_outlined, 'دائرة'),
-    (FloatingShapeType.triangle, Icons.change_history, 'مثلث'),
-    (FloatingShapeType.line, Icons.remove, 'خط'),
-    (FloatingShapeType.arrow, Icons.arrow_forward, 'سهم'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: 'إدراج شكل',
-      child: PopupMenuButton<FloatingShapeType>(
-        enabled: enabled,
-        tooltip: 'إدراج شكل',
-        icon: const Icon(Icons.interests_outlined, size: 20),
-        onSelected: onAddShape,
-        itemBuilder: (_) => <PopupMenuEntry<FloatingShapeType>>[
-          for (final shape in _shapes)
-            PopupMenuItem<FloatingShapeType>(
-              value: shape.$1,
-              child: Row(
-                children: <Widget>[
-                  Icon(shape.$2, size: 18),
-                  const SizedBox(width: 8),
-                  Text(shape.$3, style: const TextStyle(fontSize: 13)),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ExportButton extends StatelessWidget {
   const _ExportButton({required this.label, required this.tooltip, required this.onTap});
 
@@ -817,6 +755,7 @@ class _ExportButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         onTap: onTap,
         child: Container(
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
           padding: const EdgeInsets.symmetric(horizontal: 10),
           alignment: Alignment.center,

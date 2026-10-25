@@ -37,6 +37,8 @@ class _TestImagePicker extends ImagePickerPlatform {
   }
 }
 
+import 'preview_test_gestures.dart';
+
 ExamDocument _document() => ExamDocument(
       name: 'تدقيق الأزرار',
       header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
@@ -64,6 +66,9 @@ Future<void> _pump(WidgetTester tester, ExamWizardController controller,
     ),
   ));
   await tester.pumpAndSettle();
+  expect(find.byType(SmartExamToolbar), findsNothing,
+      reason: 'Specialties are hidden initially; command audits open the real UI.');
+  await openPreviewSpecialty(tester, 'نص');
 }
 
 Finder _tool(String tooltip) => find.descendant(
@@ -350,7 +355,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('all shape menu entries and media chips insert as free document elements', (tester) async {
+  testWidgets('every unique media shape command preserves insertion semantics', (tester) async {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
     await _tap(tester, _field('statement-q1'));
@@ -359,20 +364,22 @@ void main() {
       'دائرة': FloatingShapeType.circle, 'مثلث': FloatingShapeType.triangle,
       'خط': FloatingShapeType.line, 'سهم': FloatingShapeType.arrow,
     };
-    for (final entry in shapes.entries) {
-      final before = controller.document.floatingElements.length;
-      await _tap(tester, _tool('إدراج شكل'));
-      await _tap(tester, find.text(entry.key).last);
-      expect(controller.document.floatingElements.length, before + 1);
-      expect(controller.document.floatingElements.last.shape, entry.value);
+    // The removed popup and these chips called the same _addShapeToSelection.
+    // Test the surviving UI for ALL six values, with and without a selection.
+    for (final selected in <bool>[true, false]) {
+      if (!selected) {
+        await _tap(tester, _tool('تحديد الكل'));
+        await _tap(tester, _tool('إلغاء تحديد الكل'));
+      }
+      for (final entry in shapes.entries) {
+        final before = controller.document.floatingElements.length;
+        await tapPreviewMedia(tester, entry.key);
+        expect(controller.document.floatingElements.length, before + 1);
+        expect(controller.document.floatingElements.last.shape, entry.value);
+      }
     }
-    await _tap(tester, find.text('وسائط'));
-    for (final entry in shapes.entries) {
-      final before = controller.document.floatingElements.length;
-      await _tap(tester, find.text(entry.key).last);
-      expect(controller.document.floatingElements.length, before + 1);
-      expect(controller.document.floatingElements.last.shape, entry.value);
-    }
+    expect(find.byTooltip('إدراج شكل'), findsNothing,
+        reason: 'There must not be a second insertion path.');
     expect(controller.questions.every((question) => question.attachments.isEmpty), isTrue);
     expect(tester.takeException(), isNull);
   });
@@ -381,7 +388,7 @@ void main() {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
     await _tap(tester, _field('statement-q1'));
-    await _tap(tester, _tool('إضافة فاصل'));
+    await tapPreviewMedia(tester, 'فاصل');
     expect(controller.questions.first.dividerAfter, isNotNull);
     await _tap(tester, find.byKey(const ValueKey('divider-q:q1')));
     await _tap(tester, find.text('السماكة'));
@@ -650,13 +657,13 @@ void main() {
     ImagePickerPlatform.instance = _TestImagePicker(fail: true);
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
-    await _tap(tester, _tool('إدراج صورة'));
+    await tapPreviewMedia(tester, 'صورة');
     expect(find.textContaining('تعذر فتح الصورة'), findsOneWidget);
     expect(controller.document.floatingElements, isEmpty);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('image insert, media insert, replace and cancellation use the picker result', (tester) async {
+  testWidgets('unique image command, replace and cancellation use the picker result', (tester) async {
     final originalPicker = ImagePickerPlatform.instance;
     addTearDown(() => ImagePickerPlatform.instance = originalPicker);
     final bytes = Uint8List.fromList(base64Decode(
@@ -665,7 +672,7 @@ void main() {
     ImagePickerPlatform.instance = _TestImagePicker(file: XFile.fromData(bytes, mimeType: 'image/png'));
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
-    await _tap(tester, _tool('إدراج صورة'));
+    await tapPreviewMedia(tester, 'صورة');
     expect(controller.document.floatingElements.single.bytes, bytes);
     final original = controller.document.floatingElements.single;
     await _tap(tester, find.byTooltip('استبدال الصورة'));
@@ -675,11 +682,10 @@ void main() {
     expect(replaced.dy, original.dy);
     expect(replaced.width, original.width);
     expect(replaced.height, original.height);
-    await _tap(tester, find.text('وسائط'));
-    await _tap(tester, find.descendant(of: find.byType(SmartExamToolbar), matching: find.text('صورة')));
+    await tapPreviewMedia(tester, 'صورة');
     expect(controller.document.floatingElements, hasLength(2));
     ImagePickerPlatform.instance = _TestImagePicker();
-    await _tap(tester, _tool('إدراج صورة'));
+    await tapPreviewMedia(tester, 'صورة');
     expect(controller.document.floatingElements, hasLength(2));
     expect(find.textContaining('تعذر فتح الصورة'), findsNothing);
     expect(tester.takeException(), isNull);
