@@ -39,6 +39,8 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    outputs:
+      production_gate: ${{ steps.production_first.outcome }}
 
     steps:
       # Immutable action references avoid surprise changes to the CI toolchain.
@@ -619,6 +621,7 @@ jobs:
   # --------------------------------------------------------------------------
   visual-parity:
     name: Visual regression (Vector/Exact vs preview)
+    needs: build
     # Targeted runs skip the visual job unless the target is the fixture.
     if: ${{ inputs.test_path == '' || startsWith(inputs.test_path, 'test/visual') }}
     runs-on: ubuntu-24.04
@@ -908,7 +911,7 @@ jobs:
   c6-diagnostics:
     name: C6 diagnostics (non-gating)
     needs: visual-parity
-    if: ${{ always() && needs.visual-parity.result != 'skipped' }}
+    if: ${{ !cancelled() && needs.visual-parity.result != 'skipped' }}
     continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 20

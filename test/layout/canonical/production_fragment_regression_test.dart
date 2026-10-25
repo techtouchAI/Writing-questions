@@ -300,6 +300,38 @@ void main() {
     expect(boxes, isNotEmpty);
     final marker = boxes.map((box) => Rect.fromPoints(native.renderEditable.localToGlobal(Offset(box.left, box.top)), native.renderEditable.localToGlobal(Offset(box.right, box.bottom)))).reduce((a, b) => a.expandToInclude(b));
     final window = tester.getRect(slice);
+    final originalBody = reference.allBlocks.singleWhere((block) => block.id == 'repro-q/branch/repro-b/body');
+    final originalQuestion = reference.allBlocks.singleWhere((block) => block.kind == LayoutBlockKind.question && block.semanticNodeId == 'repro-q');
+    final originalBranch = reference.allBlocks.singleWhere((block) => block.kind == LayoutBlockKind.branch && block.semanticNodeId == 'repro-b');
+    final allBoxes = native.renderEditable.getBoxesForSelection(TextSelection(baseOffset: 0, extentOffset: body.length));
+    final nativeTops = allBoxes.map((box) => box.top).toSet().toList()..sort();
+    final textStyle = tester.widget<TextField>(field).style!;
+    final nativeFieldBounds = tester.getRect(paperField);
+    _record('r4-long-branch-trace', <String, Object>{
+      'sourceTopPt': last.sourceTopPt,
+      'plannedSourceHeightPx': LayoutUnits.ptToPx(originalQuestion.rect.height),
+      'actualSourceHeightPx': tester.getSize(_key('page-slice-offset-repro-q$suffix')).height,
+      'plannedBranchHeightPx': LayoutUnits.ptToPx(originalBranch.rect.height),
+      'actualBranchHeightPx': tester.getSize(find.descendant(of: slice, matching: _key('branch-target-repro-b'))).height,
+      'plannedBodyHeightPx': LayoutUnits.ptToPx(originalBody.rect.height),
+      'actualBodyHeightPx': nativeFieldBounds.height,
+      'plannedBodyWidthPx': LayoutUnits.ptToPx(originalBody.rect.width),
+      'actualBodyWidthPx': nativeFieldBounds.width,
+      'plannedLineCount': originalBody.lines.length,
+      'actualLineCount': nativeTops.length,
+      'nativeFontSizePx': textStyle.fontSize!,
+      'nativeLineHeightFactor': textStyle.height!,
+      'plannedFontSizePx': LayoutUnits.ptToPx(originalBody.lines.first.runs.first.style.fontSizePt),
+      'plannedLineHeightFactor': originalBody.lines.first.runs.first.style.lineHeightFactor,
+      'plannedBodyTopRelativePx': LayoutUnits.ptToPx(originalBody.rect.top - originalQuestion.rect.top),
+      'actualBodyTopRelativePx': nativeFieldBounds.top - tester.getRect(_key('page-slice-offset-repro-q$suffix')).top,
+      'nativeFirstLineTopPx': nativeTops.first,
+      'nativeLastLineTopPx': nativeTops.last,
+      'finalGlyphTopPx': marker.top,
+      'finalGlyphBottomPx': marker.bottom,
+      'sliceTopPx': window.top,
+      'sliceBottomPx': window.bottom,
+    });
     // Keep the original R4 0.75px edge bound; never enlarge the source clip.
     expect(marker.top, greaterThanOrEqualTo(window.top - 0.75));
     expect(marker.bottom, lessThanOrEqualTo(window.bottom + 0.75));
