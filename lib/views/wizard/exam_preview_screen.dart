@@ -569,7 +569,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         for (final point in points) {
           sync(_itemKey(point.id), point.text);
           for (var index = 0; index < point.options.length; index++) {
-            sync(_optionKey(point.id, index), point.options[index].text);
+            sync(_sourceOptionKey(point, index), point.options[index].text);
           }
         }
       }
@@ -713,7 +713,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       for (final point in points) {
         live.add(_itemKey(point.id));
         for (var index = 0; index < point.options.length; index++) {
-          live.add(_optionKey(point.id, index));
+          live.add(_sourceOptionKey(point, index));
         }
       }
     }
@@ -1344,10 +1344,78 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       fieldKey.startsWith('body-') ||
       fieldKey.startsWith('category-') ||
       fieldKey.startsWith('branch-') ||
-      fieldKey.startsWith('option-') ||
+      _isOptionFieldKey(fieldKey) ||
       fieldKey.startsWith('item-');
 
   static final RegExp _optionKeyPattern = RegExp(r'^option-(.+)-(\d+)$');
+
+  bool _isOptionFieldKey(String key) => key.startsWith('option-') || key.startsWith('option:');
+
+  String _sourceOptionKey(BranchItem point, int index) => _separateEditorCandidate
+      ? 'option:${Uri.encodeComponent(point.id)}:${Uri.encodeComponent(point.options[index].id)}'
+      : _optionKey(point.id, index);
+
+  /// Candidate option keys encode MODEL IDs, not mutable list positions.
+  /// Legacy print controls keep their existing index keys until replacement.
+  ({String pointId, int index})? _optionSourceTarget(String key) {
+    if (key.startsWith('option:')) {
+      final parts = key.split(':');
+      if (parts.length != 3) return null;
+      try {
+        final pointId = Uri.decodeComponent(parts[1]);
+        final optionId = Uri.decodeComponent(parts[2]);
+        final point = _findItem(pointId);
+        final index = point?.options.indexWhere((option) => option.id == optionId) ?? -1;
+        return index < 0 ? null : (pointId: pointId, index: index);
+      } on FormatException {
+        return null;
+      }
+    }
+    final match = _optionKeyPattern.firstMatch(key);
+    if (match == null) return null;
+    final pointId = match.group(1)!;
+    final index = int.parse(match.group(2)!);
+    final point = _findItem(pointId);
+    return point == null || index >= point.options.length ? null : (pointId: pointId, index: index);
+  }
+
+  /// Resolve IDs at INPUT TIME, including the same-frame interval before a
+  /// provider notification has rebuilt the view/callbacks. No copied model or
+  /// alternate edit path: dispatch to the existing update methods only.
+  void _writeCanonicalSource(String key, String value) {
+    final controller = _controller;
+    if (controller == null) return;
+    final document = controller.document;
+    final option = _optionSourceTarget(key);
+    if (option != null) {
+      final owner = _ownerOfPoint(document, option.pointId);
+      if (owner != null) controller.updatePointOptionText(owner, option.pointId, option.index, value);
+      return;
+    }
+    if (key.startsWith('item-')) {
+      final id = key.substring('item-'.length);
+      final owner = _ownerOfPoint(document, id);
+      if (owner != null) controller.updatePointText(owner, id, value);
+      return;
+    }
+    for (final prefix in <String>['branch-statement-', 'branch-body-']) {
+      if (!key.startsWith(prefix)) continue;
+      final ref = _findBranchRef(document, key.substring(prefix.length));
+      if (ref == null) return;
+      if (prefix == 'branch-statement-') { controller.updateBranchStatement(ref, value); }
+      else { controller.updateBranchBody(ref, value); }
+      return;
+    }
+    for (final prefix in <String>['statement-', 'body-', 'category-']) {
+      if (!key.startsWith(prefix)) continue;
+      final index = document.indexOfQuestion(key.substring(prefix.length));
+      if (index < 0) return;
+      if (prefix == 'statement-') { controller.updateQuestionStatement(index, value); }
+      else if (prefix == 'body-') { controller.updateQuestionBody(index, value); }
+      else { controller.updateQuestionCategory(index, value); }
+      return;
+    }
+  }
 
   /// المحاذاة المحفوظة في الموديل لمفتاح حقل (null = غير محددة).
   PaperAlign? _modelAlignFor(String fieldKey) {
@@ -1381,16 +1449,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             : branch.bodyAlign ?? branch.style.align;
       }
     }
-    if (fieldKey.startsWith('option-')) {
-      final match = _optionKeyPattern.firstMatch(fieldKey);
-      if (match == null) {
-        return null;
-      }
-      final options = _findItem(match.group(1)!)?.options;
-      final optionIndex = int.parse(match.group(2)!);
-      return options != null && optionIndex >= 0 && optionIndex < options.length
-          ? options[optionIndex].align
-          : null;
+    if (_isOptionFieldKey(fieldKey)) {
+      final option = _optionSourceTarget(fieldKey);
+      return option == null ? null : _findItem(option.pointId)?.options[option.index].align;
     }
     if (fieldKey.startsWith('item-')) {
       return _findItem(fieldKey.substring('item-'.length))?.align;
@@ -1463,18 +1524,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
 
     // 2. خيار «اختيار من متعدد» محدد: محاذاته وحده.
-    final optionMatch = _optionKeyPattern.firstMatch(key);
-    if (optionMatch != null) {
-      final pointId = optionMatch.group(1)!;
-      final owner = _ownerOfPoint(document, pointId);
-      if (owner != null) {
-        controller.updatePointOptionAlign(
-          owner,
-          pointId,
-          int.parse(optionMatch.group(2)!),
-          align,
-        );
-      }
+    final option = _optionSourceTarget(key);
+    if (option != null) {
+      final owner = _ownerOfPoint(document, option.pointId);
+      if (owner != null) controller.updatePointOptionAlign(owner, option.pointId, option.index, align);
       return;
     }
 
@@ -1562,15 +1615,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       return null;
     }
     // نقاط السؤال وفرعه وخياراتها: نفس نموذج النطاقات، لا مسار تنسيق ثانٍ.
-    if (key.startsWith('item-') || key.startsWith('option-')) {
-      final isOption = key.startsWith('option-');
+    if (key.startsWith('item-') || _isOptionFieldKey(key)) {
+      final isOption = _isOptionFieldKey(key);
       final String pointId;
       int? optionIndex;
       if (isOption) {
-        final match = _optionKeyPattern.firstMatch(key);
-        if (match == null) return null;
-        pointId = match.group(1)!;
-        optionIndex = int.parse(match.group(2)!);
+        final option = _optionSourceTarget(key);
+        if (option == null) return null;
+        pointId = option.pointId;
+        optionIndex = option.index;
       } else {
         pointId = key.substring('item-'.length);
       }
@@ -3655,7 +3708,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         sourceText: sourceText,
         content: content,
         style: style,
-        onEdit: onEdit,
+        onEdit: _separateEditorCandidate ? (value) => _writeCanonicalSource(fieldKey, value) : onEdit,
         onLongPress: onLongPress,
       );
       void addNodes(Iterable<InlineNode> nodes) {
@@ -3718,16 +3771,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         );
         final options = point.options?.options ?? const <OptionNode>[];
         for (final option in options) {
-          if (option.index < 0 || option.index >= item.options.length) continue;
+          final optionIndex = item.options.indexWhere((model) => model.id == option.id);
+          if (optionIndex < 0) continue;
           bind(
             option.content,
-            fieldKey: _optionKey(item.id, option.index),
-            sourceText: item.options[option.index].text,
+            fieldKey: _sourceOptionKey(item, optionIndex),
+            sourceText: item.options[optionIndex].text,
             style: fieldStyle(PaperStyles.option, model.style.copyWith(color: () => null)),
             onEdit: (value) => controller.updatePointOptionText(
               questionOwner,
               item.id,
-              option.index,
+              optionIndex,
               value,
             ),
             onLongPress: questionLongPress,
@@ -3778,16 +3832,17 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             onLongPress: branchLongPress,
           );
           for (final option in point.options?.options ?? const <OptionNode>[]) {
-            if (option.index < 0 || option.index >= item.options.length) continue;
+            final optionIndex = item.options.indexWhere((model) => model.id == option.id);
+            if (optionIndex < 0) continue;
             bind(
               option.content,
-              fieldKey: _optionKey(item.id, option.index),
-              sourceText: item.options[option.index].text,
+              fieldKey: _sourceOptionKey(item, optionIndex),
+              sourceText: item.options[optionIndex].text,
               style: fieldStyle(PaperStyles.option, branchModel.style),
               onEdit: (value) => controller.updatePointOptionText(
                 branchOwner,
                 item.id,
-                option.index,
+                optionIndex,
                 value,
               ),
               onLongPress: branchLongPress,
@@ -4029,7 +4084,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               ? style(PaperStyles.question, question.style.copyWith(color: () => question.effectiveTitleColor))
               : style(PaperStyles.prompt, question.style.copyWith(color: () => null)),
           hint: statement ? 'منطوق السؤال' : 'نص السؤال (اختياري)',
-          onEdit: (value) => statement ? controller.updateQuestionStatement(q, value) : controller.updateQuestionBody(q, value),
+          onEdit: (value) => _writeCanonicalSource(statement ? _statementKey(question.id) : _bodyKey(question.id), value),
           onLongPress: () => _longPressQuestion(q),
         ));
       }
@@ -4046,7 +4101,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             InlineContent.fromSource(statement ? branch.content.statement : branch.content.body),
           style: style(PaperStyles.body(document.layout), branch.style),
           hint: statement ? 'منطوق الفرع' : 'نص الفرع (اختياري)',
-          onEdit: (value) => statement ? controller.updateBranchStatement(ref, value) : controller.updateBranchBody(ref, value),
+          onEdit: (value) => _writeCanonicalSource(statement ? _branchStatementKey(branch.id) : _branchBodyKey(branch.id), value),
           onLongPress: () => _longPressBranch(ref),
         ));
       }
@@ -5545,7 +5600,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final initial = branchRef == null ? controller.questions[owner.questionIndex].body
         : controller.document.branchAt(branchRef).content.body;
     final field = _field(fieldKey, initial, (value) {
-      if (branchRef == null) {
+      if (_separateEditorCandidate) {
+        _writeCanonicalSource(fieldKey, value);
+      } else if (branchRef == null) {
         controller.updateQuestionBody(owner.questionIndex, value);
       } else {
         controller.updateBranchBody(branchRef, value);
@@ -7496,8 +7553,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final controller = _controller!;
     final document = controller.document;
     // هل المفتاح لنقطة من [points] (نصها أو أحد خياراتها)؟
+    final option = _optionSourceTarget(key);
     bool belongsToPoints(List<BranchItem> points) => points.any(
-          (point) => key == _itemKey(point.id) || key.startsWith('option-${point.id}-'),
+          (point) => key == _itemKey(point.id) || option?.pointId == point.id,
         );
     setState(() {
       if (!_multiSelect) {

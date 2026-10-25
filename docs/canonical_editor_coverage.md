@@ -262,3 +262,16 @@ The regression is being introduced before its source repair; a red run is not
 acceptance. `b0c8b58` has passed its focused native gate and was still running the
 full suite when this reproduction was added. Production remains on repaired
 legacy; point/option UI parity is still incomplete.
+
+- Race baseline `322471f`, run `40235171531`, main `121295126393`: production
+  8/0, focused native **19/2**. Both widths reproduced the expected failure:
+  selected option remained `SECOND` instead of `SECONDم` after the earlier
+  deletion plus same-frame IME update. Full/APK correctly did not run.
+- Repair now pending CI: candidate option source keys encode persistent point
+  AND option IDs (transient view keys only; no stored model change). Field sync,
+  lifetime pruning, current alignment/range-format targeting, and owner activation
+  share that resolution. Old-layout IR options bind by model ID, not stale
+  index. Candidate source callbacks resolve question/branch/point/option IDs at
+  INPUT TIME, including before the next rebuild; retained controllers are not
+  swapped to another option. Legacy production keeps its existing keys/surface.
+  This is a race/data-identity repair, not completed point/option command parity.
