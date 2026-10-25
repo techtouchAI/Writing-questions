@@ -131,7 +131,10 @@ void main() {
       final controller = ExamWizardController(document: _document());
       await _pumpPreview(tester, controller);
 
-      await tester.tap(find.byTooltip('المسافة بين الفقرات'));
+      final menu = find.byTooltip('المسافة بين الفقرات');
+      await tester.ensureVisible(menu);
+      await tester.pumpAndSettle();
+      await tester.tap(menu);
       await tester.pumpAndSettle();
       await tester.tap(find.text('8 بكسل').last);
       await tester.pump();

@@ -423,6 +423,9 @@ class _FontMenu extends StatelessWidget {
       child: PopupMenuButton<_MenuChoice<PaperFont>>(
         enabled: onChanged != null,
         tooltip: 'نوع الخط',
+        style: const ButtonStyle(
+          minimumSize: WidgetStatePropertyAll<Size>(Size(48, 48)),
+        ),
         icon: const Icon(Icons.font_download_outlined, size: 20),
         onSelected: (value) => onChanged?.call(value.value),
         itemBuilder: (_) => <PopupMenuEntry<_MenuChoice<PaperFont>>>[
@@ -691,6 +694,9 @@ class _ColorMenu extends StatelessWidget {
     return PopupMenuButton<_MenuChoice<int>>(
       enabled: onChanged != null,
       tooltip: tooltip,
+      style: const ButtonStyle(
+        minimumSize: WidgetStatePropertyAll<Size>(Size(48, 48)),
+      ),
       icon: Icon(
         Icons.format_color_text,
         size: 20,

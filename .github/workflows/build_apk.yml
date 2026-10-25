@@ -238,7 +238,43 @@ jobs:
           chunks = [encoded[start:start + 60000] for start in range(0, len(encoded), 60000)]
           manifest = dict(bytes=len(data), sha256=hashlib.sha256(data).hexdigest(), parts=len(chunks))
           print('::notice title=Production evidence ZIP manifest::' + json.dumps(manifest))
-          for index, chunk in enumerate(chunks, 1):
+          os.makedirs('build/production_evidence_bridge', exist_ok=True)
+          with open('build/production_evidence_bridge/base64.txt', 'w') as payload:
+              payload.write(encoded)
+          # GitHub keeps at most ten notice annotations from a single step.
+          for index, chunk in enumerate(chunks[:9], 1):
+              print(f'::notice title=Production evidence ZIP {index:02d}/{len(chunks):02d}::{chunk}')
+          PY
+
+      - name: Publish compact synthetic production evidence parts 10-18
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          path = 'build/production_evidence_bridge/base64.txt'
+          if not os.path.exists(path):
+              raise SystemExit(0)
+          with open(path) as payload:
+              encoded = payload.read()
+          chunks = [encoded[start:start + 60000] for start in range(0, len(encoded), 60000)]
+          for index, chunk in enumerate(chunks[9:18], 10):
+              print(f'::notice title=Production evidence ZIP {index:02d}/{len(chunks):02d}::{chunk}')
+          PY
+
+      - name: Publish compact synthetic production evidence parts 19-20
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          path = 'build/production_evidence_bridge/base64.txt'
+          if not os.path.exists(path):
+              raise SystemExit(0)
+          with open(path) as payload:
+              encoded = payload.read()
+          chunks = [encoded[start:start + 60000] for start in range(0, len(encoded), 60000)]
+          for index, chunk in enumerate(chunks[18:20], 19):
               print(f'::notice title=Production evidence ZIP {index:02d}/{len(chunks):02d}::{chunk}')
           PY
 
