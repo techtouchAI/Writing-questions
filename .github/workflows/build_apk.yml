@@ -76,6 +76,22 @@ jobs:
           set -o pipefail
           flutter analyze --fatal-infos 2>&1 | tee "$RUNNER_TEMP/flutter-analyze.log"
 
+      - name: Reproduce production R1 and R4 before the full suite
+        id: production_first
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          status=0
+          flutter test --reporter json --timeout 120s \
+            test/layout/canonical/production_fragment_regression_test.dart \
+            --name '^R[14] ' 2>&1 | tee "$RUNNER_TEMP/production-first.log" || status=$?
+          python3 tool/flutter_test_digest.py --log "$RUNNER_TEMP/production-first.log" \
+            --out "$RUNNER_TEMP/production-first-digest"
+          counts="$(cat "$RUNNER_TEMP/production-first-digest/counts.txt")"
+          echo "::notice title=Production R1 R4 first::$counts"
+          exit "$status"
+
       - name: Run required tests
         id: test
         shell: bash
