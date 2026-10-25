@@ -12,6 +12,7 @@ import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/question_model.dart';
+import 'package:writing_questions_app/models/text_format_span.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/views/widgets/paper_field.dart';
 import 'package:writing_questions_app/views/wizard/canonical_editing_layer.dart';
@@ -259,6 +260,101 @@ void main() {
         await tester.tap(find.byTooltip('إغلاق محرر المحتوى'));
         await tester.pumpAndSettle();
       }
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('candidate native metadata reuses label and marks dialogs with 48dp controls at $width', (tester) async {
+      tester.view.physicalSize = Size(width, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final controller = ExamWizardController(document: ExamDocument(
+        name: 'Native metadata', header: ExamHeaderModel.initial(subject: 'الرياضيات'),
+        questions: <QuestionModel>[
+          QuestionModel(id: 'meta-q', questionNumber: 1, statement: 'منطوق السؤال', marksOverride: 4,
+            statementFormats: const <TextFormatSpan>[TextFormatSpan(start: 0, end: 5, bold: true, color: 0xFF123456)],
+            branches: <BranchModel>[BranchModel(id: 'meta-b', marks: 2, content: BranchContent(statement: 'منطوق الفرع'))]),
+          QuestionModel(id: 'untouched-q', questionNumber: 2, statement: 'سؤال لا يتغير'),
+        ],
+      ));
+      addTearDown(controller.dispose);
+      final untouched = controller.questions.last.toMap();
+      final formats = controller.questions.first.statementFormats.map((span) => span.toMap()).toList();
+      await tester.pumpWidget(_candidateScreen(controller));
+      await _settle(tester);
+      Future<void> saveDialog(String title, String value, {bool numeric = false}) async {
+        final dialog = find.byType(AlertDialog);
+        expect(find.descendant(of: dialog, matching: find.text(title)), findsOneWidget);
+        final input = find.descendant(of: dialog, matching: find.byType(TextField));
+        expect(tester.getSize(input).height, greaterThanOrEqualTo(48));
+        await tester.tap(input);
+        await tester.pumpAndSettle();
+        expect(tester.widget<EditableText>(find.descendant(of: input, matching: find.byType(EditableText))).focusNode.hasFocus, isTrue);
+        await tester.enterText(input, value);
+        final save = find.descendant(of: dialog, matching: find.widgetWithText(FilledButton, numeric ? 'تطبيق' : 'حفظ'));
+        final cancel = find.descendant(of: dialog, matching: find.widgetWithText(TextButton, 'إلغاء'));
+        for (final control in <Finder>[save, cancel]) {
+          expect(tester.getSize(control).height, greaterThanOrEqualTo(48));
+          expect(tester.getSize(control).width, greaterThanOrEqualTo(48));
+        }
+        await tester.tap(save);
+        await tester.pumpAndSettle();
+      }
+      Future<void> printed(String prefix, String title, String value, {bool numeric = false}) async {
+        final before = controller.document;
+        final layout = tester.widget<CanonicalLayoutPreviewPage>(find.byType(CanonicalLayoutPreviewPage).first).layoutDocument;
+        final page = layout.pages.firstWhere((page) => _runs(page, prefix).isNotEmpty);
+        await _tapPrintedFragment(tester, page, prefix);
+        expect(controller.document, same(before), reason: 'Opening metadata must change no printed data/geometry.');
+        expect(tester.widget<CanonicalLayoutPreviewPage>(_page(page.index)).layoutDocument, same(layout));
+        await saveDialog(title, value, numeric: numeric);
+      }
+      await printed('meta-q/title/label', 'رقم السؤال', 'س خاص/');
+      expect(controller.questions.first.numberOverride, 'س خاص/');
+      await printed('meta-q/title/marks', 'درجة السؤال', '8', numeric: true);
+      expect(controller.questions.first.marksOverride, 8);
+      await printed('meta-q/branch/meta-b/title/label', 'رقم الفرع', 'ب خاص');
+      expect(controller.questions.first.branches.single.labelOverride, 'ب خاص');
+      await printed('meta-q/branch/meta-b/title/marks', 'درجة الفرع', '5', numeric: true);
+      expect(controller.questions.first.branches.single.marks, 5);
+      for (final name in <String>['question-action-label', 'question-action-marks', 'branch-action-label', 'branch-action-marks']) {
+        final action = find.byKey(ValueKey<String>(name));
+        await tester.ensureVisible(action);
+        await tester.pumpAndSettle();
+        expect(tester.getSize(action), const Size(48, 48));
+        expect(find.descendant(of: find.byType(CanonicalLayoutPreviewPage), matching: action), findsNothing);
+        final before = controller.document;
+        await tester.tap(action);
+        await tester.pumpAndSettle();
+        expect(find.byType(AlertDialog), findsOneWidget);
+        await tester.tap(find.descendant(of: find.byType(AlertDialog), matching: find.text('إلغاء')));
+        await tester.pumpAndSettle();
+        expect(controller.document, same(before), reason: 'Cancel must preserve all data.');
+      }
+      // A non-printed zero mark still has the SAME native 48dp command.
+      for (final kind in <String>['question', 'branch']) {
+        final action = find.byKey(ValueKey<String>('$kind-action-marks'));
+        await tester.ensureVisible(action);
+        await tester.pumpAndSettle();
+        await tester.tap(action);
+        await tester.pumpAndSettle();
+        await saveDialog(kind == 'question' ? 'درجة السؤال' : 'درجة الفرع', '0', numeric: true);
+        expect(kind == 'question' ? controller.questions.first.marksOverride : controller.questions.first.branches.single.marks, 0);
+        await tester.tap(action);
+        await tester.pumpAndSettle();
+        await saveDialog(kind == 'question' ? 'درجة السؤال' : 'درجة الفرع', '7', numeric: true);
+        expect(kind == 'question' ? controller.questions.first.marksOverride : controller.questions.first.branches.single.marks, 7);
+      }
+      controller.undo();
+      await tester.pumpAndSettle();
+      expect(controller.questions.first.branches.single.marks, 0);
+      controller.redo();
+      await tester.pumpAndSettle();
+      expect(controller.questions.first.branches.single.marks, 7);
+      expect(controller.questions.last.toMap(), untouched);
+      expect(controller.questions.first.statementFormats.map((span) => span.toMap()).toList(), formats);
+      expect(controller.questions.first.statement, 'منطوق السؤال');
+      expect(controller.questions.first.branches.single.content.statement, 'منطوق الفرع');
       expect(tester.takeException(), isNull);
     });
   }

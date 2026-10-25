@@ -328,13 +328,15 @@ typedef CanonicalPreviewAssetLoader =
 /// الخطوة 3: معاينة A4 تفاعلية بسطحين — يُختار أحدهما بحقن الوصلات.
 ///
 /// - **سطح الورقة التفاعلي (الافتراضي)**: بلا وصلات محقونة تُبنى الورقة
-///   كودجات قابلة للتحرير ([_buildPage]) فوق ترقيم المتحكم المقاس
-///   ([ExamWizardController.pagination])؛ المعادلات تُرسم في مكانها، والنقر
+///   كودجات قابلة للتحرير ([_buildPage]) فوق خطة LayoutEngine المشتركة؛
+///   المعادلات تُرسم في مكانها، والنقر
 ///   يفتح محرر المحتوى المختلط. هذا سطح الإنتاج.
 /// - **سطح canonical (محقون)**: مع [canonicalLayoutResolver] و
 ///   [canonicalPreviewAssetLoader] تُرسم هندسة [LayoutDocument] مباشرةً
 ///   ([CanonicalLayoutPreviewPage]) بلا إعادة التفاف أو تقسيم، والنقرات
-///   تتحول إلى source offset عبر حقل IME مخفي. للاختبارات والمراجعة.
+///   تتحول إلى source offset. افتراضي الحقن يبقي مسار IME التشخيصي القديم؛
+///   [enableSeparateEditorCandidate] يختار محررًا أصليًا خارج الورقة، اختياريًا
+///   فقط حتى اكتمال جدول التغطية، ولا يفعّل هذا المسار في الإنتاج.
 /// - **التصدير**: PDF المتجهي يحسم هندسته عند الطلب دون اعتماد على
 ///   حالة المعاينة الحية؛ وهو المسار الوحيد للتصدير.
 /// - **التحديد والتنسيق**: تحديد سؤال/فرع/ترويسة/مربع نص (منفرد أو متعدد)
@@ -3816,6 +3818,35 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return null;
   }
 
+  /// Route printed metadata to the SAME dialogs as the legacy title widgets.
+  /// Resolve current model IDs, never use a stale layout's positional index.
+  bool _handleCandidateMetadataTap(ExamWizardController controller, DocumentIR source, CanonicalHitTestResult hit) {
+    if (!_separateEditorCandidate) return false;
+    final id = hit.semanticNodeId;
+    bool label(String owner) => id.startsWith('$owner/title/label');
+    bool marks(String owner) => id.startsWith('$owner/title/marks');
+    for (final question in source.questions) {
+      final q = controller.questions.indexWhere((model) => model.id == question.id);
+      if (q < 0) continue;
+      for (final branch in question.branches) {
+        final owner = '${question.id}/branch/${branch.id}';
+        if (!label(owner) && !marks(owner)) continue;
+        final b = controller.questions[q].branches.indexWhere((model) => model.id == branch.id);
+        if (b < 0) return false;
+        final ref = BranchRef(questionIndex: q, branchIndex: b);
+        _tapBranch(ref);
+        unawaited(label(owner) ? _editBranchLabel(ref) : _editBranchMarks(ref));
+        return true;
+      }
+      if (label(question.id) || marks(question.id)) {
+        _tapQuestion(q);
+        unawaited(label(question.id) ? _editQuestionLabel(q) : _editQuestionMarks(q));
+        return true;
+      }
+    }
+    return false;
+  }
+
   void _handleCanonicalPageTap(
     ExamWizardController controller,
     LayoutDocument layout,
@@ -3830,6 +3861,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final hit = event.hit;
     if (hit == null || hit.isFloatingElement) return;
     if (_separateEditorCandidate) _canonicalEditorPageHint = page.index;
+    if (_handleCandidateMetadataTap(controller, layout.source, hit)) return;
     final run = _canonicalRunById(page, hit.runId);
     final binding = run?.semanticNode == null ? null : bindings[run!.semanticNode];
     if (binding != null && run != null) {
@@ -4673,8 +4705,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  // سطح الورقة التفاعلي: تُبنى الصفحة كودجات قابلة للتحرير فوق ترقيم
-  // المتحكم المقاس (انظر [_buildPaperZoomedPage]).
+  // سطح الورقة التفاعلي: ودجات قابلة للتحرير فوق خطة المحرك المشتركة
+  // (انظر [_buildPaperZoomedPage])؛ لا محرك ترقيم منافس.
   /// صفحة واحدة من **خطة المحرك**: مقاطع الكتل كما قرّرها `LayoutEngine`، لا
   /// كما قاسها هذا الودجت.
   ///
@@ -5402,7 +5434,23 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                         enabled: questionEnabled,
                         onPressed: () => _confirmDeleteQuestion(index!),
                       ),
+                    if (_separateEditorCandidate) ...<Widget>[
+                      button(key: 'question-action-label', icon: Icons.numbers,
+                        tooltip: 'رقم السؤال', enabled: questionEnabled,
+                        onPressed: () => _editQuestionLabel(index!)),
+                      button(key: 'question-action-marks', icon: Icons.grade_outlined,
+                        tooltip: 'درجة السؤال', enabled: questionEnabled,
+                        onPressed: () => _editQuestionMarks(index!)),
+                    ],
                     divider(),
+                    if (_separateEditorCandidate) ...<Widget>[
+                      button(key: 'branch-action-label', icon: Icons.numbers,
+                        tooltip: 'رقم الفرع', enabled: branchEnabled,
+                        onPressed: () => _editBranchLabel(branchRef!)),
+                      button(key: 'branch-action-marks', icon: Icons.grade_outlined,
+                        tooltip: 'درجة الفرع', enabled: branchEnabled,
+                        onPressed: () => _editBranchMarks(branchRef!)),
+                    ],
                     button(
                       key: 'branch-action-duplicate',
                       icon: Icons.copy_all_outlined,

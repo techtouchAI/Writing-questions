@@ -173,3 +173,26 @@ PaperField تحت شجرة الورقة، وبقاء كائن الخطة نفس�
   offset. The integration helper now also performs bounded real edge drags in
   both directions (without closing/recreating the editor), and reports actual
   transformed page/pane bounds if no printed hit can be reached. Still pending.
+
+## Candidate core verified — cdf1b73 (still not production activation)
+
+Build run `40233457138`, main job `121289923152`, passed production R1/R4,
+then the focused native gate, full required tests, analyzer, actual release APK
+build and upload. Visual/C6 were not yet complete when this entry was written;
+Extended run `40233457180` passed. Binary evidence remains not manually reviewed.
+
+Integration-tested at 320/360: real printed-pointer editing across every fragment
+of genuinely multi-page question AND branch bodies; one native editor/controller/
+focus and no new IME client across fragments; composing insertion survives
+reflow; undo/redo; optional question/branch bodies accessed outside print, typed,
+cleared, and re-anchored without replacing the input; no printed geometry/data
+change from selection. These do not prove empty statements/entirely unprinted
+owners, math/commands/formatting, drag, points/options, or every touch target.
+
+Next candidate-only increment (pending CI): printed question/branch label/marks
+hits route to the existing `_edit*Label`/`_edit*Marks` dialogs, resolving owner IDs
+against the current model. Equivalent native 48dp commands remain available
+outside the paper even when a zero mark has no printed run. Tests exercise actual
+printed hits, native command/field/dialog touch sizes, save/cancel, zero marks,
+undo/redo, unchanged other question/text and stored range formatting. Point and
+option metadata, empty statements, and the other missing rows remain uncovered.
