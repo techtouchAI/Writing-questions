@@ -150,6 +150,8 @@ void main() {
     final controller = await _pump(tester, _document());
     final branch = _key('branch-target-repro-b');
     final before = tester.getRect(branch);
+    final measured = <String>['question-block-repro-q', 'statement-repro-q', 'branch-statement-repro-b'];
+    final beforeRects = <String, Rect>{for (final key in measured) key: tester.getRect(_key(key))};
     final beforeDocument = controller.document;
     await _capture(tester, 'r1-before-selection', 0);
     await tester.tap(_key('statement-repro-q'));
@@ -161,6 +163,10 @@ void main() {
       of: _key('a4-page-0'), matching: find.byTooltip('إضافة نقطة'),
     );
     _record('r1-selection', <String, Object>{
+      'printedBounds': <String, Object>{for (final key in measured) key: <String, Object>{
+        'before': <double>[beforeRects[key]!.left, beforeRects[key]!.top, beforeRects[key]!.width, beforeRects[key]!.height],
+        'after': <double>[tester.getRect(_key(key)).left, tester.getRect(_key(key)).top, tester.getRect(_key(key)).width, tester.getRect(_key(key)).height],
+      }},
       'selectedEmptyBodyHeightPx': optionalBody.evaluate().isEmpty ? 0 : tester.getSize(optionalBody).height,
       'inPaperAddPointHeightPx': inPaperAddPoint.evaluate().isEmpty ? 0 : tester.getSize(inPaperAddPoint).height,
 
@@ -170,6 +176,15 @@ void main() {
       'sameDocument': identical(beforeDocument, controller.document),
     });
     expect(identical(beforeDocument, controller.document), isTrue);
+    for (final key in measured) {
+      final rect = tester.getRect(_key(key));
+      final original = beforeRects[key]!;
+      // Only IEEE transform roundoff, one millionth of a logical pixel.
+      expect(rect.left, closeTo(original.left, 1e-6), reason: key);
+      expect(rect.top, closeTo(original.top, 1e-6), reason: key);
+      expect(rect.width, closeTo(original.width, 1e-6), reason: key);
+      expect(rect.height, closeTo(original.height, 1e-6), reason: key);
+    }
     expect(after.top, closeTo(before.top, 1e-6),
         reason: 'Selection inserts editor-only fields/buttons into printed flow.');
   });
@@ -274,7 +289,11 @@ void main() {
     final slice = _key('page-slice-repro-q$suffix');
     await tester.ensureVisible(slice);
     await tester.pumpAndSettle();
-    final field = find.descendant(of: _key('branch-body-repro-b$suffix'), matching: find.byType(TextField));
+    final paperField = find.descendant(of: slice, matching: find.byWidgetPredicate(
+      (widget) => widget is PaperField && widget.controller.text == body));
+    expect(paperField, findsOneWidget);
+    final field = find.descendant(of: paperField, matching: find.byType(TextField));
+    expect(field, findsOneWidget);
     final editableFinder = find.descendant(of: field, matching: find.byType(EditableText));
     final native = tester.state<EditableTextState>(editableFinder);
     final boxes = native.renderEditable.getBoxesForSelection(TextSelection(baseOffset: body.indexOf('ZBRANCHEND'), extentOffset: body.length));

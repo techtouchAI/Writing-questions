@@ -5271,32 +5271,57 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         controller.updateBranchBody(branchRef, value);
       }
     });
-    await showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
-      title: Text(branchRef == null ? 'نص السؤال' : 'نص الفرع'),
-      content: SizedBox(width: 520, child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.55),
-        child: SingleChildScrollView(child: Consumer<ExamWizardController>(
-          builder: (context, current, _) {
-            final question = current.documentIr.questionById(questionId);
-            final content = branchId == null ? question?.body?.content
-                : question?.branches.where((b) => b.id == branchId).firstOrNull?.body?.content;
-            final model = current.questions[owner.questionIndex];
-            final style = branchRef == null ? model.style : current.document.branchAt(branchRef).style;
-            return _paperField(fieldKey: fieldKey, controller: field,
-              style: PaperStyles.resolve(
-                branchRef == null ? PaperStyles.prompt : PaperStyles.body(current.document.layout),
-                style.copyWith(color: () => null),
-                defaultFont: current.document.settings.defaultFont,
-                fontScale: _fontScale,
-                heightScale: _heightScale,
-              ), semanticContent: content,
-              hint: branchRef == null ? 'نص السؤال (اختياري)' : 'نص الفرع (اختياري)');
-          },
-        )),
-      )),
-      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(dialogContext),
-        child: const Text('إغلاق'))],
-    ));
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => ChangeNotifierProvider<ExamWizardController>.value(
+        // Dialog routes are above this screen's provider in Navigator. Reuse
+        // its existing owner; .value must NOT dispose the shared controller.
+        value: controller,
+        child: AlertDialog(
+          title: Text(branchRef == null ? 'نص السؤال' : 'نص الفرع'),
+          content: SizedBox(
+            width: 520,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.55,
+              ),
+              child: SingleChildScrollView(
+                child: Consumer<ExamWizardController>(
+                  builder: (context, current, _) {
+                    final question = current.documentIr.questionById(questionId);
+                    final content = branchId == null
+                        ? question?.body?.content
+                        : question?.branches.where((b) => b.id == branchId).firstOrNull?.body?.content;
+                    final model = current.questions[owner.questionIndex];
+                    final style = branchRef == null
+                        ? model.style : current.document.branchAt(branchRef).style;
+                    return _paperField(
+                      fieldKey: fieldKey,
+                      controller: field,
+                      style: PaperStyles.resolve(
+                        branchRef == null ? PaperStyles.prompt : PaperStyles.body(current.document.layout),
+                        style.copyWith(color: () => null),
+                        defaultFont: current.document.settings.defaultFont,
+                        fontScale: _fontScale,
+                        heightScale: _heightScale,
+                      ),
+                      semanticContent: content,
+                      hint: branchRef == null ? 'نص السؤال (اختياري)' : 'نص الفرع (اختياري)',
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إغلاق'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// الفرع الذي تعمل عليه أدوات الفرع.
