@@ -174,6 +174,148 @@ void main() {
         reason: 'Selection inserts editor-only fields/buttons into printed flow.');
   });
 
+  for (final width in <double>[320, 360]) {
+    testWidgets('R1 empty question and branch bodies remain editable outside print at $width', (tester) async {
+      final controller = await _pump(tester, _document(), size: Size(width, 1100));
+      final branch = _key('branch-target-repro-b');
+      final before = tester.getRect(branch);
+      final source = controller.document;
+      await _captureScreen(tester, 'r1-$width-before-selection');
+      await tester.tap(_key('statement-repro-q'));
+      await tester.pumpAndSettle();
+      final selected = tester.getRect(branch);
+      await _captureScreen(tester, 'r1-$width-after-selection');
+      // Selection has no geometric tolerance beyond floating-point transform
+      // roundoff: 1e-6 logical px, not a pixel/line-height allowance.
+      expect(selected.top, closeTo(before.top, 1e-6));
+      expect(selected.size, before.size);
+      expect(identical(source, controller.document), isTrue);
+      expect(find.descendant(of: _key('a4-page-0'), matching: _key('body-repro-q')), findsNothing);
+      final plan = await _layout(source);
+      final pdf = await tester.runAsync(() => PdfExportService.buildDocumentPdfBytes(document: source, layoutDocument: plan));
+      File('$_output/r1-$width-same-layout.pdf').writeAsBytesSync(pdf!);
+
+      Future<void> openBody() async {
+        final action = _key('question-action-edit-body');
+        await tester.ensureVisible(action);
+        await tester.pumpAndSettle();
+        expect(tester.getSize(action), const Size(48, 48));
+        await tester.tap(action);
+        await tester.pumpAndSettle();
+      }
+      Finder input() => find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField));
+      await openBody();
+      await tester.enterText(input(), 'متن السؤال الجديد');
+      await tester.pumpAndSettle();
+      expect(controller.questions.single.body, 'متن السؤال الجديد');
+      final editor = tester.state<EditableTextState>(find.descendant(of: input(), matching: find.byType(EditableText)));
+      // Nonempty -> empty must not replace/dispose the focused native editor.
+      await tester.enterText(input(), '');
+      await tester.pumpAndSettle();
+      expect(identical(editor, tester.state<EditableTextState>(find.descendant(of: input(), matching: find.byType(EditableText)))), isTrue);
+      expect(editor.widget.focusNode.hasFocus, isTrue);
+      tester.testTextInput.updateEditingValue(const TextEditingValue(text: 'م', selection: TextSelection.collapsed(offset: 1), composing: TextRange(start: 0, end: 1)));
+      await tester.pumpAndSettle();
+      expect(controller.questions.single.body, 'م');
+      expect(editor.widget.controller.value.composing, const TextRange(start: 0, end: 1));
+      await tester.tap(find.text('إغلاق'));
+      await tester.pumpAndSettle();
+
+      final beforeBranchSelection = tester.getRect(branch);
+      await tester.tap(_key('branch-statement-repro-b'));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(branch).top, closeTo(beforeBranchSelection.top, 1e-6));
+      await openBody();
+      await tester.enterText(input(), 'متن الفرع الجديد');
+      await tester.pumpAndSettle();
+      expect(controller.questions.single.branches.single.content.body, 'متن الفرع الجديد');
+      expect(controller.questions.single.body, 'م');
+      await tester.tap(find.text('إغلاق'));
+      await tester.pumpAndSettle();
+      final addPoint = _key('question-action-add-point');
+      await tester.ensureVisible(addPoint);
+      await tester.pumpAndSettle();
+      expect(tester.getSize(addPoint), const Size(48, 48));
+      await tester.tap(addPoint);
+      await tester.pumpAndSettle();
+      expect(controller.questions.single.branches.single.content.items, hasLength(1));
+      expect(controller.questions.single.items, isEmpty);
+      controller.undo();
+      await tester.pumpAndSettle();
+      expect(controller.questions.single.branches.single.content.items, isEmpty);
+      controller.redo();
+      await tester.pumpAndSettle();
+      expect(controller.questions.single.branches.single.content.items, hasLength(1));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('R4 a split long branch has a visible editable final glyph without next-page overlap', (tester) async {
+    final base = _document(frame: true);
+    final question = base.questions.single;
+    final branch = question.branches.single;
+    final body = '${_longText()} ZBRANCHEND';
+    final document = base.copyWith(questions: <QuestionModel>[
+      question.copyWith(branches: <BranchModel>[
+        branch.copyWith(showFrame: true, content: branch.content.copyWith(body: body)),
+      ]),
+      QuestionModel(id: 'after-q', questionNumber: 2, statement: 'السؤال التالي NEXT'),
+    ]);
+    final controller = await _pump(tester, document);
+    final plan = CanonicalPagePlan.fromLayout(await _layout(controller.document));
+    final fragments = plan.fragmentsOfQuestion('repro-q');
+    expect(fragments.length, greaterThan(1));
+    final reference = await _layout(controller.document, unsplit: true);
+    final referenceLines = reference.allBlocks.where((b) => b.kind == LayoutBlockKind.question && b.semanticNodeId == 'repro-q').single.allLines.map((line) => line.id).toList();
+    expect(fragments.expand((f) => f.lineIds).toList(), referenceLines,
+      reason: 'The split branch must retain every planned line exactly once.');
+    final last = fragments.last;
+    final suffix = '/slice${last.fragmentIndex}';
+    final slice = _key('page-slice-repro-q$suffix');
+    await tester.ensureVisible(slice);
+    await tester.pumpAndSettle();
+    final field = find.descendant(of: _key('branch-body-repro-b$suffix'), matching: find.byType(TextField));
+    final editableFinder = find.descendant(of: field, matching: find.byType(EditableText));
+    final native = tester.state<EditableTextState>(editableFinder);
+    final boxes = native.renderEditable.getBoxesForSelection(TextSelection(baseOffset: body.indexOf('ZBRANCHEND'), extentOffset: body.length));
+    expect(boxes, isNotEmpty);
+    final marker = boxes.map((box) => Rect.fromPoints(native.renderEditable.localToGlobal(Offset(box.left, box.top)), native.renderEditable.localToGlobal(Offset(box.right, box.bottom)))).reduce((a, b) => a.expandToInclude(b));
+    final window = tester.getRect(slice);
+    // Keep the original R4 0.75px edge bound; never enlarge the source clip.
+    expect(marker.top, greaterThanOrEqualTo(window.top - 0.75));
+    expect(marker.bottom, lessThanOrEqualTo(window.bottom + 0.75));
+    final next = plan.fragmentsOfQuestion('after-q').first;
+    if (next.pageIndex == last.pageIndex) {
+      expect(marker.bottom, lessThanOrEqualTo(tester.getRect(_key('page-slice-after-q')).top + 0.75));
+    } else {
+      expect(next.pageIndex, greaterThan(last.pageIndex));
+      expect(marker.bottom, lessThanOrEqualTo(tester.getRect(_key('a4-page-${last.pageIndex}')).bottom));
+    }
+    for (final fragment in fragments) {
+      await _capture(tester, 'r4-long-branch-page-${fragment.pageIndex}', fragment.pageIndex);
+    }
+    final pdf = await tester.runAsync(() => PdfExportService.buildDocumentPdfBytes(document: controller.document, layoutDocument: plan.layout));
+    File('$_output/r4-long-branch-same-layout.pdf').writeAsBytesSync(pdf!);
+    // Recompute coordinates after screenshot scrolling. A real hit on the
+    // visible FINAL glyph, not tester.showKeyboard on an off-clip source field.
+    await tester.ensureVisible(slice);
+    await tester.pumpAndSettle();
+    final box = boxes.last;
+    final hit = native.renderEditable.localToGlobal(Offset((box.left + box.right) / 2, (box.top + box.bottom) / 2));
+    await tester.tapAt(hit);
+    await tester.pumpAndSettle();
+    expect(native.widget.focusNode.hasFocus, isTrue);
+    expect(tester.testTextInput.isVisible, isTrue);
+    final updated = '$body EDITED';
+    tester.testTextInput.updateEditingValue(TextEditingValue(text: updated, selection: TextSelection.collapsed(offset: updated.length)));
+    await tester.pumpAndSettle();
+    expect(controller.questions.first.branches.single.content.body, updated);
+    expect(controller.questions.first.body, isEmpty);
+    expect(controller.questions.last.statement, 'السؤال التالي NEXT');
+    expect(tester.takeException(), isNull);
+    _record('r4-long-branch', <String, Object>{'fragments': fragments.length, 'finalGlyphTopPx': marker.top, 'finalGlyphBottomPx': marker.bottom, 'sliceTopPx': window.top, 'sliceBottomPx': window.bottom, 'nextQuestionPage': next.pageIndex, 'finalBranchPage': last.pageIndex, 'nativeFinalGlyphEditSucceeded': true});
+  });
+
   test('R2 a split question must retain its final divider exactly once', () async {
     final document = _document(long: true, divider: true);
     final layout = await _layout(document);

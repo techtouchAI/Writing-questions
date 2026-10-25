@@ -5139,6 +5139,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       );
     }
 
+    final PointsOwner? editOwner = _multiSelect ? null
+        : _selectedBranches.length == 1
+            ? PointsOwner.branch(_selectedBranches.single)
+            : _selectedQuestions.length == 1 && index != null
+                ? PointsOwner.question(index) : null;
+
     Widget divider() => const Padding(
           padding: EdgeInsets.symmetric(horizontal: 4),
           child: SizedBox(
@@ -5175,6 +5181,20 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: <Widget>[
+                    button(
+                      key: 'question-action-edit-body',
+                      icon: Icons.edit_note,
+                      tooltip: 'تحرير نص السؤال أو الفرع',
+                      enabled: editOwner != null && !_locked && !_isBusy,
+                      onPressed: () => _editOwnerBody(editOwner!),
+                    ),
+                    button(
+                      key: 'question-action-add-point',
+                      icon: Icons.add,
+                      tooltip: 'إضافة نقطة',
+                      enabled: editOwner != null && !_locked && !_isBusy,
+                      onPressed: () => controller.addPoint(editOwner!),
+                    ),
                     button(
                       key: 'question-action-add-branch',
                       icon: Icons.add,
@@ -5231,6 +5251,47 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         ),
       ),
     );
+  }
+
+  /// Existing optional body field, edited with the SAME source controller.
+  /// Its empty placeholder and add-point action must never enter printed flow.
+  Future<void> _editOwnerBody(PointsOwner owner) async {
+    final controller = _controller!;
+    final branchRef = owner.isBranch ? BranchRef(
+      questionIndex: owner.questionIndex, branchIndex: owner.branchIndex!) : null;
+    final questionId = controller.questions[owner.questionIndex].id;
+    final branchId = branchRef == null ? null : controller.document.branchAt(branchRef).id;
+    final fieldKey = branchId == null ? _bodyKey(questionId) : _branchBodyKey(branchId);
+    final initial = branchRef == null ? controller.questions[owner.questionIndex].body
+        : controller.document.branchAt(branchRef).content.body;
+    final field = _field(fieldKey, initial, (value) {
+      if (branchRef == null) {
+        controller.updateQuestionBody(owner.questionIndex, value);
+      } else {
+        controller.updateBranchBody(branchRef, value);
+      }
+    });
+    await showDialog<void>(context: context, builder: (dialogContext) => AlertDialog(
+      title: Text(branchRef == null ? 'نص السؤال' : 'نص الفرع'),
+      content: SizedBox(width: 520, child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.55),
+        child: SingleChildScrollView(child: Consumer<ExamWizardController>(
+          builder: (context, current, _) {
+            final question = current.documentIr.questionById(questionId);
+            final content = branchId == null ? question?.body?.content
+                : question?.branches.where((b) => b.id == branchId).firstOrNull?.body?.content;
+            final model = current.questions[owner.questionIndex];
+            final style = branchRef == null ? model.style : current.document.branchAt(branchRef).style;
+            return _paperField(fieldKey: fieldKey, controller: field,
+              style: _styled(branchRef == null ? PaperStyles.prompt : PaperStyles.body(current.document.layout), style.copyWith(color: () => null),
+                defaultFont: current.document.settings.defaultFont), semanticContent: content,
+              hint: branchRef == null ? 'نص السؤال (اختياري)' : 'نص الفرع (اختياري)');
+          },
+        )),
+      )),
+      actions: <Widget>[TextButton(onPressed: () => Navigator.pop(dialogContext),
+        child: const Text('إغلاق'))],
+    ));
   }
 
   /// الفرع الذي تعمل عليه أدوات الفرع.
@@ -5377,9 +5438,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final question = document.questions[data.index];
     final questionIndex = data.index;
     final selected = _isQuestionSelected(questionIndex);
-    // الحقول الاختيارية (نص السؤال) تظهر للتحرير عند تحديد السؤال نفسه،
-    // وتُحذف كلياً من الواجهة والطباعة عند فراغها.
-    final directlySelected = _selectedQuestions.contains(question.id);
     final defaultFont = document.settings.defaultFont;
     final bodyStyle = question.style.copyWith(color: () => null);
     final titleStyle = PaperStyles.resolve(
@@ -5511,8 +5569,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
           ),
         ),
-        // نص السؤال: يُحذف كلياً عند فراغه (يظهر للتحرير عند تحديد السؤال).
-        if (data.body != null || directlySelected) ...<Widget>[
+        // نص السؤال الفارغ يحرّر من الشريط، ولا يحجز مساحة مطبوعة.
+        if (data.body != null) ...<Widget>[
           if (blockSpacing > 0) SizedBox(height: blockSpacing),
           _paperField(
             fieldKey: bodyKey,
@@ -5547,7 +5605,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             PaperStyles.toTextAlign(question.style.align),
           ),
         ],
-        if (directlySelected) _addPointButton(controller, owner),
         // السؤال الجديد يبدأ بلا فروع؛ تُنشأ فقط بطلب صريح (زر +).
         if (question.branches.isEmpty)
           Padding(
@@ -5591,7 +5648,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       padding: EdgeInsets.all(
         question.showFrame ? VisualMetrics.questionFramePaddingPx : 0,
       ),
-      decoration: BoxDecoration(
+      foregroundDecoration: BoxDecoration(
         border: Border.all(
           color: question.showFrame ? PaperStyles.ink : Colors.transparent,
           width: question.showFrame ? 1 : 0,
@@ -5692,30 +5749,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         child: const Padding(
           padding: EdgeInsets.symmetric(horizontal: 4),
           child: Text('+ درجة', style: TextStyle(fontSize: 10, color: Colors.grey)),
-        ),
-      ),
-    );
-  }
-
-  /// زر «إضافة نقطة» (أداة تحرير تظهر عند تحديد صاحب النقاط فقط).
-  Widget _addPointButton(ExamWizardController controller, PointsOwner owner) {
-    return Padding(
-      padding: const EdgeInsetsDirectional.only(
-        start: VisualMetrics.pointIndentPx,
-      ),
-      child: Align(
-        alignment: AlignmentDirectional.centerStart,
-        child: Tooltip(
-          message: 'إضافة نقطة',
-          child: TextButton.icon(
-            style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-            ),
-            onPressed: () => controller.addPoint(owner),
-            icon: const Icon(Icons.add, size: 14),
-            label: const Text('إضافة نقطة', style: TextStyle(fontSize: 11)),
-          ),
         ),
       ),
     );
@@ -5870,18 +5903,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           onTap: () => _tapBranch(ref),
           onLongPress: () => _longPressBranch(ref),
           child: Container(
-            margin: const EdgeInsets.only(top: 2),
             // إزاحة الفرع عن بداية السؤال من العقد البصري (26px): تُطبَّق
             // مرة واحدة هنا فيحاذي عنوان الفرع ونصه ونقاطه ما يطبعه PDF
             // وWord بنفس الرقم — لا 4px حشوةً تُضاف فوقها.
-            padding: const EdgeInsetsDirectional.only(
-              start: VisualMetrics.branchIndentPx,
-              end: 4,
-              top: 2,
-              bottom: 2,
-            ),
-            decoration: BoxDecoration(
-              color: highlighted ? const Color(0x1A2563EB) : null,
+            padding: EdgeInsets.zero,
+            color: highlighted ? const Color(0x1A2563EB) : null,
+            foregroundDecoration: BoxDecoration(
               border: Border.all(
                 color: highlighted
                     ? PaperStyles.accent
@@ -5904,11 +5931,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
         );
         body = Container(
-          margin: EdgeInsets.only(top: branch.showFrame ? 2 : 0),
           padding: EdgeInsets.all(
             branch.showFrame ? VisualMetrics.branchFramePaddingPx : 0,
           ),
-          decoration: BoxDecoration(
+          foregroundDecoration: BoxDecoration(
             border: Border.all(
               color: branch.showFrame ? PaperStyles.ink : Colors.transparent,
               width: branch.showFrame ? 0.8 : 0,
@@ -5917,7 +5943,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
           child: body,
         );
-        return body;
+        return Padding(
+          padding: const EdgeInsetsDirectional.only(start: VisualMetrics.branchIndentPx),
+          child: body,
+        );
       },
     );
   }
@@ -5994,8 +6023,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
         ),
         ),
-        // نص الفرع: يُحذف كلياً عند فراغه (يظهر للتحرير عند تحديد الفرع).
-        if (data.body != null || isSelected)
+        // نص الفرع الفارغ يحرّر من الشريط، ولا يحجز مساحة مطبوعة.
+        if (data.body != null)
           Padding(
             // لا إزاحة إضافية: كتلة الفرع نفسها مُزاحة عن السؤال بمقدار
             // `branchIndentPx`، ونص الفرع يأخذ الإزاحة نفسها في PDF وWord.
@@ -6021,7 +6050,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             SizedBox(height: index == 0 ? firstItemSpacing : itemSpacing),
           _pointRow(controller, owner, data.points[index], bodyStyle, branchAlign),
         ],
-        if (isSelected) _addPointButton(controller, owner),
         if (branch.dividerAfter != null)
           _buildDividerWidget(
             key: 'b:${branch.id}',

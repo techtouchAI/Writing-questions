@@ -69,13 +69,6 @@ jobs:
       - name: Verify vendored pdf patch (Arabic RTL word spacing)
         run: dart run tool/verify_vendored_pdf_patch.dart
 
-      - name: Analyze source
-        id: analyze
-        shell: bash
-        run: |
-          set -o pipefail
-          flutter analyze --fatal-infos 2>&1 | tee "$RUNNER_TEMP/flutter-analyze.log"
-
       - name: Reproduce production R1 and R4 before the full suite
         id: production_first
         shell: bash
@@ -90,13 +83,24 @@ jobs:
           counts="$(cat "$RUNNER_TEMP/production-first-digest/counts.txt")"
           echo "::notice title=Production R1 R4 first::$counts"
           python3 - <<'PYTARGET'
-          import glob, os
+          import glob, json, os, re
           root = os.path.join(os.environ['RUNNER_TEMP'], 'production-first-digest')
           for path in glob.glob(os.path.join(root, 'excerpt_*.txt')):
               message = open(path).read().replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
               print(f'::notice title=Targeted production failure::{message}')
+          matched = set()
+          for line in open(os.path.join(os.environ['RUNNER_TEMP'], 'production-first.log')):
+              try:
+                  event = json.loads(line)
+              except ValueError:
+                  continue
+              if event.get('type') == 'testStart':
+                  name = event.get('test', {}).get('name', '')
+                  if re.match(r'^R[14] ', name):
+                      matched.add(name)
+          if len(matched) < 5:
+              raise SystemExit(f'Targeted gate matched {len(matched)} real R1/R4 cases, expected at least 5; load/setup pseudo-tests do not count.')
           PYTARGET
-          grep -Eq 'passed=[1-9][0-9]*|failed=[1-9][0-9]*' "$RUNNER_TEMP/production-first-digest/counts.txt" || exit 1
           exit "$status"
 
       - name: Run required tests
@@ -148,6 +152,14 @@ jobs:
               2>&1 | tee "$RUNNER_TEMP/flutter-test-canonical-gate.log" || gate_status=$?
           fi
           exit $gate_status
+
+      - name: Analyze source
+        id: analyze
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter analyze --fatal-infos 2>&1 | tee "$RUNNER_TEMP/flutter-analyze.log"
 
       # Structured diagnostics from the JSON reporter (see the digest step):
       # GitHub truncates every annotation at 4 KiB, so the digest pre-chunks
