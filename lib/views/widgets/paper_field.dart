@@ -441,11 +441,11 @@ class _RenderCaretGutter extends RenderShiftedBox {
 
   @override
   double computeMinIntrinsicWidth(double height) =>
-      math.max(0, child!.getMinIntrinsicWidth(height) - _nativeCaretGutter);
+      math.max(0.0, child!.getMinIntrinsicWidth(height) - _nativeCaretGutter);
 
   @override
   double computeMaxIntrinsicWidth(double height) =>
-      math.max(0, child!.getMaxIntrinsicWidth(height) - _nativeCaretGutter);
+      math.max(0.0, child!.getMaxIntrinsicWidth(height) - _nativeCaretGutter);
 
   @override
   double computeMinIntrinsicHeight(double width) =>
