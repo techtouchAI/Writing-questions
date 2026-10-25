@@ -3357,17 +3357,20 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         // يظهر في حوار المراجعة قبل التصدير.
         title: const Text('الخطوة 3: معاينة A4'),
         leading: IconButton(
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           icon: const Icon(Icons.arrow_forward),
           tooltip: 'العودة للأسئلة',
           onPressed: widget.onBackToQuestions,
         ),
         actions: <Widget>[
           IconButton(
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'إعدادات الورقة',
             onPressed: _isBusy ? null : _showSettings,
           ),
           IconButton(
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
             icon: const Icon(Icons.save_outlined),
             tooltip: 'حفظ الورقة',
             onPressed: _isBusy ? null : _save,

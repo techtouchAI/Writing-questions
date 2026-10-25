@@ -447,19 +447,26 @@ void main() {
       // Cover every primary popup/button as well, not only the eight
       // originally reproduced failures. InkResponse includes IconButton's
       // response as well as InkWell's response for text-based popup menus.
-      final controls = find.descendant(of: find.byType(PreviewToolbar),
-          matching: find.byWidgetPredicate((widget) => widget is InkResponse))
-          .evaluate().toList();
-      expect(controls.length, greaterThan(20));
-      for (var index = 0; index < controls.length; index++) {
-        final element = controls[index];
-        final target = find.byElementPredicate((candidate) => identical(candidate, element));
-        await tester.ensureVisible(target);
-        await tester.pumpAndSettle();
-        final size = tester.getSize(target);
-        sizes['primary-$index'] = <String, double>{'width': size.width, 'height': size.height};
-        expect(size.width, greaterThanOrEqualTo(48), reason: 'primary-$index width');
-        expect(size.height, greaterThanOrEqualTo(48), reason: 'primary-$index height');
+      for (final scope in <String, Finder>{
+        'primary': find.byType(PreviewToolbar),
+        'app-bar': find.byType(AppBar),
+        'question-actions': _key('question-actions-bar'),
+      }.entries) {
+        final controls = find.descendant(of: scope.value,
+            matching: find.byWidgetPredicate((widget) => widget is InkResponse))
+            .evaluate().toList();
+        expect(controls.length, greaterThan(scope.key == 'primary' ? 20 : 2));
+        for (var index = 0; index < controls.length; index++) {
+          final element = controls[index];
+          final target = find.byElementPredicate((candidate) => identical(candidate, element));
+          await tester.ensureVisible(target);
+          await tester.pumpAndSettle();
+          final size = tester.getSize(target);
+          final label = '${scope.key}-$index';
+          sizes[label] = <String, double>{'width': size.width, 'height': size.height};
+          expect(size.width, greaterThanOrEqualTo(48), reason: '$label width');
+          expect(size.height, greaterThanOrEqualTo(48), reason: '$label height');
+        }
       }
       _record('r8-${width.toInt()}-touch', sizes);
       expect(minimumWidth, greaterThanOrEqualTo(48));
