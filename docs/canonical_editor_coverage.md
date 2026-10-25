@@ -246,3 +246,19 @@ metrics and successful PDF rasters for EVERY formula, verifies both inline and
 block semantic nodes, and records actual maximum coordinate delta/field count.
 This strengthens evidence against silent readable-text fallback; its new checks
 are pending CI and do not retroactively claim a manual visual comparison.
+
+### Option identity race reproduction — deliberately not acceptance
+
+Audit found a concrete missing contract: option models/IR already have persistent
+IDs, but candidate bindings/controllers/callbacks still use positional indices.
+Deleting option 0 while option 1 is focused can synchronously sync the focused
+slot to the next option; IME input arriving before the next widget build then
+uses the captured old index and edits the wrong option. New 320/360 regressions
+exercise that exact same-frame race for question AND branch points, require the
+original option ID/controller/editor/focus/composing/IME client to survive, and
+check untouched sibling data and formats plus undo/redo. The model deletion is
+an external-mutation race probe, **not** proof of a native delete-button workflow.
+The regression is being introduced before its source repair; a red run is not
+acceptance. `b0c8b58` has passed its focused native gate and was still running the
+full suite when this reproduction was added. Production remains on repaired
+legacy; point/option UI parity is still incomplete.

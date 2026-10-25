@@ -9,6 +9,9 @@ import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/document_ir.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
+import 'package:writing_questions_app/models/branch_item.dart';
+import 'package:writing_questions_app/models/point_kind.dart';
+import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/question_model.dart';
@@ -423,6 +426,73 @@ void main() {
       expect(controller.questions.single.body, isEmpty);
       expect(controller.questions.single.branches.single.content.statement, isEmpty);
       expect(controller.questions.single.branches.single.content.body, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('candidate native option identity survives a same-frame earlier deletion at $width', (tester) async {
+      tester.view.physicalSize = Size(width, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      BranchItem item(String id) => BranchItem(id: id, text: 'اختر الإجابة', kind: PointKind.multipleChoice,
+        options: <QuestionOption>[
+          QuestionOption(id: '$id-first', text: 'FIRST'),
+          QuestionOption(id: '$id-second', text: 'SECOND', formats: const <TextFormatSpan>[TextFormatSpan(start: 0, end: 6, bold: true)]),
+          QuestionOption(id: '$id-third', text: 'THIRD'),
+        ]);
+      final controller = ExamWizardController(document: ExamDocument(
+        name: 'Persistent option identity', header: ExamHeaderModel.initial(subject: 'الرياضيات'),
+        questions: <QuestionModel>[QuestionModel(id: 'identity-q', questionNumber: 1, statement: 'منطوق السؤال',
+          items: <BranchItem>[item('identity-qp')],
+          branches: <BranchModel>[BranchModel(id: 'identity-b', content: BranchContent(statement: 'منطوق الفرع', items: <BranchItem>[item('identity-bp')]))])],
+      ));
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(_candidateScreen(controller));
+      await _settle(tester);
+      for (final entry in <String, PointsOwner>{
+        'identity-q/point/identity-qp': const PointsOwner.question(0),
+        'identity-q/branch/identity-b/point/identity-bp': PointsOwner.branch(const BranchRef(questionIndex: 0, branchIndex: 0)),
+      }.entries) {
+        final point = controller.document.pointsOf(entry.value).single;
+        final selected = point.options[1];
+        final untouched = point.options.last.toMap();
+        final layout = tester.widget<CanonicalLayoutPreviewPage>(find.byType(CanonicalLayoutPreviewPage).first).layoutDocument;
+        final prefix = '${entry.key}/options/${selected.id}/content';
+        final page = layout.pages.firstWhere((page) => _runs(page, prefix).isNotEmpty);
+        await _tapPrintedFragment(tester, page, prefix);
+        final field = find.byWidgetPredicate((widget) => widget is PaperField && widget.controller.text == selected.text);
+        final fieldKey = tester.widget<PaperField>(field).key;
+        final editable = find.descendant(of: find.byKey(fieldKey!), matching: find.byType(EditableText));
+        final native = tester.state<EditableTextState>(editable);
+        final originalController = native.widget.controller;
+        final connections = tester.testTextInput.log.where((call) => call.method == 'TextInput.setClient').length;
+        // Deliberate external model mutation, NOT an assertion of delete-button
+        // parity: exercise input arriving BEFORE the next widget/layout build.
+        controller.removePointOption(entry.value, point.id, 0);
+        const composed = 'SECONDم';
+        tester.testTextInput.updateEditingValue(const TextEditingValue(text: composed,
+          selection: TextSelection.collapsed(offset: 7), composing: TextRange(start: 6, end: 7)));
+        final updated = controller.document.pointsOf(entry.value).single;
+        expect(updated.options.first.id, selected.id);
+        expect(updated.options.first.text, composed,
+          reason: 'An earlier deletion must not retarget the old index callback to the NEXT option.');
+        expect(updated.options.last.toMap(), untouched);
+        expect(updated.options.first.formats.map((span) => span.toMap()).toList(), selected.formats.map((span) => span.toMap()).toList());
+        await tester.pumpAndSettle();
+        expect(tester.state<EditableTextState>(editable), same(native));
+        expect(native.widget.controller, same(originalController));
+        expect(native.widget.focusNode.hasFocus, isTrue);
+        expect(native.widget.controller.value.composing, const TextRange(start: 6, end: 7));
+        expect(tester.testTextInput.log.where((call) => call.method == 'TextInput.setClient').length, connections);
+        controller.undo();
+        await tester.pumpAndSettle();
+        expect(controller.document.pointsOf(entry.value).single.options.first.text, 'SECOND');
+        controller.redo();
+        await tester.pumpAndSettle();
+        expect(controller.document.pointsOf(entry.value).single.options.first.text, composed);
+        await tester.tap(find.byTooltip('إغلاق محرر المحتوى'));
+        await tester.pumpAndSettle();
+      }
       expect(tester.takeException(), isNull);
     });
   }
