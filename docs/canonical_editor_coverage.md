@@ -132,3 +132,26 @@ PaperField تحت شجرة الورقة، وبقاء كائن الخطة نفس�
 والدرجات والنقاط/خياراتها، مقابض/أهداف السحب، التغطية الكاملة للنص/المعادلات
 والأوامر والحفظ، وتدقيق لمس جميع أدوات الورق. المرشّح ليس برهان تكافؤ هذه
 الوظائف؛ لا يتغير حكم صفوفها إلى «مغطاة» لمجرد وجوده.
+
+### Candidate follow-up — pending CI (production still off)
+
+- `7ed5e38`: R1/R4 8/0, full 911/2 (both candidate fragment hit helpers),
+  canonical 3/0, analyzer clean; Extended diagnostics passed. APK did not build.
+- Diagnosed the test-coordinate mismatch: `WidgetTester.getRect` combines a
+  transformed top-left with the **unscaled local size**. Actual paper is zoomed.
+  Pointer targets now use `RenderBox.getTransformTo(null)` over the complete
+  local bounds, matching the actual print transform. No layout tolerance or
+  print geometry was changed to make a test pass.
+- Optional question/branch bodies now have an opt-in native editor fallback
+  anchored to their real owner/title block, or the shared plan's unplanned-owner
+  page/body origin when nothing is printed. Existing body command/controllers/
+  model callbacks are retained. Empty placeholders remain outside print flow.
+  Typing/clearing bodies and retaining focus/controller/state at 320/360 are
+  covered by new **unverified** integration tests, not yet claimed as passing.
+- Native/contextual fields can request a 48dp minimum interactive height;
+  printed legacy fields keep the zero default. This is not a print-height fix.
+- CI now runs production R1/R4, then the native candidate/caret regressions,
+  then the full suite/analyzer/APK. Candidate failures must not trigger costly
+  downstream visual jobs or be hidden by full-suite output truncation.
+- All previous missing-parity rows remain missing until individually proved;
+  this does **not** approve or enable the candidate in production.

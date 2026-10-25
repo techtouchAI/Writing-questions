@@ -83,8 +83,10 @@ class _CanonicalFieldBinding {
     required this.style,
     required this.onEdit,
     required this.onLongPress,
+    this.hint,
   });
 
+  final String? hint;
   final String fieldKey;
   final String sourceText;
   final InlineContent content;
@@ -3827,6 +3829,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
     final hit = event.hit;
     if (hit == null || hit.isFloatingElement) return;
+    if (_separateEditorCandidate) _canonicalEditorPageHint = page.index;
     final run = _canonicalRunById(page, hit.runId);
     final binding = run?.semanticNode == null ? null : bindings[run!.semanticNode];
     if (binding != null && run != null) {
@@ -3974,9 +3977,53 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return null;
   }
 
+  ({_CanonicalFieldBinding binding, String ownerId, String questionId})? _candidateBodyBinding(ExamWizardController controller) {
+    final document = controller.document;
+    TextStyle style(TextStyle role, PaperTextStyle override) => PaperStyles.resolve(
+      role, override, defaultFont: document.settings.defaultFont,
+      fontScale: _fontScale, heightScale: _heightScale,
+    );
+    for (var q = 0; q < document.questions.length; q++) {
+      final question = document.questions[q];
+      final ir = controller.documentIr.questionById(question.id);
+      if (_activeFieldKey == _bodyKey(question.id)) {
+        return (ownerId: question.id, questionId: question.id, binding: _CanonicalFieldBinding(
+          fieldKey: _bodyKey(question.id), sourceText: question.body,
+          content: ir?.body?.content ?? InlineContent.fromSource(question.body),
+          style: style(PaperStyles.prompt, question.style.copyWith(color: () => null)),
+          hint: 'نص السؤال (اختياري)',
+          onEdit: (value) => controller.updateQuestionBody(q, value),
+          onLongPress: () => _longPressQuestion(q),
+        ));
+      }
+      for (var b = 0; b < question.branches.length; b++) {
+        final branch = question.branches[b];
+        if (_activeFieldKey != _branchBodyKey(branch.id)) continue;
+        final ref = BranchRef(questionIndex: q, branchIndex: b);
+        final branchIr = ir?.branches.where((candidate) => candidate.id == branch.id).firstOrNull;
+        return (ownerId: branch.id, questionId: question.id, binding: _CanonicalFieldBinding(
+          fieldKey: _branchBodyKey(branch.id), sourceText: branch.content.body,
+          content: branchIr?.body?.content ?? InlineContent.fromSource(branch.content.body),
+          style: style(PaperStyles.body(document.layout), branch.style),
+          hint: 'نص الفرع (اختياري)',
+          onEdit: (value) => controller.updateBranchBody(ref, value),
+          onLongPress: () => _longPressBranch(ref),
+        ));
+      }
+    }
+    return null;
+  }
+
+  Iterable<LayoutBlock> _canonicalDescendants(Iterable<LayoutBlock> blocks) sync* {
+    for (final block in blocks) {
+      yield block;
+      yield* _canonicalDescendants(block.children);
+    }
+  }
+
   Widget _buildSeparateCanonicalEditor(ExamWizardController controller, LayoutDocument layout) {
     final bindings = _canonicalFieldBindings(controller, layout.source);
-    ({LayoutPage page, LayoutLine line, _CanonicalFieldBinding binding})? target;
+    ({LayoutPage page, LayoutRect anchor, _CanonicalFieldBinding binding})? target;
     var bestDistance = double.infinity;
     final source = _activeFieldKey == null ? null : _fields[_activeFieldKey];
     final selection = source?.selection;
@@ -3994,7 +4041,35 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             if (distance == bestDistance &&
                 (target?.page.index == _canonicalEditorPageHint || page.index != _canonicalEditorPageHint)) continue;
             bestDistance = distance;
-            target = (page: page, line: line, binding: binding);
+            target = (page: page, anchor: line.rect, binding: binding);
+          }
+        }
+      }
+    }
+    if (target == null) {
+      final body = _candidateBodyBinding(controller);
+      if (body != null) {
+        // No invented printed box: use the actual owner/title on this page.
+        // An entirely unprinted owner uses the shared plan's unplanned anchor.
+        for (final ownerId in <String>{body.ownerId, body.questionId}) {
+          for (final page in layout.pages) {
+            for (final block in _canonicalDescendants(page.blocks)) {
+              if (block.semanticNodeId != ownerId) continue;
+              if (target != null && page.index != _canonicalEditorPageHint) continue;
+              final lines = block.allLines;
+              target = (page: page, anchor: lines.isEmpty ? block.rect : lines.first.rect, binding: body.binding);
+            }
+          }
+          if (target != null) break;
+        }
+        if (target == null) {
+          final plan = CanonicalPagePlan.fromLayout(layout);
+          for (final page in plan.pages) {
+            if (!page.unplannedQuestionIds.contains(body.questionId)) continue;
+            target = (page: layout.pages[page.index],
+              anchor: LayoutRect.fromLTWH(page.bodyBounds.left, page.bodyBounds.top, page.bodyBounds.width, 0),
+              binding: body.binding);
+            break;
           }
         }
       }
@@ -4006,7 +4081,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       key: const ValueKey<String>('canonical-native-editing-layer'),
       viewportKey: _canonicalEditorViewport,
       pageKey: pageKey,
-      anchorPt: target.line.rect,
+      anchorPt: target.anchor,
       scrollChanges: _canonicalEditorScroll,
       child: Material(
         elevation: 6,
@@ -4031,6 +4106,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               style: binding.style,
               semanticContent: binding.content,
               autofocus: true,
+              minimumInteractiveHeight: 48,
+              hint: binding.hint,
               matchPrintedTextWidth: false,
               onLongPress: binding.onLongPress,
             ),
@@ -5379,6 +5456,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         controller.updateBranchBody(branchRef, value);
       }
     });
+    if (_separateEditorCandidate) {
+      _canonicalEditorOpen = true;
+      _activateField(fieldKey, field);
+      return;
+    }
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => ChangeNotifierProvider<ExamWizardController>.value(
@@ -5407,6 +5489,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       fieldKey: fieldKey,
                       controller: field,
                       matchPrintedTextWidth: false,
+                      minimumInteractiveHeight: 48,
                       style: PaperStyles.resolve(
                         branchRef == null ? PaperStyles.prompt : PaperStyles.body(current.document.layout),
                         style.copyWith(color: () => null),
@@ -7370,6 +7453,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     bool mushafStyle = false,
     bool matchPrintedTextWidth = true,
     bool autofocus = false,
+    double minimumInteractiveHeight = 0,
     InlineContent? semanticContent,
     VoidCallback? onLongPress,
   }) {
@@ -7380,6 +7464,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       key: ValueKey<String>('$fieldKey$_sliceKeySuffix'),
       controller: controller,
       autofocus: autofocus,
+      minimumInteractiveHeight: minimumInteractiveHeight,
       style: style,
       matchPrintedTextWidth: matchPrintedTextWidth,
       semanticContent: semanticContent,

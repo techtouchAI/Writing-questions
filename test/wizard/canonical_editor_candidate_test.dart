@@ -48,7 +48,10 @@ Future<void> _tapPrintedFragment(WidgetTester tester, LayoutPage page, String pr
   await tester.ensureVisible(finder);
   await tester.pumpAndSettle();
   List<Offset> availableTargets() {
-    final rect = tester.getRect(finder);
+    final box = tester.renderObject<RenderBox>(finder);
+    // getRect combines transformed top-left with UNTRANSFORMED local size.
+    // The real paper is zoomed: use its entire actual paint transform.
+    final rect = MatrixUtils.transformRect(box.getTransformTo(null), Offset.zero & box.size);
     final panel = find.descendant(of: find.byType(CanonicalEditingLayer), matching: find.byType(Material));
     final panelRect = panel.evaluate().isEmpty ? null : tester.getRect(panel.first);
     final screen = Offset.zero & (tester.view.physicalSize / tester.view.devicePixelRatio);
@@ -66,11 +69,23 @@ Future<void> _tapPrintedFragment(WidgetTester tester, LayoutPage page, String pr
     await tester.pumpAndSettle();
     available = availableTargets();
   }
-  expect(available, isNotEmpty, reason: 'After real paper scrolling, a printed fragment must remain reachable.');
+  expect(available, isNotEmpty, reason: 'After real paper scrolling, page ${page.index} / $prefix must remain reachable through its actual render transform.');
   // Use a real pointer hit, never call an activation callback or showKeyboard.
   await tester.tapAt(available.last);
   await tester.pumpAndSettle();
 }
+
+Widget _candidateScreen(ExamWizardController controller) => MaterialApp(home: ChangeNotifierProvider<ExamWizardController>.value(
+        value: controller,
+        child: ExamPreviewScreen(
+          onBackToQuestions: () {},
+          enableSeparateEditorCandidate: true,
+          canonicalLayoutResolver: ({required ExamDocument document, required DocumentIR sourceIr}) =>
+            CanonicalLayoutService.resolve(document: document, sourceIr: sourceIr),
+          canonicalPreviewAssetLoader: ({required LayoutDocument layout, required ExamDocument document}) =>
+            CanonicalLayoutPreviewAssets.load(layout: layout, document: document),
+        ),
+      ));
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -96,17 +111,7 @@ void main() {
       );
       final controller = ExamWizardController(document: document);
       addTearDown(controller.dispose);
-      await tester.pumpWidget(MaterialApp(home: ChangeNotifierProvider<ExamWizardController>.value(
-        value: controller,
-        child: ExamPreviewScreen(
-          onBackToQuestions: () {},
-          enableSeparateEditorCandidate: true,
-          canonicalLayoutResolver: ({required ExamDocument document, required DocumentIR sourceIr}) =>
-            CanonicalLayoutService.resolve(document: document, sourceIr: sourceIr),
-          canonicalPreviewAssetLoader: ({required LayoutDocument layout, required ExamDocument document}) =>
-            CanonicalLayoutPreviewAssets.load(layout: layout, document: document),
-        ),
-      )));
+      await tester.pumpWidget(_candidateScreen(controller));
       await _settle(tester);
       final layout = tester.widget<CanonicalLayoutPreviewPage>(find.byType(CanonicalLayoutPreviewPage).first).layoutDocument;
       final originalDocument = controller.document;
@@ -173,6 +178,69 @@ void main() {
       controller.redo();
       await tester.pumpAndSettle();
       expect(controller.questions.single.branches.single.content.body, composed);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('candidate native empty question and branch bodies stay outside print at $width', (tester) async {
+      tester.view.physicalSize = Size(width, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final controller = ExamWizardController(document: ExamDocument(
+        name: 'Optional bodies',
+        header: ExamHeaderModel.initial(subject: 'الرياضيات'),
+        questions: <QuestionModel>[QuestionModel(
+          id: 'empty-q', questionNumber: 1, statement: 'منطوق السؤال',
+          branches: <BranchModel>[BranchModel(id: 'empty-b', content: BranchContent(statement: 'منطوق الفرع'))],
+        )],
+      ));
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(_candidateScreen(controller));
+      await _settle(tester);
+      for (final entry in <String, String>{
+        'body-empty-q': 'empty-q',
+        'branch-body-empty-b': 'empty-q/branch/empty-b',
+      }.entries) {
+        final pageWidget = tester.widget<CanonicalLayoutPreviewPage>(find.byType(CanonicalLayoutPreviewPage).first);
+        final layout = pageWidget.layoutDocument;
+        final before = controller.document;
+        final lines = [for (final page in layout.pages) for (final block in page.blocks) for (final line in block.allLines) line.rect];
+        expect([for (final page in layout.pages) ..._runs(page, '${entry.value}/body')], isEmpty);
+        final page = layout.pages.firstWhere((page) => _runs(page, '${entry.value}/statement').isNotEmpty);
+        await _tapPrintedFragment(tester, page, '${entry.value}/statement');
+        final action = find.byKey(const ValueKey<String>('question-action-edit-body'));
+        expect(tester.getSize(action).height, greaterThanOrEqualTo(48));
+        expect(tester.getSize(action).width, greaterThanOrEqualTo(48));
+        await tester.tap(action);
+        await tester.pumpAndSettle();
+        expect(find.byType(AlertDialog), findsNothing, reason: 'Candidate bodies use the same anchored native editor, not a replacement dialog.');
+        final field = find.byKey(ValueKey<String>(entry.key));
+        final editable = find.descendant(of: field, matching: find.byType(EditableText));
+        expect(editable, findsOneWidget);
+        final native = tester.widget<EditableText>(editable);
+        final nativeState = tester.state<EditableTextState>(editable);
+        expect(native.focusNode.hasFocus, isTrue);
+        expect(tester.getSize(find.descendant(of: field, matching: find.byType(TextField))).height, greaterThanOrEqualTo(48));
+        expect(controller.document, same(before));
+        final after = tester.widget<CanonicalLayoutPreviewPage>(find.byType(CanonicalLayoutPreviewPage).first).layoutDocument;
+        expect([for (final page in after.pages) for (final block in page.blocks) for (final line in block.allLines) line.rect], lines,
+          reason: 'Opening an optional editor must create no printed box or change any printed coordinate.');
+        expect(find.descendant(of: find.byType(CanonicalLayoutPreviewPage), matching: field), findsNothing);
+        await tester.enterText(field, 'إضافة نص اختياري English');
+        await tester.pumpAndSettle();
+        expect(native.controller.text, 'إضافة نص اختياري English');
+        expect(entry.key.startsWith('branch') ? controller.questions.single.branches.single.content.body : controller.questions.single.body, native.controller.text);
+        expect(tester.state<EditableTextState>(editable), same(nativeState));
+        expect(tester.widget<EditableText>(editable).controller, same(native.controller));
+        await tester.enterText(field, '');
+        await tester.pumpAndSettle();
+        expect(tester.state<EditableTextState>(editable), same(nativeState), reason: 'Removing the final printed run must retain native focus/controller/session via the actual owner anchor.');
+        expect(native.focusNode.hasFocus, isTrue);
+        final cleared = tester.widget<CanonicalLayoutPreviewPage>(find.byType(CanonicalLayoutPreviewPage).first).layoutDocument;
+        expect([for (final page in cleared.pages) ..._runs(page, '${entry.value}/body')], isEmpty);
+        await tester.tap(find.byTooltip('إغلاق محرر المحتوى'));
+        await tester.pumpAndSettle();
+      }
       expect(tester.takeException(), isNull);
     });
   }

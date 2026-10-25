@@ -38,6 +38,7 @@ class PaperField extends StatefulWidget {
     this.canonicalInteractionOnly = false,
     this.autofocus = false,
     this.matchPrintedTextWidth = false,
+    this.minimumInteractiveHeight = 0,
   });
 
   /// متحكم النص (نفسه في وضعَي العرض والتحرير).
@@ -93,6 +94,9 @@ class PaperField extends StatefulWidget {
   /// editor's caret-only gutter. Does not alter the parent's width or clip.
   /// Separate/contextual editors use the normal TextField width by default.
   final bool matchPrintedTextWidth;
+
+  /// Native/contextual touch height only; print fields leave this at zero.
+  final double minimumInteractiveHeight;
 
   @override
   State<PaperField> createState() => _PaperFieldState();
@@ -320,9 +324,10 @@ class _PaperFieldState extends State<PaperField> {
             child: InkWell(
               onTap: _handleRenderedTap,
               onLongPress: widget.onLongPress,
-              child: SizedBox(
-                width: double.infinity,
-                child: widget.renderBuilder(widget.controller.text),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: widget.minimumInteractiveHeight),
+                child: SizedBox(width: double.infinity,
+                  child: widget.renderBuilder(widget.controller.text)),
               ),
             ),
           );
@@ -350,9 +355,10 @@ class _PaperFieldState extends State<PaperField> {
         return SizedBox(
           width: double.infinity,
           child: _buildLongPressLayer(
-            widget.matchPrintedTextWidth
-                ? _CaretGutter(child: field)
-                : field,
+            ConstrainedBox(
+              constraints: BoxConstraints(minHeight: widget.minimumInteractiveHeight),
+              child: widget.matchPrintedTextWidth ? _CaretGutter(child: field) : field,
+            ),
           ),
         );
       },
