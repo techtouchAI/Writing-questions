@@ -211,3 +211,38 @@ selection, plus the same-live-plan PDF and JSON manifest into the existing
 source field rectangles in page coordinates to 1e-6px (IEEE roundoff only),
 while asserting identical document and plan objects. These files are not yet
 verified/generated and are not a manual visual review or an editing-parity claim.
+
+## Metadata and production evidence verified — 324fd4c
+
+Run `40234173938`, main `121292228670`: production 8/0, focused native 17/0,
+full **922/0** (103 suites), canonical 3/0, analyzer clean, actual APK built and
+uploaded. Extended `40234173929` passed. Visual/C6 were still outstanding at
+this checkpoint, so this is not an all-workflow completion statement.
+
+- Question/branch printed label/marks routing, native 48dp equivalent controls,
+  existing dialogs (including actual focus/field/action touch sizes), cancel,
+  zero marks, undo/redo, other-question/text/range-format preservation passed.
+  Point/option metadata is still missing.
+- Production mixed-math 320/360 fixture passed. Actual live-plan PDF plus every
+  page's phone/full-paper PNGs in three selection states are in
+  `production-fragment-repro` artifact `12614122565` (11,659,580 bytes).
+  Actual APK artifact `12614367237` (28,384,212 bytes). No manual image/PDF review.
+
+### Next source-field increment — pending verification
+
+A candidate-only 48dp access menu relocates existing empty question/branch
+statement/body fields out of print flow, including entirely unprinted owners
+and whitespace-only fields. It resolves persistent owner IDs against the live
+model at selection and uses the original source controllers/update callbacks.
+No stored model, print placeholder, or default production tool is added.
+Tests cover all four source roles at 320/360, composing insertion, the transition
+from no printed owner to printed text and back, and no editor/controller/focus/
+IME-client replacement. Existing optional-body cases also now test composing
+and no reconnection. Empty points/options/category and other parity rows remain
+uncovered; production activation remains prohibited.
+
+The production evidence fixture now additionally requires real `mathSnapshot`
+metrics and successful PDF rasters for EVERY formula, verifies both inline and
+block semantic nodes, and records actual maximum coordinate delta/field count.
+This strengthens evidence against silent readable-text fallback; its new checks
+are pending CI and do not retroactively claim a manual visual comparison.

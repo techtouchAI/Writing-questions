@@ -13,11 +13,13 @@ import 'package:writing_questions_app/layout/canonical/canonical_page_plan.dart'
 import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart';
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
+import 'package:writing_questions_app/layout/semantic/inline_nodes.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
+import 'package:writing_questions_app/pdf_engine/pdf_math_rasters.dart';
 import 'package:writing_questions_app/services/math_snapshot_renderer.dart';
 import 'package:writing_questions_app/services/pdf_export_service.dart';
 import 'package:writing_questions_app/views/widgets/math_snapshot_host.dart';
@@ -158,8 +160,13 @@ void main() {
       final math = plan.layout.allLines.expand((line) => line.runs).where((run) => run.isMath).toList();
       expect(math.any((run) => run.text.contains('x^2')), isTrue);
       expect(math.any((run) => run.text.contains(r'\frac')), isTrue);
+      expect(math.map((run) => run.semanticNode).whereType<MathNode>().any((node) => node.isBlock), isTrue);
+      expect(math.map((run) => run.semanticNode).whereType<MathNode>().any((node) => !node.isBlock), isTrue);
+      expect(math.every((run) => run.mathBox?.source == 'mathSnapshot'), isTrue,
+        reason: 'A host being available is insufficient: every math run needs actual snapshot metrics.');
       final before = _geometry(tester, plan);
       expect(before, isNotEmpty);
+      var maxSelectionDelta = 0.0;
       final label = 'r9-${width.toInt()}';
       for (final state in <String>['before-selection', 'question-selected', 'branch-selected']) {
         if (state != 'before-selection') {
@@ -179,6 +186,8 @@ void main() {
             // IEEE matrix/translation roundoff only; no pixel-height allowance.
             for (final pair in <(double, double)>[(actual.left, entry.value.left), (actual.top, entry.value.top),
                 (actual.width, entry.value.width), (actual.height, entry.value.height)]) {
+              final delta = (pair.$1 - pair.$2).abs();
+              if (delta > maxSelectionDelta) maxSelectionDelta = delta;
               expect(pair.$1, closeTo(pair.$2, 1e-6), reason: entry.key);
             }
           }
@@ -192,12 +201,23 @@ void main() {
             '$label-$state-page-${page.index}-paper');
         }
       }
-      final pdf = await _finish(tester, PdfExportService.buildDocumentPdfBytes(document: document, layoutDocument: plan.layout));
+      // The exact public raster collector used by the production PDF engine;
+      // assert every requested formula succeeded, never accept text fallback.
+      final requested = PdfMathRasters.collecting();
+      for (final run in math) { requested.lookup(run.text, run.style.fontSizePt); }
+      final rasters = await _finish(tester, requested.resolve());
+      for (final run in math) {
+        expect(rasters.lookup(run.text, run.style.fontSizePt), isNotNull);
+      }
+      final pdf = await _finish(tester, PdfExportService.buildDocumentPdfBytes(
+        document: document, layoutDocument: plan.layout, mathRasters: rasters));
       File('$_out/$label-same-live-plan.pdf').writeAsBytesSync(pdf);
       File('$_out/$label-manifest.json').writeAsStringSync(const JsonEncoder.withIndent('  ').convert({
         'surface': 'production default; no resolver/asset injection', 'mathHost': true,
         'widthDp': width, 'pageCount': plan.pageCount, 'bodyPages': pageSets,
-        'mathRunCount': math.length, 'pdfUsesObservedLivePlan': true,
+        'mathRunCount': math.length, 'mathRasterCount': requested.requestCount,
+        'mathMetricsSource': 'mathSnapshot', 'pdfUsesObservedLivePlan': true,
+        'measuredSourceFields': before.length, 'maxSelectionDeltaPx': maxSelectionDelta,
         'selectionGeometryTolerancePx': 1e-6, 'manualVisualReview': false,
       }));
       expect(tester.takeException(), isNull);

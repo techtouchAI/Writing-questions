@@ -245,6 +245,12 @@ void main() {
         expect([for (final page in after.pages) for (final block in page.blocks) for (final line in block.allLines) line.rect], lines,
           reason: 'Opening an optional editor must create no printed box or change any printed coordinate.');
         expect(find.descendant(of: find.byType(CanonicalLayoutPreviewPage), matching: field), findsNothing);
+        final connections = tester.testTextInput.log.where((call) => call.method == 'TextInput.setClient').length;
+        tester.testTextInput.updateEditingValue(const TextEditingValue(text: 'م',
+          selection: TextSelection.collapsed(offset: 1), composing: TextRange(start: 0, end: 1)));
+        await tester.pumpAndSettle();
+        expect(native.controller.value.composing, const TextRange(start: 0, end: 1));
+        expect(tester.state<EditableTextState>(editable), same(nativeState));
         await tester.enterText(field, 'إضافة نص اختياري English');
         await tester.pumpAndSettle();
         expect(native.controller.text, 'إضافة نص اختياري English');
@@ -255,6 +261,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.state<EditableTextState>(editable), same(nativeState), reason: 'Removing the final printed run must retain native focus/controller/session via the actual owner anchor.');
         expect(native.focusNode.hasFocus, isTrue);
+        expect(tester.testTextInput.log.where((call) => call.method == 'TextInput.setClient').length, connections);
         final cleared = tester.widget<CanonicalLayoutPreviewPage>(find.byType(CanonicalLayoutPreviewPage).first).layoutDocument;
         expect([for (final page in cleared.pages) ..._runs(page, '${entry.value}/body')], isEmpty);
         await tester.tap(find.byTooltip('إغلاق محرر المحتوى'));
@@ -355,6 +362,67 @@ void main() {
       expect(controller.questions.first.statementFormats.map((span) => span.toMap()).toList(), formats);
       expect(controller.questions.first.statement, 'منطوق السؤال');
       expect(controller.questions.first.branches.single.content.statement, 'منطوق الفرع');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('candidate native entirely unprinted owners keep all statement and body fields accessible at $width', (tester) async {
+      tester.view.physicalSize = Size(width, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final controller = ExamWizardController(document: ExamDocument(
+        name: 'Unprinted source owners', header: ExamHeaderModel.initial(subject: 'الرياضيات'),
+        questions: <QuestionModel>[QuestionModel(id: 'blank-q', questionNumber: 1, statement: '   ',
+          branches: <BranchModel>[BranchModel(id: 'blank-b', content: BranchContent(body: '\n '))])],
+      ));
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(_candidateScreen(controller));
+      await _settle(tester);
+      for (final key in <String>['statement-blank-q', 'branch-statement-blank-b', 'body-blank-q', 'branch-body-blank-b']) {
+        final before = controller.document;
+        final plan = tester.widget<CanonicalLayoutPreviewPage>(find.byType(CanonicalLayoutPreviewPage).first).layoutDocument;
+        expect([for (final page in plan.pages) ..._runs(page, 'blank-q')], isEmpty,
+          reason: 'Entirely empty/whitespace owners must have NO printed placeholder.');
+        final access = find.byKey(const ValueKey<String>('canonical-empty-fields'));
+        await tester.ensureVisible(access);
+        await tester.pumpAndSettle();
+        expect(tester.getSize(access), const Size(48, 48));
+        await tester.tap(access);
+        await tester.pumpAndSettle();
+        final entry = find.byKey(ValueKey<String>('canonical-empty-$key'));
+        expect(tester.getSize(entry).height, greaterThanOrEqualTo(48));
+        await tester.tap(entry);
+        await tester.pumpAndSettle();
+        final field = find.byKey(ValueKey<String>(key));
+        final editable = find.descendant(of: field, matching: find.byType(EditableText));
+        final native = tester.state<EditableTextState>(editable);
+        expect(native.widget.focusNode.hasFocus, isTrue);
+        expect(controller.document, same(before));
+        expect(tester.widget<CanonicalLayoutPreviewPage>(find.byType(CanonicalLayoutPreviewPage).first).layoutDocument, same(plan));
+        expect(find.descendant(of: find.byType(CanonicalLayoutPreviewPage), matching: field), findsNothing);
+        final connections = tester.testTextInput.log.where((call) => call.method == 'TextInput.setClient').length;
+        tester.testTextInput.updateEditingValue(const TextEditingValue(text: 'م',
+          selection: TextSelection.collapsed(offset: 1), composing: TextRange(start: 0, end: 1)));
+        await tester.pumpAndSettle();
+        expect(native.widget.controller.text, 'م');
+        expect(native.widget.controller.value.composing, const TextRange(start: 0, end: 1));
+        expect(tester.state<EditableTextState>(editable), same(native));
+        final typed = tester.widget<CanonicalLayoutPreviewPage>(find.byType(CanonicalLayoutPreviewPage).first).layoutDocument;
+        expect([for (final page in typed.pages) ..._runs(page, 'blank-q')], isNotEmpty);
+        await tester.enterText(field, '');
+        await tester.pumpAndSettle();
+        expect(tester.state<EditableTextState>(editable), same(native));
+        expect(native.widget.focusNode.hasFocus, isTrue);
+        expect(tester.testTextInput.log.where((call) => call.method == 'TextInput.setClient').length, connections);
+        final cleared = tester.widget<CanonicalLayoutPreviewPage>(find.byType(CanonicalLayoutPreviewPage).first).layoutDocument;
+        expect([for (final page in cleared.pages) ..._runs(page, 'blank-q')], isEmpty);
+        await tester.tap(find.byTooltip('إغلاق محرر المحتوى'));
+        await tester.pumpAndSettle();
+      }
+      expect(controller.questions.single.statement, isEmpty);
+      expect(controller.questions.single.body, isEmpty);
+      expect(controller.questions.single.branches.single.content.statement, isEmpty);
+      expect(controller.questions.single.branches.single.content.body, isEmpty);
       expect(tester.takeException(), isNull);
     });
   }

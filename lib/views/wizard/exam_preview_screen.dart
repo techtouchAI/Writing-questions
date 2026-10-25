@@ -4009,8 +4009,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return null;
   }
 
-  ({_CanonicalFieldBinding binding, String ownerId, String questionId})? _candidateBodyBinding(ExamWizardController controller) {
+  ({_CanonicalFieldBinding binding, String ownerId, String questionId})? _candidateOptionalBinding(ExamWizardController controller, {String? fieldKey}) {
     final document = controller.document;
+    final key = fieldKey ?? _activeFieldKey;
     TextStyle style(TextStyle role, PaperTextStyle override) => PaperStyles.resolve(
       role, override, defaultFont: document.settings.defaultFont,
       fontScale: _fontScale, heightScale: _heightScale,
@@ -4018,27 +4019,34 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     for (var q = 0; q < document.questions.length; q++) {
       final question = document.questions[q];
       final ir = controller.documentIr.questionById(question.id);
-      if (_activeFieldKey == _bodyKey(question.id)) {
+      final statement = key == _statementKey(question.id);
+      if (statement || key == _bodyKey(question.id)) {
+        final text = statement ? question.statement : question.body;
         return (ownerId: question.id, questionId: question.id, binding: _CanonicalFieldBinding(
-          fieldKey: _bodyKey(question.id), sourceText: question.body,
-          content: ir?.body?.content ?? InlineContent.fromSource(question.body),
-          style: style(PaperStyles.prompt, question.style.copyWith(color: () => null)),
-          hint: 'نص السؤال (اختياري)',
-          onEdit: (value) => controller.updateQuestionBody(q, value),
+          fieldKey: statement ? _statementKey(question.id) : _bodyKey(question.id), sourceText: text,
+          content: (statement ? ir?.content : ir?.body?.content) ?? InlineContent.fromSource(text),
+          style: statement
+              ? style(PaperStyles.question, question.style.copyWith(color: () => question.effectiveTitleColor))
+              : style(PaperStyles.prompt, question.style.copyWith(color: () => null)),
+          hint: statement ? 'منطوق السؤال' : 'نص السؤال (اختياري)',
+          onEdit: (value) => statement ? controller.updateQuestionStatement(q, value) : controller.updateQuestionBody(q, value),
           onLongPress: () => _longPressQuestion(q),
         ));
       }
       for (var b = 0; b < question.branches.length; b++) {
         final branch = question.branches[b];
-        if (_activeFieldKey != _branchBodyKey(branch.id)) continue;
+        final statement = key == _branchStatementKey(branch.id);
+        if (!statement && key != _branchBodyKey(branch.id)) continue;
         final ref = BranchRef(questionIndex: q, branchIndex: b);
         final branchIr = ir?.branches.where((candidate) => candidate.id == branch.id).firstOrNull;
         return (ownerId: branch.id, questionId: question.id, binding: _CanonicalFieldBinding(
-          fieldKey: _branchBodyKey(branch.id), sourceText: branch.content.body,
-          content: branchIr?.body?.content ?? InlineContent.fromSource(branch.content.body),
+          fieldKey: statement ? _branchStatementKey(branch.id) : _branchBodyKey(branch.id),
+          sourceText: statement ? branch.content.statement : branch.content.body,
+          content: (statement ? branchIr?.content : branchIr?.body?.content) ??
+            InlineContent.fromSource(statement ? branch.content.statement : branch.content.body),
           style: style(PaperStyles.body(document.layout), branch.style),
-          hint: 'نص الفرع (اختياري)',
-          onEdit: (value) => controller.updateBranchBody(ref, value),
+          hint: statement ? 'منطوق الفرع' : 'نص الفرع (اختياري)',
+          onEdit: (value) => statement ? controller.updateBranchStatement(ref, value) : controller.updateBranchBody(ref, value),
           onLongPress: () => _longPressBranch(ref),
         ));
       }
@@ -4079,7 +4087,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
     }
     if (target == null) {
-      final body = _candidateBodyBinding(controller);
+      final body = _candidateOptionalBinding(controller);
       if (body != null) {
         // No invented printed box: use the actual owner/title on this page.
         // An entirely unprinted owner uses the shared plan's unplanned anchor.
@@ -5329,6 +5337,44 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// كل مجموعة تعمل على هدفها وحده: أدوات السؤال على السؤال المستهدف، وأدوات
   /// الفرع على فرع واحد محدَّد/نشط (أو الفرع الوحيد في السؤال) — وإلا تُعطَّل
   /// بدل أن تعمل على عنصر لم يقصده المستخدم.
+  /// Equivalent access to existing optional source fields when the print
+  /// contract deliberately gives their owner no ink or hit box. No placeholder
+  /// is inserted into the page; persistent IDs survive popup/model changes.
+  Widget _buildCandidateEmptyFields(ExamWizardController controller) {
+    final document = controller.document;
+    final entries = <({String key, String label})>[];
+    for (var q = 0; q < document.questions.length; q++) {
+      final question = document.questions[q];
+      final name = 'السؤال ${document.formatNumber(q + 1)}';
+      if (question.statement.trim().isEmpty) entries.add((key: _statementKey(question.id), label: '$name — المنطوق'));
+      if (question.body.trim().isEmpty) entries.add((key: _bodyKey(question.id), label: '$name — النص الاختياري'));
+      for (var b = 0; b < question.branches.length; b++) {
+        final branch = question.branches[b];
+        final name = 'السؤال ${document.formatNumber(q + 1)} — الفرع ${document.formatNumber(b + 1)}';
+        if (branch.content.statement.trim().isEmpty) entries.add((key: _branchStatementKey(branch.id), label: '$name — المنطوق'));
+        if (branch.content.body.trim().isEmpty) entries.add((key: _branchBodyKey(branch.id), label: '$name — النص الاختياري'));
+      }
+    }
+    return SizedBox(width: 48, height: 48, child: PopupMenuButton<String>(
+      key: const ValueKey<String>('canonical-empty-fields'),
+      tooltip: 'تحرير حقل غير مطبوع', icon: const Icon(Icons.edit_note),
+      enabled: !_locked && !_isBusy && !_multiSelect && entries.isNotEmpty,
+      itemBuilder: (_) => <PopupMenuEntry<String>>[
+        for (final entry in entries) PopupMenuItem<String>(
+          key: ValueKey<String>('canonical-empty-${entry.key}'), value: entry.key,
+          height: 48, child: Text(entry.label, maxLines: 2, overflow: TextOverflow.ellipsis)),
+      ],
+      onSelected: (key) {
+        final owner = _candidateOptionalBinding(controller, fieldKey: key);
+        if (owner == null) return;
+        final binding = owner.binding;
+        _canonicalEditorOpen = true;
+        _canonicalEditorPageHint = null;
+        _activateField(key, _field(key, binding.sourceText, binding.onEdit));
+      },
+    ));
+  }
+
   Widget _buildQuestionActionsBar(ExamWizardController controller) {
     final index = _actionQuestionIndex();
     final branchRef = _actionBranchRef();
@@ -5398,6 +5444,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: <Widget>[
+                    if (_separateEditorCandidate) _buildCandidateEmptyFields(controller),
                     button(
                       key: 'question-action-edit-body',
                       icon: Icons.edit_note,
