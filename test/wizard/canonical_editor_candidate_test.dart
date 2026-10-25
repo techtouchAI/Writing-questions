@@ -47,18 +47,28 @@ Future<void> _tapPrintedFragment(WidgetTester tester, LayoutPage page, String pr
   final finder = _page(page.index);
   await tester.ensureVisible(finder);
   await tester.pumpAndSettle();
-  final rect = tester.getRect(finder);
-  final panel = find.descendant(of: find.byType(CanonicalEditingLayer), matching: find.byType(Material));
-  final panelRect = panel.evaluate().isEmpty ? null : tester.getRect(panel.first);
-  Offset point(({LayoutLine line, LayoutRun run}) value) => Offset(
-    rect.left + (value.run.x + value.run.width / 2) / page.pageSize.width * rect.width,
-    rect.top + (value.line.baseline - value.run.baselineOffset + value.run.height / 2) / page.pageSize.height * rect.height,
-  );
-  final available = _runs(page, prefix).where((value) =>
-    panelRect == null || !panelRect.contains(point(value))).toList();
-  expect(available, isNotEmpty, reason: 'The native editor must leave a real printed target reachable.');
+  List<Offset> availableTargets() {
+    final rect = tester.getRect(finder);
+    final panel = find.descendant(of: find.byType(CanonicalEditingLayer), matching: find.byType(Material));
+    final panelRect = panel.evaluate().isEmpty ? null : tester.getRect(panel.first);
+    final screen = Offset.zero & (tester.view.physicalSize / tester.view.devicePixelRatio);
+    return _runs(page, prefix).map((value) => Offset(
+      rect.left + (value.run.x + value.run.width / 2) / page.pageSize.width * rect.width,
+      rect.top + (value.line.baseline - value.run.baselineOffset + value.run.height / 2) / page.pageSize.height * rect.height,
+    )).where((point) => screen.contains(point) && (panelRect == null || !panelRect.contains(point))).toList();
+  }
+  var available = availableTargets();
+  if (available.isEmpty) {
+    // A contextual editor can cover a short continuation after top alignment.
+    // Real paper scrolling must expose it WITHOUT closing/recreating the input
+    // session. Exercise the actual scroll view and remeasure the actual panel.
+    await Scrollable.ensureVisible(tester.element(finder), alignment: 1);
+    await tester.pumpAndSettle();
+    available = availableTargets();
+  }
+  expect(available, isNotEmpty, reason: 'After real paper scrolling, a printed fragment must remain reachable.');
   // Use a real pointer hit, never call an activation callback or showKeyboard.
-  await tester.tapAt(point(available.last));
+  await tester.tapAt(available.last);
   await tester.pumpAndSettle();
 }
 
@@ -105,10 +115,17 @@ void main() {
         'body-candidate-q': 'candidate-q/body',
         'branch-body-candidate-b': 'candidate-q/branch/candidate-b/body',
       }.entries) {
+        if (find.byType(CanonicalEditingLayer).evaluate().isNotEmpty) {
+          // Switching to a DIFFERENT source field may close the old contextual
+          // editor. Fragment-to-fragment checks below never close it.
+          await tester.tap(find.byTooltip('إغلاق محرر المحتوى'));
+          await tester.pumpAndSettle();
+        }
         final pages = layout.pages.where((page) => _runs(page, entry.value).isNotEmpty).toList();
         expect(pages.length, greaterThan(1), reason: '${entry.key} must REALLY span pages.');
         EditableTextState? originalEditor;
         TextEditingController? originalController;
+        int? inputConnections;
         for (final page in pages) {
           await _tapPrintedFragment(tester, page, entry.value);
           final sourceField = find.byKey(ValueKey<String>(entry.key));
@@ -121,6 +138,9 @@ void main() {
           expect(identical(native.widget.controller, originalController), isTrue);
           expect(native.widget.focusNode.hasFocus, isTrue);
           expect(tester.testTextInput.isVisible, isTrue);
+          final connections = tester.testTextInput.log.where((call) => call.method == 'TextInput.setClient').length;
+          inputConnections ??= connections;
+          expect(connections, inputConnections, reason: 'Moving the anchor must not reconnect IME.');
           expect(native.widget.style.color, isNot(Colors.transparent));
           expect(find.descendant(of: _page(page.index), matching: find.byType(PaperField)), findsNothing,
             reason: 'Native text and IME must not enter the printable subtree.');
@@ -134,7 +154,7 @@ void main() {
       final source = find.byKey(const ValueKey<String>('branch-body-candidate-b'));
       final native = tester.state<EditableTextState>(find.descendant(of: source, matching: find.byType(EditableText)));
       final offset = native.widget.controller.selection.extentOffset;
-      final composed = branchBody.substring(0, offset) + 'م' + branchBody.substring(offset);
+      final composed = '${branchBody.substring(0, offset)}م${branchBody.substring(offset)}';
       tester.testTextInput.updateEditingValue(TextEditingValue(
         text: composed,
         selection: TextSelection.collapsed(offset: offset + 1),

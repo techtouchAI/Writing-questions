@@ -52,7 +52,7 @@ void main() {
       find.descendant(of: find.byKey(ValueKey<String>('ink-$index')), matching: find.byType(EditableText)),
     );
     int lines(int index) => editor(index).renderEditable
-        .getBoxesForSelection(TextSelection(baseOffset: 0, extentOffset: text.length))
+        .getBoxesForSelection(const TextSelection(baseOffset: 0, extentOffset: text.length))
         .map((box) => box.top).toSet().length;
 
     expect(lines(0), 2, reason: 'The uncompensated native caret must reproduce the wrapping defect.');
