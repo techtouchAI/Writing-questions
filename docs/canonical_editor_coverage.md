@@ -196,3 +196,18 @@ outside the paper even when a zero mark has no printed run. Tests exercise actua
 printed hits, native command/field/dialog touch sizes, save/cancel, zero marks,
 undo/redo, unchanged other question/text and stored range formatting. Point and
 option metadata, empty statements, and the other missing rows remain uncovered.
+
+### Production mixed-math evidence fixture — pending validation
+
+`production_mixed_math_evidence_test.dart` uses the DEFAULT production screen
+with the same `MathSnapshotHost` installed by `main.dart` (no resolver or asset
+injection). A test-only controller subclass observes `applyLayoutPlan`, so its
+PDF receives the **actual live plan object**, not a recomputed lookalike. At
+320/360 both question and branch bodies must independently span pages and
+contain inline/display math. The fixture writes phone PNGs and full-paper PNGs
+for every page before selection, after question selection, and after branch-only
+selection, plus the same-live-plan PDF and JSON manifest into the existing
+`production-fragment-repro` artifact directory. Selection compares all native
+source field rectangles in page coordinates to 1e-6px (IEEE roundoff only),
+while asserting identical document and plan objects. These files are not yet
+verified/generated and are not a manual visual review or an editing-parity claim.
