@@ -275,3 +275,41 @@ legacy; point/option UI parity is still incomplete.
   INPUT TIME, including before the next rebuild; retained controllers are not
   swapped to another option. Legacy production keeps its existing keys/surface.
   This is a race/data-identity repair, not completed point/option command parity.
+
+### Verified persistent-source repair (`02d2c64`)
+
+- Build run `40235447739`, main job `121295907603`: production R1/R4
+  **8/0**, focused native **21/0**, full **926/0**, canonical gate **3/0**;
+  analysis and **actual release APK build succeeded**. This includes the two
+  same-frame option-identity regressions and strengthened real-math fixture.
+- Extended run `40235447684` and the follow-on Visual job succeeded.
+  C6 is still pending at this checkpoint, not counted as success.
+- Production artifact `12614364524` (11,659,678 bytes), actual APK
+  `12614424446` (28,384,913 bytes). Neither images nor PDFs have been manually
+  reviewed/downloaded. No visual equivalence claim follows from test success.
+- GitHub limits notices to ten per step: the existing production publisher
+  exhausts those on R1–R7. A separate R9 notice step now exposes BOTH mixed-math
+  manifests through Checks API, and requires both files after a successful full
+  run. It does not replace downloadable PNG/PDF evidence or manual review.
+
+### Native point/option commands — implementation awaiting CI
+
+Candidate-only external 48dp controls now route to existing point kind/label/
+marks/delete and option add/label/delete handlers, using persistent IDs and
+fresh owner/index lookup. Printed point/option metadata opens the same dialogs.
+The empty-source menu exposes existing blank point text and blank MCQ options;
+no empty source, button, or editor is inserted into printed flow. Kind changes
+preserve existing options; changing away from MCQ while an option is active
+switches the editor to that point's text. Deleting an active source explicitly
+closes its editor, retaining the selected question/branch owner.
+
+New 320/360 tests exercise real menus/dialogs for question AND branch points:
+all four kinds, option-ID retention, native/printed metadata, blank option to
+text, UI option deletion with sibling preservation and undo/redo, option add,
+UI point deletion and exact-model undo, existing add-point action, empty point
+access, multiline source and undo-to-empty/redo with the same native editor,
+focus and IME-client count, and other-owner/range-format preservation.
+**Not yet compiled/tested; not acceptance.** Active-option kind-switch focus,
+category clearing, reorder drag, math/formatting command parity, every remaining
+control's touch target, and stale completed-asset/layout pairing remain open.
+Production candidate flag remains OFF; no activation, merge, or branch removal.

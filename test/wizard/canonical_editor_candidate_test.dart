@@ -495,5 +495,161 @@ void main() {
       }
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('candidate native point and option commands preserve existing models at $width', (tester) async {
+      tester.view.physicalSize = Size(width, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      BranchItem item(String id) => BranchItem(id: id, text: 'نص النقطة الأصلية',
+        textFormats: const <TextFormatSpan>[TextFormatSpan(start: 0, end: 2, italic: true)]);
+      final controller = ExamWizardController(document: ExamDocument(
+        name: 'Native point commands', header: ExamHeaderModel.initial(subject: 'الرياضيات'),
+        questions: <QuestionModel>[QuestionModel(id: 'commands-q', questionNumber: 1, statement: 'منطوق السؤال',
+          items: <BranchItem>[item('commands-qp')], branches: <BranchModel>[BranchModel(id: 'commands-b',
+            content: BranchContent(statement: 'منطوق الفرع', items: <BranchItem>[item('commands-bp')]))])],
+      ));
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(_candidateScreen(controller));
+      await _settle(tester);
+      Future<void> command(String key) async {
+        final action = find.byKey(ValueKey<String>(key));
+        await tester.ensureVisible(action);
+        await tester.pumpAndSettle();
+        expect(tester.getSize(action), const Size(48, 48));
+        expect(find.descendant(of: find.byType(CanonicalLayoutPreviewPage), matching: action), findsNothing);
+        await tester.tap(action);
+        await tester.pumpAndSettle();
+      }
+      Future<void> dialog(String title, String text, {bool numeric = false}) async {
+        final route = find.byType(AlertDialog);
+        expect(find.descendant(of: route, matching: find.text(title)), findsOneWidget);
+        final input = find.descendant(of: route, matching: find.byType(TextField));
+        expect(tester.getSize(input).height, greaterThanOrEqualTo(48));
+        await tester.tap(input);
+        await tester.enterText(input, text);
+        await tester.tap(find.descendant(of: route, matching: find.text(numeric ? 'تطبيق' : 'حفظ')));
+        await tester.pumpAndSettle();
+      }
+      Future<void> printed(String prefix) async {
+        final layout = tester.widget<CanonicalLayoutPreviewPage>(find.byType(CanonicalLayoutPreviewPage).first).layoutDocument;
+        final page = layout.pages.firstWhere((page) => _runs(page, prefix).isNotEmpty);
+        await _tapPrintedFragment(tester, page, prefix);
+      }
+      Future<void> empty(String key) async {
+        await command('canonical-empty-fields');
+        final entry = find.byKey(ValueKey<String>('canonical-empty-$key'));
+        await tester.ensureVisible(entry);
+        await tester.pumpAndSettle();
+        expect(tester.getSize(entry).height, greaterThanOrEqualTo(48));
+        await tester.tap(entry);
+        await tester.pumpAndSettle();
+        expect(find.byKey(ValueKey<String>(key)), findsOneWidget);
+      }
+      Future<void> history(String tooltip) async {
+        final action = find.byTooltip(tooltip);
+        await tester.ensureVisible(action);
+        await tester.pumpAndSettle();
+        await tester.tap(action);
+        await tester.pumpAndSettle();
+      }
+      for (final owner in <PointsOwner>[const PointsOwner.question(0), PointsOwner.branch(const BranchRef(questionIndex: 0, branchIndex: 0))]) {
+        final point = controller.document.pointsOf(owner).single;
+        final other = owner.isBranch ? const PointsOwner.question(0) : PointsOwner.branch(const BranchRef(questionIndex: 0, branchIndex: 0));
+        final otherData = controller.document.pointsOf(other).map((point) => point.toMap()).toList();
+        final prefix = owner.isBranch ? 'commands-q/branch/commands-b/point/${point.id}' : 'commands-q/point/${point.id}';
+        await printed('$prefix/content');
+        List<String>? optionIds;
+        for (final kind in <PointKind>[PointKind.trueFalse, PointKind.fillBlank, PointKind.multipleChoice, PointKind.plain, PointKind.multipleChoice]) {
+          await command('point-action-kind');
+          final entry = find.byKey(ValueKey<String>('point-kind-${kind.name}'));
+          expect(tester.getSize(entry).height, greaterThanOrEqualTo(48));
+          await tester.tap(entry);
+          await tester.pumpAndSettle();
+          expect(controller.document.pointsOf(owner).single.kind, kind);
+          expect(controller.document.pointsOf(owner).single.text, point.text);
+          if (kind == PointKind.multipleChoice) optionIds ??= controller.document.pointsOf(owner).single.options.map((option) => option.id).toList();
+          if (optionIds != null) expect(controller.document.pointsOf(owner).single.options.map((option) => option.id).toList(), optionIds);
+        }
+        expect(controller.document.pointsOf(owner).single.options.length, 4);
+        await command('point-action-label');
+        await dialog('ترقيم النقطة', 'نقطة خاصة');
+        expect(controller.document.pointsOf(owner).single.labelOverride, 'نقطة خاصة');
+        await printed('$prefix/label');
+        await dialog('ترقيم النقطة', 'نقطة مطبوعة');
+        await command('point-action-marks');
+        await dialog('درجة النقطة', '3', numeric: true);
+        expect(controller.document.pointsOf(owner).single.marks, 3);
+        await printed('$prefix/marks');
+        await dialog('درجة النقطة', '4', numeric: true);
+        final options = controller.document.pointsOf(owner).single.options;
+        final firstId = options.first.id;
+        String optionKey(String id) => 'option:${Uri.encodeComponent(point.id)}:${Uri.encodeComponent(id)}';
+        await empty(optionKey(firstId));
+        final field = find.byKey(ValueKey<String>(optionKey(firstId)));
+        final editable = find.descendant(of: field, matching: find.byType(EditableText));
+        final native = tester.state<EditableTextState>(editable);
+        await tester.enterText(field, 'خيار أول');
+        await tester.pumpAndSettle();
+        expect(tester.state<EditableTextState>(editable), same(native));
+        expect(controller.document.pointsOf(owner).single.options.first.text, 'خيار أول');
+        await command('option-action-label');
+        await dialog('تسمية الخيار', 'C.');
+        await printed('$prefix/options/$firstId/label');
+        await dialog('تسمية الخيار', 'D.');
+        expect(controller.document.pointsOf(owner).single.options.first.labelOverride, 'D.');
+        final secondId = controller.document.pointsOf(owner).single.options[1].id;
+        await empty(optionKey(secondId));
+        await command('option-action-delete');
+        expect(controller.document.pointsOf(owner).single.options.length, 3);
+        expect(controller.document.pointsOf(owner).single.options.any((option) => option.id == secondId), isFalse);
+        expect(controller.document.pointsOf(owner).single.options.first.id, firstId);
+        expect(controller.document.pointsOf(owner).single.options.first.text, 'خيار أول');
+        await history('تراجع');
+        expect(controller.document.pointsOf(owner).single.options[1].id, secondId);
+        await history('إعادة');
+        expect(controller.document.pointsOf(owner).single.options.length, 3);
+        await printed('$prefix/content');
+        await command('point-action-add-option');
+        expect(controller.document.pointsOf(owner).single.options.length, 4);
+        final addedId = controller.document.pointsOf(owner).single.options.last.id;
+        await empty(optionKey(addedId));
+        await tester.enterText(find.byKey(ValueKey<String>(optionKey(addedId))), 'خيار مضاف');
+        await tester.pumpAndSettle();
+        final saved = controller.document.pointsOf(owner).single.toMap();
+        await command('point-action-delete');
+        expect(controller.document.pointsOf(owner), isEmpty);
+        await history('تراجع');
+        expect(controller.document.pointsOf(owner).single.toMap(), saved);
+        // Existing add-point command, now with real access to its empty source.
+        await command('question-action-add-point');
+        final addedPoint = controller.document.pointsOf(owner).last;
+        expect(controller.document.pointsOf(owner).length, 2);
+        await empty('item-${addedPoint.id}');
+        final linesField = find.byKey(ValueKey<String>('item-${addedPoint.id}'));
+        final linesEditable = find.descendant(of: linesField, matching: find.byType(EditableText));
+        final lineEditor = tester.state<EditableTextState>(linesEditable);
+        final lineConnections = tester.testTextInput.log.where((call) => call.method == 'TextInput.setClient').length;
+        await tester.enterText(linesField, 'سطر أول\nسطر ثان');
+        await tester.pumpAndSettle();
+        expect(controller.document.pointsOf(owner).last.text, 'سطر أول\nسطر ثان');
+        await history('تراجع');
+        expect(controller.document.pointsOf(owner).last.text, isEmpty);
+        expect(tester.state<EditableTextState>(linesEditable), same(lineEditor));
+        expect(lineEditor.widget.focusNode.hasFocus, isTrue);
+        await history('إعادة');
+        expect(controller.document.pointsOf(owner).last.text, 'سطر أول\nسطر ثان');
+        expect(tester.state<EditableTextState>(linesEditable), same(lineEditor));
+        expect(lineEditor.widget.focusNode.hasFocus, isTrue);
+        expect(tester.testTextInput.log.where((call) => call.method == 'TextInput.setClient').length, lineConnections);
+        await command('point-action-delete');
+        expect(controller.document.pointsOf(owner).single.toMap(), saved);
+        expect(controller.document.pointsOf(other).map((point) => point.toMap()).toList(), otherData);
+        expect(controller.document.pointsOf(owner).single.textFormats.map((span) => span.toMap()).toList(), point.textFormats.map((span) => span.toMap()).toList());
+      }
+      expect(controller.questions.single.statement, 'منطوق السؤال');
+      expect(controller.questions.single.branches.single.content.statement, 'منطوق الفرع');
+      expect(tester.takeException(), isNull);
+    });
   }
 }

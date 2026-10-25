@@ -2756,7 +2756,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (saved == null) {
       return;
     }
-    controller.updatePointLabel(owner, pointId, saved);
+    final targetOwner = _separateEditorCandidate ? _ownerOfPoint(controller.document, pointId) : owner;
+    if (targetOwner != null) controller.updatePointLabel(targetOwner, pointId, saved);
   }
 
   /// درجة النقطة: الرقم الخام فقط («2») فيطبعه النظام «(٢ درجة)».
@@ -2788,7 +2789,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       return;
     }
     if (saved.trim().isEmpty) {
-      controller.updatePointMarks(owner, pointId, 0);
+      final targetOwner = _separateEditorCandidate ? _ownerOfPoint(controller.document, pointId) : owner;
+      if (targetOwner != null) controller.updatePointMarks(targetOwner, pointId, 0);
       return;
     }
     final marks = _parseMarks(saved);
@@ -2796,7 +2798,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       _showMessage('أدخل الدرجة رقماً صحيحاً فقط (مثال: 2).', isError: true);
       return;
     }
-    controller.updatePointMarks(owner, pointId, marks);
+    final targetOwner = _separateEditorCandidate ? _ownerOfPoint(controller.document, pointId) : owner;
+    if (targetOwner != null) controller.updatePointMarks(targetOwner, pointId, marks);
   }
 
   /// تسمية الخيار: مخصصة حرفياً، فارغ = تلقائي، `-` = إخفاء.
@@ -2813,6 +2816,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (index < 0 || index >= options.length) {
       return;
     }
+    final optionId = options[index].id;
     final saved = await _showTextInputDialog(
       title: 'تسمية الخيار',
       initialText: options[index].labelOverride ?? '',
@@ -2822,7 +2826,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (saved == null) {
       return;
     }
-    controller.updatePointOptionLabel(owner, pointId, index, saved);
+    if (_separateEditorCandidate) {
+      final targetOwner = _ownerOfPoint(controller.document, pointId);
+      final targetIndex = _findItem(pointId)?.options.indexWhere((option) => option.id == optionId) ?? -1;
+      if (targetOwner != null && targetIndex >= 0) controller.updatePointOptionLabel(targetOwner, pointId, targetIndex, saved);
+    } else {
+      controller.updatePointOptionLabel(owner, pointId, index, saved);
+    }
   }
 
   /// يفتح محرر المعادلات المرئي للحقل النشط (مسار شريط الصيغ).
@@ -3883,6 +3893,27 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     for (final question in source.questions) {
       final q = controller.questions.indexWhere((model) => model.id == question.id);
       if (q < 0) continue;
+      final pointPaths = <({PointBlock point, String path})>[
+        for (final point in question.points) (point: point, path: '${question.id}/point/${point.id}'),
+        for (final branch in question.branches)
+          for (final point in branch.points) (point: point, path: '${question.id}/branch/${branch.id}/point/${point.id}'),
+      ];
+      for (final entry in pointPaths) {
+        final owner = _ownerOfPoint(controller.document, entry.point.id);
+        final point = _findItem(entry.point.id);
+        if (owner == null || point == null) continue;
+        if (id.startsWith('${entry.path}/label') || id.startsWith('${entry.path}/marks')) {
+          if (id.startsWith('${entry.path}/label')) { unawaited(_editPointLabel(owner, point.id)); }
+          else { unawaited(_editPointMarks(owner, point.id)); }
+          return true;
+        }
+        for (final option in entry.point.options?.options ?? const <OptionNode>[]) {
+          if (!id.startsWith('${entry.path}/options/${option.id}/label')) continue;
+          final index = point.options.indexWhere((model) => model.id == option.id);
+          if (index >= 0) unawaited(_editOptionLabel(owner, point.id, index));
+          return index >= 0;
+        }
+      }
       for (final branch in question.branches) {
         final owner = '${question.id}/branch/${branch.id}';
         if (!label(owner) && !marks(owner)) continue;
@@ -4071,6 +4102,31 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       role, override, defaultFont: document.settings.defaultFont,
       fontScale: _fontScale, heightScale: _heightScale,
     );
+    final option = key == null ? null : _optionSourceTarget(key);
+    final pointId = option?.pointId ?? (key != null && key.startsWith('item-') ? key.substring('item-'.length) : null);
+    if (key != null && pointId != null) {
+      final owner = _ownerOfPoint(document, pointId);
+      final point = _findItem(pointId);
+      if (owner == null || point == null) return null;
+      final question = document.questions[owner.questionIndex];
+      final questionIr = controller.documentIr.questionById(question.id);
+      final branch = owner.branchIndex == null ? null : question.branches[owner.branchIndex!];
+      final pointsIr = branch == null ? questionIr?.points
+          : questionIr?.branches.where((value) => value.id == branch.id).firstOrNull?.points;
+      final pointIr = pointsIr?.where((value) => value.id == pointId).firstOrNull;
+      final modelOption = option == null ? null : point.options[option.index];
+      final text = modelOption?.text ?? point.text;
+      final content = option == null ? pointIr?.content
+          : pointIr?.options?.options.where((value) => value.id == modelOption!.id).firstOrNull?.content;
+      return (ownerId: pointId, questionId: question.id, binding: _CanonicalFieldBinding(
+        fieldKey: key, sourceText: text, content: content ?? InlineContent.fromSource(text),
+        style: style(option == null ? PaperStyles.item : PaperStyles.option,
+          branch?.style ?? question.style.copyWith(color: () => null)),
+        hint: option == null ? point.kind.textHint : 'اكتب الخيار هنا...',
+        onEdit: (value) => _writeCanonicalSource(key, value),
+        onLongPress: _pointsOwnerLongPress(owner),
+      ));
+    }
     for (var q = 0; q < document.questions.length; q++) {
       final question = document.questions[q];
       final ir = controller.documentIr.questionById(question.id);
@@ -5398,16 +5454,30 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   Widget _buildCandidateEmptyFields(ExamWizardController controller) {
     final document = controller.document;
     final entries = <({String key, String label})>[];
+    void addPoints(List<BranchItem> points, String ownerName) {
+      for (var p = 0; p < points.length; p++) {
+        final point = points[p];
+        final name = '$ownerName — النقطة ${document.formatNumber(p + 1)}';
+        if (point.text.trim().isEmpty) entries.add((key: _itemKey(point.id), label: '$name — النص'));
+        if (point.kind != PointKind.multipleChoice) continue;
+        for (var o = 0; o < point.options.length; o++) {
+          if (point.options[o].text.trim().isEmpty) entries.add((key: _sourceOptionKey(point, o),
+            label: '$name — الخيار ${document.formatNumber(o + 1)}'));
+        }
+      }
+    }
     for (var q = 0; q < document.questions.length; q++) {
       final question = document.questions[q];
       final name = 'السؤال ${document.formatNumber(q + 1)}';
       if (question.statement.trim().isEmpty) entries.add((key: _statementKey(question.id), label: '$name — المنطوق'));
       if (question.body.trim().isEmpty) entries.add((key: _bodyKey(question.id), label: '$name — النص الاختياري'));
+      addPoints(question.items, name);
       for (var b = 0; b < question.branches.length; b++) {
         final branch = question.branches[b];
         final name = 'السؤال ${document.formatNumber(q + 1)} — الفرع ${document.formatNumber(b + 1)}';
         if (branch.content.statement.trim().isEmpty) entries.add((key: _branchStatementKey(branch.id), label: '$name — المنطوق'));
         if (branch.content.body.trim().isEmpty) entries.add((key: _branchBodyKey(branch.id), label: '$name — النص الاختياري'));
+        addPoints(branch.content.items, name);
       }
     }
     return SizedBox(width: 48, height: 48, child: PopupMenuButton<String>(
@@ -5428,6 +5498,73 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         _activateField(key, _field(key, binding.sourceText, binding.onEdit));
       },
     ));
+  }
+
+  List<Widget> _buildCandidatePointTools(ExamWizardController controller) {
+    final key = _activeFieldKey;
+    if (key == null) return const <Widget>[];
+    final option = _optionSourceTarget(key);
+    final id = option?.pointId ?? (key.startsWith('item-') ? key.substring('item-'.length) : null);
+    final point = id == null ? null : _findItem(id);
+    if (point == null) return const <Widget>[];
+    final enabled = !_locked && !_isBusy && !_multiSelect;
+    void current(void Function(PointsOwner owner, BranchItem point) action) {
+      final owner = _ownerOfPoint(controller.document, point.id);
+      final model = _findItem(point.id);
+      if (owner != null && model != null) action(owner, model);
+    }
+    void closeDeletedField() {
+      FocusManager.instance.primaryFocus?.unfocus();
+      setState(() {
+        _canonicalEditorOpen = false;
+        _activeFieldKey = null;
+        _activeItemFieldKey = null;
+        _activeCanonicalSemanticNodeId = null;
+      });
+    }
+    Widget button(String key, String tooltip, IconData icon, VoidCallback action) => IconButton(
+      key: ValueKey<String>(key), tooltip: tooltip, icon: Icon(icon, size: 20),
+      constraints: const BoxConstraints(minWidth: 48, minHeight: 48), padding: const EdgeInsets.all(8),
+      onPressed: enabled ? action : null,
+    );
+    return <Widget>[
+      SizedBox(width: 48, height: 48, child: PopupMenuButton<PointKind>(
+        key: const ValueKey<String>('point-action-kind'), tooltip: 'نوع النقطة',
+        enabled: enabled, icon: const Icon(Icons.swap_horiz),
+        itemBuilder: (_) => <PopupMenuEntry<PointKind>>[
+          for (final kind in PointKind.values) PopupMenuItem<PointKind>(
+            key: ValueKey<String>('point-kind-${kind.name}'), height: 48, value: kind, child: Text(kind.arabicLabel)),
+        ],
+        onSelected: (kind) => current((owner, model) {
+          controller.updatePointKind(owner, model.id, kind);
+          if (option != null && kind != PointKind.multipleChoice) {
+            final binding = _candidateOptionalBinding(controller, fieldKey: _itemKey(model.id))?.binding;
+            if (binding != null) _activateField(binding.fieldKey, _field(binding.fieldKey, binding.sourceText, binding.onEdit));
+          }
+        }),
+      )),
+      button('point-action-label', 'ترقيم النقطة', Icons.numbers,
+        () => current((owner, model) => _editPointLabel(owner, model.id))),
+      button('point-action-marks', 'درجة النقطة', Icons.grade_outlined,
+        () => current((owner, model) => _editPointMarks(owner, model.id))),
+      button('point-action-delete', 'حذف النقطة', Icons.delete_outline,
+        () => current((owner, model) { controller.removePoint(owner, model.id); closeDeletedField(); })),
+      if (point.kind == PointKind.multipleChoice)
+        button('point-action-add-option', 'إضافة خيار', Icons.add,
+          () => current((owner, model) => controller.addPointOption(owner, model.id))),
+      if (option != null) ...<Widget>[
+        button('option-action-label', 'تسمية الخيار', Icons.label_outline,
+          () => current((owner, model) {
+            final target = _optionSourceTarget(key);
+            if (target != null) unawaited(_editOptionLabel(owner, model.id, target.index));
+          })),
+        button('option-action-delete', 'حذف الخيار', Icons.close,
+          () => current((owner, model) {
+            final target = _optionSourceTarget(key);
+            if (target != null) { controller.removePointOption(owner, model.id, target.index); closeDeletedField(); }
+          })),
+      ],
+    ];
   }
 
   Widget _buildQuestionActionsBar(ExamWizardController controller) {
@@ -5578,6 +5715,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       enabled: branchEnabled,
                       onPressed: () => controller.removeBranch(branchRef!),
                     ),
+                    if (_separateEditorCandidate) ..._buildCandidatePointTools(controller),
                   ],
                 ),
               ),

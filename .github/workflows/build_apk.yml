@@ -286,6 +286,26 @@ jobs:
                   print(f'::notice title=Production repro {name}::{message}')
           PY
 
+      # GitHub keeps at most ten notices per step. The older measurement
+      # publisher already fills those slots, so mixed-math manifests need their
+      # own step to remain readable via Checks API as well as the artifact.
+      - name: Publish production mixed-math evidence manifests
+        if: always()
+        env:
+          REQUIRE_MANIFESTS: ${{ steps.test.outcome == 'success' && inputs.test_path == '' }}
+        shell: bash
+        run: |
+          python3 - <<'PYMATH'
+          import glob, json, os
+          paths = sorted(glob.glob('build/production_fragment_repro/r9-*-manifest.json'))
+          if os.environ['REQUIRE_MANIFESTS'] == 'true' and len(paths) != 2:
+              raise SystemExit(f'Expected both 320/360 production mixed-math manifests, found {len(paths)}')
+          for path in paths:
+              data = json.load(open(path))
+              message = json.dumps(data, ensure_ascii=False).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::notice title=Production mixed math {os.path.basename(path)}::{message}')
+          PYMATH
+
       - name: Upload production fragment reproductions
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
