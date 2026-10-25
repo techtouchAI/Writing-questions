@@ -22,6 +22,8 @@ import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 import 'package:writing_questions_app/views/wizard/paper_header_footer_view.dart';
 import 'package:writing_questions_app/views/wizard/preview_toolbar.dart';
 
+import 'preview_test_gestures.dart';
+
 class _TestImagePicker extends ImagePickerPlatform {
   _TestImagePicker({this.fail = false, this.file});
   final bool fail;
@@ -36,8 +38,6 @@ class _TestImagePicker extends ImagePickerPlatform {
     return file;
   }
 }
-
-import 'preview_test_gestures.dart';
 
 ExamDocument _document() => ExamDocument(
       name: 'تدقيق الأزرار',
@@ -207,8 +207,7 @@ void main() {
     );
     await _pump(tester, controller);
 
-    await _tap(tester, _tool('إدراج شكل'));
-    await _tap(tester, find.text('مربع').last);
+    await tapPreviewMedia(tester, 'مربع');
 
     expect(controller.document.questions, isEmpty);
     expect(controller.document.floatingElements, hasLength(1));

@@ -58,14 +58,14 @@ void main() {
       expect(fragments.length, greaterThan(1));
       var end = 0.0;
       for (final fragment in fragments) {
-        expect(fragment.sourceTopPt, closeTo(end, 0.01));
+        expect(fragment.sourceTopPt, closeTo(end, 1e-6));
         end += fragment.heightPt;
         final page = plan.pages[fragment.pageIndex];
         expect(fragment.topPt + fragment.heightPt,
-            lessThanOrEqualTo(page.bodyBounds.bottom + 0.01));
+            lessThanOrEqualTo(page.bodyBounds.bottom + 1e-6));
       }
       final original = reference.allBlocks.singleWhere((b) => b.id == 'whole-q');
-      expect(end, closeTo(original.rect.height, 0.01));
+      expect(end, closeTo(original.rect.height, 1e-6));
       final referenceLines = original.allLines.map((l) => l.id).toList()..sort();
       final actual = layout.pages.expand((p) => p.blocks)
           .where((b) => b.kind == LayoutBlockKind.question)
@@ -102,7 +102,7 @@ void main() {
         'question bottom=${original.rect.bottom}');
     for (final block in reference.allBlocks) {
       for (final line in block.allLines) {
-        expect(line.rect.bottom, lessThanOrEqualTo(block.rect.bottom + 0.01),
+        expect(line.rect.bottom, lessThanOrEqualTo(block.rect.bottom + 1e-6),
             reason: '${block.id} must contain measured line ${line.id}.');
       }
     }
@@ -117,8 +117,8 @@ void main() {
     final placement = layout.pages.expand((p) => p.floatingElements).single;
     final page = layout.pages[placement.pageIndex];
     expect(placement.pageIndex, greaterThan(0));
-    expect(placement.rect.top, greaterThanOrEqualTo(page.bodyBounds.top - 0.01));
-    expect(placement.rect.bottom, lessThanOrEqualTo(page.bodyBounds.bottom + 0.01));
-    expect(placement.rect.height, closeTo(LayoutUnits.pxToPt(80), 0.01));
+    expect(placement.rect.top, greaterThanOrEqualTo(page.bodyBounds.top - 1e-6));
+    expect(placement.rect.bottom, lessThanOrEqualTo(page.bodyBounds.bottom + 1e-6));
+    expect(placement.rect.height, closeTo(LayoutUnits.pxToPt(80), 1e-6));
   });
 }

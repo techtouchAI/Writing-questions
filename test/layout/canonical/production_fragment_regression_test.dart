@@ -163,7 +163,7 @@ void main() {
       'sameDocument': identical(beforeDocument, controller.document),
     });
     expect(identical(beforeDocument, controller.document), isTrue);
-    expect(after.top, closeTo(before.top, 0.75),
+    expect(after.top, closeTo(before.top, 1e-6),
         reason: 'Selection inserts editor-only fields/buttons into printed flow.');
   });
 
