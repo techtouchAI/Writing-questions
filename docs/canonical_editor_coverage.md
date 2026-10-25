@@ -165,3 +165,11 @@ PaperField تحت شجرة الورقة، وبقاء كائن الخطة نفس�
   regression measures the offscreen anchor and visible continuation region.
   Empty-body test selectors corrected to the real `/title/statement` IDs.
   These follow-up fixes are pending CI, not yet acceptance evidence.
+
+- `cdddb7a`: R1/R4 8/0; native gate 13/2. Empty body and placement/IME
+  component cases passed at both widths; multi-page question traversal passed,
+  but the final branch continuation still failed reachability. Full/APK did not
+  run. At document end both `ensureVisible` alignments clamp to the same maximum
+  offset. The integration helper now also performs bounded real edge drags in
+  both directions (without closing/recreating the editor), and reports actual
+  transformed page/pane bounds if no printed hit can be reached. Still pending.

@@ -69,7 +69,25 @@ Future<void> _tapPrintedFragment(WidgetTester tester, LayoutPage page, String pr
     await tester.pumpAndSettle();
     available = availableTargets();
   }
-  expect(available, isNotEmpty, reason: 'After real paper scrolling, page ${page.index} / $prefix must remain reachable through its actual render transform.');
+  if (available.isEmpty) {
+    // At the document end both ensureVisible alignments clamp to the SAME
+    // maximum scroll offset. Drag the real paper backwards: the prior visible
+    // anchor moves down and the native pane can sit above it, exposing the short
+    // final continuation below. The 2dp edge is outside native chrome (8dp
+    // inset), not a callback/scroll-controller shortcut or a hidden editor.
+    final scroll = tester.getRect(find.byKey(const ValueKey<String>('paper-v-scroll')));
+    for (final delta in <double>[180, -360, 180]) {
+      await tester.dragFrom(Offset(scroll.left + 2, scroll.center.dy), Offset(0, delta));
+      await tester.pumpAndSettle();
+      available = availableTargets();
+      if (available.isNotEmpty) break;
+    }
+  }
+  final box = tester.renderObject<RenderBox>(finder);
+  final actualPage = MatrixUtils.transformRect(box.getTransformTo(null), Offset.zero & box.size);
+  final panel = find.descendant(of: find.byType(CanonicalEditingLayer), matching: find.byType(Material));
+  final panelRect = panel.evaluate().isEmpty ? null : tester.getRect(panel.first);
+  expect(available, isNotEmpty, reason: 'After real paper scrolling, page ${page.index} / $prefix must remain reachable. Actual page: $actualPage; native pane: $panelRect; run count: ${_runs(page, prefix).length}.');
   // Use a real pointer hit, never call an activation callback or showKeyboard.
   await tester.tapAt(available.last);
   await tester.pumpAndSettle();
