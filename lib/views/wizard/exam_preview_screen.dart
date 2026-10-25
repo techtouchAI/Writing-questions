@@ -5283,8 +5283,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             final model = current.questions[owner.questionIndex];
             final style = branchRef == null ? model.style : current.document.branchAt(branchRef).style;
             return _paperField(fieldKey: fieldKey, controller: field,
-              style: _styled(branchRef == null ? PaperStyles.prompt : PaperStyles.body(current.document.layout), style.copyWith(color: () => null),
-                defaultFont: current.document.settings.defaultFont), semanticContent: content,
+              style: PaperStyles.resolve(
+                branchRef == null ? PaperStyles.prompt : PaperStyles.body(current.document.layout),
+                style.copyWith(color: () => null),
+                defaultFont: current.document.settings.defaultFont,
+                fontScale: _fontScale,
+                heightScale: _heightScale,
+              ), semanticContent: content,
               hint: branchRef == null ? 'نص السؤال (اختياري)' : 'نص الفرع (اختياري)');
           },
         )),
