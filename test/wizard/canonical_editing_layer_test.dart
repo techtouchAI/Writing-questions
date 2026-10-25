@@ -118,7 +118,12 @@ void _expectAnchor(WidgetTester tester, _HarnessState state) {
       .clamp(8.0, viewport.size.width - 8 - actual.width), 1e-6));
   expect(actual.top, closeTo(top.clamp(8.0, viewport.size.height - 8 - actual.height), 1e-6));
   expect(actual.width, closeTo(math.min(560.0, viewport.size.width - 16), 1e-6));
-  expect(actual.height, 180);
+  // Native layout must be EXACTLY 180. Subtracting two global coordinates
+  // may produce 180.00000000000003; allow only floating-point roundoff for
+  // that subtraction, not a pixel-scale geometry/overflow allowance.
+  final native = tester.getSize(find.byKey(const ValueKey<String>('native-editor')));
+  expect(native.height, 180);
+  expect(actual.height, closeTo(native.height, 1e-10));
 }
 
 void main() {
