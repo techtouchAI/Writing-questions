@@ -1,0 +1,93 @@
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
+import 'package:writing_questions_app/layout/canonical/canonical_page_plan.dart';
+import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart';
+import 'package:writing_questions_app/layout/canonical/layout_document.dart';
+import 'package:writing_questions_app/layout/canonical/layout_units.dart';
+import 'package:writing_questions_app/models/branch_model.dart';
+import 'package:writing_questions_app/models/exam_document.dart';
+import 'package:writing_questions_app/models/exam_header_model.dart';
+import 'package:writing_questions_app/models/floating_element.dart';
+import 'package:writing_questions_app/models/paper_divider.dart';
+import 'package:writing_questions_app/models/question_model.dart';
+
+ExamDocument _document({double? floatTopPx, bool longTitle = false}) => ExamDocument(
+  name: 'Whole source windows',
+  header: ExamHeaderModel.initial(subject: 'الرياضيات'),
+  questions: <QuestionModel>[
+    QuestionModel(
+      id: 'whole-q', questionNumber: 1, showFrame: true,
+      statement: List.filled(longTitle ? 90 : 1,
+          'عنوان السؤال الذي يختبر عدم فقد الأسطر').join(' '),
+      body: List.generate(140, (i) =>
+          'W$i فقرة عربية تقيس حدود الصفحة ومحتوى السؤال الكامل.').join(' '),
+      dividerAfter: const PaperDivider(),
+      attachments: <FloatingElement>[
+        if (floatTopPx != null) FloatingElement(
+          id: 'whole-float', type: FloatingElementType.shape,
+          shape: FloatingShapeType.rectangle, ownerQuestionId: 'whole-q',
+          dx: 4, dy: floatTopPx, width: 60, height: 80,
+        ),
+      ],
+      branches: <BranchModel>[
+        BranchModel(id: 'whole-b', showFrame: true,
+          content: BranchContent(statement: 'آخر فرع ZEND'),
+          dividerAfter: const PaperDivider()),
+      ],
+    ),
+  ],
+);
+
+Future<LayoutDocument> _layout(ExamDocument document, {bool tall = false}) =>
+    CanonicalLayoutService.resolve(document: document,
+      pageSize: tall ? const LayoutSize(width: 210 * 72 / 25.4, height: 20000) : null);
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(FlutterTextMetrics.ensureFontsLoaded);
+
+  for (final longTitle in <bool>[false, true]) {
+    test('full source coverage and exact line inventory; longTitle=$longTitle', () async {
+      final source = _document(longTitle: longTitle);
+      final layout = await _layout(source);
+      final reference = await _layout(source, tall: true);
+      final plan = CanonicalPagePlan.fromLayout(layout);
+      final fragments = plan.fragmentsOfQuestion('whole-q');
+      expect(fragments.length, greaterThan(1));
+      var end = 0.0;
+      for (final fragment in fragments) {
+        expect(fragment.sourceTopPt, closeTo(end, 0.01));
+        end += fragment.heightPt;
+        final page = plan.pages[fragment.pageIndex];
+        expect(fragment.topPt + fragment.heightPt,
+            lessThanOrEqualTo(page.bodyBounds.bottom + 0.01));
+      }
+      final original = reference.allBlocks.singleWhere((b) => b.id == 'whole-q');
+      expect(end, closeTo(original.rect.height, 0.01));
+      final referenceLines = original.allLines.map((l) => l.id).toList()..sort();
+      final actual = layout.pages.expand((p) => p.blocks)
+          .where((b) => b.kind == LayoutBlockKind.question)
+          .expand((b) => b.allLines).map((l) => l.id).toList()..sort();
+      expect(actual, referenceLines, reason: 'Compare against UNSPLIT input, '
+          'not against a second projection of already-sliced output.');
+      final rules = layout.allBlocks.where((b) => b.kind == LayoutBlockKind.divider);
+      expect(rules.map((b) => b.id).toSet(),
+          reference.allBlocks.where((b) => b.kind == LayoutBlockKind.divider)
+              .map((b) => b.id).toSet());
+      expect(rules.length, 2);
+    });
+  }
+
+  test('an owned attachment crossing a prospective seam stays whole on its page', () async {
+    final initial = CanonicalPagePlan.fromLayout(await _layout(_document()));
+    final seam = initial.fragmentsOfQuestion('whole-q').first.heightPt;
+    final layout = await _layout(_document(floatTopPx: LayoutUnits.ptToPx(seam) - 20));
+    final placement = layout.pages.expand((p) => p.floatingElements).single;
+    final page = layout.pages[placement.pageIndex];
+    expect(placement.pageIndex, greaterThan(0));
+    expect(placement.rect.top, greaterThanOrEqualTo(page.bodyBounds.top - 0.01));
+    expect(placement.rect.bottom, lessThanOrEqualTo(page.bodyBounds.bottom + 0.01));
+    expect(placement.rect.height, closeTo(LayoutUnits.pxToPt(80), 0.01));
+  });
+}
