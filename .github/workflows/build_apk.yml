@@ -78,7 +78,6 @@ jobs:
 
       - name: Reproduce production R1 and R4 before the full suite
         id: production_first
-        continue-on-error: true
         shell: bash
         run: |
           set -o pipefail
@@ -90,6 +89,15 @@ jobs:
             --out "$RUNNER_TEMP/production-first-digest"
           counts="$(cat "$RUNNER_TEMP/production-first-digest/counts.txt")"
           echo "::notice title=Production R1 R4 first::$counts"
+          python3 - <<'PYTARGET'
+          import json, os
+          root = os.path.join(os.environ['RUNNER_TEMP'], 'production-first-digest')
+          for filename in ('failures.txt', 'failure_excerpts.txt'):
+              path = os.path.join(root, filename)
+              if os.path.isfile(path):
+                  print(open(path).read())
+          PYTARGET
+          grep -Eq 'passed=[1-9][0-9]*|failed=[1-9][0-9]*' "$RUNNER_TEMP/production-first-digest/counts.txt" || exit 1
           exit "$status"
 
       - name: Run required tests

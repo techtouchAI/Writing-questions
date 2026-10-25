@@ -156,7 +156,14 @@ void main() {
     await tester.pumpAndSettle();
     final after = tester.getRect(branch);
     await _capture(tester, 'r1-after-selection', 0);
+    final optionalBody = _key('body-repro-q');
+    final inPaperAddPoint = find.descendant(
+      of: _key('a4-page-0'), matching: find.byTooltip('إضافة نقطة'),
+    );
     _record('r1-selection', <String, Object>{
+      'selectedEmptyBodyHeightPx': optionalBody.evaluate().isEmpty ? 0 : tester.getSize(optionalBody).height,
+      'inPaperAddPointHeightPx': inPaperAddPoint.evaluate().isEmpty ? 0 : tester.getSize(inPaperAddPoint).height,
+
       'branchTopBeforePx': before.top,
       'branchTopAfterPx': after.top,
       'shiftPx': after.top - before.top,
@@ -239,7 +246,20 @@ void main() {
           layoutDocument: plan.layout,
         ));
     File('$_output/r4-same-layout.pdf').writeAsBytesSync(pdf!);
+    final reference = await _layout(controller.document, unsplit: true);
+    final sourceBlock = reference.allBlocks.singleWhere((b) =>
+      b.kind == LayoutBlockKind.question && b.semanticNodeId == 'repro-q');
+    final sourceWidget = tester.getRect(_key('question-target-repro-q$suffix'));
+    final branchWidget = tester.getRect(_key('branch-target-repro-b$suffix'));
     _record('r4-last-branch', <String, Object>{
+      'sourceTopPt': last.sourceTopPt,
+      'plannedSourceHeightPx': LayoutUnits.ptToPx(sourceBlock.rect.height),
+      'actualSourceHeightPx': sourceWidget.height,
+      'plannedSourceWidthPx': LayoutUnits.ptToPx(sourceBlock.rect.width),
+      'actualSourceWidthPx': sourceWidget.width,
+      'branchWidgetHeightPx': branchWidget.height,
+      'branchFieldHeightPx': field.height,
+
       'fragmentIndex': last.fragmentIndex,
       'sliceTopPx': slice.top,
       'sliceBottomPx': slice.bottom,
