@@ -90,12 +90,11 @@ jobs:
           counts="$(cat "$RUNNER_TEMP/production-first-digest/counts.txt")"
           echo "::notice title=Production R1 R4 first::$counts"
           python3 - <<'PYTARGET'
-          import json, os
+          import glob, os
           root = os.path.join(os.environ['RUNNER_TEMP'], 'production-first-digest')
-          for filename in ('failures.txt', 'failure_excerpts.txt'):
-              path = os.path.join(root, filename)
-              if os.path.isfile(path):
-                  print(open(path).read())
+          for path in glob.glob(os.path.join(root, 'excerpt_*.txt')):
+              message = open(path).read().replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::notice title=Targeted production failure::{message}')
           PYTARGET
           grep -Eq 'passed=[1-9][0-9]*|failed=[1-9][0-9]*' "$RUNNER_TEMP/production-first-digest/counts.txt" || exit 1
           exit "$status"

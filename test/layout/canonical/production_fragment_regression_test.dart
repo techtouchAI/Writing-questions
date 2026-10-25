@@ -249,8 +249,8 @@ void main() {
     final reference = await _layout(controller.document, unsplit: true);
     final sourceBlock = reference.allBlocks.singleWhere((b) =>
       b.kind == LayoutBlockKind.question && b.semanticNodeId == 'repro-q');
-    final sourceWidget = tester.getRect(_key('question-target-repro-q$suffix'));
-    final branchWidget = tester.getRect(_key('branch-target-repro-b$suffix'));
+    final sourceWidget = tester.getRect(_key('page-slice-offset-repro-q$suffix'));
+    final branchWidget = tester.getRect(find.descendant(of: sliceFinder, matching: _key('branch-target-repro-b')));
     _record('r4-last-branch', <String, Object>{
       'sourceTopPt': last.sourceTopPt,
       'plannedSourceHeightPx': LayoutUnits.ptToPx(sourceBlock.rect.height),
