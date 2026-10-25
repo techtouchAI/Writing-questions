@@ -5298,6 +5298,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                     return _paperField(
                       fieldKey: fieldKey,
                       controller: field,
+                      matchPrintedTextWidth: false,
                       style: PaperStyles.resolve(
                         branchRef == null ? PaperStyles.prompt : PaperStyles.body(current.document.layout),
                         style.copyWith(color: () => null),
@@ -7259,6 +7260,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     TextAlign textAlign = TextAlign.start,
     String? hint,
     bool mushafStyle = false,
+    bool matchPrintedTextWidth = true,
     InlineContent? semanticContent,
     VoidCallback? onLongPress,
   }) {
@@ -7269,6 +7271,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       key: ValueKey<String>('$fieldKey$_sliceKeySuffix'),
       controller: controller,
       style: style,
+      matchPrintedTextWidth: matchPrintedTextWidth,
       semanticContent: semanticContent,
       textAlign: textAlign,
       hint: hint,

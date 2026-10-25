@@ -192,7 +192,7 @@ jobs:
       # deletion; floor 600 keeps a 30+ margin); canonical subset: exactly
       # test-1 + E7 + its load pseudo-test.
       - name: Guard against vacuous gate runs
-        if: ${{ always() && inputs.test_path == '' }}
+        if: ${{ !cancelled() && steps.production_first.outcome == 'success' && inputs.test_path == '' }}
         shell: bash
         run: |
           total_of() {
@@ -623,7 +623,7 @@ jobs:
     name: Visual regression (Vector/Exact vs preview)
     needs: build
     # Targeted runs skip the visual job unless the target is the fixture.
-    if: ${{ inputs.test_path == '' || startsWith(inputs.test_path, 'test/visual') }}
+    if: ${{ !cancelled() && needs.build.outputs.production_gate == 'success' && (inputs.test_path == '' || startsWith(inputs.test_path, 'test/visual')) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
