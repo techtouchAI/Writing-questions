@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
@@ -30,7 +32,8 @@ void main() {
         ..layout(maxWidth: double.infinity);
       try {
         final baseline = LayoutUnits.pxToPt(painter.computeLineMetrics().single.baseline);
-        final boxes = painter.getBoxesForSelection(TextSelection(baseOffset: 0, extentOffset: text.length));
+        final boxes = painter.getBoxesForSelection(const TextSelection(baseOffset: 0, extentOffset: text.length),
+          boxHeightStyle: ui.BoxHeightStyle.strut);
         expect(boxes, hasLength(1));
         expect(fragment.baselineOffset, closeTo(baseline, 1e-6), reason: 'style height $factor');
         expect(fragment.height, closeTo(LayoutUnits.pxToPt(boxes.single.bottom - boxes.single.top), 1e-6));

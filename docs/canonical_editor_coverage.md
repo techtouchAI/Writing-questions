@@ -410,3 +410,28 @@ cached box metadata. A focused independent TextPainter regression checks both
 baseline and box height at factors 1/1.2/1.45/1.7, and joins the native-first gate.
 The R10 body-bound/coverage/hit/edit assertions remain unchanged. This is a
 pending shared-metrics repair, not acceptance or a visual equivalence claim.
+
+
+### Font frames versus painted ink — R10 measurement correction
+
+`4b9d144`, Build `40346352752`, main `121654187481`: production **8/0**,
+native **33/3**; Extended `40346352543` succeeded. Full/APK did not run.
+The independent metric case shows why a font frame is not an ink measurement:
+at height 1, the adapter's STRUT selection height is **13.999998pt**, while
+Flutter's TIGHT font selection bounds are **23.841999pt**. The styled baseline
+fix clears the former bottom overrun but a boundary frame begins at
+**42.219685pt** versus body top **42.519685pt**. Neither observation alone
+proves clipped painted pixels. Analysis also flags the test's missing const.
+
+The metric regression now compares the SAME `BoxHeightStyle.strut` as the
+adapter (and fixes the const lint), retaining the actual styled-baseline check.
+R10 retains exact planned line containment, source-offset coverage, unchanged
+paper geometry, per-fragment input and native-state invariants. Instead of
+calling a strut rectangle “ink”, every near-edge source run is rasterized using
+exactly the preview painter's font, style, baseline, scale and page pixel phase.
+Its raw RGBA bytes with versus without the UNCHANGED shared body clip must be
+**identical, zero differing bytes**. Only scratch image allocation is padded;
+no production clip, font, geometry tolerance, or pagination is changed. This
+is a stronger direct painted-pixel visibility check, not allowance for overflow.
+All results still await CI; do not infer actual glyph clipping or acceptance
+from the earlier incorrectly interpreted frame measurements.

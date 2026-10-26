@@ -12,6 +12,8 @@ import 'package:writing_questions_app/layout/canonical/canonical_layout_preview.
 import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
 import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart';
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
+import 'package:writing_questions_app/layout/canonical/layout_units.dart';
+import 'package:writing_questions_app/layout/document_direction.dart';
 import 'package:writing_questions_app/layout/document_ir.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
@@ -119,6 +121,68 @@ Future<double> _tapPrintedFragment(WidgetTester tester, LayoutPage page, String 
     expect(pair.$1, closeTo(pair.$2, 1e-6), reason: 'Activating $prefix moved/resized printed page ${page.index}.');
   }
   return maxDelta;
+}
+
+// Font/strut rectangles include transparent leading: they are NOT glyph ink.
+// Compare actual preview-style raster bytes with/without the exact body clip.
+// Equality proves the clip loses no painted pixels; no geometric tolerance,
+// font/line-height change, enlarged clip or hidden overflow is involved.
+Future<void> _assertBoundaryInkIsVisible(WidgetTester tester, LayoutPage page,
+    LayoutLine line, LayoutRun run) async {
+  final style = run.style;
+  final painter = TextPainter(text: TextSpan(text: run.text, style: TextStyle(
+    fontFamily: style.font.family, fontSize: style.fontSizePt,
+    fontWeight: style.bold ? FontWeight.w700 : FontWeight.w400,
+    fontStyle: style.italic ? FontStyle.italic : FontStyle.normal,
+    color: style.colorArgb == null ? Colors.black : Color(style.colorArgb!),
+    letterSpacing: style.letterSpacingPt, height: style.lineHeightFactor,
+    decoration: style.underline ? TextDecoration.underline : null)),
+    textDirection: run.direction == DocumentDirection.rtl ? TextDirection.rtl : TextDirection.ltr,
+    textScaler: TextScaler.noScaling, maxLines: 1)..layout(maxWidth: double.infinity);
+  try {
+    final scale = LayoutUnits.ptToPx(1);
+    final baseline = painter.computeLineMetrics().single.baseline;
+    final top = line.baseline - baseline;
+    // Only the scratch raster allocation has padding. The tested clip is the
+    // UNCHANGED shared plan body. Integer-pixel origin preserves page AA phase.
+    final padding = (style.fontSizePt * scale * 3).ceil();
+    final originX = ((run.x * scale).floor() - padding) / scale;
+    final originY = ((top * scale).floor() - padding) / scale;
+    final width = (painter.width * scale).ceil() + padding * 2 + 2;
+    final height = (painter.height * scale).ceil() + padding * 2 + 2;
+    final images = (await tester.runAsync(() async {
+      final result = <List<int>>[];
+      for (final clipped in <bool>[false, true]) {
+        final recorder = ui.PictureRecorder();
+        final canvas = Canvas(recorder)..scale(scale);
+        if (clipped) {
+          canvas.clipRect(Rect.fromLTRB(0, page.bodyBounds.top - originY,
+            width / scale, page.bodyBounds.bottom - originY));
+        }
+        painter.paint(canvas, Offset(run.x - originX, top - originY));
+        final picture = recorder.endRecording();
+        final image = await picture.toImage(width, height);
+        try {
+          final bytes = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
+          result.add(List<int>.of(bytes.buffer.asUint8List()));
+        } finally {
+          image.dispose();
+          picture.dispose();
+        }
+      }
+      return result;
+    }))!;
+    expect(images[0].length, images[1].length);
+    var differentBytes = 0;
+    for (var index = 0; index < images[0].length; index++) {
+      if (images[0][index] != images[1][index]) differentBytes++;
+    }
+    expect(differentBytes, 0,
+      reason: 'Page ${page.index}, ${run.semanticNodeId}, source ${run.sourceStartOffset}..${run.sourceEndOffset}: '
+        'the exact body clip must preserve EVERY painted byte of boundary text.');
+  } finally {
+    painter.dispose();
+  }
 }
 
 Widget _candidateScreen(ExamWizardController controller) => MaterialApp(home: ChangeNotifierProvider<ExamWizardController>.value(
@@ -587,13 +651,14 @@ void main() {
         final coverage = List<int>.filled(source.length, 0);
         for (final page in plan.pages) {
           for (final value in _runs(page, entry.value.prefix)) {
-            // Shared-plan line AND glyph-metric boxes must fit the actual page
-            // body, rather than relying on a larger clip to hide overflow.
+            // Preserve the line-box geometry gate, then check actual ink at
+            // page edges: font/strut hit boxes contain transparent leading.
             expect(value.line.rect.top, greaterThanOrEqualTo(page.bodyBounds.top - 1e-6));
             expect(value.line.rect.bottom, lessThanOrEqualTo(page.bodyBounds.bottom + 1e-6));
-            final inkTop = value.line.baseline - value.run.baselineOffset;
-            expect(inkTop, greaterThanOrEqualTo(page.bodyBounds.top - 1e-6));
-            expect(inkTop + value.run.height, lessThanOrEqualTo(page.bodyBounds.bottom + 1e-6));
+            if (value.line.rect.top - page.bodyBounds.top < value.run.style.fontSizePt * 2 ||
+                page.bodyBounds.bottom - value.line.rect.bottom < value.run.style.fontSizePt * 2) {
+              await _assertBoundaryInkIsVisible(tester, page, value.line, value.run);
+            }
             for (var offset = value.run.sourceStartOffset; offset < value.run.sourceEndOffset; offset++) {
               expect(offset, inInclusiveRange(0, source.length - 1));
               coverage[offset]++;
@@ -661,7 +726,8 @@ void main() {
       File('$output/$label-manifest.json').writeAsStringSync(const JsonEncoder.withIndent('  ').convert({
         'surface': 'opt-in native editor candidate; production remains legacy',
         'widthDp': width, 'pageCount': finalLayout.pageCount, 'sourcePages': sourcePages,
-        'allPrintableSourceOffsetsCoveredExactlyOnce': true, 'glyphBoxesWithinPageBody': true,
+        'allPrintableSourceOffsetsCoveredExactlyOnce': true, 'lineBoxesWithinPageBody': true,
+        'boundaryInkClippedVsUnclippedBytesIdentical': true,
         'everyFragmentEditedOriginalModelAndUndoRestoredAllData': true,
         'maxActivationDeltaPx': maxActivationDelta, 'geometryTolerancePx': 1e-6,
         'pdfUsesDisplayedLivePlan': true, 'lastBranchPage': lastBranchPage.index,
