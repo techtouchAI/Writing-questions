@@ -144,9 +144,15 @@ List<({String text, Rect rect})> _paintedSourceLines(
     final transform = paragraph.getTransformTo(canvas);
     var start = 0;
     void emit(int end) {
-      final value = text.substring(start, end).replaceAll('\uFFFC', '').replaceAll(RegExp(r'\s+'), ' ').trim();
+      // Newline selection boxes can include the following empty line; they
+      // are not painted glyphs belonging to this text line.
+      var first = start;
+      var last = end;
+      while (first < last && text[first].trim().isEmpty) { first++; }
+      while (last > first && text[last - 1].trim().isEmpty) { last--; }
+      final value = text.substring(first, last).replaceAll('\uFFFC', '').replaceAll(RegExp(r'\s+'), ' ').trim();
       if (value.isEmpty) return;
-      final boxes = paragraph.getBoxesForSelection(TextSelection(baseOffset: start, extentOffset: end));
+      final boxes = paragraph.getBoxesForSelection(TextSelection(baseOffset: first, extentOffset: last));
       if (boxes.isEmpty) return;
       final rect = boxes.map((box) => MatrixUtils.transformRect(transform, box.toRect()))
           .reduce((a, b) => a.expandToInclude(b));
@@ -195,7 +201,10 @@ List<Map<String, Object>> _sourcePageBoundaries(WidgetTester tester,
           (widget) => widget is PaperField && widget.controller.text == source.$2));
       expect(field, findsOneWidget);
       final native = _paintedSourceLines(tester, field, canvas).where((line) =>
-          line.rect.bottom > clip.top && line.rect.top < clip.bottom).toList();
+          // A font selection box can overlap a neighbouring flow band even
+          // when its actual glyph ink does not (opened page1 proves this).
+          // Assign each whole native line by its center, not any bbox sliver.
+          line.rect.center.dy >= clip.top && line.rect.center.dy < clip.bottom).toList();
       final planned = plan.layout.pages[fragment.pageIndex].blocks.expand((block) => block.allLines).where((line) =>
           line.runs.any((run) => run.semanticNodeId.startsWith(source.$1) &&
               !run.isBlockMath && run.text.trim().isNotEmpty)).toList()
@@ -209,12 +218,17 @@ List<Map<String, Object>> _sourcePageBoundaries(WidgetTester tester,
       }
       final nativeText = native.map((line) => line.text).toList();
       var maxGlyphGeometryDelta = 0.0;
+      Map<String, Object> worstGlyphGeometry = {};
       if (native.length == planned.length) {
         for (var index = 0; index < native.length; index++) {
           for (final pair in [(native[index].rect.top, LayoutUnits.ptToPx(planned[index].glyphTop ?? planned[index].rect.top)),
               (native[index].rect.bottom, LayoutUnits.ptToPx(planned[index].glyphBottom ?? planned[index].rect.bottom))]) {
             final delta = (pair.$1 - pair.$2).abs();
-            if (delta > maxGlyphGeometryDelta) maxGlyphGeometryDelta = delta;
+            if (delta > maxGlyphGeometryDelta) {
+              maxGlyphGeometryDelta = delta;
+              worstGlyphGeometry = {'lineIndex': index, 'nativeText': native[index].text,
+                'plannedText': plannedText[index], 'nativeY': pair.$1, 'plannedY': pair.$2};
+            }
           }
         }
       }
@@ -258,6 +272,7 @@ List<Map<String, Object>> _sourcePageBoundaries(WidgetTester tester,
         'nativeLineCount': native.length, 'plannedLineCount': planned.length,
         'nativeText': nativeText, 'plannedText': plannedText,
         'maxGlyphGeometryDeltaPx': maxGlyphGeometryDelta,
+        'worstGlyphGeometry': worstGlyphGeometry,
         'nativeMathCount': nativeMath.length, 'plannedMathCount': plannedMath.length,
         'mathGeometry': mathGeometry,
         'nativeFirstGlyphTopPx': native.isEmpty ? -1 : native.first.rect.top,
@@ -271,6 +286,21 @@ List<Map<String, Object>> _sourcePageBoundaries(WidgetTester tester,
 }
 
 void main() {
+  testWidgets('native line evidence excludes a trailing newline empty-line box', (tester) async {
+    await tester.pumpWidget(Directionality(textDirection: TextDirection.rtl,
+      child: DefaultTextStyle(style: const TextStyle(fontSize: 18, height: 1.3),
+        child: RepaintBoundary(key: const ValueKey('line-reader-canvas'),
+          child: Column(children: const [Text('الأول\n'), Text('التالي')])))));
+    final canvas = tester.renderObject<RenderBox>(_key('line-reader-canvas'));
+    final lines = _paintedSourceLines(tester, _key('line-reader-canvas'), canvas);
+    expect(lines.map((line) => line.text).toList(), ['الأول', 'التالي']);
+    final paragraph = tester.renderObject<RenderParagraph>(find.byType(RichText).first);
+    final expected = paragraph.getBoxesForSelection(const TextSelection(baseOffset: 0, extentOffset: 5))
+        .map((box) => MatrixUtils.transformRect(paragraph.getTransformTo(canvas), box.toRect()))
+        .reduce((a, b) => a.expandToInclude(b));
+    expect(lines.first.rect, expected);
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(loadProductionEvidenceFonts);
   for (final width in <double>[320, 360]) {

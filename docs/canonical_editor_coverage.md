@@ -789,3 +789,22 @@ changing split tolerances, clips or fonts. Added an independent native multiline
 round-up/down regression (1.3/1.35/1.7 factors). The CI digest additionally
 retains the prefix of oversized diagnostic lines under its unchanged byte
 budget; **32/32** offline self-tests pass. Validation still pending.
+
+`6a2ea13` run `40409816668`: R1/R4 **8/0**, native **56/2**, Extended
+successful, strict production original transport **57/57** verified. Actual
+320 page1 native/PDF opened. Every inline/display math rectangle on every page
+now agrees within **2.28e-13px** (not a relaxed 1e-6); header remains exact
+109px; B109 survives and final glyph box ends at506.1874 vs clip506.6929px.
+
+R9's two remaining failures expose evidence-reader defects, not a proven
+25px source movement: first/last coordinates and all texts match, but selecting
+a trailing newline included a following empty-line box (+25px). Added a direct
+native RenderParagraph regression and trim only unpainted boundary whitespace
+before obtaining its glyph box. The former "any font-box overlap" page filter
+also counted the previous page's line at top31.732px on page1 even though the
+opened native page starts with full Q44 like PDF. Font selection boxes are not
+actual ink (they overhang adjacent allocated flow bands); classify whole native
+lines by their centers, retaining full exact glyph coordinate comparisons.
+This changes neither production clipping nor pagination, and is not pixel-ink
+proof by itself. New diagnostics retain the worst individual glyph comparison.
+Full/analyze/APK/Visual remain blocked; no completion or activation claimed.
