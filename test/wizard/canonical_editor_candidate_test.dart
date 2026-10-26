@@ -1,5 +1,10 @@
 // Integration candidate only: this never enables the production default.
+import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
@@ -17,6 +22,7 @@ import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/text_format_span.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
+import 'package:writing_questions_app/services/pdf_export_service.dart';
 import 'package:writing_questions_app/views/widgets/paper_field.dart';
 import 'package:writing_questions_app/views/wizard/canonical_editing_layer.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
@@ -47,7 +53,7 @@ List<({LayoutLine line, LayoutRun run})> _runs(LayoutPage page, String prefix) =
           (line: line, run: run),
 ];
 
-Future<void> _tapPrintedFragment(WidgetTester tester, LayoutPage page, String prefix) async {
+Future<double> _tapPrintedFragment(WidgetTester tester, LayoutPage page, String prefix, {bool endingRunOnly = false}) async {
   final finder = _page(page.index);
   await tester.ensureVisible(finder);
   await tester.pumpAndSettle();
@@ -59,7 +65,11 @@ Future<void> _tapPrintedFragment(WidgetTester tester, LayoutPage page, String pr
     final panel = find.descendant(of: find.byType(CanonicalEditingLayer), matching: find.byType(Material));
     final panelRect = panel.evaluate().isEmpty ? null : tester.getRect(panel.first);
     final screen = Offset.zero & (tester.view.physicalSize / tester.view.devicePixelRatio);
-    return _runs(page, prefix).map((value) => Offset(
+    final runs = _runs(page, prefix);
+    final targets = endingRunOnly && runs.isNotEmpty
+        ? [runs.reduce((a, b) => a.run.sourceEndOffset >= b.run.sourceEndOffset ? a : b)]
+        : runs;
+    return targets.map((value) => Offset(
       rect.left + (value.run.x + value.run.width / 2) / page.pageSize.width * rect.width,
       rect.top + (value.line.baseline - value.run.baselineOffset + value.run.height / 2) / page.pageSize.height * rect.height,
     )).where((point) => screen.contains(point) && (panelRect == null || !panelRect.contains(point))).toList();
@@ -93,8 +103,22 @@ Future<void> _tapPrintedFragment(WidgetTester tester, LayoutPage page, String pr
   final panelRect = panel.evaluate().isEmpty ? null : tester.getRect(panel.first);
   expect(available, isNotEmpty, reason: 'After real paper scrolling, page ${page.index} / $prefix must remain reachable. Actual page: $actualPage; native pane: $panelRect; run count: ${_runs(page, prefix).length}.');
   // Use a real pointer hit, never call an activation callback or showKeyboard.
+  final before = tester.widget<CanonicalLayoutPreviewPage>(finder).layoutDocument;
   await tester.tapAt(available.last);
   await tester.pumpAndSettle();
+  expect(tester.widget<CanonicalLayoutPreviewPage>(finder).layoutDocument, same(before),
+    reason: 'Source/metadata activation must not repaginate unchanged data.');
+  final afterBox = tester.renderObject<RenderBox>(finder);
+  final afterPage = MatrixUtils.transformRect(afterBox.getTransformTo(null), Offset.zero & afterBox.size);
+  var maxDelta = 0.0;
+  for (final pair in <(double, double)>[(afterPage.left, actualPage.left), (afterPage.top, actualPage.top),
+      (afterPage.width, actualPage.width), (afterPage.height, actualPage.height)]) {
+    // Only floating-point paint-matrix roundoff, not a pixel/line-height budget.
+    final delta = (pair.$1 - pair.$2).abs();
+    if (delta > maxDelta) maxDelta = delta;
+    expect(pair.$1, closeTo(pair.$2, 1e-6), reason: 'Activating $prefix moved/resized printed page ${page.index}.');
+  }
+  return maxDelta;
 }
 
 Widget _candidateScreen(ExamWizardController controller) => MaterialApp(home: ChangeNotifierProvider<ExamWizardController>.value(
@@ -496,6 +520,156 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('candidate native point and option continuations preserve geometry and source identity at $width', (tester) async {
+      tester.view.physicalSize = Size(width, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      BranchItem point(String id) => BranchItem(id: id, text: _body('$id-text'), kind: PointKind.multipleChoice,
+        textFormats: const <TextFormatSpan>[TextFormatSpan(start: 0, end: 2, italic: true)],
+        options: <QuestionOption>[QuestionOption(id: '$id-long', text: _body('$id-option'),
+          formats: const <TextFormatSpan>[TextFormatSpan(start: 0, end: 2, bold: true)]),
+          QuestionOption(id: '$id-sibling', text: 'خيار شقيق محفوظ')]);
+      final controller = ExamWizardController(document: ExamDocument(
+        name: 'Point and option continuation geometry', header: ExamHeaderModel.initial(subject: 'الرياضيات'),
+        questions: <QuestionModel>[QuestionModel(id: 'split-q', questionNumber: 1, statement: 'منطوق السؤال',
+          items: <BranchItem>[point('split-qp')], branches: <BranchModel>[BranchModel(id: 'split-b',
+            content: BranchContent(statement: 'منطوق الفرع', items: <BranchItem>[point('split-bp')]))]),
+          QuestionModel(id: 'next-q', questionNumber: 2, statement: 'السؤال التالي NEXT')],
+      ));
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(RepaintBoundary(key: const ValueKey<String>('native-point-evidence-screen'),
+        child: _candidateScreen(controller)));
+      await _settle(tester);
+      LayoutDocument currentLayout() => tester.widget<CanonicalLayoutPreviewPage>(find.byType(CanonicalLayoutPreviewPage).first).layoutDocument;
+      const output = 'build/production_fragment_repro';
+      Directory(output).createSync(recursive: true);
+      final label = 'r10-native-${width.toInt()}';
+      Future<void> png(Finder finder, String name) async {
+        final boundary = tester.renderObject<RenderRepaintBoundary>(finder);
+        final image = (await tester.runAsync(() => boundary.toImage()))!;
+        try {
+          final bytes = (await tester.runAsync(() => image.toByteData(format: ui.ImageByteFormat.png)))!;
+          File('$output/$name.png').writeAsBytesSync(bytes.buffer.asUint8List());
+        } finally {
+          image.dispose();
+        }
+      }
+      Future<void> capture(String state) async {
+        for (final page in currentLayout().pages) {
+          final finder = _page(page.index);
+          await tester.ensureVisible(finder);
+          await tester.pumpAndSettle();
+          await png(find.byKey(const ValueKey<String>('native-point-evidence-screen')), '$label-$state-page-${page.index}-phone');
+          await png(find.ancestor(of: finder, matching: find.byType(RepaintBoundary)).first, '$label-$state-page-${page.index}-paper');
+        }
+      }
+      await capture('before-selection');
+      var maxActivationDelta = 0.0;
+      final sourcePages = <String, List<int>>{};
+      final original = controller.document.toMap();
+      final sources = <String, ({String prefix, String Function() text})>{
+        'item-split-qp': (prefix: 'split-q/point/split-qp/content', text: () => controller.questions.first.items.single.text),
+        'option:split-qp:split-qp-long': (prefix: 'split-q/point/split-qp/options/split-qp-long/content', text: () => controller.questions.first.items.single.options.first.text),
+        'item-split-bp': (prefix: 'split-q/branch/split-b/point/split-bp/content', text: () => controller.questions.first.branches.single.content.items.single.text),
+        'option:split-bp:split-bp-long': (prefix: 'split-q/branch/split-b/point/split-bp/options/split-bp-long/content', text: () => controller.questions.first.branches.single.content.items.single.options.first.text),
+      };
+      for (final entry in sources.entries) {
+        if (find.byType(CanonicalEditingLayer).evaluate().isNotEmpty) {
+          await tester.tap(find.byTooltip('إغلاق محرر المحتوى'));
+          await tester.pumpAndSettle();
+        }
+        final source = entry.value.text();
+        final plan = currentLayout();
+        final pages = plan.pages.where((page) => _runs(page, entry.value.prefix).isNotEmpty).map((page) => page.index).toList();
+        sourcePages[entry.key] = pages;
+        expect(pages.length, greaterThan(1), reason: '${entry.key} must really split, not only its parent question.');
+        final coverage = List<int>.filled(source.length, 0);
+        for (final page in plan.pages) {
+          for (final value in _runs(page, entry.value.prefix)) {
+            // Shared-plan line AND glyph-metric boxes must fit the actual page
+            // body, rather than relying on a larger clip to hide overflow.
+            expect(value.line.rect.top, greaterThanOrEqualTo(page.bodyBounds.top - 1e-6));
+            expect(value.line.rect.bottom, lessThanOrEqualTo(page.bodyBounds.bottom + 1e-6));
+            final inkTop = value.line.baseline - value.run.baselineOffset;
+            expect(inkTop, greaterThanOrEqualTo(page.bodyBounds.top - 1e-6));
+            expect(inkTop + value.run.height, lessThanOrEqualTo(page.bodyBounds.bottom + 1e-6));
+            for (var offset = value.run.sourceStartOffset; offset < value.run.sourceEndOffset; offset++) {
+              expect(offset, inInclusiveRange(0, source.length - 1));
+              coverage[offset]++;
+            }
+          }
+        }
+        for (var offset = 0; offset < source.length; offset++) {
+          if (source[offset].trim().isNotEmpty) {
+            expect(coverage[offset], 1, reason: 'Missing/duplicated printable source at ${entry.key}:$offset.');
+          }
+        }
+        EditableTextState? firstEditor;
+        TextEditingController? firstController;
+        int? connections;
+        for (final pageIndex in pages) {
+          final live = currentLayout();
+          final delta = await _tapPrintedFragment(tester, live.pages[pageIndex], entry.value.prefix,
+            endingRunOnly: pageIndex == pages.last);
+          if (delta > maxActivationDelta) maxActivationDelta = delta;
+          final field = find.byKey(ValueKey<String>(entry.key));
+          final editable = find.descendant(of: field, matching: find.byType(EditableText));
+          final native = tester.state<EditableTextState>(editable);
+          firstEditor ??= native;
+          firstController ??= native.widget.controller;
+          connections ??= tester.testTextInput.log.where((call) => call.method == 'TextInput.setClient').length;
+          expect(native, same(firstEditor));
+          expect(native.widget.controller, same(firstController));
+          expect(native.widget.focusNode.hasFocus, isTrue);
+          expect(find.descendant(of: find.byType(CanonicalLayoutPreviewPage), matching: field), findsNothing);
+          expect(currentLayout(), same(live));
+          final offset = native.widget.controller.selection.extentOffset;
+          expect(offset, inInclusiveRange(0, source.length));
+          final changed = source.replaceRange(offset, offset, 'م');
+          tester.testTextInput.updateEditingValue(TextEditingValue(text: changed,
+            selection: TextSelection.collapsed(offset: offset + 1), composing: TextRange(start: offset, end: offset + 1)));
+          await tester.pumpAndSettle();
+          expect(entry.value.text(), changed, reason: 'Editing fragment $pageIndex must write the original model source.');
+          expect(tester.state<EditableTextState>(editable), same(firstEditor));
+          expect(native.widget.controller.value.composing, TextRange(start: offset, end: offset + 1));
+          controller.undo();
+          await tester.pumpAndSettle();
+          expect(controller.document.toMap(), original, reason: 'Undo must restore all owners, options and range formats exactly.');
+          expect(native.widget.focusNode.hasFocus, isTrue);
+          expect(tester.state<EditableTextState>(editable), same(firstEditor));
+          expect(tester.testTextInput.log.where((call) => call.method == 'TextInput.setClient').length, connections);
+        }
+      }
+      final finalLayout = currentLayout();
+      final lastBranchPage = finalLayout.pages.lastWhere((page) => _runs(page, 'split-q/branch/split-b/').isNotEmpty);
+      final nextPage = finalLayout.pages.firstWhere((page) => _runs(page, 'next-q/title/').isNotEmpty);
+      expect(nextPage.index, greaterThanOrEqualTo(lastBranchPage.index));
+      if (nextPage.index == lastBranchPage.index) {
+        final branchBottom = _runs(lastBranchPage, 'split-q/branch/split-b/').map((value) => value.line.rect.bottom).reduce((a, b) => a > b ? a : b);
+        final nextTop = _runs(nextPage, 'next-q/title/').map((value) => value.line.rect.top).reduce((a, b) => a < b ? a : b);
+        expect(nextTop, greaterThanOrEqualTo(branchBottom - 1e-6), reason: 'Final branch ink must not overlap the following question.');
+      }
+      expect(identical(finalLayout.source, controller.documentIr), isTrue,
+        reason: 'PDF evidence must use the displayed plan of the current, restored model.');
+      await capture('option-selected');
+      expect(currentLayout(), same(finalLayout));
+      final pdf = await tester.runAsync(() => PdfExportService.buildDocumentPdfBytes(
+        document: controller.document, layoutDocument: finalLayout));
+      expect(pdf, isNotNull);
+      File('$output/$label-same-live-plan.pdf').writeAsBytesSync(pdf!);
+      File('$output/$label-manifest.json').writeAsStringSync(const JsonEncoder.withIndent('  ').convert({
+        'surface': 'opt-in native editor candidate; production remains legacy',
+        'widthDp': width, 'pageCount': finalLayout.pageCount, 'sourcePages': sourcePages,
+        'allPrintableSourceOffsetsCoveredExactlyOnce': true, 'glyphBoxesWithinPageBody': true,
+        'everyFragmentEditedOriginalModelAndUndoRestoredAllData': true,
+        'maxActivationDeltaPx': maxActivationDelta, 'geometryTolerancePx': 1e-6,
+        'pdfUsesDisplayedLivePlan': true, 'lastBranchPage': lastBranchPage.index,
+        'followingQuestionPage': nextPage.index, 'manualVisualReview': false,
+      }));
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('candidate native point and option commands preserve existing models at $width', (tester) async {
       tester.view.physicalSize = Size(width, 1200);
       tester.view.devicePixelRatio = 1;
@@ -518,7 +692,23 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.getSize(action), const Size(48, 48));
         expect(find.descendant(of: find.byType(CanonicalLayoutPreviewPage), matching: action), findsNothing);
+        final before = controller.document;
+        final plan = tester.widget<CanonicalLayoutPreviewPage>(find.byType(CanonicalLayoutPreviewPage).first).layoutDocument;
+        final coordinates = [for (final page in plan.pages) for (final block in page.blocks) for (final line in block.allLines) line.rect];
         await tester.tap(action);
+        await tester.pumpAndSettle();
+        if (identical(controller.document, before)) {
+          final after = tester.widget<CanonicalLayoutPreviewPage>(find.byType(CanonicalLayoutPreviewPage).first).layoutDocument;
+          expect(after, same(plan));
+          expect([for (final page in after.pages) for (final block in page.blocks) for (final line in block.allLines) line.rect], coordinates,
+            reason: 'Opening $key must not move any printed line.');
+        }
+      }
+      Future<void> chooseKind(PointKind kind) async {
+        await command('point-action-kind');
+        final entry = find.byKey(ValueKey<String>('point-kind-${kind.name}'));
+        expect(tester.getSize(entry).height, greaterThanOrEqualTo(48));
+        await tester.tap(entry);
         await tester.pumpAndSettle();
       }
       Future<void> dialog(String title, String text, {bool numeric = false}) async {
@@ -563,11 +753,7 @@ void main() {
         await printed('$prefix/content');
         List<String>? optionIds;
         for (final kind in <PointKind>[PointKind.trueFalse, PointKind.fillBlank, PointKind.multipleChoice, PointKind.plain, PointKind.multipleChoice]) {
-          await command('point-action-kind');
-          final entry = find.byKey(ValueKey<String>('point-kind-${kind.name}'));
-          expect(tester.getSize(entry).height, greaterThanOrEqualTo(48));
-          await tester.tap(entry);
-          await tester.pumpAndSettle();
+          await chooseKind(kind);
           expect(controller.document.pointsOf(owner).single.kind, kind);
           expect(controller.document.pointsOf(owner).single.text, point.text);
           if (kind == PointKind.multipleChoice) optionIds ??= controller.document.pointsOf(owner).single.options.map((option) => option.id).toList();
@@ -595,6 +781,16 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.state<EditableTextState>(editable), same(native));
         expect(controller.document.pointsOf(owner).single.options.first.text, 'خيار أول');
+        final retainedOptions = controller.document.pointsOf(owner).single.options.map((option) => option.toMap()).toList();
+        await chooseKind(PointKind.plain);
+        expect(controller.document.pointsOf(owner).single.options.map((option) => option.toMap()).toList(), retainedOptions);
+        final pointField = find.byKey(ValueKey<String>('item-${point.id}'));
+        final pointEditor = tester.widget<EditableText>(find.descendant(of: pointField, matching: find.byType(EditableText)));
+        expect(pointEditor.focusNode.hasFocus, isTrue, reason: 'Hiding MCQ options must activate point text, not lose the editor.');
+        expect(find.byKey(ValueKey<String>(optionKey(firstId))), findsNothing);
+        await chooseKind(PointKind.multipleChoice);
+        expect(controller.document.pointsOf(owner).single.options.map((option) => option.toMap()).toList(), retainedOptions);
+        await printed('$prefix/options/$firstId/content');
         await command('option-action-label');
         await dialog('تسمية الخيار', 'C.');
         await printed('$prefix/options/$firstId/label');

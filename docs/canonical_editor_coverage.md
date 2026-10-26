@@ -332,3 +332,56 @@ Production candidate flag remains OFF; no activation, merge, or branch removal.
   activation is unchanged. The original missing-field assertion is retained
   and now reports mounted field keys if it fails again. The analyzer info is
   corrected with braces. This repair awaits CI, not a claim of a green result.
+
+
+### Point commands accepted by tests; analyzer still blocks APK (`a02d717`)
+
+Build `40343329932`, main `121643562734`: production **8/0**, native **23/0**,
+full **928/0**, canonical gate **3/0**. The source-switch guard repairs both
+missing-option regressions without closing the old editor in the test. The
+new native add/delete/undo/redo/empty point/option workflows pass at both widths
+for question and branch owners. This is scoped integration evidence, not full
+parity or activation. One multiline empty-option-menu `if` still violates the
+brace lint (the prior correction addressed the adjacent point-text `if`).
+Analysis failed and APK did NOT build on this SHA; this is not acceptance.
+
+The separate manifest publisher worked: R9 at BOTH widths reports 5 pages,
+question pages 0/1/2, branch pages 2/3/4, 8 math runs / 4 unique rasters with
+`mathSnapshot` metrics, 20 measured source fields, and **0.0px maximum selection
+geometry delta**, tolerance 1e-6px, PDF using the observed production live plan.
+Manual visual review remains false.
+
+### Point continuation/geometry evidence increment — pending verification
+
+The remaining multiline brace lint is fixed. New 320/360 tests require each
+question/branch POINT TEXT and MCQ OPTION itself to span multiple pages, cover
+every non-whitespace source offset exactly once, keep line/glyph metric boxes
+inside the shared plan's body bounds, and leave the following question clear of
+the final branch. They hit the original AND every continuation (the ending run
+on the final fragment), compose text into the same model field from EACH,
+and undo to the exact original document including other owners/options/formats.
+The native editor/controller/focus/IME connection must survive every fragment
+and edit/undo. No activation or assertion weakening is involved.
+
+All candidate printed-hit helpers now compare the actual transformed paper
+rectangle before/after activation within 1e-6px (floating-point matrix roundoff
+only), as well as identical unchanged-data layout. Opening native command
+menus/dialogs must keep all planned printed line coordinates unchanged.
+The command test additionally switches the ACTIVE OPTION away from/back to MCQ,
+requiring focused point-text fallback and exact retained option models.
+
+This fixture generates clearly labelled **opt-in candidate** R10 PNGs for every
+page at phone/paper resolution before selection and with the option editor
+active, plus PDF using the displayed restored-model layout and manifests.
+These are separate from default-production mixed-math R9 evidence. The workflow
+publishes/requires both widths of each after a successful unfiltered full run.
+New assertions and evidence generation are NOT compiled/tested yet. Neither
+candidate PNGs nor PDFs have been manually reviewed; production remains legacy.
+
+
+`a02d717` follow-on Visual `121646916853` and C6 `121648615396` subsequently
+finished successfully; Extended `40343329986` also succeeded. Overall Build
+remains FAILED due to the analyzer lint, and APK remained skipped. C6's
+non-gating historical geometry report still lists 95 tight-centre violations
+for its legacy comparison artifacts; a green diagnostic job is not proof of
+zero PDF/preview discrepancies and does not replace manual R9/R10 review.

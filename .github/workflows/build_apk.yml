@@ -289,21 +289,23 @@ jobs:
       # GitHub keeps at most ten notices per step. The older measurement
       # publisher already fills those slots, so mixed-math manifests need their
       # own step to remain readable via Checks API as well as the artifact.
-      - name: Publish production mixed-math evidence manifests
+      - name: Publish mixed-math and native-point evidence manifests
         if: always()
         env:
-          REQUIRE_MANIFESTS: ${{ steps.test.outcome == 'success' && inputs.test_path == '' }}
+          REQUIRE_MANIFESTS: ${{ steps.test.outcome == 'success' && inputs.test_path == '' && inputs.test_name == '' }}
         shell: bash
         run: |
           python3 - <<'PYMATH'
           import glob, json, os
-          paths = sorted(glob.glob('build/production_fragment_repro/r9-*-manifest.json'))
-          if os.environ['REQUIRE_MANIFESTS'] == 'true' and len(paths) != 2:
-              raise SystemExit(f'Expected both 320/360 production mixed-math manifests, found {len(paths)}')
-          for path in paths:
-              data = json.load(open(path))
-              message = json.dumps(data, ensure_ascii=False).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-              print(f'::notice title=Production mixed math {os.path.basename(path)}::{message}')
+          for pattern, title in [('r9-*-manifest.json', 'Production mixed math'),
+                                 ('r10-native-*-manifest.json', 'Native point continuation')]:
+              paths = sorted(glob.glob(f'build/production_fragment_repro/{pattern}'))
+              if os.environ['REQUIRE_MANIFESTS'] == 'true' and len(paths) != 2:
+                  raise SystemExit(f'Expected both 320/360 {title} manifests, found {len(paths)}')
+              for path in paths:
+                  data = json.load(open(path))
+                  message = json.dumps(data, ensure_ascii=False).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  print(f'::notice title={title} {os.path.basename(path)}::{message}')
           PYMATH
 
       - name: Upload production fragment reproductions

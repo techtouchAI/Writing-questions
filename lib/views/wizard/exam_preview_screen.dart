@@ -5463,8 +5463,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         }
         if (point.kind != PointKind.multipleChoice) continue;
         for (var o = 0; o < point.options.length; o++) {
-          if (point.options[o].text.trim().isEmpty) entries.add((key: _sourceOptionKey(point, o),
-            label: '$name — الخيار ${document.formatNumber(o + 1)}'));
+          if (point.options[o].text.trim().isEmpty) {
+            entries.add((key: _sourceOptionKey(point, o),
+              label: '$name — الخيار ${document.formatNumber(o + 1)}'));
+          }
         }
       }
     }
