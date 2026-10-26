@@ -520,3 +520,60 @@ This diagnostic transport does not change app code, clipping, tolerances,
 fonts, rendering or test gates. R1/R4/native/full/analyze/actual APK still run.
 Visual review remains pending until original files are retrieved and opened.
 Remaining drag/math/format/async/touch parity remains unaccepted; flag stays OFF.
+
+## Original-byte review checkpoint — a82ccc8 (not visual acceptance)
+
+The original Azure redirect still fails in the review sandbox. The same-run
+Git-blob route worked: 50 original files were downloaded and checked against
+run `40378917968`, source `a82ccc809800f3ab5e91b21483467f7f4bad4c10`, byte
+length, SHA-256, and Git blob SHA-1. However, GitHub capped the job's annotations
+at **50 of 52 references**. The missing files were `r9-360-same-live-plan.pdf`
+and `r9-360-question-selected-page-4-paper.png`. This is **partial retrieval**,
+not successful complete transport. The repair packs two references per notice
+(maximum 40 notices for 80 files), enumerates required companion files from the
+manifests, and verifies an inventory count plus inventory checksum before
+retrieval can emit a complete-success marker. Four offline regressions exercise
+packing, complete retrieval, truncated annotations, and corrupt original bytes.
+No application code, print geometry, clips, fonts, or tolerances changed here.
+
+### Actual visual examination performed
+
+Original PNGs were opened alongside **the corresponding original PDF pages**
+rasterized with MuPDF at 96 dpi. This is agent examination of visible content,
+not a human/device sign-off and not a deduction from green CI.
+
+| Evidence actually opened | Visible result | Acceptance |
+| --- | --- | --- |
+| R9 production, 320, all five paper pages against corresponding PDF pages | Inline/display math are black Ahem-like blocks, not readable equations. Header typography/placement differs. Continuation boundaries show partial glyph rows; preview's final branch tail does not visibly contain all of PDF's B109 ending. Text/line placement differs. | **Fail / investigate**; neither visual match nor math readability proved |
+| R9 production, 320, page 3 before/question-selected/branch-selected and page 5 before/branch-selected | Selection decorations appear without an obvious reflow in the opened pairs; existing boundary/tail defects remain. | Selection observation only, **not** print acceptance |
+| R10 native candidate, 320 **and** 360, page 20 paper against corresponding PDF page 20; same paper before/option-selected | Last option text remains visible above NEXT without overlap; selection decoration does not visibly move printed text in these pairs. | Narrow visual check passed for **this page only**, not complete candidate acceptance |
+| R10 native candidate, 320 and 360, selected phone screenshots | Native editor is visible, but labels/icons appear as test-font boxes. | Cannot use these images to sign off tool readability/touch or all functions |
+| R9 production, 360, complete PDF comparison | PDF reference was truncated by GitHub. | **Not reviewed** until complete republish/retrieval |
+
+Review files reside outside Git at `/home/user/review-a82ccc8/`; derived
+same-page views are under `comparison/`. Original run:
+https://github.com/techtouchAI/Writing-questions/actions/runs/40378917968
+
+The font hypothesis has a concrete test-environment lead:
+`test/views/widgets/math_snapshot_host_test.dart` explicitly documents Ahem
+instead of KaTeX, while R9 only registers application paper fonts through
+`FlutterTextMetrics.ensureFontsLoaded`. This is not yet proof that loading the
+package's production fonts resolves layout differences. First reproduce with
+the **unchanged production font assets** registered in the evidence harness;
+then trace any remaining plan/source/paint mismatch. Do not replace fonts,
+enlarge clips, change tolerances, or call the existing block images math parity.
+
+All Actions for a82 completed: R1/R4 8/0; native 36/0; full 931/0; canonical
+3/0; analyzer clean; **actual release APK built**; Visual and C6 succeeded;
+Extended `40378917818` succeeded. C6 still reports 95 historical non-gating
+violations. These automated successes do **not** override the visible failure.
+
+### Acceptance still open (no production activation)
+
+| Required remaining behavior | Current proof status |
+| --- | --- |
+| Actual question and branch drag, resulting model/order/coordinates/PDF | **Unproved** on the candidate; legacy handlers are not equivalent proof |
+| Readable inline/display math, mixed RTL/English, colors/all formats vs PDF | **Failed/incomplete visual evidence**, expanded matrix pending |
+| Async image/math/layout completion and export/save races | Root candidates identified; draft real-work regressions not yet compiled/run, no repair claimed |
+| ALL editing tools, touch targets, and empty fields at 320/360 | Existing targeted cases do not establish an exhaustive audit; missing rows remain missing |
+| Candidate activation / merge | **Prohibited**; stays off, no PR merged, no branches deleted |

@@ -1,0 +1,84 @@
+"""Offline regressions for lossless CI evidence references (no GitHub writes)."""
+import contextlib
+import io
+import json
+from pathlib import Path
+import tempfile
+from types import SimpleNamespace
+import unittest
+from unittest.mock import patch
+
+import evidence_review_transport as transport
+
+
+class EvidenceTransportTest(unittest.TestCase):
+    def test_annotation_packing_stays_below_job_and_step_limits(self):
+        rows = [{'file': f'evidence-{i}.png', 'inventoryCount': 80} for i in range(80)]
+        with tempfile.TemporaryDirectory() as directory:
+            index = Path(directory) / 'index.json'
+            index.write_text(json.dumps(rows))
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                for group in range(8):
+                    transport.emit(SimpleNamespace(index=index, group=group))
+            notices = output.getvalue().splitlines()
+            self.assertLessEqual(len(notices), 40, 'GitHub truncates a job at 50 annotations')
+            decoded = [json.loads(line.split('::', 2)[2]) for line in notices]
+            self.assertEqual([row for pair in decoded for row in pair], rows)
+
+    def exercise_fetch(self, *, truncate=False, corrupt=False):
+        rows = []
+        blobs = {}
+        import base64
+        import hashlib
+        for i in range(3):
+            raw = f'original bytes {i}'.encode()
+            sha = transport.git_blob_sha(raw)
+            rows.append(dict(file=f'original-{i}.png', bytes=len(raw),
+                sha256=hashlib.sha256(raw).hexdigest(), blob=sha, sourceSha='source-sha', sourceRun='123'))
+            blobs[sha] = dict(encoding='base64', content=base64.b64encode(raw).decode())
+        count = len(rows)
+        digest = transport.inventory_sha(rows)
+        rows = [dict(row, inventoryCount=count, inventorySha256=digest) for row in rows]
+        delivered = rows[:2] if truncate else rows
+        annotations = [dict(title='Evidence blob reference', message=json.dumps(delivered))]
+        if corrupt:
+            blobs[rows[0]['blob']]['content'] = base64.b64encode(b'not the original').decode()
+
+        def fake_api(path):
+            if path.endswith('/actions/runs/123'):
+                return dict(head_sha='source-sha')
+            if '/jobs?' in path:
+                return dict(jobs=[dict(name='Original evidence review transport', conclusion='success', id=9)])
+            if '/annotations?' in path:
+                return annotations
+            if '/git/blobs/' in path:
+                return blobs[path.rsplit('/', 1)[1]]
+            self.fail(f'Unexpected API call {path}')
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(transport, 'api', fake_api):
+            destination = Path(directory) / 'retrieved'
+            args = SimpleNamespace(repository='owner/repo', run='123', destination=destination)
+            if truncate or corrupt:
+                with self.assertRaisesRegex(ValueError, 'inventory|checksum'):
+                    transport.fetch(args)
+                self.assertFalse((destination / 'retrieval-provenance.json').exists())
+            else:
+                transport.fetch(args)
+                provenance = json.loads((destination / 'retrieval-provenance.json').read_text())
+                self.assertTrue(provenance['verifiedComplete'])
+                self.assertEqual(provenance['count'], 3)
+                self.assertEqual(len(list(destination.glob('*.png'))), 3)
+
+    def test_complete_originals_are_verified(self):
+        self.exercise_fetch()
+
+    def test_truncated_annotations_cannot_report_success(self):
+        self.exercise_fetch(truncate=True)
+
+    def test_corrupt_blob_cannot_report_success(self):
+        self.exercise_fetch(corrupt=True)
+
+
+if __name__ == '__main__':
+    unittest.main()

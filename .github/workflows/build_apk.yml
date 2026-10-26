@@ -696,6 +696,9 @@ jobs:
         with:
           name: production-fragment-repro
           path: ${{ runner.temp }}/review-originals
+      - name: Verify evidence transport completeness regressions
+        run: python3 -m unittest discover -s tool -p test_evidence_review_transport.py
+      # Pair references: <=40 annotations/job, below GitHub's 50-job cap.
       - name: Publish original bytes as unattached GitHub blobs
         env:
           GH_TOKEN: ${{ github.token }}

@@ -11,7 +11,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import re
 import subprocess
 
 
@@ -23,16 +22,19 @@ def api(path, payload=None):
 
 
 def selected(root):
-    patterns = [
-        r'r9-(320|360)-(before-selection|question-selected|branch-selected)-page-\d+-paper\.png',
-        r'r9-(320|360)-(before-selection|question-selected|branch-selected)-page-2-phone\.png',
-        r'r9-(320|360)-(same-live-plan\.pdf|manifest\.json)',
-        r'r10-native-(320|360)-(same-live-plan\.pdf|manifest\.json)',
-    ]
-    names = {p.name for p in root.iterdir() if any(re.fullmatch(pattern, p.name) for pattern in patterns)}
+    # Enumerate required companions, not merely files that happened to exist.
+    names = set()
     for width in (320, 360):
-        manifest = root / f'r10-native-{width}-manifest.json'
-        data = json.loads(manifest.read_text())
+        r9 = json.loads((root / f'r9-{width}-manifest.json').read_text())
+        if r9['pageCount'] < 3:
+            raise ValueError('Expected split production evidence including page 2')
+        names.update((f'r9-{width}-manifest.json', f'r9-{width}-same-live-plan.pdf',
+                      f'r10-native-{width}-manifest.json', f'r10-native-{width}-same-live-plan.pdf'))
+        for state in ('before-selection', 'question-selected', 'branch-selected'):
+            for page in range(r9['pageCount']):
+                names.add(f'r9-{width}-{state}-page-{page}-paper.png')
+            names.add(f'r9-{width}-{state}-page-2-phone.png')
+        data = json.loads((root / f'r10-native-{width}-manifest.json').read_text())
         page = data['lastBranchPage']
         for state in ('before-selection', 'option-selected'):
             for view in ('phone', 'paper'):
@@ -48,6 +50,13 @@ def git_blob_sha(data):
     return hashlib.sha1(f'blob {len(data)}\0'.encode() + data).hexdigest()
 
 
+def inventory_sha(rows):
+    plain = [{key: value for key, value in row.items()
+              if key not in ('inventoryCount', 'inventorySha256')} for row in rows]
+    plain.sort(key=lambda row: row['file'])
+    return hashlib.sha256(json.dumps(plain, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
 def publish(args):
     repository = os.environ['GITHUB_REPOSITORY']
     rows = []
@@ -60,19 +69,27 @@ def publish(args):
                          blob=result['sha'], sourceSha=os.environ['GITHUB_SHA'], sourceRun=os.environ['GITHUB_RUN_ID']))
     if not rows or len(rows) > 80:
         raise ValueError(f'Unexpected evidence inventory: {len(rows)}')
+    digest = inventory_sha(rows)
+    rows = [dict(row, inventoryCount=len(rows), inventorySha256=digest) for row in rows]
     args.index.write_text(json.dumps(rows, indent=2))
 
 
 def emit(args):
     rows = json.loads(args.index.read_text())
-    for row in rows[args.group * 10:(args.group + 1) * 10]:
-        message = json.dumps(row, separators=(',', ':'))
+    # At most five notices per step and forty per job (80 references). GitHub
+    # truncates at 50 annotations/job even when each step is below its limit.
+    group = rows[args.group * 10:(args.group + 1) * 10]
+    for offset in range(0, len(group), 2):
+        message = json.dumps(group[offset:offset + 2], separators=(',', ':'))
         if len(message) > 2800:
             raise ValueError('Reference exceeds safe Checks message budget')
         print('::notice title=Evidence blob reference::' + message.replace('%', '%25').replace('\n', '%0A').replace('\r', '%0D'))
 
 
 def fetch(args):
+    args.destination.mkdir(parents=True, exist_ok=True)
+    # Even a failed API request or incomplete retry invalidates the old marker.
+    (args.destination / 'retrieval-provenance.json').unlink(missing_ok=True)
     repository = args.repository
     run = api(f'repos/{repository}/actions/runs/{args.run}')
     jobs = api(f'repos/{repository}/actions/runs/{args.run}/jobs?per_page=100')['jobs']
@@ -84,12 +101,21 @@ def fetch(args):
             raise ValueError('Evidence transport job has not succeeded')
         for page in range(1, 20):
             annotations = api(f"repos/{repository}/check-runs/{job['id']}/annotations?per_page=100&page={page}")
-            rows += [json.loads(a['message']) for a in annotations if a['title'] == 'Evidence blob reference']
+            for annotation in annotations:
+                if annotation['title'] == 'Evidence blob reference':
+                    packet = json.loads(annotation['message'])
+                    if not isinstance(packet, list):
+                        raise ValueError('Legacy inventory lacks a completeness proof; republish required')
+                    rows.extend(packet)
             if len(annotations) < 100:
                 break
     if not rows:
         raise ValueError('No verified evidence references; refusing empty success')
-    args.destination.mkdir(parents=True, exist_ok=True)
+    if any(row.get('inventoryCount') != len(rows) for row in rows):
+        raise ValueError('Incomplete evidence inventory: annotation truncation')
+    digest = inventory_sha(rows)
+    if any(row.get('inventorySha256') != digest for row in rows):
+        raise ValueError('Evidence inventory checksum mismatch')
     seen = set()
     for row in rows:
         name = row['file']
@@ -106,7 +132,8 @@ def fetch(args):
         (args.destination / name).write_bytes(raw)
         seen.add(name)
         print('VERIFIED', name, row['sha256'], flush=True)
-    (args.destination / 'retrieval-provenance.json').write_text(json.dumps(rows, indent=2))
+    (args.destination / 'retrieval-provenance.json').write_text(json.dumps(dict(verifiedComplete=True, count=len(rows), sourceRun=str(args.run),
+        sourceSha=run['head_sha'], inventorySha256=digest, files=rows), indent=2))
 
 
 if __name__ == '__main__':
