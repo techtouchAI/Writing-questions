@@ -679,6 +679,44 @@ jobs:
   # بمحرّكات أخرى ويقارن كل صفحة بالمعاينة عبر RMSE فعلي (انظر
   # tool/verify_visual_parity.sh). فشل أي مسار هو فشل CI.
   # --------------------------------------------------------------------------
+  evidence-review:
+    name: Original evidence review transport
+    needs: build
+    if: ${{ github.event_name == 'push' && needs.build.result == 'success' && contains(github.event.head_commit.message, '[review-evidence]') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      # Create unattached blobs only. No commit/tree/ref/branch is written.
+      contents: write
+    steps:
+      - name: Check out evidence transport tool
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Download this run's original evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: production-fragment-repro
+          path: ${{ runner.temp }}/review-originals
+      - name: Publish original bytes as unattached GitHub blobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tool/evidence_review_transport.py publish --root "$RUNNER_TEMP/review-originals" --index "$RUNNER_TEMP/review-index.json"
+      - name: Publish evidence references 1
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 0
+      - name: Publish evidence references 2
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 1
+      - name: Publish evidence references 3
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 2
+      - name: Publish evidence references 4
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 3
+      - name: Publish evidence references 5
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 4
+      - name: Publish evidence references 6
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 5
+      - name: Publish evidence references 7
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 6
+      - name: Publish evidence references 8
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 7
+
   visual-parity:
     name: Visual regression (Vector/Exact vs preview)
     needs: build

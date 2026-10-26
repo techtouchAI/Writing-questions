@@ -503,3 +503,20 @@ integration**; no rerun/cancel API retry is attempted. A documentation-only push
 now requests a fresh normal run with the SAME source/tests/bounded tool setup.
 Final acceptance still requires this latest SHA's actual jobs and APK, not a
 cancelled run or the earlier main-gate success.
+
+## Acceptance closure after `2ed3ec9`: actual evidence retrieval
+
+The artifact redirect was reproduced: the authenticated GitHub API succeeds,
+then the signed Azure blob download returns EOF in this sandbox. This is not
+an APK/test failure or an invalid GitHub credential. A new opt-in
+`[review-evidence]` CI job transports allowlisted ORIGINAL fixture PNG/PDF/JSON
+bytes through GitHub's blob API. Blobs are unattached: no commit, tree, ref,
+branch, release or tracked binary is created. Job-scoped contents:write is only
+for that API; no new repository branch or publication destination is used.
+Checks notices contain small references/checksums, not truncated Base64 data.
+The reader verifies run/SHA provenance, byte length, SHA-256 AND Git blob SHA-1
+before writing any review file. Missing/truncated data is an error, not review.
+This diagnostic transport does not change app code, clipping, tolerances,
+fonts, rendering or test gates. R1/R4/native/full/analyze/actual APK still run.
+Visual review remains pending until original files are retrieved and opened.
+Remaining drag/math/format/async/touch parity remains unaccepted; flag stays OFF.
