@@ -25,6 +25,7 @@ import 'package:writing_questions_app/services/pdf_export_service.dart';
 import 'package:writing_questions_app/views/widgets/math_snapshot_host.dart';
 import 'package:writing_questions_app/views/widgets/paper_field.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
+import 'package:writing_questions_app/views/wizard/paper_header_footer_view.dart';
 
 const _out = 'build/production_fragment_repro';
 Finder _key(String value) => find.byKey(ValueKey<String>(value));
@@ -164,6 +165,40 @@ void main() {
       expect(math.map((run) => run.semanticNode).whereType<MathNode>().any((node) => !node.isBlock), isTrue);
       expect(math.every((run) => run.mathBox?.source == 'mathSnapshot'), isTrue,
         reason: 'A host being available is insufficient: every math run needs actual snapshot metrics.');
+      final firstCanvas = tester.renderObject<RenderBox>(_key('a4-page-0'));
+      final headerBox = tester.renderObject<RenderBox>(find.byType(PaperHeaderView));
+      final headerRect = MatrixUtils.transformRect(headerBox.getTransformTo(firstCanvas), Offset.zero & headerBox.size);
+      final expectedHeader = plan.layout.headerBlock!.rect;
+      final lastFragment = plan.fragmentsOfQuestion('evidence-q').last;
+      final suffix = '/slice${lastFragment.fragmentIndex}';
+      final lastCanvas = tester.renderObject<RenderBox>(_key('a4-page-${lastFragment.pageIndex}'));
+      final sliceBox = tester.renderObject<RenderBox>(_key('page-slice-evidence-q$suffix'));
+      final sliceRect = MatrixUtils.transformRect(sliceBox.getTransformTo(lastCanvas), Offset.zero & sliceBox.size);
+      final tailField = _key('branch-body-evidence-b$suffix');
+      final tailParagraph = find.descendant(of: tailField, matching: find.byType(RichText)).evaluate()
+          .map((element) => element.findRenderObject()).whereType<RenderParagraph>()
+          .firstWhere((paragraph) => paragraph.text.toPlainText().contains('B109'));
+      final tailText = tailParagraph.text.toPlainText();
+      final tailBoxes = tailParagraph.getBoxesForSelection(TextSelection(
+          baseOffset: tailText.indexOf('B109'), extentOffset: tailText.length));
+      final tailRect = tailBoxes.map((box) => MatrixUtils.transformRect(
+          tailParagraph.getTransformTo(lastCanvas), box.toRect())).reduce((a, b) => a.expandToInclude(b));
+      final nativeTailLine = tailParagraph.getLineBoundary(TextPosition(offset: tailText.length - 1));
+      final canonicalTailLine = plan.layout.allLines.lastWhere((line) => line.runs.any((run) =>
+          run.semanticNodeId.startsWith(prefixes.last)));
+      final tailRuns = canonicalTailLine.runs.toList()..sort((a, b) {
+        final logical = a.logicalIndex.compareTo(b.logicalIndex);
+        return logical != 0 ? logical : a.sourceStartOffset.compareTo(b.sourceStartOffset);
+      });
+      final trace = <String, Object>{
+        'nativeHeaderPx': [headerRect.left, headerRect.top, headerRect.width, headerRect.height],
+        'canonicalHeaderPx': [expectedHeader.left, expectedHeader.top, expectedHeader.width, expectedHeader.height].map(LayoutUnits.ptToPx).toList(),
+        'nativeFinalBranchLine': tailText.substring(nativeTailLine.start, nativeTailLine.end).trim(),
+        'canonicalFinalBranchLine': tailRuns.map((run) => run.text).join().trim(),
+        'finalGlyphBottomPx': tailRect.bottom, 'fragmentBottomPx': sliceRect.bottom,
+        'sourceTopPt': lastFragment.sourceTopPt, 'fragmentHeightPt': lastFragment.heightPt,
+      };
+      debugPrint('R14 source/window/paint trace $width: ${jsonEncode(trace)}');
       final before = _geometry(tester, plan);
       expect(before, isNotEmpty);
       var maxSelectionDelta = 0.0;
@@ -219,7 +254,16 @@ void main() {
         'mathMetricsSource': 'mathSnapshot', 'pdfUsesObservedLivePlan': true,
         'measuredSourceFields': before.length, 'maxSelectionDeltaPx': maxSelectionDelta,
         'selectionGeometryTolerancePx': 1e-6, 'manualVisualReview': false,
+        'sourceWindowPaintTrace': trace,
       }));
+      // Existing R4 glyph-edge bound, not a new tolerance or enlarged clip.
+      expect(tailRect.bottom, lessThanOrEqualTo(sliceRect.bottom + 0.75), reason: jsonEncode(trace));
+      expect(trace['nativeFinalBranchLine'], trace['canonicalFinalBranchLine'], reason: jsonEncode(trace));
+      for (final pair in <(double, double)>[(headerRect.left, expectedHeader.left),
+          (headerRect.top, expectedHeader.top), (headerRect.width, expectedHeader.width),
+          (headerRect.height, expectedHeader.height)]) {
+        expect(pair.$1, closeTo(LayoutUnits.ptToPx(pair.$2), 1e-6), reason: jsonEncode(trace));
+      }
       expect(tester.takeException(), isNull);
     });
   }

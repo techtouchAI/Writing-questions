@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:writing_questions_app/views/widgets/safe_math_tex.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../../support/production_evidence_fonts.dart';
 import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
@@ -84,6 +86,23 @@ void main() {
         expect(shape.filledRectangles, 0, reason: 'Ahem rectangle glyphs must fail acceptance: $shape');
       } finally { snapshot?.dispose(); }
       }
+    });
+
+    testWidgets('real math acceptance snapshot ignores ambient debug font weight at $width', (tester) async {
+      await tester.pumpWidget(MaterialApp(builder: (_, child) => MathSnapshotHost(child: child),
+        home: const Scaffold(body: Center(child: RepaintBoundary(key: ValueKey<String>('math-source-reference'),
+          child: SafeMathTex(r'\frac{a+b}{c}', textStyle: TextStyle(fontSize: 96,
+            color: Colors.black, fontWeight: FontWeight.normal, fontStyle: FontStyle.normal)))))));
+      final snapshot = await finish(tester, MathSnapshotRenderer.render(r'\frac{a+b}{c}', fontSizePt: 12));
+      expect(snapshot, isNotNull);
+      final reference = tester.renderObject<RenderRepaintBoundary>(find.byKey(const ValueKey<String>('math-source-reference'))).toImageSync();
+      try {
+        final expected = await finish(tester, reference.toByteData(format: ui.ImageByteFormat.rawRgba));
+        final actual = await finish(tester, snapshot!.image.toByteData(format: ui.ImageByteFormat.rawRgba));
+        expect(snapshot.image.width, reference.width, reason: 'Same formula/style/density must not inherit a bold debug font outside Scaffold.');
+        expect(snapshot.image.height, reference.height);
+        expect(actual!.buffer.asUint8List(), orderedEquals(expected!.buffer.asUint8List()));
+      } finally { snapshot?.dispose(); reference.dispose(); }
     });
 
     testWidgets('real math acceptance preserves inline versus display metrics at $width', (tester) async {
