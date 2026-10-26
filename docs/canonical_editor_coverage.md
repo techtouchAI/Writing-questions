@@ -491,3 +491,15 @@ is removed/relaxed. The new push supersedes this unbounded setup stall, not a
 failed comparison or test. Final-SHA follow-on jobs still must actually finish.
 The ink-gap test/doc checkpoint landed in `e5f9189`; the bounded setup is in the
 following commit after a local patch-script syntax error was corrected.
+
+### Final-run scheduling note
+
+`78af1eb` Build `40353886832` was cancelled before any job/check ran while the
+two close pushes competed with the still-running `97c7569` workflow and pending
+`e5f9189` Build. It is NOT a test/build result. Local workflow YAML and setup
+Bash parsing succeed. `gh run rerun` gave a generic “workflow may be broken”
+message, but the direct rerun API reports **403 Resource not accessible by
+integration**; no rerun/cancel API retry is attempted. A documentation-only push
+now requests a fresh normal run with the SAME source/tests/bounded tool setup.
+Final acceptance still requires this latest SHA's actual jobs and APK, not a
+cancelled run or the earlier main-gate success.
