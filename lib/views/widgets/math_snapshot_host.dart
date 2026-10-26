@@ -67,8 +67,9 @@ class _MathSnapshotHostState extends State<MathSnapshotHost> {
   Future<MathSnapshot?> _render(
     String latex,
     double fontSizePt,
-    double density,
-  ) {
+    double density, {
+    bool isBlock = false,
+  }) {
     if (!mounted) {
       return Future<MathSnapshot?>.value();
     }
@@ -76,6 +77,7 @@ class _MathSnapshotHostState extends State<MathSnapshotHost> {
       latex: latex,
       fontSizePt: fontSizePt,
       density: density,
+      isBlock: isBlock,
     );
     setState(() => _jobs.add(job));
     _schedulePump();
@@ -244,7 +246,7 @@ class _MathSnapshotHostState extends State<MathSnapshotHost> {
       alignment: AlignmentDirectional.topStart,
       child: SafeMathTex(
         job.latex,
-        mathStyle: MathStyle.text,
+        mathStyle: job.isBlock ? MathStyle.display : MathStyle.text,
         textStyle: TextStyle(
           fontSize: job.fontSizePt * job.density,
           color: const Color(0xFF000000),
@@ -260,11 +262,13 @@ class _SnapshotJob {
     required this.latex,
     required this.fontSizePt,
     required this.density,
+    required this.isBlock,
   });
 
   final String latex;
   final double fontSizePt;
   final double density;
+  final bool isBlock;
   final GlobalKey key = GlobalKey(debugLabel: 'math-snapshot');
   final Completer<MathSnapshot?> completer = Completer<MathSnapshot?>();
   int attempts = 0;

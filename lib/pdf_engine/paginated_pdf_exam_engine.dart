@@ -128,7 +128,7 @@ class PaginatedPdfExamEngine {
     final collected = PdfMathRasters.collecting();
     for (final line in layout.allLines) {
       for (final run in line.runs) {
-        if (run.isMath) collected.lookup(run.text, run.style.fontSizePt);
+        if (run.isMath) collected.lookup(run.text, run.style.fontSizePt, isBlock: run.isBlockMath);
       }
     }
     if (collected.isEmpty) return PdfMathRasters.empty();

@@ -693,7 +693,7 @@ class PdfPaperBuilder {
         }
         continue;
       }
-      final raster = mathRasters?.lookup(segment.text, fontSize);
+      final raster = mathRasters?.lookup(segment.text, fontSize, isBlock: segment.isBlock);
       if (raster == null) {
         // صيغة لم تُلتقط (مضيف غائب أو تعذّر الرسم): نص رياضي مقروء —
         // ممنوع ظهور كود LaTeX في أي ملف مهما كان السبب.

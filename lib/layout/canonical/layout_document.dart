@@ -308,6 +308,10 @@ class LayoutRun {
   final LayoutMathBox? mathBox;
   final String measurementSource;
 
+  /// Preserve the source math style without adding a persisted model field.
+  bool get isBlockMath => semanticNode is RichRunNode &&
+      (semanticNode! as RichRunNode).run.isBlockMath;
+
   bool get isMath => contentKind == LayoutContentKind.math;
   bool get isQuran => contentKind == LayoutContentKind.quran;
   bool get isImage => contentKind == LayoutContentKind.image;

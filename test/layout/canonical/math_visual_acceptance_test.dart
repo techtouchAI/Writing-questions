@@ -5,8 +5,8 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../../support/production_evidence_fonts.dart';
 import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
-import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart';
 import 'package:writing_questions_app/layout/semantic/inline_nodes.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
@@ -63,25 +63,27 @@ Future<T> finish<T>(WidgetTester tester, Future<T> work) async {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUpAll(FlutterTextMetrics.ensureFontsLoaded);
+  setUpAll(loadProductionEvidenceFonts);
   for (final width in <double>[320, 360]) {
     testWidgets('real math acceptance has glyph ink, not Ahem rectangles at $width', (tester) async {
       tester.view.physicalSize = Size(width, 1200); tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize); addTearDown(tester.view.resetDevicePixelRatio);
       await tester.pumpWidget(MaterialApp(builder: (_, child) => MathSnapshotHost(child: child),
         home: const SizedBox.expand()));
-      final snapshot = await finish(tester, MathSnapshotRenderer.render(r'\frac{a+b}{c}'));
+      for (final isBlock in <bool>[false, true]) {
+      final snapshot = await finish(tester, MathSnapshotRenderer.render(r'\frac{a+b}{c}', isBlock: isBlock));
       expect(snapshot, isNotNull);
       try {
         final pixels = await finish(tester, snapshot!.image.toByteData(format: ui.ImageByteFormat.rawRgba));
         final shape = inkShape(pixels!.buffer.asUint8List(), snapshot.image.width, snapshot.image.height);
         Directory('build/production_fragment_repro').createSync(recursive: true);
         final png = await finish(tester, snapshot.toPngRaster());
-        File('build/production_fragment_repro/r13-math-${width.toInt()}-fraction.png').writeAsBytesSync(png.pngBytes);
+        File('build/production_fragment_repro/r13-math-${width.toInt()}-${isBlock ? 'display' : 'inline'}.png').writeAsBytesSync(png.pngBytes);
         expect(shape.ink, greaterThan(0), reason: 'An empty snapshot is not readable math.');
         expect(shape.nonRectangular, greaterThanOrEqualTo(3), reason: 'a, b and c must be glyph strokes, not solid font-test blocks: $shape');
         expect(shape.filledRectangles, 0, reason: 'Ahem rectangle glyphs must fail acceptance: $shape');
       } finally { snapshot?.dispose(); }
+      }
     });
 
     testWidgets('real math acceptance preserves inline versus display metrics at $width', (tester) async {

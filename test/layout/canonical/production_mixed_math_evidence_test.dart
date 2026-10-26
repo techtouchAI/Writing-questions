@@ -7,10 +7,10 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../../support/production_evidence_fonts.dart';
 import 'package:provider/provider.dart';
 
 import 'package:writing_questions_app/layout/canonical/canonical_page_plan.dart';
-import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart';
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/layout/semantic/inline_nodes.dart';
@@ -124,7 +124,7 @@ Future<void> _selectPrinted(WidgetTester tester, LayoutDocument layout, String p
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUpAll(FlutterTextMetrics.ensureFontsLoaded);
+  setUpAll(loadProductionEvidenceFonts);
   for (final width in <double>[320, 360]) {
     testWidgets('production split question AND branch inline/display math evidence at $width', (tester) async {
       tester.view.physicalSize = Size(width, 1200);
@@ -204,10 +204,10 @@ void main() {
       // The exact public raster collector used by the production PDF engine;
       // assert every requested formula succeeded, never accept text fallback.
       final requested = PdfMathRasters.collecting();
-      for (final run in math) { requested.lookup(run.text, run.style.fontSizePt); }
+      for (final run in math) { requested.lookup(run.text, run.style.fontSizePt, isBlock: run.isBlockMath); }
       final rasters = await _finish(tester, requested.resolve());
       for (final run in math) {
-        expect(rasters.lookup(run.text, run.style.fontSizePt), isNotNull);
+        expect(rasters.lookup(run.text, run.style.fontSizePt, isBlock: run.isBlockMath), isNotNull);
       }
       final pdf = await _finish(tester, PdfExportService.buildDocumentPdfBytes(
         document: document, layoutDocument: plan.layout, mathRasters: rasters));

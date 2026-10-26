@@ -84,6 +84,7 @@ final class CanonicalLayoutPreviewAssets {
           final snapshot = await MathSnapshotRenderer.render(
             run.text,
             fontSizePt: run.style.fontSizePt,
+            isBlock: run.isBlockMath,
           );
           if (snapshot == null) continue;
           try {

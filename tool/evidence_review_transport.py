@@ -23,7 +23,10 @@ def api(path, payload=None):
 
 def selected(root):
     # Enumerate required companions, not merely files that happened to exist.
-    names = set()
+    names = {'production-font-assets.json'}
+    for width in (320, 360):
+        for style in ('inline', 'display'):
+            names.add(f'r13-math-{width}-{style}.png')
     for width in (320, 360):
         r9 = json.loads((root / f'r9-{width}-manifest.json').read_text())
         if r9['pageCount'] < 3:

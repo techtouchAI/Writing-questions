@@ -577,3 +577,26 @@ violations. These automated successes do **not** override the visible failure.
 | Async image/math/layout completion and export/save races | Root candidates identified; draft real-work regressions not yet compiled/run, no repair claimed |
 | ALL editing tools, touch targets, and empty fields at 320/360 | Existing targeted cases do not establish an exhaustive audit; missing rows remain missing |
 | Candidate activation / merge | **Prohibited**; stays off, no PR merged, no branches deleted |
+
+## Math acceptance repair — regression first, still no activation
+
+Baseline `49a76df`, run `40394056877`, reproduced four failures at 320/360:
+- Fraction snapshot: 16,446 ink pixels, **zero nonrectangular glyph components**,
+  two filled rectangles. A nonempty image was not proof of readable math.
+- Inline and display copies of the same fraction both measured exactly
+  **13.476187999999999 pt** high. The source display flag was lost before capture.
+R1/R4 remained 8/0; downstream full/analyzer/APK were correctly blocked by the
+new failing gate, not claimed successful. Extended `40394056876` completed.
+
+The repair forwards the existing semantic block-math flag through canonical
+metrics, snapshot jobs, preview assets, and PDF collection/lookup. Cache keys
+separate inline/display while preserving the old default-inline API and keys.
+No persisted document fields or print font/style settings are changed.
+
+Evidence harnesses register unchanged package/Material fonts from the generated
+`FontManifest.json`, fail on missing Main/Math families or empty font assets,
+and publish the loaded family/asset/length inventory. Both inline and display
+snapshots must have actual glyph strokes, reject filled-rectangle/empty ink,
+and preserve distinct real metrics at both widths. This is not yet a passing
+repair until CI and actual original-byte visual review complete. Branch-tail,
+page-boundary, header/margin, drag, async and full-tool acceptance stay open.

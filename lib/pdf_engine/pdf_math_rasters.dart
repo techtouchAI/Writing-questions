@@ -21,12 +21,12 @@ final class PdfMathRasters {
       PdfMathRasters._(Map<String, MathRaster>.unmodifiable(cache));
 
   /// مفتاح الطلب: نفس الصيغة بحجم خط مختلف لقطةٌ مختلفة (المقياس بالنقاط).
-  static String key(String latex, double fontSizePt) =>
-      '${fontSizePt.toStringAsFixed(3)}|$latex';
+  static String key(String latex, double fontSizePt, {bool isBlock = false}) =>
+      '${isBlock ? "display|" : ""}${fontSizePt.toStringAsFixed(3)}|$latex';
 
   final Map<String, MathRaster>? _cache;
-  final List<({String latex, double fontSizePt})> _requests =
-      <({String latex, double fontSizePt})>[];
+  final List<({String latex, double fontSizePt, bool isBlock})> _requests =
+      <({String latex, double fontSizePt, bool isBlock})>[];
   final Set<String> _seen = <String>{};
 
   /// كم صيغة طُلبت في جولة الجمع (للاختبار والتشخيص).
@@ -34,24 +34,25 @@ final class PdfMathRasters {
 
   /// الطلبات المسجَّلة بترتيبها (نسخة للقراءة: للاختبار والتشخيص).
   List<({String latex, double fontSizePt})> get recorded =>
-      List<({String latex, double fontSizePt})>.unmodifiable(_requests);
+      List<({String latex, double fontSizePt})>.unmodifiable(
+          _requests.map((r) => (latex: r.latex, fontSizePt: r.fontSizePt)));
 
   bool get isEmpty => _requests.isEmpty;
 
   /// اللقطة الجاهزة لـ [latex] بحجم [fontSizePt]، أو `null` إن لم تُلتقط.
-  MathRaster? lookup(String latex, double fontSizePt) {
+  MathRaster? lookup(String latex, double fontSizePt, {bool isBlock = false}) {
     final cache = _cache;
     if (latex.trim().isEmpty || fontSizePt <= 0) {
       return null;
     }
     if (cache == null) {
-      final id = key(latex, fontSizePt);
+      final id = key(latex, fontSizePt, isBlock: isBlock);
       if (_seen.add(id)) {
-        _requests.add((latex: latex, fontSizePt: fontSizePt));
+        _requests.add((latex: latex, fontSizePt: fontSizePt, isBlock: isBlock));
       }
       return null;
     }
-    return cache[key(latex, fontSizePt)];
+    return cache[key(latex, fontSizePt, isBlock: isBlock)];
   }
 
   /// يلتقط كل ما جُمع (بلا انتظار تتابعي: المضيف يبني شجرة اللقطات دفعة
@@ -61,14 +62,14 @@ final class PdfMathRasters {
     double density = MathSnapshotRenderer.defaultDensity,
   }) async {
     final rasters = await Future.wait<MathRaster?>(
-      _requests.map((request) => rasterize(request.latex, request.fontSizePt, density: density)),
+      _requests.map((request) => rasterize(request.latex, request.fontSizePt, density: density, isBlock: request.isBlock)),
     );
     final cache = <String, MathRaster>{};
     for (var index = 0; index < _requests.length; index++) {
       final raster = rasters[index];
       if (raster != null) {
         final request = _requests[index];
-        cache[key(request.latex, request.fontSizePt)] = raster;
+        cache[key(request.latex, request.fontSizePt, isBlock: request.isBlock)] = raster;
       }
     }
     return PdfMathRasters.serving(cache);
@@ -81,6 +82,7 @@ final class PdfMathRasters {
     String latex,
     double fontSizePt, {
     double density = MathSnapshotRenderer.defaultDensity,
+    bool isBlock = false,
   }) async {
     final MathSnapshot? snapshot;
     try {
@@ -88,6 +90,7 @@ final class PdfMathRasters {
         latex,
         fontSizePt: fontSizePt,
         density: density,
+        isBlock: isBlock,
       );
     } catch (_) {
       return null;

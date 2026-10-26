@@ -7,11 +7,11 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../../support/production_evidence_fonts.dart';
 import 'package:provider/provider.dart';
 
 import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
 import 'package:writing_questions_app/layout/canonical/canonical_page_plan.dart';
-import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart';
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
@@ -143,7 +143,7 @@ Future<void> _capture(WidgetTester tester, String name, int pageIndex) async {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUpAll(FlutterTextMetrics.ensureFontsLoaded);
+  setUpAll(loadProductionEvidenceFonts);
 
   testWidgets('R1 selecting a question must not move its printed branch',
       (tester) async {

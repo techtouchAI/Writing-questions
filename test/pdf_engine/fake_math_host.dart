@@ -60,8 +60,9 @@ class FakeMathHost {
   Future<MathSnapshot?> provide(
     String latex,
     double fontSizePt,
-    double density,
-  ) async {
+    double density, {
+    bool isBlock = false,
+  }) async {
     requests.add((latex: latex, fontSizePt: fontSizePt));
     lastDensity = density;
     if (failingLatex == latex) {
