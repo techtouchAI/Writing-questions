@@ -633,3 +633,18 @@ Header selection padding/borders also entered layout; header frame padding
 is now foreground-only, left-column alignment follows its existing semantic
 intent, and the header-to-question gap comes from the shared plan. These are
 root coordinate conversions/containers, not clip expansion or a tolerance change.
+
+`d698964` (`40398267492`) and `b8b86c6` (`40399423367`) complete:
+production R1/R4 **8/0**, native **48/2**, Extended successful; full/analyze/APK
+blocked by the intentional native guard. All eight source-reference weight/color
+comparisons passed. Both remaining failures were in the new R9 trace, not a
+passing geometric measurement: it incorrectly assumed a globally suffixed branch
+field key. Branch DragTarget builds later and uses local ValueKeys; R6 had already
+proved controller identity by scoping the field inside its question slice. The
+trace now uses that actual source/slice identity and preserves originals before
+asserting. No geometry tolerance was changed. Red evidence transport is now
+permitted as well, still requiring the complete hashed inventory and never
+changing the build/native acceptance guards. Frame visibility regression checks
+the foreground border and explicitly checks that switching it does not resize
+its header. Physical conversion helpers call LayoutUnits directly; stored canvas
+model coordinates/constants remain unchanged.

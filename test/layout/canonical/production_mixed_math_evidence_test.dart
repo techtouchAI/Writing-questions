@@ -230,7 +230,13 @@ void main() {
       final lastCanvas = tester.renderObject<RenderBox>(_key('a4-page-${lastFragment.pageIndex}'));
       final sliceBox = tester.renderObject<RenderBox>(_key('page-slice-evidence-q$suffix'));
       final sliceRect = MatrixUtils.transformRect(sliceBox.getTransformTo(lastCanvas), Offset.zero & sliceBox.size);
-      final tailField = _key('branch-body-evidence-b$suffix');
+      // Branch DragTarget builds later than the question slice; its ValueKeys
+      // are local (R6 already proves controller sharing). Identify this source
+      // within the last slice, not by an invented global/suffixed branch key.
+      final tailField = find.descendant(of: _key('page-slice-evidence-q$suffix'),
+        matching: find.byWidgetPredicate((widget) => widget is PaperField &&
+            widget.controller.text.contains('B109')));
+      expect(tailField, findsOneWidget);
       final field = tester.widget<PaperField>(tailField);
       final paragraphs = find.descendant(of: tailField, matching: find.byType(RichText), skipOffstage: false).evaluate()
           .map((element) => element.findRenderObject()).whereType<RenderParagraph>().toList();

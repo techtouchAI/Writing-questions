@@ -684,7 +684,9 @@ jobs:
   evidence-review:
     name: Original evidence review transport
     needs: build
-    if: ${{ github.event_name == 'push' && needs.build.result == 'success' && contains(github.event.head_commit.message, '[review-evidence]') }}
+    # Failed acceptance must still publish its complete originals. Transport
+    # success is not repair acceptance; all build/native gates stay unchanged.
+    if: ${{ always() && github.event_name == 'push' && needs.build.result != 'cancelled' && contains(github.event.head_commit.message, '[review-evidence]') }}
     runs-on: ubuntu-24.04
     permissions:
       actions: read

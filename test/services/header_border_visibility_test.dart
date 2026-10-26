@@ -66,10 +66,19 @@ void main() {
     await tester.pumpAndSettle();
     final decorated = tester.widgetList<Container>(find.byType(Container)).where(
           (container) =>
-              container.decoration is BoxDecoration &&
-              (container.decoration! as BoxDecoration).border != null,
+              container.foregroundDecoration is BoxDecoration &&
+              (container.foregroundDecoration! as BoxDecoration).border != null,
         );
     expect(decorated, isNotEmpty,
         reason: 'إطار الترويسة مرسوم في المعاينة عند تفعيله.');
+    final framedSize = tester.getSize(find.byType(PaperHeaderView));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: PaperHeaderView(
+      header: ExamBlueprint.from(_document(framed: false)).header,
+      style: PaperTextStyle.empty, defaultFont: PaperFont.naskh,
+      fontScale: 1, heightScale: 1,
+    ))));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byType(PaperHeaderView)), framedSize,
+        reason: 'A decorative frame must not add layout insets or change header wrapping.');
   });
 }
