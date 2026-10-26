@@ -41,7 +41,7 @@ abstract final class PaperMetrics {
   static const double branchGapPx = 1;
 
   /// عرض المحتوى على لوحة بالهامش الافتراضي.
-  static double get contentWidthPx => contentWidthFor(ExamCanvasGeometry.marginMm);
+  static double get contentWidthPx => px(LayoutUnits.a4.width) - 2 * ExamCanvasGeometry.margin;
 
   /// الارتفاع المتاح للكتل داخل صفحة واحدة لهامش طباعة [marginMm] بالمليمتر
   /// (الصندوق كاملاً؛ التذييل يُحجز من آخر كتلة فقط عبر `lastPageReserve`).
