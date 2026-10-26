@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter_math_fork/flutter_math.dart' show MathStyle;
 import 'package:flutter_test/flutter_test.dart';
 import '../../support/production_evidence_fonts.dart';
 import 'package:provider/provider.dart';
@@ -24,6 +25,7 @@ import 'package:writing_questions_app/services/math_snapshot_renderer.dart';
 import 'package:writing_questions_app/services/pdf_export_service.dart';
 import 'package:writing_questions_app/views/widgets/math_snapshot_host.dart';
 import 'package:writing_questions_app/views/widgets/paper_field.dart';
+import 'package:writing_questions_app/views/widgets/safe_math_tex.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 import 'package:writing_questions_app/views/wizard/paper_header_footer_view.dart';
 
@@ -121,6 +123,133 @@ Future<void> _selectPrinted(WidgetTester tester, LayoutDocument layout, String p
   await tester.longPressAt(points.first);
   await tester.pumpAndSettle();
   expect(find.byType(AlertDialog), findsNothing);
+}
+
+// Read the source RenderParagraphs, not a second TextPainter/paginator.
+List<({String text, double baseline, Rect rect})> _paintedSourceLines(
+    WidgetTester tester, Finder field, RenderBox canvas) {
+  final result = <({String text, double baseline, Rect rect})>[];
+  final paragraphs = find.descendant(of: field, matching: find.byType(RichText)).evaluate()
+      .map((element) => element.findRenderObject()).whereType<RenderParagraph>();
+  for (final paragraph in paragraphs) {
+    final text = paragraph.text.toPlainText();
+    if (text.isEmpty) continue;
+    final transform = paragraph.getTransformTo(canvas);
+    final firstBaseline = paragraph.getDistanceToBaseline(TextBaseline.alphabetic)!;
+    final firstCaretY = paragraph.getOffsetForCaret(const TextPosition(offset: 0), Rect.zero).dy;
+    var start = 0;
+    var caretY = firstCaretY;
+    void emit(int end) {
+      final value = text.substring(start, end).replaceAll('\uFFFC', '').replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (value.isEmpty) return;
+      final boxes = paragraph.getBoxesForSelection(TextSelection(baseOffset: start, extentOffset: end));
+      if (boxes.isEmpty) return;
+      final rect = boxes.map((box) => MatrixUtils.transformRect(transform, box.toRect()))
+          .reduce((a, b) => a.expandToInclude(b));
+      result.add((text: value, rect: rect, baseline: MatrixUtils.transformPoint(
+          transform, Offset(0, firstBaseline + caretY - firstCaretY)).dy));
+    }
+    for (var offset = 1; offset < text.length; offset++) {
+      // A WidgetSpan's caret uses its object box, not the adjacent text
+      // strut. It is covered by the separate real-math ink tests; this trace
+      // follows text lines affected by its size, without inventing a line.
+      if (text.codeUnitAt(offset) == 0xFFFC) continue;
+      final nextY = paragraph.getOffsetForCaret(TextPosition(offset: offset), Rect.zero).dy;
+      if (nextY != caretY) { emit(offset); start = offset; caretY = nextY; }
+    }
+    emit(text.length);
+  }
+  result.sort((a, b) => a.baseline.compareTo(b.baseline));
+  return result;
+}
+
+List<Map<String, Object>> _sourcePageBoundaries(WidgetTester tester,
+    CanonicalPagePlan plan, ExamDocument document) {
+  final rows = <Map<String, Object>>[];
+  for (final fragment in plan.fragmentsOfQuestion('evidence-q')) {
+    final suffix = fragment.isContinuation ? '/slice${fragment.fragmentIndex}' : '';
+    final slice = _key('page-slice-evidence-q$suffix');
+    final canvas = tester.renderObject<RenderBox>(_key('a4-page-${fragment.pageIndex}'));
+    final box = tester.renderObject<RenderBox>(slice);
+    final clip = MatrixUtils.transformRect(box.getTransformTo(canvas), Offset.zero & box.size);
+    for (final source in <(String, String)>[
+      ('evidence-q/body', document.questions.single.body),
+      ('evidence-q/branch/evidence-b/body', document.questions.single.branches.single.content.body),
+    ]) {
+      final field = find.descendant(of: slice, matching: find.byWidgetPredicate(
+          (widget) => widget is PaperField && widget.controller.text == source.$2));
+      expect(field, findsOneWidget);
+      final native = _paintedSourceLines(tester, field, canvas).where((line) =>
+          line.rect.bottom > clip.top && line.rect.top < clip.bottom).toList();
+      final planned = plan.layout.pages[fragment.pageIndex].blocks.expand((block) => block.allLines).where((line) =>
+          line.runs.any((run) => run.semanticNodeId.startsWith(source.$1) &&
+              !run.isBlockMath && run.text.trim().isNotEmpty)).toList()
+          ..sort((a, b) => a.baseline.compareTo(b.baseline));
+      final plannedText = <String>[];
+      for (final line in planned) {
+        final runs = line.runs.where((run) => run.semanticNodeId.startsWith(source.$1)).toList()
+            ..sort((a, b) => a.logicalIndex.compareTo(b.logicalIndex));
+        plannedText.add(runs.map((run) => run.isMath ? '' : run.text).join()
+            .replaceAll(RegExp(r'\s+'), ' ').trim());
+      }
+      final nativeText = native.map((line) => line.text).toList();
+      var maxBaselineDelta = 0.0;
+      if (native.length == planned.length) {
+        for (var index = 0; index < native.length; index++) {
+          final delta = (native[index].baseline - LayoutUnits.ptToPx(planned[index].baseline)).abs();
+          if (delta > maxBaselineDelta) maxBaselineDelta = delta;
+        }
+      }
+      final nativeMath = <({String latex, bool display, Rect rect})>[];
+      for (final element in find.descendant(of: field, matching: find.byType(SafeMathTex)).evaluate()) {
+        final widget = element.widget as SafeMathTex;
+        final render = element.findRenderObject()! as RenderBox;
+        final rect = MatrixUtils.transformRect(render.getTransformTo(canvas), Offset.zero & render.size);
+        if (rect.bottom > clip.top && rect.top < clip.bottom) {
+          nativeMath.add((latex: widget.latex.trim(), display: widget.mathStyle == MathStyle.display, rect: rect));
+        }
+      }
+      nativeMath.sort((a, b) => a.rect.top.compareTo(b.rect.top));
+      final plannedMath = <({LayoutRun run, Rect rect})>[];
+      for (final line in plan.layout.pages[fragment.pageIndex].blocks.expand((block) => block.allLines)) {
+        for (final run in line.runs.where((run) => run.isMath && run.semanticNodeId.startsWith(source.$1))) {
+          plannedMath.add((run: run, rect: Rect.fromLTWH(LayoutUnits.ptToPx(run.x),
+            LayoutUnits.ptToPx(line.baseline - run.baselineOffset),
+            LayoutUnits.ptToPx(run.width), LayoutUnits.ptToPx(run.height))));
+        }
+      }
+      plannedMath.sort((a, b) => a.rect.top.compareTo(b.rect.top));
+      final mathGeometry = <Map<String, Object>>[];
+      for (var index = 0; index < nativeMath.length && index < plannedMath.length; index++) {
+        final actual = nativeMath[index];
+        final expected = plannedMath[index];
+        var delta = 0.0;
+        for (final pair in [(actual.rect.left, expected.rect.left), (actual.rect.top, expected.rect.top),
+            (actual.rect.width, expected.rect.width), (actual.rect.height, expected.rect.height)]) {
+          final difference = (pair.$1 - pair.$2).abs();
+          if (difference > delta) delta = difference;
+        }
+        mathGeometry.add({'nativeLatex': actual.latex, 'plannedLatex': expected.run.text.trim(),
+          'nativeDisplay': actual.display, 'plannedDisplay': expected.run.isBlockMath,
+          'nativeRectPx': [actual.rect.left, actual.rect.top, actual.rect.width, actual.rect.height],
+          'plannedRectPx': [expected.rect.left, expected.rect.top, expected.rect.width, expected.rect.height],
+          'maxGeometryDeltaPx': delta});
+      }
+      rows.add({
+        'page': fragment.pageIndex, 'source': source.$1,
+        'nativeLineCount': native.length, 'plannedLineCount': planned.length,
+        'nativeText': nativeText, 'plannedText': plannedText,
+        'maxBaselineDeltaPx': maxBaselineDelta,
+        'nativeMathCount': nativeMath.length, 'plannedMathCount': plannedMath.length,
+        'mathGeometry': mathGeometry,
+        'nativeFirstBaselinePx': native.isEmpty ? -1 : native.first.baseline,
+        'plannedFirstBaselinePx': planned.isEmpty ? -1 : LayoutUnits.ptToPx(planned.first.baseline),
+        'nativeLastBaselinePx': native.isEmpty ? -1 : native.last.baseline,
+        'plannedLastBaselinePx': planned.isEmpty ? -1 : LayoutUnits.ptToPx(planned.last.baseline),
+      });
+    }
+  }
+  return rows;
 }
 
 void main() {
@@ -283,6 +412,8 @@ void main() {
       final manifestFile = File('$_out/$label-manifest.json');
       final manifest = jsonDecode(manifestFile.readAsStringSync()) as Map<String, dynamic>;
       manifest['sourceWindowPaintTrace'] = trace;
+      final boundaries = _sourcePageBoundaries(tester, plan, document);
+      manifest['sourcePageBoundaries'] = boundaries;
       manifestFile.writeAsStringSync(const JsonEncoder.withIndent('  ').convert(manifest));
       // Existing R4 glyph-edge bound, not a new tolerance or enlarged clip.
       expect(tailRect.bottom, lessThanOrEqualTo(sliceRect.bottom + 0.75), reason: jsonEncode(trace));
@@ -291,6 +422,20 @@ void main() {
           (headerRect.top, expectedHeader.top), (headerRect.width, expectedHeader.width),
           (headerRect.height, expectedHeader.height)]) {
         expect(pair.$1, closeTo(LayoutUnits.ptToPx(pair.$2), 1e-6), reason: jsonEncode(trace));
+      }
+      for (final row in boundaries) {
+        final identity = '${row['source']} page ${row['page']}';
+        expect(row['nativeText'], row['plannedText'], reason: identity);
+        expect(row['nativeMathCount'], row['plannedMathCount'], reason: identity);
+        for (final math in row['mathGeometry']! as List<Map<String, Object>>) {
+          expect(math['nativeLatex'], math['plannedLatex'], reason: identity);
+          expect(math['nativeDisplay'], math['plannedDisplay'], reason: identity);
+          expect(math['maxGeometryDeltaPx'], lessThanOrEqualTo(1e-6), reason: '$identity ${jsonEncode(math)}');
+        }
+        expect(row['maxBaselineDeltaPx'], lessThanOrEqualTo(1e-6), reason: jsonEncode({
+          for (final entry in row.entries)
+            if (entry.key != 'nativeText' && entry.key != 'plannedText' && entry.key != 'mathGeometry') entry.key: entry.value,
+        }));
       }
       expect(tester.takeException(), isNull);
     });

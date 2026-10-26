@@ -71,6 +71,9 @@ void main() {
         );
     expect(decorated, isNotEmpty,
         reason: 'إطار الترويسة مرسوم في المعاينة عند تفعيله.');
+    final border = (decorated.first.foregroundDecoration! as BoxDecoration).border! as Border;
+    expect(border.top.strokeAlign, BorderSide.strokeAlignCenter,
+        reason: 'Canonical/PDF strokes are centered on header.rect, not inset into it.');
     final framedSize = tester.getSize(find.byType(PaperHeaderView));
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: PaperHeaderView(
       header: ExamBlueprint.from(_document(framed: false)).header,

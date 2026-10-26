@@ -648,3 +648,30 @@ changing the build/native acceptance guards. Frame visibility regression checks
 the foreground border and explicitly checks that switching it does not resize
 its header. Physical conversion helpers call LayoutUnits directly; stored canvas
 model coordinates/constants remain unchanged.
+
+### c942c2a: tested main, still visibly incomplete
+
+Run `40400455879`, main `121844843516`: R1/R4 **8/0**, native **50/0**,
+full **942/0/0** (105 suites), canonical **3/0**, clean analysis and actual
+release APK. Extended `40400455782` successful. Original transport
+`121849137901` verified **57/57**, inventory SHA256
+`ecc50eeedb302a73b5dfc7c4edc220bffd8502fde11a893776d6eeb0ce5ee67d`.
+Actually opened corresponding 320 page0/page4 preview+PDF originals rendered
+at 96dpi, and the original display-math capture composited on white only as
+an identified diagnostic derivative. Equation glyphs are now normal/italic
+like the source, not the former bold upright image. Header **box** is exactly
+`[56.69291338582678,56.69291338582678,680.3149606299214,109]` in both paths;
+B109 final text matches exactly and is visible in both. Selection delta=0.
+
+**NOT acceptance:** native page4 still begins with a partially clipped line
+and its last glyph is ~14.9px above the planned fragment bottom. A terminal
+containment assertion cannot prove that every continuation starts correctly.
+Expanded R9 now reads actual native text-line carets/selection boxes for BOTH
+bodies on EVERY page, compares source line inventory/baselines to LayoutDocument,
+and compares actual SafeMathTex rectangles to the PDF's canonical run boxes.
+Only IEEE 1e-6 coordinate comparison remains. WidgetSpan object carets are not
+misclassified as separate text lines. The complete diagnostic data is saved in
+the original manifest before assertions. Header frame also gets a centered-
+stroke regression: PDF strokes straddle header.rect; BoxBorder's default inside
+stroke does not. Font/glyph shaping of the header is still visibly different;
+no font replacement or visual acceptance is asserted.
