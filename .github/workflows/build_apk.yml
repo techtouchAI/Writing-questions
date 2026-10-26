@@ -114,6 +114,7 @@ jobs:
           status=0
           flutter test --reporter json --timeout 120s \
             test/wizard/canonical_editor_candidate_test.dart \
+            test/layout/canonical/math_visual_acceptance_test.dart \
             test/wizard/canonical_editing_layer_test.dart \
             test/wizard/paper_field_ink_width_test.dart \
             test/layout/canonical/flutter_text_metrics_test.dart \
