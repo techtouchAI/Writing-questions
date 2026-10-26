@@ -127,7 +127,7 @@ Future<double> _tapPrintedFragment(WidgetTester tester, LayoutPage page, String 
 // Compare actual preview-style raster bytes with/without the exact body clip.
 // Equality proves the clip loses no painted pixels; no geometric tolerance,
 // font/line-height change, enlarged clip or hidden overflow is involved.
-Future<void> _assertBoundaryInkIsVisible(WidgetTester tester, LayoutPage page,
+Future<({int topPx, int bottomPx})> _assertBoundaryInkIsVisible(WidgetTester tester, LayoutPage page,
     LayoutLine line, LayoutRun run) async {
   final style = run.style;
   final painter = TextPainter(text: TextSpan(text: run.text, style: TextStyle(
@@ -147,7 +147,8 @@ Future<void> _assertBoundaryInkIsVisible(WidgetTester tester, LayoutPage page,
     // UNCHANGED shared plan body. Integer-pixel origin preserves page AA phase.
     final padding = (style.fontSizePt * scale * 3).ceil();
     final originX = ((run.x * scale).floor() - padding) / scale;
-    final originY = ((top * scale).floor() - padding) / scale;
+    final originYPx = (top * scale).floor() - padding;
+    final originY = originYPx / scale;
     final width = (painter.width * scale).ceil() + padding * 2 + 2;
     final height = (painter.height * scale).ceil() + padding * 2 + 2;
     final images = (await tester.runAsync(() async {
@@ -164,7 +165,7 @@ Future<void> _assertBoundaryInkIsVisible(WidgetTester tester, LayoutPage page,
         final image = await picture.toImage(width, height);
         try {
           final bytes = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!;
-          result.add(List<int>.of(bytes.buffer.asUint8List()));
+          result.add(bytes.buffer.asUint8List().sublist(0));
         } finally {
           image.dispose();
           picture.dispose();
@@ -180,6 +181,16 @@ Future<void> _assertBoundaryInkIsVisible(WidgetTester tester, LayoutPage page,
     expect(differentBytes, 0,
       reason: 'Page ${page.index}, ${run.semanticNodeId}, source ${run.sourceStartOffset}..${run.sourceEndOffset}: '
         'the exact body clip must preserve EVERY painted byte of boundary text.');
+    var firstInkRow = height;
+    var lastInkRow = -1;
+    for (var index = 3; index < images[0].length; index += 4) {
+      if (images[0][index] == 0) continue;
+      final row = (index ~/ 4) ~/ width;
+      if (row < firstInkRow) firstInkRow = row;
+      if (row > lastInkRow) lastInkRow = row;
+    }
+    expect(lastInkRow, greaterThanOrEqualTo(0), reason: 'The source text must actually paint visible ink.');
+    return (topPx: originYPx + firstInkRow, bottomPx: originYPx + lastInkRow + 1);
   } finally {
     painter.dispose();
   }
@@ -710,10 +721,24 @@ void main() {
       final lastBranchPage = finalLayout.pages.lastWhere((page) => _runs(page, 'split-q/branch/split-b/').isNotEmpty);
       final nextPage = finalLayout.pages.firstWhere((page) => _runs(page, 'next-q/title/').isNotEmpty);
       expect(nextPage.index, greaterThanOrEqualTo(lastBranchPage.index));
+      int? actualFollowingInkGapPx;
       if (nextPage.index == lastBranchPage.index) {
         final branchBottom = _runs(lastBranchPage, 'split-q/branch/split-b/').map((value) => value.line.rect.bottom).reduce((a, b) => a > b ? a : b);
         final nextTop = _runs(nextPage, 'next-q/title/').map((value) => value.line.rect.top).reduce((a, b) => a < b ? a : b);
         expect(nextTop, greaterThanOrEqualTo(branchBottom - 1e-6), reason: 'Final branch ink must not overlap the following question.');
+        int? lastInkBottom;
+        int? nextInkTop;
+        for (final value in _runs(lastBranchPage, 'split-q/branch/split-b/')) {
+          final ink = await _assertBoundaryInkIsVisible(tester, lastBranchPage, value.line, value.run);
+          if (lastInkBottom == null || ink.bottomPx > lastInkBottom) lastInkBottom = ink.bottomPx;
+        }
+        for (final value in _runs(nextPage, 'next-q/title/')) {
+          final ink = await _assertBoundaryInkIsVisible(tester, nextPage, value.line, value.run);
+          if (nextInkTop == null || ink.topPx < nextInkTop) nextInkTop = ink.topPx;
+        }
+        actualFollowingInkGapPx = nextInkTop! - lastInkBottom!;
+        expect(actualFollowingInkGapPx, greaterThanOrEqualTo(0),
+          reason: 'Actual raster ink, not only planned line rectangles, must separate the final branch and next question.');
       }
       expect(identical(finalLayout.source, controller.documentIr), isTrue,
         reason: 'PDF evidence must use the displayed plan of the current, restored model.');
@@ -731,7 +756,8 @@ void main() {
         'everyFragmentEditedOriginalModelAndUndoRestoredAllData': true,
         'maxActivationDeltaPx': maxActivationDelta, 'geometryTolerancePx': 1e-6,
         'pdfUsesDisplayedLivePlan': true, 'lastBranchPage': lastBranchPage.index,
-        'followingQuestionPage': nextPage.index, 'manualVisualReview': false,
+        'followingQuestionPage': nextPage.index, 'actualFollowingQuestionInkGapPx': actualFollowingInkGapPx,
+        'manualVisualReview': false,
       }));
       expect(tester.takeException(), isNull);
     });

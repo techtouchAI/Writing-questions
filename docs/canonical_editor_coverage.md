@@ -435,3 +435,41 @@ no production clip, font, geometry tolerance, or pagination is changed. This
 is a stronger direct painted-pixel visibility check, not allowance for overflow.
 All results still await CI; do not infer actual glyph clipping or acceptance
 from the earlier incorrectly interpreted frame measurements.
+
+### Point/option integration checkpoint `97c7569` — verified main gate
+
+Build `40347503909`, main `121658253342`: production **8/0**, native **36/0**
+(4 suites including focused font metrics), full **931/0**, canonical **3/0**,
+clean analysis and **actual release APK build succeeded**. Extended
+`40347504021` succeeded. Visual/C6 are still pending at this checkpoint.
+
+R10 manifests for BOTH widths confirm **20 real pages**, point text pages
+0–2 / branch-point text 9–11, question option pages 2–9 / branch option 11–19.
+Each printable source offset appears once; every source fragment edits its
+original model and undo restores the entire document and range formats.
+Actual boundary run raster bytes are identical with/without the unchanged body
+clip. Actual page activation delta is **0.0px** (tolerance 1e-6px). The following
+question shares page 19 without planned-line overlap. PDF uses the displayed
+live restored-model plan; manual visual review remains false.
+
+Reviewable PNG/PDF artifact `12662827368` (32,655,826 bytes) includes R9 default
+production mixed math AND clearly separate R10 opt-in candidate evidence.
+Actual APK artifact `12662233586` (28,385,653 bytes). Logs/artifact downloads
+remain inaccessible in the agent environment, so none were manually reviewed.
+
+| Current parity area | Implemented counterpart | Verified scope / still open |
+|---|---|---|
+| Question/branch source, empty fields, continuations, IME | Existing source controllers in anchored native editor | Integration verified at both widths; category clear/reopen still open |
+| Point/option add/delete/kinds/labels/marks/undo/redo | Existing handlers + external 48dp native commands and empty-source menu | Question AND branch owners verified; active-option kind switch retains all option data |
+| Long point/option source, every continuation, native lifetime | Actual shared-plan hits + the SAME model/controller/editor | 20-page cases verified, all characters covered, model/format round-trip exact |
+| Selection/command opening and page-edge visibility | Fixed canonical paper + external chrome | 0px activation shift and byte-exact painted boundary visibility verified |
+| Actual ink separation from the following question | Planned non-overlap plus actual glyph bounds | Additional raster-ink gap assertion below awaits CI |
+| Reorder drag, math/range-format command parity, remaining touch targets | Existing handlers remain available; counterpart coverage incomplete | NOT accepted; production activation prohibited |
+| Completed asset/layout pairing, stale export transitions | Current async canonical preview pipeline | Still needs deterministic delayed-asset coverage and repair if exposed |
+| Default-production preview/PDF evidence | R9 live-plan PNG/PDF with real inline/block math | Automated geometry/snapshots verified, manual visual comparison NOT performed |
+
+The next test-only increment additionally scans actual alpha pixels of the
+final branch and next-question runs, requiring non-overlapping raster ink (not
+only line rectangles), and records the measured pixel gap. Scratch RGBA copies
+retain compact byte storage; no production code/geometry/clip change. This new
+assertion is pending CI. The candidate remains OFF; no merge or branch removal.
