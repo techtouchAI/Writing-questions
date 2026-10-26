@@ -288,12 +288,12 @@ void main() {
       reason: 'The split branch must retain every planned line in order exactly once: ${jsonEncode({
         'expectedCount': referenceLines.length,
         'actualCount': fragmentLineIds.length,
-        'missing': referenceLines.where((id) => !fragmentLineIds.contains(id)).toList(),
-        'extra': fragmentLineIds.where((id) => !referenceLines.contains(id)).toList(),
-        'duplicate': fragmentLineIds.where((id) => fragmentLineIds.indexOf(id) != fragmentLineIds.lastIndexOf(id)).toSet().toList(),
-        'missingRects': [for (final line in reference.allBlocks.where((b) => b.kind == LayoutBlockKind.question && b.semanticNodeId == 'repro-q').single.allLines)
-          if (!fragmentLineIds.contains(line.id)) {'id': line.id, 'top': line.rect.top, 'bottom': line.rect.bottom}],
-        'windows': [for (final f in fragments) {'top': f.sourceTopPt, 'bottom': f.sourceTopPt + f.heightPt}],
+        'missing': referenceLines.where((id) => !fragmentLineIds.contains(id)).take(2).toList(),
+        'extra': fragmentLineIds.where((id) => !referenceLines.contains(id)).take(2).toList(),
+        'duplicate': fragmentLineIds.where((id) => fragmentLineIds.indexOf(id) != fragmentLineIds.lastIndexOf(id)).toSet().take(2).toList(),
+        'missingRects': [for (final line in reference.allBlocks.where((b) => b.kind == LayoutBlockKind.question && b.semanticNodeId == 'repro-q').single.allLines.where((line) => !fragmentLineIds.contains(line.id)).take(2))
+          [line.rect.top, line.rect.bottom]],
+        'windows': [for (final f in fragments.take(2)) [f.sourceTopPt, f.sourceTopPt + f.heightPt]],
       })}');
     final last = fragments.last;
     final suffix = '/slice${last.fragmentIndex}';
