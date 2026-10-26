@@ -12,6 +12,43 @@ import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 
 void main() {
+  testWidgets('rounded-up and rounded-down native flow bands neither overlap nor grow the paragraph', (_) async {
+    await FlutterTextMetrics.ensureFontsLoaded();
+    const metrics = FlutterTextMetrics();
+    final text = List.filled(12, 'هذا نص عربي مع English لفحص تدفق السطر').join(' ');
+    for (final factor in <double>[1.3, 1.35, 1.7]) {
+      final style = LayoutTextStyle(font: PaperFont.naskh, fontSizePt: 14, lineHeightFactor: factor);
+      final paragraph = metrics.layoutParagraph(spans: <MetricSpan>[
+        MetricSpan(semanticNodeId: 'body', semanticNode: null, text: text,
+          contentKind: LayoutContentKind.text, semanticRole: LayoutSemanticRole.text,
+          style: style, direction: DocumentDirection.rtl, logicalIndex: 0),
+      ], width: 300, direction: DocumentDirection.rtl, alignment: null,
+        resolveJustification: false);
+      final painter = TextPainter(text: TextSpan(text: text, style: TextStyle(
+        fontFamily: PaperFont.naskh.family, fontSize: LayoutUnits.ptToPx(14), height: factor)),
+        textDirection: TextDirection.rtl, textScaler: TextScaler.noScaling)
+        ..layout(minWidth: LayoutUnits.ptToPx(300), maxWidth: LayoutUnits.ptToPx(300));
+      try {
+        final native = painter.computeLineMetrics();
+        expect(native.length, greaterThan(1));
+        expect(paragraph.lines.length, native.length);
+        var nativeFlowTop = 0.0;
+        for (var i = 0; i < native.length; i++) {
+          final line = paragraph.lines[i];
+          expect(line.top, closeTo(LayoutUnits.pxToPt(nativeFlowTop), 1e-6));
+          expect(line.height, closeTo(LayoutUnits.pxToPt(native[i].height), 1e-6));
+          expect(line.baseline, closeTo(LayoutUnits.pxToPt(native[i].baseline), 1e-6));
+          nativeFlowTop += native[i].height;
+        }
+        expect(nativeFlowTop, closeTo(painter.height, 1e-6));
+        expect(paragraph.lines.last.top + paragraph.lines.last.height,
+          closeTo(paragraph.height, 1e-6));
+      } finally {
+        painter.dispose();
+      }
+    }
+  });
+
   testWidgets('glyph overhang is recorded without inflating native paragraph flow', (_) async {
     await FlutterTextMetrics.ensureFontsLoaded();
     const metrics = FlutterTextMetrics();

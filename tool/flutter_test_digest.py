@@ -235,6 +235,15 @@ def excerpt_text(digest, test_id):
                 break
             line_bytes = len(line.encode("utf-8")) + 1
             if head_bytes + line_bytes > MAX_PRINT_BYTES_IN_EXCERPT // 2:
+                # A long JSON diagnostic is still useful at its beginning.
+                # Do not drop the entire actionable line merely because it
+                # cannot fit as a whole (the overall byte ceiling is unchanged).
+                available = MAX_PRINT_BYTES_IN_EXCERPT // 2 - head_bytes - 1
+                marker = " ... [truncated]"
+                if available > len(marker):
+                    partial = _truncate_bytes(line, available - len(marker)) + marker
+                    head.append(partial)
+                    head_bytes += len(partial.encode("utf-8")) + 1
                 break
             head.append(line)
             head_bytes += line_bytes
@@ -439,6 +448,16 @@ def self_test():
           "baseline queried outside parent layout" in excerpt)
     check("large trace excerpt within annotation budget",
           len(excerpt.encode("utf-8")) <= MAX_EXCERPT_BYTES)
+
+    long_reason = Digest()
+    long_reason.prints[42] = ["EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK",
+        "Expected: true", "Actual: false", "missing=branch/body/line/33 " + "ع" * 2000,
+        "test description"]
+    long_excerpt = excerpt_text(long_reason, 42)
+    check("oversized failure reason retains its actionable prefix",
+          "missing=branch/body/line/33" in long_excerpt and "[truncated]" in long_excerpt)
+    check("oversized Unicode failure reason respects the same byte ceiling",
+          len(long_excerpt.encode("utf-8")) <= MAX_EXCERPT_BYTES)
 
     empty = parse_stream(["plain banner", "another line"])
     check("unparsed log tolerated",

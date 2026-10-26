@@ -1139,7 +1139,7 @@ class _LayoutBuilder {
       semanticNodeId: id,
       semanticNode: semanticNode,
       kind: kind,
-      // Preserve the source paragraph height and unrounded logical line bands.
+      // Preserve the source paragraph height and its allocated logical line bands.
       // Glyph overhang is recorded separately, not inserted into flow.
       // A paragraph must contain BOTH measurements: otherwise the terminal
       // line falls outside the source interval before pagination even starts.

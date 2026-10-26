@@ -500,6 +500,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
       }
 
       final lines = <MeasuredLine>[];
+      var flowTopPx = 0.0;
       for (var index = 0; index < lineMetrics.length; index++) {
         final metric = lineMetrics[index];
         final fragments = fragmentsByLine[index]
@@ -545,10 +546,11 @@ class FlutterTextMetrics implements FontMetricsProvider {
                 for (final fragment in measuredFragments)
                   _translateFragment(fragment, alignmentOffset),
               ];
-        // LineMetrics.height is rounded to integer logical pixels. It is
-        // NOT the source paragraph's unrounded logical flow height. Keep
-        // actual glyph boxes separately: an Amiri glyph may overhang a short
-        // header line without adding that overhang to paragraph flow.
+        // Skia allocates rounded line-height bands. baseline-ascent is not
+        // the top of that allocated band: rounding can put it above/below it.
+        // Using ascent+descent as flow height also overlaps successive bands
+        // when the source rounds DOWN. Keep glyph overhang separate from the
+        // actual allocated flow, and preserve painter.height below.
         var glyphTop = metric.baseline - metric.ascent;
         var glyphBottom = metric.baseline + metric.descent;
         if (fragments.isNotEmpty) {
@@ -570,7 +572,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
         lines.add(
           MeasuredLine(
             index: index,
-            top: LayoutUnits.pxToPt(metric.baseline - metric.ascent),
+            top: LayoutUnits.pxToPt(flowTopPx),
             glyphTop: LayoutUnits.pxToPt(glyphTop),
             glyphBottom: LayoutUnits.pxToPt(glyphBottom),
             baseline: LayoutUnits.pxToPt(metric.baseline),
@@ -579,7 +581,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
             leading: LayoutUnits.pxToPt(
               metric.height - metric.ascent - metric.descent,
             ),
-            height: LayoutUnits.pxToPt(metric.ascent + metric.descent),
+            height: LayoutUnits.pxToPt(metric.height),
             naturalWidth: naturalWidth,
             resolvedWidth: resolvedWidth,
             isJustified: isJustified,
@@ -588,6 +590,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
             fragments: List<MeasuredRunFragment>.unmodifiable(positionedFragments),
           ),
         );
+        flowTopPx += metric.height;
       }
       final height = LayoutUnits.pxToPt(painter.height);
       return MeasuredParagraph(

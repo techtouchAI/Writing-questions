@@ -769,3 +769,23 @@ claim. The unchanged logical equality guard now emits a compact boolean plus
 missing/extra/duplicate line IDs, rectangles and source windows, rather than a
 large expected/actual list truncated by GitHub annotations. This diagnosis is
 required before modifying the split algorithm; no tolerance changed.
+
+`d0ea6ed` run `40409229495`: still R1/R4 **7/1**, Extended successful,
+all downstream gates skipped. Compact proof: expected **73** line IDs, actual
+**42**; initial source windows `[0,46.35000014305115]`,
+`[46.35000014305115,65.10000085830688]`. Reference body bands were
+`[178.11968518242122,197.01968503937007]` and
+`[196.86968589767696,215.7696857546258]`: height **18.9pt**, baseline step
+**18.75pt**, overlapping by **0.15pt**. The proposed unrounded flow-height
+repair was wrong when Skia rounds DOWN, causing the indivisible-atom splitter
+to backtrack through the overlap chain and exclude lines.
+
+Correct flow representation: source-allocated `LineMetrics.height` with its
+**cumulative allocated top**, NOT `baseline-ascent` as that band's top and NOT
+unrounded ascent+descent as flow height. Painted baseline and actual selection
+box top/bottom remain independent, unchanged measurements. This handles both
+round-UP (the previous 0.0667px excess) and round-DOWN (0.2px overlap) without
+changing split tolerances, clips or fonts. Added an independent native multiline
+round-up/down regression (1.3/1.35/1.7 factors). The CI digest additionally
+retains the prefix of oversized diagnostic lines under its unchanged byte
+budget; **32/32** offline self-tests pass. Validation still pending.
