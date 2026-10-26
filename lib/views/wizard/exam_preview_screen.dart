@@ -5458,7 +5458,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       for (var p = 0; p < points.length; p++) {
         final point = points[p];
         final name = '$ownerName — النقطة ${document.formatNumber(p + 1)}';
-        if (point.text.trim().isEmpty) entries.add((key: _itemKey(point.id), label: '$name — النص'));
+        if (point.text.trim().isEmpty) {
+          entries.add((key: _itemKey(point.id), label: '$name — النص'));
+        }
         if (point.kind != PointKind.multipleChoice) continue;
         for (var o = 0; o < point.options.length; o++) {
           if (point.options[o].text.trim().isEmpty) entries.add((key: _sourceOptionKey(point, o),
@@ -7761,7 +7763,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       semanticContent: semanticContent,
       textAlign: textAlign,
       hint: hint,
-      onActivate: () => _activateField(fieldKey, controller),
+      onActivate: () {
+        // A popup/dialog can restore focus to the previous field while an
+        // explicit source switch is rebuilding. That retired native field
+        // must not steal the newly selected source back before it mounts.
+        if (_separateEditorCandidate && _activeFieldKey != fieldKey) return;
+        _activateField(fieldKey, controller);
+      },
       onEditFormula: () => _editEquationInField(fieldKey),
       // في وضع التحديد المتعدد لا يبتلع الحقل الضغط المطوّل: يمرّ إلى كتلة
       // السؤال/الفرع فتُحدَّد من أي موضع (والنص غير قابل للتأشير وقتها).

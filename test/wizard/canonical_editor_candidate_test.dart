@@ -544,7 +544,9 @@ void main() {
         expect(tester.getSize(entry).height, greaterThanOrEqualTo(48));
         await tester.tap(entry);
         await tester.pumpAndSettle();
-        expect(find.byKey(ValueKey<String>(key)), findsOneWidget);
+        expect(find.byKey(ValueKey<String>(key)), findsOneWidget,
+          reason: 'Empty-source switch must survive popup focus restoration; mounted fields: '
+            '${tester.widgetList<PaperField>(find.byType(PaperField)).map((field) => field.key).toList()}');
       }
       Future<void> history(String tooltip) async {
         final action = find.byTooltip(tooltip);

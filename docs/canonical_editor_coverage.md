@@ -313,3 +313,22 @@ focus and IME-client count, and other-owner/range-format preservation.
 category clearing, reorder drag, math/formatting command parity, every remaining
 control's touch target, and stale completed-asset/layout pairing remain open.
 Production candidate flag remains OFF; no activation, merge, or branch removal.
+
+
+### Point command first run and focus-switch repair (pending verification)
+
+- `02d2c64` finished ALL workflows successfully: Build `40235447739`,
+  including Visual `121297507891` and C6 `121298187920`, plus Extended
+  `40235447684`. Release attachment skipped because this is not a tag/release;
+  the actual APK build and artifact succeeded. No manual visual review.
+- `4d79d57`, Build `40236825017`, main `121300068869`: production **8/0**,
+  native **21/2**; both new command tests fail opening an empty option (the
+  expected source field is absent). Full suite and APK correctly did not run.
+  Analysis has one `curly_braces_in_flow_control_structures` info; Extended
+  `40236825028` succeeded. This is NOT point-command acceptance.
+- Candidate native field focus callbacks now reject a retired field whose key
+  differs from the explicitly selected active source. Popup focus restoration
+  must not overwrite a newly selected source before its widget mounts; legacy
+  activation is unchanged. The original missing-field assertion is retained
+  and now reports mounted field keys if it fails again. The analyzer info is
+  corrected with braces. This repair awaits CI, not a claim of a green result.
