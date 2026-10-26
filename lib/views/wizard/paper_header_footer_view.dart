@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../layout/blueprint/exam_blueprint.dart';
 import '../../layout/document_ir.dart';
+import '../../layout/canonical/layout_units.dart';
 import '../../layout/semantic/inline_nodes.dart';
 import '../../models/paper_font.dart';
 import '../../models/paper_text_style.dart';
@@ -76,14 +77,14 @@ class PaperHeaderView extends StatelessWidget {
     TextStyle lineStyle,
     TextAlign columnAlign,
   ) {
-    final align = PaperStyles.toTextAlign(style.align, columnAlign);
     final spacing = style.paragraphSpacing;
     return <Widget>[
       for (final line in lines) ...<Widget>[
         _semanticLine(
           line.content,
-          line.bold ? lineStyle.copyWith(fontWeight: FontWeight.bold) : lineStyle,
-          align,
+          lineStyle.copyWith(fontWeight:
+              (style.bold ?? line.bold) ? FontWeight.bold : FontWeight.normal),
+          PaperStyles.toTextAlign(style.align ?? line.alignment, columnAlign),
         ),
         if (spacing != null && spacing > 0) SizedBox(height: spacing),
       ],
@@ -122,8 +123,8 @@ class PaperHeaderView extends StatelessWidget {
       textDirection: TextDirection.rtl,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: framed
-            ? BoxDecoration(border: Border.all(color: PaperStyles.ink, width: 1.2))
+        foregroundDecoration: framed
+            ? BoxDecoration(border: Border.all(color: PaperStyles.ink, width: LayoutUnits.ptToPx(1)))
             : null,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,

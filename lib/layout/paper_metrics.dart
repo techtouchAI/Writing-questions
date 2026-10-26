@@ -1,4 +1,4 @@
-import 'package:pdf/pdf.dart' show PdfPageFormat;
+import 'canonical/layout_units.dart';
 
 import '../models/exam_canvas_geometry.dart';
 
@@ -9,7 +9,10 @@ import '../models/exam_canvas_geometry.dart';
 /// (انظر [pageContentHeightFor]/[contentWidthFor])، وهو نفسه حشوة الإطار.
 abstract final class PaperMetrics {
   /// نقطة PDF لكل بكسل منطقي على اللوحة (A4: 595.28pt ↔ 794px).
-  static double get pointsPerPixel => PdfPageFormat.a4.width / ExamCanvasGeometry.width;
+  // A rounded 794px A4 width is not a physical-unit conversion. It made
+  // 10.5pt become 14.005277px while canonical measurement used 14px.
+  static double get pointsPerPixel =>
+      LayoutUnits.pointsPerInch / LayoutUnits.logicalPixelsPerInch;
 
   static double px(double points) => points / pointsPerPixel;
 

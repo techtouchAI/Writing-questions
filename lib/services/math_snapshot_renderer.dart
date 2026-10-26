@@ -146,6 +146,8 @@ typedef MathSnapshotProvider = Future<MathSnapshot?> Function(
   double fontSizePt,
   double density, {
   bool isBlock,
+  bool bold,
+  int colorArgb,
 });
 
 /// خدمة الوصول إلى المضيف المرسوم بلا سياق واجهة (شجرة تصدير نظيفة).
@@ -180,13 +182,15 @@ abstract final class MathSnapshotRenderer {
     double fontSizePt = 12,
     double density = defaultDensity,
     bool isBlock = false,
+    bool bold = false,
+    int colorArgb = 0xFF000000,
   }) {
     final provider = _provider;
     if (provider == null || latex.trim().isEmpty || fontSizePt <= 0) {
       return Future<MathSnapshot?>.value();
     }
     try {
-      return provider(latex, fontSizePt, density, isBlock: isBlock);
+      return provider(latex, fontSizePt, density, isBlock: isBlock, bold: bold, colorArgb: colorArgb);
     } catch (_) {
       return Future<MathSnapshot?>.value();
     }

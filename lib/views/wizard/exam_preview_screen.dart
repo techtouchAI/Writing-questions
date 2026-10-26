@@ -4761,16 +4761,19 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     int pageCount,
     CanonicalPagePlan plan,
   ) {
+    final size = plan.layout.pages[page.index].pageSize;
+    final width = LayoutUnits.ptToPx(size.width);
+    final height = LayoutUnits.ptToPx(size.height);
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       child: SizedBox(
-        width: ExamCanvasGeometry.width * _zoom,
-        height: ExamCanvasGeometry.height * _zoom,
+        width: width * _zoom,
+        height: height * _zoom,
         child: FittedBox(
           fit: BoxFit.fill,
           child: SizedBox(
-            width: ExamCanvasGeometry.width,
-            height: ExamCanvasGeometry.height,
+            width: width,
+            height: height,
             child: _buildPage(
               controller,
               layout,
@@ -4849,6 +4852,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     // تُرشَّح المعرّفات المحذوفة أثناء حسم تعديل كي لا يبقى فراغ كتلة.
     if (page.hasHeader && page.index == 0) {
       blocks.add(_buildHeaderBlock(controller));
+      if (page.fragments.isNotEmpty) {
+        final header = plan.layout.headerBlock!;
+        final gap = page.fragments.first.topPt - header.rect.bottom;
+        if (gap > 0) blocks.add(SizedBox(height: LayoutUnits.ptToPx(gap)));
+      }
     }
 
     // (2) محتوى الصفحة = **مقاطع** الخطة بترتيبها (بدايات وتكملات)، ثم
@@ -5061,8 +5069,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           debugLabel: 'a4-page-canvas-${page.index}',
         ),
       ),
-      width: ExamCanvasGeometry.width,
-      height: ExamCanvasGeometry.height,
+      width: LayoutUnits.ptToPx(plan.layout.pages[page.index].pageSize.width),
+      height: LayoutUnits.ptToPx(plan.layout.pages[page.index].pageSize.height),
       clipBehavior: Clip.antiAlias,
       // إطار الشاشة (الظل والحدّ الرقيق) زينة عرض لا جزء من الورقة: الحدّ كان
       // داخل `decoration`، و`Container` يحسب `decoration.padding` (سماكة
@@ -5341,8 +5349,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       behavior: HitTestBehavior.translucent,
       onTap: _tapHeader,
       child: Container(
-        padding: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
+        foregroundDecoration: BoxDecoration(
           border: Border.all(
             color: _headerSelected
                 ? PaperStyles.primary.withOpacity(0.45)

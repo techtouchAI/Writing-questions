@@ -62,6 +62,8 @@ class FakeMathHost {
     double fontSizePt,
     double density, {
     bool isBlock = false,
+    bool bold = false,
+    int colorArgb = 0xFF000000,
   }) async {
     requests.add((latex: latex, fontSizePt: fontSizePt));
     lastDensity = density;

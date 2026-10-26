@@ -85,6 +85,8 @@ final class CanonicalLayoutPreviewAssets {
             run.text,
             fontSizePt: run.style.fontSizePt,
             isBlock: run.isBlockMath,
+            bold: run.style.bold,
+            colorArgb: run.style.colorArgb ?? 0xFF000000,
           );
           if (snapshot == null) continue;
           try {

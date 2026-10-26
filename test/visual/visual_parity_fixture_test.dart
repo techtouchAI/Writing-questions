@@ -69,7 +69,7 @@ PdfMathRasters _sharedMathRasters(
     for (final run in line.runs) {
       final raster = assets.mathRasters[run.id];
       if (raster == null) continue;
-      cache[PdfMathRasters.key(run.text, run.style.fontSizePt, isBlock: run.isBlockMath)] = raster;
+      cache[PdfMathRasters.key(run.text, run.style.fontSizePt, isBlock: run.isBlockMath, bold: run.style.bold, colorArgb: run.style.colorArgb ?? 0xFF000000)] = raster;
     }
   }
   debugPrint('[fixture] shared math rasters=${cache.length}');

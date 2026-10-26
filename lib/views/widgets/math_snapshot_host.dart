@@ -69,6 +69,8 @@ class _MathSnapshotHostState extends State<MathSnapshotHost> {
     double fontSizePt,
     double density, {
     bool isBlock = false,
+    bool bold = false,
+    int colorArgb = 0xFF000000,
   }) {
     if (!mounted) {
       return Future<MathSnapshot?>.value();
@@ -78,6 +80,8 @@ class _MathSnapshotHostState extends State<MathSnapshotHost> {
       fontSizePt: fontSizePt,
       density: density,
       isBlock: isBlock,
+      bold: bold,
+      colorArgb: colorArgb,
     );
     setState(() => _jobs.add(job));
     _schedulePump();
@@ -249,7 +253,13 @@ class _MathSnapshotHostState extends State<MathSnapshotHost> {
         mathStyle: job.isBlock ? MathStyle.display : MathStyle.text,
         textStyle: TextStyle(
           fontSize: job.fontSizePt * job.density,
-          color: const Color(0xFF000000),
+          // Host is above Scaffold: never inherit WidgetsApp's bold debug
+          // DefaultTextStyle. These are the actual source run attributes.
+          color: Color(job.colorArgb),
+          fontWeight: job.bold ? FontWeight.bold : FontWeight.normal,
+          fontStyle: FontStyle.normal,
+          letterSpacing: 0,
+          wordSpacing: 0,
         ),
       ),
     );
@@ -263,12 +273,16 @@ class _SnapshotJob {
     required this.fontSizePt,
     required this.density,
     required this.isBlock,
+    required this.bold,
+    required this.colorArgb,
   });
 
   final String latex;
   final double fontSizePt;
   final double density;
   final bool isBlock;
+  final bool bold;
+  final int colorArgb;
   final GlobalKey key = GlobalKey(debugLabel: 'math-snapshot');
   final Completer<MathSnapshot?> completer = Completer<MathSnapshot?>();
   int attempts = 0;

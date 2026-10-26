@@ -183,7 +183,17 @@ void main() {
           baseOffset: tailText.indexOf('B109'), extentOffset: tailText.length));
       final tailRect = tailBoxes.map((box) => MatrixUtils.transformRect(
           tailParagraph.getTransformTo(lastCanvas), box.toRect())).reduce((a, b) => a.expandToInclude(b));
-      final nativeTailLine = tailParagraph.getLineBoundary(TextPosition(offset: tailText.length - 1));
+      // RenderParagraph has no public getLineBoundary in Flutter 3.22. Read
+      // its actual selection geometry; do not build a rival text layouter.
+      final end = tailText.trimRight().length;
+      final lastLineTop = tailParagraph.getBoxesForSelection(TextSelection(
+          baseOffset: end - 1, extentOffset: end), boxHeightStyle: ui.BoxHeightStyle.strut).last.top;
+      var nativeLineStart = 0;
+      for (var offset = end - 1; offset >= 0; offset--) {
+        final boxes = tailParagraph.getBoxesForSelection(TextSelection(
+            baseOffset: offset, extentOffset: offset + 1), boxHeightStyle: ui.BoxHeightStyle.strut);
+        if (boxes.isNotEmpty && boxes.last.top < lastLineTop) { nativeLineStart = offset + 1; break; }
+      }
       final canonicalTailLine = plan.layout.allLines.lastWhere((line) => line.runs.any((run) =>
           run.semanticNodeId.startsWith(prefixes.last)));
       final tailRuns = canonicalTailLine.runs.toList()..sort((a, b) {
@@ -193,7 +203,7 @@ void main() {
       final trace = <String, Object>{
         'nativeHeaderPx': [headerRect.left, headerRect.top, headerRect.width, headerRect.height],
         'canonicalHeaderPx': [expectedHeader.left, expectedHeader.top, expectedHeader.width, expectedHeader.height].map(LayoutUnits.ptToPx).toList(),
-        'nativeFinalBranchLine': tailText.substring(nativeTailLine.start, nativeTailLine.end).trim(),
+        'nativeFinalBranchLine': tailText.substring(nativeLineStart, end).trim(),
         'canonicalFinalBranchLine': tailRuns.map((run) => run.text).join().trim(),
         'finalGlyphBottomPx': tailRect.bottom, 'fragmentBottomPx': sliceRect.bottom,
         'sourceTopPt': lastFragment.sourceTopPt, 'fragmentHeightPt': lastFragment.heightPt,
@@ -239,10 +249,10 @@ void main() {
       // The exact public raster collector used by the production PDF engine;
       // assert every requested formula succeeded, never accept text fallback.
       final requested = PdfMathRasters.collecting();
-      for (final run in math) { requested.lookup(run.text, run.style.fontSizePt, isBlock: run.isBlockMath); }
+      for (final run in math) { requested.lookup(run.text, run.style.fontSizePt, isBlock: run.isBlockMath, bold: run.style.bold, colorArgb: run.style.colorArgb ?? 0xFF000000); }
       final rasters = await _finish(tester, requested.resolve());
       for (final run in math) {
-        expect(rasters.lookup(run.text, run.style.fontSizePt, isBlock: run.isBlockMath), isNotNull);
+        expect(rasters.lookup(run.text, run.style.fontSizePt, isBlock: run.isBlockMath, bold: run.style.bold, colorArgb: run.style.colorArgb ?? 0xFF000000), isNotNull);
       }
       final pdf = await _finish(tester, PdfExportService.buildDocumentPdfBytes(
         document: document, layoutDocument: plan.layout, mathRasters: rasters));

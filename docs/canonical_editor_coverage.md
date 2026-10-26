@@ -600,3 +600,36 @@ snapshots must have actual glyph strokes, reject filled-rectangle/empty ink,
 and preserve distinct real metrics at both widths. This is not yet a passing
 repair until CI and actual original-byte visual review complete. Branch-tail,
 page-boundary, header/margin, drag, async and full-tool acceptance stay open.
+
+### Additional measured cause after loading the real fonts
+
+`c7be8ed` main run `40394655894` passed 8/0 production, 43/0 native,
+938/0 full, 3/0 canonical, clean analysis and actual APK. All **57/57**
+original references were retrieved and checksummed, including the real font
+manifest (12 KaTeX families plus MaterialIcons). Actual page examination showed
+readable equations and the B109 tail, but PDF math was unexpectedly bold/upright
+and continuation/header geometry still differed. Therefore no visual acceptance.
+Visual/C6 for this intermediate SHA were superseded/cancelled by the next push;
+the final SHA must complete them, not inherit this intermediate result.
+
+Baseline `e421c52`, run `40397022714`, proved the ambient-font defect at both
+widths: same fraction/style/density is **156px** wide in the host versus **140px**
+in the source under Scaffold. The hidden host lives above Scaffold and inherited
+WidgetsApp's bold debug DefaultTextStyle. Source weight/color are now explicit
+capture/cache inputs rather than inherited defaults. A real source-raster byte
+comparison covers normal/bold and black/blue, not only a nonempty image.
+
+The new source/window/header regression initially failed to compile because
+Flutter 3.22 RenderParagraph exposes no public getLineBoundary. It now reads
+actual RenderParagraph selection boxes, without a second text layout. Its
+branch/header assertions have **not** yet passed and are not claimed repaired.
+
+Identified geometry inconsistencies: legacy PaperMetrics derived pt/px from
+rounded 794px rather than 72/96, making 10.5pt -> 14.005277px instead of 14px;
+legacy page consumers used 794x1123 while LayoutDocument owns physical A4.
+The repair consumes that existing plan's page dimensions and the physical
+unit ratio, without changing nominal font sizes or stored model coordinates.
+Header selection padding/borders also entered layout; header frame padding
+is now foreground-only, left-column alignment follows its existing semantic
+intent, and the header-to-question gap comes from the shared plan. These are
+root coordinate conversions/containers, not clip expansion or a tolerance change.
