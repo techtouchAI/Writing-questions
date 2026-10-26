@@ -225,7 +225,12 @@ def excerpt_text(digest, test_id):
     if prints:
         head = []
         head_bytes = 0
-        for line in prints:
+        # A large trace before the exception must not hide the actual reason.
+        head_start = next((i for i, line in enumerate(prints)
+                           if "EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK" in line), 0)
+        for line in prints[head_start:]:
+            if "EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK" in line:
+                line = "EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK"
             if len(head) >= MAX_PRINT_HEAD_LINES:
                 break
             line_bytes = len(line.encode("utf-8")) + 1
@@ -235,7 +240,7 @@ def excerpt_text(digest, test_id):
             head_bytes += line_bytes
         tail = []
         tail_bytes = 0
-        for line in reversed(prints[len(head):]):
+        for line in reversed(prints[head_start + len(head):]):
             line_bytes = len(line.encode("utf-8")) + 1
             if head_bytes + tail_bytes + line_bytes > MAX_PRINT_BYTES_IN_EXCERPT:
                 break
@@ -423,6 +428,17 @@ def self_test():
         check("compile error captured", "Undefined name 'foo'" in compile_errors)
         summary = open(os.path.join(tmp, "summary.md"), encoding="utf-8").read()
         check("summary lists failures", "Failing tests (2)" in summary)
+
+    probe = Digest()
+    probe.prints[42] = ["R14 " + "x" * 5000,
+        "EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK",
+        "The following assertion was thrown:", "baseline queried outside parent layout",
+        "When the exception was thrown", "trace", "test description"]
+    excerpt = excerpt_text(probe, 42)
+    check("large pre-exception trace cannot hide the real reason",
+          "baseline queried outside parent layout" in excerpt)
+    check("large trace excerpt within annotation budget",
+          len(excerpt.encode("utf-8")) <= MAX_EXCERPT_BYTES)
 
     empty = parse_stream(["plain banner", "another line"])
     check("unparsed log tolerated",

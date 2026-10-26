@@ -72,6 +72,7 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize); addTearDown(tester.view.resetDevicePixelRatio);
       await tester.pumpWidget(MaterialApp(builder: (_, child) => MathSnapshotHost(child: child),
         home: const SizedBox.expand()));
+      final baselines = <(double?, double)>[];
       for (final isBlock in <bool>[false, true]) {
       final snapshot = await finish(tester, MathSnapshotRenderer.render(r'\frac{a+b}{c}', isBlock: isBlock));
       expect(snapshot, isNotNull);
@@ -84,7 +85,14 @@ void main() {
         expect(shape.ink, greaterThan(0), reason: 'An empty snapshot is not readable math.');
         expect(shape.nonRectangular, greaterThanOrEqualTo(3), reason: 'a, b and c must be glyph strokes, not solid font-test blocks: $shape');
         expect(shape.filledRectangles, 0, reason: 'Ahem rectangle glyphs must fail acceptance: $shape');
+        baselines.add((snapshot.baselinePt, snapshot.heightPt));
       } finally { snapshot?.dispose(); }
+      }
+      for (final metrics in baselines) {
+        expect(metrics.$1, isNotNull,
+            reason: 'A post-frame baseline query must not swallow the Flutter layout-phase assertion.');
+        expect(metrics.$1, lessThan(metrics.$2),
+            reason: 'The fraction denominator extends below its alphabetic baseline.');
       }
     });
 

@@ -135,7 +135,11 @@ List<({String text, double baseline, Rect rect})> _paintedSourceLines(
     final text = paragraph.text.toPlainText();
     if (text.isEmpty) continue;
     final transform = paragraph.getTransformTo(canvas);
-    final firstBaseline = paragraph.getDistanceToBaseline(TextBaseline.alphabetic)!;
+    // Flutter 3.22 restricts getDistanceToBaseline to parent layout/paint.
+    // This diagnostic reads that SAME laid-out RenderParagraph's cached
+    // painter baseline, not a second TextPainter or a disabled assertion.
+    // ignore: invalid_use_of_protected_member
+    final firstBaseline = paragraph.computeDistanceToActualBaseline(TextBaseline.alphabetic);
     final firstCaretY = paragraph.getOffsetForCaret(const TextPosition(offset: 0), Rect.zero).dy;
     var start = 0;
     var caretY = firstCaretY;
