@@ -726,6 +726,38 @@ jobs:
       - name: Publish evidence references 8
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 7
 
+  visual-evidence-review:
+    name: Original visual fixture review transport
+    needs: visual-parity
+    # A failed visual gate is exactly when reviewable originals are needed.
+    if: ${{ always() && github.event_name == 'push' && needs.visual-parity.result != 'skipped' && needs.visual-parity.result != 'cancelled' && contains(github.event.head_commit.message, '[review-evidence]') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out evidence transport tool
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Download this run's original visual fixture
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: visual-parity
+          path: ${{ runner.temp }}/visual-originals
+      - name: Verify evidence transport regressions
+        run: python3 -m unittest discover -s tool -p test_evidence_review_transport.py
+      - name: Publish complete original PDF and preview page inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tool/evidence_review_transport.py publish --profile visual --root "$RUNNER_TEMP/visual-originals" --index "$RUNNER_TEMP/visual-index.json"
+      - name: Publish original fixture references
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/visual-index.json" --group 0
+      - name: Publish original fixture references 2
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/visual-index.json" --group 1
+      - name: Publish original fixture references 3
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/visual-index.json" --group 2
+      - name: Publish original fixture references 4
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/visual-index.json" --group 3
+
   visual-parity:
     name: Visual regression (Vector/Exact vs preview)
     needs: build

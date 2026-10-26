@@ -26,6 +26,25 @@ class EvidenceTransportTest(unittest.TestCase):
             decoded = [json.loads(line.split('::', 2)[2]) for line in notices]
             self.assertEqual([row for pair in decoded for row in pair], rows)
 
+    def test_visual_profile_requires_pdf_and_every_manifest_page(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            names = ['vector.pdf', 'preview_page_1.png', 'preview_page_2.png']
+            (root / 'manifest.json').write_text(json.dumps(dict(pageCount=2, files=names)))
+            for name in names:
+                (root / name).write_bytes(b'original')
+            self.assertEqual({p.name for p in transport.selected(root, 'visual')}, set(names + ['manifest.json']))
+            (root / names[-1]).unlink()
+            with self.assertRaisesRegex(ValueError, 'Missing/unsafe'):
+                list(transport.selected(root, 'visual'))
+
+    def test_visual_manifest_cannot_omit_a_companion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'manifest.json').write_text(json.dumps(dict(pageCount=2, files=['vector.pdf', 'preview_page_1.png'])))
+            with self.assertRaisesRegex(ValueError, 'every required original'):
+                list(transport.selected(root, 'visual'))
+
     def exercise_fetch(self, *, truncate=False, corrupt=False):
         rows = []
         blobs = {}

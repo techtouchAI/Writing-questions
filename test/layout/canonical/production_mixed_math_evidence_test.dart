@@ -126,23 +126,23 @@ Future<void> _selectPrinted(WidgetTester tester, LayoutDocument layout, String p
 }
 
 // Read the source RenderParagraphs, not a second TextPainter/paginator.
-List<({String text, double baseline, Rect rect})> _paintedSourceLines(
+List<({String text, Rect rect})> _paintedSourceLines(
     WidgetTester tester, Finder field, RenderBox canvas) {
-  final result = <({String text, double baseline, Rect rect})>[];
+  final result = <({String text, Rect rect})>[];
   final paragraphs = find.descendant(of: field, matching: find.byType(RichText)).evaluate()
-      .map((element) => element.findRenderObject()).whereType<RenderParagraph>();
+      .where((element) {
+        var inMath = false;
+        element.visitAncestorElements((ancestor) {
+          if (ancestor.widget is SafeMathTex) { inMath = true; return false; }
+          return true;
+        });
+        return !inMath; // Math's own glyph RichTexts are not body text lines.
+      }).map((element) => element.findRenderObject()).whereType<RenderParagraph>();
   for (final paragraph in paragraphs) {
     final text = paragraph.text.toPlainText();
     if (text.isEmpty) continue;
     final transform = paragraph.getTransformTo(canvas);
-    // Flutter 3.22 restricts getDistanceToBaseline to parent layout/paint.
-    // This diagnostic reads that SAME laid-out RenderParagraph's cached
-    // painter baseline, not a second TextPainter or a disabled assertion.
-    // ignore: invalid_use_of_protected_member
-    final firstBaseline = paragraph.computeDistanceToActualBaseline(TextBaseline.alphabetic);
-    final firstCaretY = paragraph.getOffsetForCaret(const TextPosition(offset: 0), Rect.zero).dy;
     var start = 0;
-    var caretY = firstCaretY;
     void emit(int end) {
       final value = text.substring(start, end).replaceAll('\uFFFC', '').replaceAll(RegExp(r'\s+'), ' ').trim();
       if (value.isEmpty) return;
@@ -150,8 +150,7 @@ List<({String text, double baseline, Rect rect})> _paintedSourceLines(
       if (boxes.isEmpty) return;
       final rect = boxes.map((box) => MatrixUtils.transformRect(transform, box.toRect()))
           .reduce((a, b) => a.expandToInclude(b));
-      result.add((text: value, rect: rect, baseline: MatrixUtils.transformPoint(
-          transform, Offset(0, firstBaseline + caretY - firstCaretY)).dy));
+      result.add((text: value, rect: rect));
     }
     Rect? lineBand;
     for (var offset = 0; offset < text.length; offset++) {
@@ -162,14 +161,12 @@ List<({String text, double baseline, Rect rect})> _paintedSourceLines(
       // Logical bidi runs can report slightly different caret tops on the
       // SAME line. Cluster by native glyph-band centers, not double == or
       // a pixel tolerance (font boxes can slightly overlap neighbouring rows).
-      // Actual baseline equality remains at 1e-6.
+      // Actual glyph-box and math-rectangle equality remains at 1e-6.
       if (lineBand == null) {
         lineBand = glyphBand;
-        caretY = paragraph.getOffsetForCaret(TextPosition(offset: offset), Rect.zero).dy;
       } else if (glyphBand.center.dy >= lineBand.bottom || glyphBand.center.dy <= lineBand.top) {
         emit(offset);
         start = offset;
-        caretY = paragraph.getOffsetForCaret(TextPosition(offset: offset), Rect.zero).dy;
         lineBand = glyphBand;
       } else {
         lineBand = lineBand.expandToInclude(glyphBand);
@@ -177,7 +174,7 @@ List<({String text, double baseline, Rect rect})> _paintedSourceLines(
     }
     emit(text.length);
   }
-  result.sort((a, b) => a.baseline.compareTo(b.baseline));
+  result.sort((a, b) => a.rect.top.compareTo(b.rect.top));
   return result;
 }
 
@@ -211,11 +208,14 @@ List<Map<String, Object>> _sourcePageBoundaries(WidgetTester tester,
             .replaceAll(RegExp(r'\s+'), ' ').trim());
       }
       final nativeText = native.map((line) => line.text).toList();
-      var maxBaselineDelta = 0.0;
+      var maxGlyphGeometryDelta = 0.0;
       if (native.length == planned.length) {
         for (var index = 0; index < native.length; index++) {
-          final delta = (native[index].baseline - LayoutUnits.ptToPx(planned[index].baseline)).abs();
-          if (delta > maxBaselineDelta) maxBaselineDelta = delta;
+          for (final pair in [(native[index].rect.top, LayoutUnits.ptToPx(planned[index].rect.top)),
+              (native[index].rect.bottom, LayoutUnits.ptToPx(planned[index].rect.bottom))]) {
+            final delta = (pair.$1 - pair.$2).abs();
+            if (delta > maxGlyphGeometryDelta) maxGlyphGeometryDelta = delta;
+          }
         }
       }
       final nativeMath = <({String latex, bool display, Rect rect})>[];
@@ -257,13 +257,13 @@ List<Map<String, Object>> _sourcePageBoundaries(WidgetTester tester,
         'page': fragment.pageIndex, 'source': source.$1,
         'nativeLineCount': native.length, 'plannedLineCount': planned.length,
         'nativeText': nativeText, 'plannedText': plannedText,
-        'maxBaselineDeltaPx': maxBaselineDelta,
+        'maxGlyphGeometryDeltaPx': maxGlyphGeometryDelta,
         'nativeMathCount': nativeMath.length, 'plannedMathCount': plannedMath.length,
         'mathGeometry': mathGeometry,
-        'nativeFirstBaselinePx': native.isEmpty ? -1 : native.first.baseline,
-        'plannedFirstBaselinePx': planned.isEmpty ? -1 : LayoutUnits.ptToPx(planned.first.baseline),
-        'nativeLastBaselinePx': native.isEmpty ? -1 : native.last.baseline,
-        'plannedLastBaselinePx': planned.isEmpty ? -1 : LayoutUnits.ptToPx(planned.last.baseline),
+        'nativeFirstGlyphTopPx': native.isEmpty ? -1 : native.first.rect.top,
+        'plannedFirstGlyphTopPx': planned.isEmpty ? -1 : LayoutUnits.ptToPx(planned.first.rect.top),
+        'nativeLastGlyphBottomPx': native.isEmpty ? -1 : native.last.rect.bottom,
+        'plannedLastGlyphBottomPx': planned.isEmpty ? -1 : LayoutUnits.ptToPx(planned.last.rect.bottom),
       });
     }
   }
@@ -450,7 +450,7 @@ void main() {
           expect(math['nativeDisplay'], math['plannedDisplay'], reason: identity);
           expect(math['maxGeometryDeltaPx'], lessThanOrEqualTo(1e-6), reason: '$identity ${jsonEncode(math)}');
         }
-        expect(row['maxBaselineDeltaPx'], lessThanOrEqualTo(1e-6), reason: jsonEncode({
+        expect(row['maxGlyphGeometryDeltaPx'], lessThanOrEqualTo(1e-6), reason: jsonEncode({
           for (final entry in row.entries)
             if (entry.key != 'nativeText' && entry.key != 'plannedText' && entry.key != 'mathGeometry') entry.key: entry.value,
         }));

@@ -711,3 +711,35 @@ Also diagnosed the intermediate c942c2a Visual failure: content strip
 12.7%. Do not call Visual successful or relax its threshold. Its C6 job was
 superseded by the regression push. Fresh original fixture evidence is still
 required to localize the strip defect after these repairs.
+
+`d2d04cb`, run `40405333375`: R1/R4 **8/0**, native **54/2**, Extended
+successful, originals **57/57** verified and corresponding 320 page4 pair
+actually opened. The native continuation's first line is now visibly complete
+and B109 remains present. Baseline, normal/bold/black/blue pixel-reference,
+inline/display and centered-border regressions pass. Full/analyze/APK remained
+blocked by R9 and are NOT claimed for this SHA.
+
+Remaining raw measurements: display/body flow differs by increments of about
+0.0667px; native inline math width now matches exactly, top differs by
+~0.0000021px and a later x by 0.0001221px. Identified two further exact causes:
+(1) LineMetrics.height is integer-rounded, not the actual source glyph/flow
+extent; the shared font adapter now retains actual same-paragraph glyph boxes
+and TextPainter.height. (2) RenderParagraph places WidgetSpan from
+inlinePlaceholderBoxes, while canonical code used selection boxes and then
+recentered an already-aligned paragraph; the shared plan now retains the actual
+placeholder origin and its measured paint-baseline offset. This is not a
+loosened tolerance. Native math rectangle comparisons remain **1e-6**.
+
+The test's 39-vs-30 text count was additionally including math renderer's own
+RichText glyphs (e.g. superscript "2") as body paragraphs. It now excludes
+SafeMathTex descendants, and compares actual source glyph top/bottom to the
+same canonical glyph boxes. RenderParagraph's reported alphabeticBaseline is
+not substituted for its painted glyph-box coordinates. No assertion is
+silenced to obtain a synthetic baseline.
+
+Visual fixture originals now have a separate strict hashed transport profile
+(manifest, actual vector.pdf and **every** preview_page_N.png), including on
+visual failure. Fetch with `--job-name 'Original visual fixture review transport'`.
+Production's historical 57-file profile is unchanged. Transport unit tests
+**6/6**, digest self-tests **30/30**, YAML parse and diff whitespace checks pass
+locally; Flutter validation of the latest changes remains CI-only.

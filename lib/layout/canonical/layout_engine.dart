@@ -1078,7 +1078,7 @@ class _LayoutBuilder {
           advance: fragment.width,
           width: item.span.mathBox?.widthPt ?? fragment.width,
           height: item.span.mathBox?.heightPt ?? fragment.height,
-          baselineOffset: item.span.mathBox?.baselinePt ?? fragment.baselineOffset,
+          baselineOffset: fragment.baselineOffset,
           direction: fragment.direction == DocumentDirection.inherit
               ? direction
               : fragment.direction,
@@ -1137,8 +1137,8 @@ class _LayoutBuilder {
       semanticNodeId: id,
       semanticNode: semanticNode,
       kind: kind,
-      // TextPainter.height and the final rounded LineMetrics box need not
-      // share an identical bottom (notably at fractional line spacing).
+      // TextPainter.height and the final measured glyph box need not share
+      // an identical bottom (notably at fractional line spacing).
       // A paragraph must contain BOTH measurements: otherwise the terminal
       // line falls outside the source interval before pagination even starts.
       // This changes no baseline, run position, font or wrapping decision.

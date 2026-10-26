@@ -231,6 +231,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
   }) {
     final children = <InlineSpan>[];
     final placeholderDimensions = <PlaceholderDimensions>[];
+    final placeholderIndexBySpan = <int, int>{};
     final spanRanges = <({int start, int end, int spanIndex})>[];
     var offset = 0;
 
@@ -253,6 +254,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
               ? heightPt
               : box?.baselinePt ?? (box?.heightPt ?? span.style.fontSizePt),
         );
+        placeholderIndexBySpan[index] = placeholderDimensions.length;
         children.add(
           WidgetSpan(
             alignment: PlaceholderAlignment.baseline,
@@ -456,11 +458,17 @@ class FlutterTextMetrics implements FontMetricsProvider {
             continue;
           }
 
-          final boxes = painter.getBoxesForSelection(
-            TextSelection(baseOffset: textRange.start, extentOffset: textRange.end),
-            boxHeightStyle: ui.BoxHeightStyle.strut,
-            boxWidthStyle: ui.BoxWidthStyle.tight,
-          );
+          // RenderParagraph positions WidgetSpan children from these exact
+          // placeholder boxes, not the selection API's independently rounded
+          // range boxes. Retain that actual paint origin in the shared plan.
+          final placeholderIndex = placeholderIndexBySpan[range.spanIndex];
+          final boxes = placeholderIndex != null && painter.inlinePlaceholderBoxes != null
+              ? <ui.TextBox>[painter.inlinePlaceholderBoxes![placeholderIndex]]
+              : painter.getBoxesForSelection(
+                  TextSelection(baseOffset: textRange.start, extentOffset: textRange.end),
+                  boxHeightStyle: ui.BoxHeightStyle.strut,
+                  boxWidthStyle: ui.BoxWidthStyle.tight,
+                );
           for (final box in boxes) {
             final lineIndex = _lineForBox(box, lineMetrics);
             final metric = lineMetrics[lineIndex];
@@ -520,7 +528,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
                 extra,
               )
             : directionResolvedFragments;
-        final alignmentOffset = _alignmentOffsetPt(
+        final alignmentOffset = bidiDirection == direction ? 0.0 : _alignmentOffsetPt(
           alignment: alignment,
           direction: direction,
           paragraphWidthPt: width,
@@ -533,17 +541,38 @@ class FlutterTextMetrics implements FontMetricsProvider {
                 for (final fragment in measuredFragments)
                   _translateFragment(fragment, alignmentOffset),
               ];
+        // LineMetrics.height is rounded to integer logical pixels. It is
+        // NOT the source paragraph's glyph/flow extent. Read the actual boxes
+        // from this same laid-out paragraph; preserve painter.height below.
+        var glyphTop = metric.baseline - metric.ascent;
+        var glyphBottom = metric.baseline + metric.descent;
+        if (fragments.isNotEmpty) {
+          var start = plainText.length;
+          var end = 0;
+          for (final fragment in fragments) {
+            final range = spanRanges.firstWhere((range) => range.spanIndex == fragment.spanIndex);
+            final a = range.start + fragment.startOffset;
+            final b = range.start + fragment.endOffset;
+            if (a < start) start = a;
+            if (b > end) end = b;
+          }
+          final glyphBoxes = painter.getBoxesForSelection(TextSelection(baseOffset: start, extentOffset: end));
+          if (glyphBoxes.isNotEmpty) {
+            glyphTop = glyphBoxes.map((box) => box.top).reduce((a, b) => a < b ? a : b);
+            glyphBottom = glyphBoxes.map((box) => box.bottom).reduce((a, b) => a > b ? a : b);
+          }
+        }
         lines.add(
           MeasuredLine(
             index: index,
-            top: LayoutUnits.pxToPt(metric.baseline - metric.ascent),
+            top: LayoutUnits.pxToPt(glyphTop),
             baseline: LayoutUnits.pxToPt(metric.baseline),
             ascent: LayoutUnits.pxToPt(metric.ascent),
             descent: LayoutUnits.pxToPt(metric.descent),
             leading: LayoutUnits.pxToPt(
               metric.height - metric.ascent - metric.descent,
             ),
-            height: LayoutUnits.pxToPt(metric.height),
+            height: LayoutUnits.pxToPt(glyphBottom - glyphTop),
             naturalWidth: naturalWidth,
             resolvedWidth: resolvedWidth,
             isJustified: isJustified,

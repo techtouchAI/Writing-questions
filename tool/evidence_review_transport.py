@@ -21,7 +21,23 @@ def api(path, payload=None):
     return json.loads(subprocess.check_output(command, input=None if payload is None else json.dumps(payload).encode()))
 
 
-def selected(root):
+def selected(root, profile='production'):
+    if profile == 'visual':
+        manifest = json.loads((root / 'manifest.json').read_text())
+        count = manifest['pageCount']
+        if not isinstance(count, int) or not 1 <= count <= 30:
+            raise ValueError('Invalid visual page inventory')
+        expected = {'vector.pdf', *(f'preview_page_{page}.png' for page in range(1, count + 1))}
+        if set(manifest['files']) != expected or len(manifest['files']) != len(expected):
+            raise ValueError('Visual manifest does not describe every required original')
+        for name in sorted(expected | {'manifest.json'}):
+            path = root / name
+            if not path.is_file() or path.is_symlink():
+                raise ValueError(f'Missing/unsafe evidence: {name}')
+            yield path
+        return
+    if profile != 'production':
+        raise ValueError('Unknown evidence profile')
     # Enumerate required companions, not merely files that happened to exist.
     names = {'production-font-assets.json'}
     for width in (320, 360):
@@ -63,7 +79,7 @@ def inventory_sha(rows):
 def publish(args):
     repository = os.environ['GITHUB_REPOSITORY']
     rows = []
-    for path in selected(args.root):
+    for path in selected(args.root, getattr(args, 'profile', 'production')):
         raw = path.read_bytes()
         result = api(f'repos/{repository}/git/blobs', {'encoding': 'base64', 'content': base64.b64encode(raw).decode()})
         if result['sha'] != git_blob_sha(raw):
@@ -98,7 +114,7 @@ def fetch(args):
     jobs = api(f'repos/{repository}/actions/runs/{args.run}/jobs?per_page=100')['jobs']
     rows = []
     for job in jobs:
-        if job['name'] != 'Original evidence review transport':
+        if job['name'] != getattr(args, 'job_name', 'Original evidence review transport'):
             continue
         if job['conclusion'] != 'success':
             raise ValueError('Evidence transport job has not succeeded')
@@ -142,8 +158,8 @@ def fetch(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest='command', required=True)
-    p = sub.add_parser('publish'); p.add_argument('--root', type=Path, required=True); p.add_argument('--index', type=Path, required=True)
+    p = sub.add_parser('publish'); p.add_argument('--root', type=Path, required=True); p.add_argument('--index', type=Path, required=True); p.add_argument('--profile', choices=['production', 'visual'], default='production')
     p = sub.add_parser('emit'); p.add_argument('--index', type=Path, required=True); p.add_argument('--group', type=int, required=True)
-    p = sub.add_parser('fetch'); p.add_argument('--run', required=True); p.add_argument('--repository', default='techtouchAI/Writing-questions'); p.add_argument('--destination', type=Path, required=True)
+    p = sub.add_parser('fetch'); p.add_argument('--run', required=True); p.add_argument('--repository', default='techtouchAI/Writing-questions'); p.add_argument('--destination', type=Path, required=True); p.add_argument('--job-name', default='Original evidence review transport')
     args = parser.parse_args()
     {'publish': publish, 'emit': emit, 'fetch': fetch}[args.command](args)
