@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:writing_questions_app/views/widgets/safe_math_tex.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import '../../support/production_evidence_fonts.dart';
 import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
 import 'package:writing_questions_app/layout/semantic/inline_nodes.dart';
@@ -101,14 +102,17 @@ void main() {
         for (final color in <int>[0xFF000000, 0xFF1565C0]) {
           await tester.pumpWidget(MaterialApp(builder: (_, child) => MathSnapshotHost(child: child),
             home: Scaffold(body: Center(child: RepaintBoundary(key: const ValueKey<String>('math-source-reference'),
-              child: SafeMathTex(r'\frac{a+b}{c}', textStyle: TextStyle(fontSize: 96,
+              child: SafeMathTex(r'\frac{a+b}{c}', textStyle: TextStyle(fontSize: 16,
                 color: Color(color), fontWeight: bold ? FontWeight.bold : FontWeight.normal,
                 fontStyle: FontStyle.normal)))))));
           await tester.pumpAndSettle();
           final snapshot = await finish(tester, MathSnapshotRenderer.render(r'\frac{a+b}{c}',
               fontSizePt: 12, bold: bold, colorArgb: color));
           expect(snapshot, isNotNull);
-          final reference = tester.renderObject<RenderRepaintBoundary>(find.byKey(const ValueKey<String>('math-source-reference'))).toImageSync();
+          final sourceSize = tester.getSize(find.byKey(const ValueKey<String>('math-source-reference')));
+          expect(snapshot?.widthPt, closeTo(LayoutUnits.pxToPt(sourceSize.width), 1e-6));
+          expect(snapshot?.heightPt, closeTo(LayoutUnits.pxToPt(sourceSize.height), 1e-6));
+          final reference = tester.renderObject<RenderRepaintBoundary>(find.byKey(const ValueKey<String>('math-source-reference'))).toImageSync(pixelRatio: 6);
           try {
             final expected = await finish(tester, reference.toByteData(format: ui.ImageByteFormat.rawRgba));
             final actual = await finish(tester, snapshot!.image.toByteData(format: ui.ImageByteFormat.rawRgba));

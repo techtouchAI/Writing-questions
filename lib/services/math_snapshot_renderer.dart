@@ -14,10 +14,10 @@
 /// LaTeX ─→ EquationModel ────→ OMML: معادلة Word الأصلية (المسار الأساسي)
 /// ```
 ///
-/// المقياس: تُرسم المعادلة بخط `fontSizePt × density` ثم يُقسم قياسها على
-/// الكثافة نفسها — فتُقرأ الأبعاد بالنقاط كما يريدها محرك PDF وWord مباشرةً،
-/// والدقة أعلى بمقدار الكثافة، بلا عامل تحجيم يدوي ولا تصحيح baseline
-/// مخترَع: كل رقم يأتي من المحرك نفسه (`size` و`getDistanceToBaseline`).
+/// Layout uses the source font's actual logical size (96px/in). Density is
+/// pixels per point and only changes capture pixelRatio, not font shaping.
+/// Geometry and the alphabetic baseline come from the laid-out math child,
+/// then convert through the shared 72pt/96px physical unit boundary.
 library math_snapshot_renderer;
 
 import 'dart:typed_data';

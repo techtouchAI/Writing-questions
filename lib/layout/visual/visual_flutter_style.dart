@@ -5,7 +5,8 @@ import 'package:flutter/material.dart'
         FontWeight,
         TextAlign,
         TextDecoration,
-        TextStyle;
+        TextStyle,
+        TextLeadingDistribution;
 
 import '../../models/paper_text_style.dart';
 import '../paper_metrics.dart';
@@ -27,6 +28,9 @@ abstract final class VisualFlutterStyle {
       decoration:
           style.underline ? TextDecoration.underline : TextDecoration.none,
       height: style.lineHeight,
+      // Material 3's ambient even leading differs from TextPainter's explicit
+      // canonical proportional leading. Printed styles must be context-free.
+      leadingDistribution: TextLeadingDistribution.proportional,
       // التباعد يُصرَّح دائماً (صفراً عند غياب قيمة في العقد): `null` يعني
       // «ورّث»، فيرث حقل الورقة `letterSpacing` من `Theme.textTheme.bodyLarge`
       // (0.5px في Material 3). أثره المقيس: نصّ أوسع بـ≈11% من قياس المحرك

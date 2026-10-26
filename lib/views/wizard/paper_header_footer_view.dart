@@ -124,7 +124,7 @@ class PaperHeaderView extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         foregroundDecoration: framed
-            ? BoxDecoration(border: Border.all(color: PaperStyles.ink, width: LayoutUnits.ptToPx(1)))
+            ? BoxDecoration(border: Border.all(color: PaperStyles.ink, width: LayoutUnits.ptToPx(1), strokeAlign: BorderSide.strokeAlignCenter))
             : null,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,

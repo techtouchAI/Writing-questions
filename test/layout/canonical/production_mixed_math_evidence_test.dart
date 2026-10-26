@@ -153,13 +153,27 @@ List<({String text, double baseline, Rect rect})> _paintedSourceLines(
       result.add((text: value, rect: rect, baseline: MatrixUtils.transformPoint(
           transform, Offset(0, firstBaseline + caretY - firstCaretY)).dy));
     }
-    for (var offset = 1; offset < text.length; offset++) {
-      // A WidgetSpan's caret uses its object box, not the adjacent text
-      // strut. It is covered by the separate real-math ink tests; this trace
-      // follows text lines affected by its size, without inventing a line.
-      if (text.codeUnitAt(offset) == 0xFFFC) continue;
-      final nextY = paragraph.getOffsetForCaret(TextPosition(offset: offset), Rect.zero).dy;
-      if (nextY != caretY) { emit(offset); start = offset; caretY = nextY; }
+    Rect? lineBand;
+    for (var offset = 0; offset < text.length; offset++) {
+      if (text.codeUnitAt(offset) == 0xFFFC || text[offset].trim().isEmpty) continue;
+      final boxes = paragraph.getBoxesForSelection(TextSelection(baseOffset: offset, extentOffset: offset + 1));
+      if (boxes.isEmpty) continue;
+      final glyphBand = boxes.map((box) => box.toRect()).reduce((a, b) => a.expandToInclude(b));
+      // Logical bidi runs can report slightly different caret tops on the
+      // SAME line. Cluster by native glyph-band centers, not double == or
+      // a pixel tolerance (font boxes can slightly overlap neighbouring rows).
+      // Actual baseline equality remains at 1e-6.
+      if (lineBand == null) {
+        lineBand = glyphBand;
+        caretY = paragraph.getOffsetForCaret(TextPosition(offset: offset), Rect.zero).dy;
+      } else if (glyphBand.center.dy >= lineBand.bottom || glyphBand.center.dy <= lineBand.top) {
+        emit(offset);
+        start = offset;
+        caretY = paragraph.getOffsetForCaret(TextPosition(offset: offset), Rect.zero).dy;
+        lineBand = glyphBand;
+      } else {
+        lineBand = lineBand.expandToInclude(glyphBand);
+      }
     }
     emit(text.length);
   }

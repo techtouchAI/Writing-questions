@@ -1076,7 +1076,7 @@ class _LayoutBuilder {
           text: fragment.text,
           x: x + fragment.x,
           advance: fragment.width,
-          width: fragment.width,
+          width: item.span.mathBox?.widthPt ?? fragment.width,
           height: item.span.mathBox?.heightPt ?? fragment.height,
           baselineOffset: item.span.mathBox?.baselinePt ?? fragment.baselineOffset,
           direction: fragment.direction == DocumentDirection.inherit

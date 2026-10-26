@@ -675,3 +675,39 @@ the original manifest before assertions. Header frame also gets a centered-
 stroke regression: PDF strokes straddle header.rect; BoxBorder's default inside
 stroke does not. Font/glyph shaping of the header is still visibly different;
 no font replacement or visual acceptance is asserted.
+
+### Baseline/layout proof beyond glyph presence
+
+`9933d5a`, run `40403822327`: R1/R4 **8/0**, native **51/5**;
+Extended successful and complete originals transported despite red acceptance.
+Two real ink tests prove `MathSnapshot.baselinePt == null`: the host queried
+RenderBox baseline **post-frame**, Flutter 3.22 asserts that it is legal only in
+parent layout/paint, and the old catch silently substituted image-bottom for
+alphabetic baseline. One frame-stroke test proves inside `-1` versus centered
+`0`. R9's actual math rectangle trace proves inline vertical error **2.854px**,
+and natural width **39.498815px** versus measured-at-large-font **39.518005px**.
+Native page4 final text baselines are **58.297818..508.297802px** versus plan
+**72.511351..522.511320px**. The raw trace's inflated 39-vs-30 text count was a
+measurement bug (exact caret-top grouping split bidi runs), not a claimed lost
+nine lines: corrected grouping uses native glyph bands without changing the
+actual 1e-6 coordinate assertion.
+
+Repair under validation: capture the actual child's alphabetic baseline during
+parent layout; layout math at its real 96dpi source font size and obtain higher
+bitmap resolution with capture pixelRatio, rather than scaling font shaping;
+use the natural math width (as already done for its height/baseline) instead of
+a float32 selection-box width. Source TexText now uses the canonical baseline
+placeholder contract for inline AND display paragraphs, retaining the declared
+4px display padding. Printed leading distribution is explicit proportional,
+not inherited Material-3 even leading (first baseline previously differed by
+0.061px). Frame stroke is centered on the exact shared header rect. No clip,
+page-height constant, nominal font size, font family or acceptance tolerance
+was enlarged/loosened. Source reference byte tests now capture actual 16px
+source math at pixelRatio 6 (12pt at density 8), rather than assuming 96px font
+shaping scales identically.
+
+Also diagnosed the intermediate c942c2a Visual failure: content strip
+`y=864,x=566..606` was fully uncovered (200 pixels); header strip uncovered
+12.7%. Do not call Visual successful or relax its threshold. Its C6 job was
+superseded by the regression push. Fresh original fixture evidence is still
+required to localize the strip defect after these repairs.

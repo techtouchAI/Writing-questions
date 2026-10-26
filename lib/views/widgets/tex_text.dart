@@ -105,19 +105,33 @@ class TexText extends StatelessWidget {
             blocks.add(
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Center(
-                  child: SafeMathTex(
-                    run.text,
-                    mathStyle: MathStyle.display,
-                    textStyle: mathTextStyle ?? style,
-                  ),
+                // The canonical engine measures display math as a centered
+                // baseline placeholder paragraph, not a bare centered box.
+                // Use that same paragraph/strut contract in the source flow.
+                child: Text.rich(
+                  TextSpan(children: <InlineSpan>[
+                    WidgetSpan(
+                      alignment: PlaceholderAlignment.baseline,
+                      baseline: TextBaseline.alphabetic,
+                      style: effectiveStyle,
+                      child: SafeMathTex(
+                        run.text,
+                        mathStyle: MathStyle.display,
+                        textStyle: mathTextStyle ?? style,
+                      ),
+                    ),
+                  ]),
+                  style: effectiveStyle,
+                  textAlign: TextAlign.center,
                 ),
               ),
             );
           } else if (run.isMath) {
             inlineSpans.add(
               WidgetSpan(
-                alignment: PlaceholderAlignment.middle,
+                alignment: PlaceholderAlignment.baseline,
+                baseline: TextBaseline.alphabetic,
+                style: effectiveStyle,
                 child: SafeMathTex(
                   run.text,
                   mathStyle: MathStyle.text,

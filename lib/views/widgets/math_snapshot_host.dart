@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_math_fork/flutter_math.dart' show MathStyle;
 
 import '../../services/math_snapshot_renderer.dart';
+import '../../layout/canonical/layout_units.dart';
 import 'safe_math_tex.dart';
 
 /// مضيف خفيّ يرسم المعادلات خارج الشاشة بمحرك العرض نفسه ثم يعيدها لقطات.
@@ -116,7 +117,7 @@ class _MathSnapshotHostState extends State<MathSnapshotHost> {
         // اللقطة متزامنة كلها (toImageSync): تُؤخذ عقب paint مباشرةً، بلا
         // انتظار حلقة أحداث — ولا ترميز PNG هنا: المُهلِك يُرمَّز عند
         // المستهلك (وثيق `MathSnapshot`)، فبقى الملتقِط خطوة واحدة لا تُعلَّق.
-        snapshot = _capture(job, boundary, boundary.toImageSync());
+        snapshot = _capture(job, boundary, boundary.toImageSync(pixelRatio: job.density * LayoutUnits.pointsPerInch / LayoutUnits.logicalPixelsPerInch));
       } catch (error) {
         _report('toImageSync: $error');
         _retryOrFail(job);
@@ -177,37 +178,15 @@ class _MathSnapshotHostState extends State<MathSnapshotHost> {
     RenderRepaintBoundary boundary,
     ui.Image image,
   ) {
-    // لا scale ولا pixelRatio: الدقة تأتي من رسم الودجت بخط
-    // `fontSizePt × density` ثم قسمة قياسه على الكثافة — بؤرة الرسم بكسل
-    // منطقي لكل نقطة، فتُعطي الكثافة نفسها بلا اعتماد على أي إصدار من
-    // Flutter (وتخطيط الخطوط متجانس القياس: لا فرق في المواضع).
+    // Layout at the source's actual logical font size. Increase raster
+    // resolution via pixelRatio, not by enlarging the font: shaping advances
+    // at 14px and 84px are not perfectly homogeneous (measured ~0.019px drift).
     return MathSnapshot(
       image: image,
-      widthPt: boundary.size.width / job.density,
-      heightPt: boundary.size.height / job.density,
-      baselinePt: _baselineOf(boundary, job.density),
+      widthPt: LayoutUnits.pxToPt(boundary.size.width),
+      heightPt: LayoutUnits.pxToPt(boundary.size.height),
+      baselinePt: job.baselinePx == null ? null : LayoutUnits.pxToPt(job.baselinePx!),
     );
-  }
-
-  /// خط الأساس من المحرك نفسه إن أعلنه (بمقياس النقاط)؛ لا تقدير بديل عند
-  /// غيابه — عندها يُستعمل الارتفاع كله، فتجلس الصورة على السطر بلا نزول.
-  double? _baselineOf(RenderRepaintBoundary boundary, double density) {
-    // الصندوق الوسيط قد لا يجيب فيُسأل ابنه المباشر؛ ومن لا يعلن عن خط أساسه
-    // يُترك null (لا تخمين: تُستعمل الصورة بارتفاعها كاملاً).
-    for (final RenderBox? box in <RenderBox?>[boundary, boundary.child]) {
-      if (box == null) {
-        continue;
-      }
-      try {
-        final baseline = box.getDistanceToBaseline(TextBaseline.alphabetic);
-        if (baseline != null) {
-          return baseline / density;
-        }
-      } catch (_) {
-        // المحرك لا يدعم السؤال عند هذا العقد: ننتقل إلى من يليه.
-      }
-    }
-    return null;
   }
 
   @override
@@ -243,23 +222,25 @@ class _MathSnapshotHostState extends State<MathSnapshotHost> {
     );
   }
 
-  /// نفس ما تبنيه المعاينة، بخط مضروب في الكثافة: القياس يُقرأ مقسوماً
-  /// عليها، فتبقى الأبعاد بالنقاط والشكل شكلاً حرفياً من المحرك نفسه.
+  /// Same logical typography as the source; density affects raster resolution only.
   Widget _build(_SnapshotJob job) {
     return UnconstrainedBox(
       alignment: AlignmentDirectional.topStart,
-      child: SafeMathTex(
-        job.latex,
-        mathStyle: job.isBlock ? MathStyle.display : MathStyle.text,
-        textStyle: TextStyle(
-          fontSize: job.fontSizePt * job.density,
-          // Host is above Scaffold: never inherit WidgetsApp's bold debug
-          // DefaultTextStyle. These are the actual source run attributes.
-          color: Color(job.colorArgb),
-          fontWeight: job.bold ? FontWeight.bold : FontWeight.normal,
-          fontStyle: FontStyle.normal,
-          letterSpacing: 0,
-          wordSpacing: 0,
+      child: _MathBaselineProbe(
+        onBaseline: (value) => job.baselinePx = value,
+        child: SafeMathTex(
+          job.latex,
+          mathStyle: job.isBlock ? MathStyle.display : MathStyle.text,
+          textStyle: TextStyle(
+            fontSize: LayoutUnits.ptToPx(job.fontSizePt),
+            // Host is above Scaffold: never inherit WidgetsApp's bold debug
+            // DefaultTextStyle. These are the actual source run attributes.
+            color: Color(job.colorArgb),
+            fontWeight: job.bold ? FontWeight.bold : FontWeight.normal,
+            fontStyle: FontStyle.normal,
+            letterSpacing: 0,
+            wordSpacing: 0,
+          ),
         ),
       ),
     );
@@ -286,10 +267,41 @@ class _SnapshotJob {
   final GlobalKey key = GlobalKey(debugLabel: 'math-snapshot');
   final Completer<MathSnapshot?> completer = Completer<MathSnapshot?>();
   int attempts = 0;
+  double? baselinePx;
 
   void complete(MathSnapshot? snapshot) {
     if (!completer.isCompleted) {
       completer.complete(snapshot);
     }
+  }
+}
+
+
+// RenderBox baseline queries are legal only during parent layout/paint in
+// Flutter 3.22. A post-frame query throws and used to be silently turned into
+// null, making the canonical placeholder use the image's bottom as baseline.
+// Measure the actual math child during its parent's layout, without changing
+// constraints, size, font, clipping or snapshot pixels.
+class _MathBaselineProbe extends SingleChildRenderObjectWidget {
+  const _MathBaselineProbe({required this.onBaseline, required super.child});
+  final ValueChanged<double?> onBaseline;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderMathBaselineProbe(onBaseline);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderMathBaselineProbe renderObject) {
+    renderObject.onBaseline = onBaseline;
+  }
+}
+
+class _RenderMathBaselineProbe extends RenderProxyBox {
+  _RenderMathBaselineProbe(this.onBaseline);
+  ValueChanged<double?> onBaseline;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    onBaseline(child?.getDistanceToBaseline(TextBaseline.alphabetic, onlyReal: true));
   }
 }
