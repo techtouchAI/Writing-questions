@@ -705,10 +705,30 @@ jobs:
       # poppler لتصيير PDF، ImageMagick للمقارنة، وLibreOffice لتصيير Word
       # (ثم يُحوَّل ناتجه إلى PDF بالـpoppler نفسه).
       - name: Install rendering tools
+        shell: bash
+        timeout-minutes: 16
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            poppler-utils imagemagick libreoffice-writer
+          set -o pipefail
+          log="$RUNNER_TEMP/visual-render-tools.log"
+          setup_failed() {
+            local phase="$1" status="$2" excerpt
+            excerpt="$(tail -n 20 "$log" | tail -c 3500)"
+            excerpt="${excerpt//%/%25}"
+            excerpt="${excerpt//$'\r'/%0D}"
+            excerpt="${excerpt//$'\n'/%0A}"
+            echo "::error title=Visual rendering tools setup::$phase failed/timed out (exit $status): $excerpt"
+            exit "$status"
+          }
+          # Same bounded-network policy as C6 below. Never skip these tools or
+          # mark a timeout successful; preserve the failed mirror/package tail
+          # in Checks API when the signed job log cannot be downloaded.
+          timeout 150 sudo apt-get -o Acquire::http::Timeout=20 \
+            -o Acquire::https::Timeout=20 -o Acquire::Retries=2 update \
+            2>&1 | tee "$log" || setup_failed 'apt-get update' "$?"
+          timeout 600 sudo apt-get -o Acquire::http::Timeout=20 \
+            -o Acquire::https::Timeout=20 -o Acquire::Retries=2 \
+            install -y --no-install-recommends poppler-utils imagemagick libreoffice-writer \
+            2>&1 | tee -a "$log" || setup_failed 'apt-get install' "$?"
 
       # تنتج الركيزة اللقطات المرجعية وVector PDF وEditable/Exact DOCX/PDF؛
       # وفشلها يجب أن يظهر سببه لا رقم خروجه فقط.

@@ -473,3 +473,21 @@ final branch and next-question runs, requiring non-overlapping raster ink (not
 only line rectangles), and records the measured pixel gap. Scratch RGBA copies
 retain compact byte storage; no production code/geometry/clip change. This new
 assertion is pending CI. The candidate remains OFF; no merge or branch removal.
+
+### Follow-on setup stall — no false all-CI acceptance
+
+At 2026-10-26 15:53 UTC, `97c7569` Visual job `121665272351` remains in
+“Install rendering tools” since 15:28:30 (over 24 minutes); comparison has not
+started. Main/APK and Extended successes remain valid, but overall/Visual/C6
+success is NOT claimed. A fresh download attempt of artifact `12662827368`
+also failed with EOF at its signed Azure URL; no images/PDF were extracted.
+
+The Visual install step now adopts the existing C6 bounded-network approach:
+150s apt update, 600s installation, 20s network idle timeouts/retries, 16m step
+budget. All THREE existing required packages remain required; timeout/failure
+is an actual failure, with phase/status and the failing log tail exposed through
+Checks annotations. No visual fixture, comparison, RMSE threshold, or test gate
+is removed/relaxed. The new push supersedes this unbounded setup stall, not a
+failed comparison or test. Final-SHA follow-on jobs still must actually finish.
+The ink-gap test/doc checkpoint landed in `e5f9189`; the bounded setup is in the
+following commit after a local patch-script syntax error was corrected.
