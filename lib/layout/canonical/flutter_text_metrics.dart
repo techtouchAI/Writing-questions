@@ -137,7 +137,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
   }
 
   @override
-  String get backendId => 'flutter-text-painter-pt-v5';
+  String get backendId => 'flutter-text-painter-pt-v6';
 
   @override
   FontRunMetrics measureText(
@@ -313,13 +313,15 @@ class FlutterTextMetrics implements FontMetricsProvider {
         final key = (spanIndex, runDirection);
         return baselineOffsets.putIfAbsent(key, () {
           final span = spans[spanIndex];
-          // PDF paints every canonical run as a one-line text widget. Measure
-          // that widget's natural baseline centrally, then align it to the
-          // paragraph baseline. Selection-box tops vary with glyph bounds and
-          // are not a stable per-run baseline (notably across Arabic words).
+          // Fragment height comes from the styled paragraph's selection box.
+          // Its top offset must use the SAME line-height factor, as the live
+          // preview painter does. Pairing a height=1 baseline with that taller
+          // box shifts hit bounds down into the following page margin.
+          // This is box metadata only: paragraph baselines/wrapping and both
+          // painters' independently baseline-aligned text stay unchanged.
           return measureText(
             span.text,
-            span.style.copyWith(lineHeightFactor: 1),
+            span.style,
             runDirection,
           ).baseline;
         });

@@ -385,3 +385,28 @@ remains FAILED due to the analyzer lint, and APK remained skipped. C6's
 non-gating historical geometry report still lists 95 tight-centre violations
 for its legacy comparison artifacts; a green diagnostic job is not proof of
 zero PDF/preview discrepancies and does not replace manual R9/R10 review.
+
+
+### R10 boundary diagnosis — shared run-box style mismatch (repair pending CI)
+
+`dc9ba67`, Build `40345220783`, main `121650227093`: production **8/0**,
+native **23/2**; the two new continuation cases stop BEFORE input at a boundary
+run box bottom **801.1151728723931pt**, body bottom **799.3700787401575pt**.
+The planned line itself fits. Analysis is clean, but full suite/APK did not run;
+Extended `40345220369` succeeded, downstream Visual/C6 correctly skipped.
+
+Tracing the box to both painters distinguishes metadata from actual ink:
+`FlutterTextMetrics._layoutOnce` takes fragment HEIGHT from the styled paragraph
+selection box but measures its BASELINE OFFSET with `lineHeightFactor: 1`.
+The actual preview painter measures the same styled run with the document's
+line-height factor and independently aligns its baseline; PDF also aligns from
+its own embedded-font baseline. Thus the hit/selection box is displaced downward
+relative to what is painted. This failure is NOT yet proof of cropped pixels.
+
+The fix uses the SAME resolved style for the run baseline and its styled box;
+no pagination/line baseline/wrapping/font/page/clip changes, no larger tolerance,
+and no source/model fields. Metrics backend version increments to invalidate
+cached box metadata. A focused independent TextPainter regression checks both
+baseline and box height at factors 1/1.2/1.45/1.7, and joins the native-first gate.
+The R10 body-bound/coverage/hit/edit assertions remain unchanged. This is a
+pending shared-metrics repair, not acceptance or a visual equivalence claim.

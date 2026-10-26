@@ -116,6 +116,7 @@ jobs:
             test/wizard/canonical_editor_candidate_test.dart \
             test/wizard/canonical_editing_layer_test.dart \
             test/wizard/paper_field_ink_width_test.dart \
+            test/layout/canonical/flutter_text_metrics_test.dart \
             2>&1 | tee "$RUNNER_TEMP/native-editor-first.log" || status=$?
           python3 tool/flutter_test_digest.py --log "$RUNNER_TEMP/native-editor-first.log" \
             --out "$RUNNER_TEMP/native-editor-first-digest"

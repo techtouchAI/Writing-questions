@@ -1,13 +1,48 @@
+import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart';
 import 'package:writing_questions_app/layout/canonical/font_metrics.dart';
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
+import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/layout/document_direction.dart';
 import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 
 void main() {
+  testWidgets('styled run hit bounds use the actual preview paint baseline and box height', (_) async {
+    await FlutterTextMetrics.ensureFontsLoaded();
+    const metrics = FlutterTextMetrics();
+    const text = 'اختيار';
+    for (final factor in <double>[1, 1.2, 1.45, 1.7]) {
+      final style = LayoutTextStyle(font: PaperFont.naskh, fontSizePt: 14, lineHeightFactor: factor);
+      final paragraph = metrics.layoutParagraph(spans: <MetricSpan>[
+        MetricSpan(semanticNodeId: 'point/content', semanticNode: null, text: text,
+          contentKind: LayoutContentKind.text, semanticRole: LayoutSemanticRole.text,
+          style: style, direction: DocumentDirection.rtl, logicalIndex: 0),
+      ], width: 300, direction: DocumentDirection.rtl, alignment: null, resolveJustification: false);
+      final fragment = paragraph.lines.single.fragments.single;
+      // Independent one-line painter with the exact style used by preview,
+      // not a height=1 baseline borrowed from a differently styled box.
+      final painter = TextPainter(text: TextSpan(text: text, style: TextStyle(
+        fontFamily: PaperFont.naskh.family, fontSize: LayoutUnits.ptToPx(14), height: factor)),
+        textDirection: TextDirection.rtl, textScaler: TextScaler.noScaling, maxLines: 1)
+        ..layout(maxWidth: double.infinity);
+      try {
+        final baseline = LayoutUnits.pxToPt(painter.computeLineMetrics().single.baseline);
+        final boxes = painter.getBoxesForSelection(TextSelection(baseOffset: 0, extentOffset: text.length));
+        expect(boxes, hasLength(1));
+        expect(fragment.baselineOffset, closeTo(baseline, 1e-6), reason: 'style height $factor');
+        expect(fragment.height, closeTo(LayoutUnits.pxToPt(boxes.single.bottom - boxes.single.top), 1e-6));
+        final actualTop = paragraph.lines.single.baseline - baseline;
+        final plannedTop = paragraph.lines.single.baseline - fragment.baselineOffset;
+        expect(plannedTop, closeTo(actualTop, 1e-6));
+      } finally {
+        painter.dispose();
+      }
+    }
+  });
+
   testWidgets('directional runs preserve mixed bidi source text losslessly', (_) async {
     const source = '، قبل (MIX 123) بعد\u00a0؛';
     for (final fallback in <DocumentDirection>[
