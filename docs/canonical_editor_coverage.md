@@ -761,3 +761,11 @@ those actual source glyph extents with **1e-6** unchanged, not flow rectangles
 or an inferred baseline. Added an independent same-font native TextPainter
 regression for header glyph overhang versus paragraph flow. No page-height or
 font substitutions and no disabled guards. Validation pending.
+
+`a3034a5` run `40408253196`: R1/R4 **7/1**; R4's ordered line inventory
+failed before capture; native/full/analyze/APK/visual/C6 skipped, Extended
+successful, original transport failed (incomplete inventory). No repaired-state
+claim. The unchanged logical equality guard now emits a compact boolean plus
+missing/extra/duplicate line IDs, rectangles and source windows, rather than a
+large expected/actual list truncated by GitHub annotations. This diagnosis is
+required before modifying the split algorithm; no tolerance changed.

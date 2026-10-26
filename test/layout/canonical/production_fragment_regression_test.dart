@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../../support/production_evidence_fonts.dart';
@@ -282,8 +283,18 @@ void main() {
     expect(fragments.length, greaterThan(1));
     final reference = await _layout(controller.document, unsplit: true);
     final referenceLines = reference.allBlocks.where((b) => b.kind == LayoutBlockKind.question && b.semanticNodeId == 'repro-q').single.allLines.map((line) => line.id).toList();
-    expect(fragments.expand((f) => f.lineIds).toList(), referenceLines,
-      reason: 'The split branch must retain every planned line exactly once.');
+    final fragmentLineIds = fragments.expand((f) => f.lineIds).toList();
+    expect(listEquals(fragmentLineIds, referenceLines), isTrue,
+      reason: 'The split branch must retain every planned line in order exactly once: ${jsonEncode({
+        'expectedCount': referenceLines.length,
+        'actualCount': fragmentLineIds.length,
+        'missing': referenceLines.where((id) => !fragmentLineIds.contains(id)).toList(),
+        'extra': fragmentLineIds.where((id) => !referenceLines.contains(id)).toList(),
+        'duplicate': fragmentLineIds.where((id) => fragmentLineIds.indexOf(id) != fragmentLineIds.lastIndexOf(id)).toSet().toList(),
+        'missingRects': [for (final line in reference.allBlocks.where((b) => b.kind == LayoutBlockKind.question && b.semanticNodeId == 'repro-q').single.allLines)
+          if (!fragmentLineIds.contains(line.id)) {'id': line.id, 'top': line.rect.top, 'bottom': line.rect.bottom}],
+        'windows': [for (final f in fragments) {'top': f.sourceTopPt, 'bottom': f.sourceTopPt + f.heightPt}],
+      })}');
     final last = fragments.last;
     final suffix = '/slice${last.fragmentIndex}';
     final slice = _key('page-slice-repro-q$suffix');
