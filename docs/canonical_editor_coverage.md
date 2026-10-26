@@ -743,3 +743,21 @@ visual failure. Fetch with `--job-name 'Original visual fixture review transport
 Production's historical 57-file profile is unchanged. Transport unit tests
 **6/6**, digest self-tests **30/30**, YAML parse and diff whitespace checks pass
 locally; Flutter validation of the latest changes remains CI-only.
+
+Follow-up `ece1021` CI `40407092299` is NOT accepted: R1/R4 **8/0**,
+native **51/5**, Extended successful; downstream full/analyze/APK/visual
+skipped, original production transport failed because the earlier header
+assertion prevented a complete original inventory. Exact failures exposed two
+necessary distinctions: a native Amiri selection-box overhang is **not** added
+to the paragraph's flow (doing so incorrectly increased header 109→112.6428px);
+and native stretched paragraphs require equal minWidth/maxWidth, whereas a
+zero-minWidth TextPainter shrinks its content and shifts RTL/center paint
+origins. The alignment and point/option-continuation guards also failed.
+
+The follow-up retains unrounded ascent+descent logical flow, records actual
+glyphTop/glyphBottom separately on MeasuredLine/LayoutLine (including move and
+scale), and measures at the native column constraints. The R9 comparison uses
+those actual source glyph extents with **1e-6** unchanged, not flow rectangles
+or an inferred baseline. Added an independent same-font native TextPainter
+regression for header glyph overhang versus paragraph flow. No page-height or
+font substitutions and no disabled guards. Validation pending.

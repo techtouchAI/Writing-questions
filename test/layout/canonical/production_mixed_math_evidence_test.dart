@@ -211,8 +211,8 @@ List<Map<String, Object>> _sourcePageBoundaries(WidgetTester tester,
       var maxGlyphGeometryDelta = 0.0;
       if (native.length == planned.length) {
         for (var index = 0; index < native.length; index++) {
-          for (final pair in [(native[index].rect.top, LayoutUnits.ptToPx(planned[index].rect.top)),
-              (native[index].rect.bottom, LayoutUnits.ptToPx(planned[index].rect.bottom))]) {
+          for (final pair in [(native[index].rect.top, LayoutUnits.ptToPx(planned[index].glyphTop ?? planned[index].rect.top)),
+              (native[index].rect.bottom, LayoutUnits.ptToPx(planned[index].glyphBottom ?? planned[index].rect.bottom))]) {
             final delta = (pair.$1 - pair.$2).abs();
             if (delta > maxGlyphGeometryDelta) maxGlyphGeometryDelta = delta;
           }
@@ -261,9 +261,9 @@ List<Map<String, Object>> _sourcePageBoundaries(WidgetTester tester,
         'nativeMathCount': nativeMath.length, 'plannedMathCount': plannedMath.length,
         'mathGeometry': mathGeometry,
         'nativeFirstGlyphTopPx': native.isEmpty ? -1 : native.first.rect.top,
-        'plannedFirstGlyphTopPx': planned.isEmpty ? -1 : LayoutUnits.ptToPx(planned.first.rect.top),
+        'plannedFirstGlyphTopPx': planned.isEmpty ? -1 : LayoutUnits.ptToPx(planned.first.glyphTop ?? planned.first.rect.top),
         'nativeLastGlyphBottomPx': native.isEmpty ? -1 : native.last.rect.bottom,
-        'plannedLastGlyphBottomPx': planned.isEmpty ? -1 : LayoutUnits.ptToPx(planned.last.rect.bottom),
+        'plannedLastGlyphBottomPx': planned.isEmpty ? -1 : LayoutUnits.ptToPx(planned.last.glyphBottom ?? planned.last.rect.bottom),
       });
     }
   }

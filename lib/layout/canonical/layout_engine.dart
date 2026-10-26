@@ -1115,6 +1115,8 @@ class _LayoutBuilder {
           lineIndex: measured.index,
           rect: LayoutRect.fromLTWH(x, measured.top, width, measured.height),
           baseline: measured.baseline,
+          glyphTop: measured.glyphTop,
+          glyphBottom: measured.glyphBottom,
           ascent: measured.ascent,
           descent: measured.descent,
           leading: measured.leading,
@@ -1137,8 +1139,8 @@ class _LayoutBuilder {
       semanticNodeId: id,
       semanticNode: semanticNode,
       kind: kind,
-      // TextPainter.height and the final measured glyph box need not share
-      // an identical bottom (notably at fractional line spacing).
+      // Preserve the source paragraph height and unrounded logical line bands.
+      // Glyph overhang is recorded separately, not inserted into flow.
       // A paragraph must contain BOTH measurements: otherwise the terminal
       // line falls outside the source interval before pagination even starts.
       // This changes no baseline, run position, font or wrapping decision.
@@ -2278,6 +2280,8 @@ LayoutBlock _scaleBlock(
         paragraphIndex: line.paragraphIndex,
         lineIndex: line.lineIndex,
         rect: scaleRect(line.rect),
+        glyphTop: line.glyphTop == null ? null : scaleOriginY + (line.glyphTop! - scaleOriginY) * factor,
+        glyphBottom: line.glyphBottom == null ? null : scaleOriginY + (line.glyphBottom! - scaleOriginY) * factor,
         baseline: scaleOriginY + (line.baseline - scaleOriginY) * factor,
         ascent: line.ascent * factor,
         descent: line.descent * factor,
@@ -2334,6 +2338,8 @@ LayoutLine _moveLine(LayoutLine line, double dx, double dy) =>
       paragraphIndex: line.paragraphIndex,
       lineIndex: line.lineIndex,
       rect: line.rect.translate(dx, dy),
+      glyphTop: line.glyphTop == null ? null : line.glyphTop! + dy,
+      glyphBottom: line.glyphBottom == null ? null : line.glyphBottom! + dy,
       baseline: line.baseline + dy,
       ascent: line.ascent,
       descent: line.descent,

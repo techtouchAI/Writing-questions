@@ -189,6 +189,8 @@ class LayoutLine {
     required this.isJustified,
     required this.justificationOpportunityCount,
     required this.extraSpacePerOpportunity,
+    this.glyphTop,
+    this.glyphBottom,
   });
 
   final String id;
@@ -197,6 +199,10 @@ class LayoutLine {
   final int paragraphIndex;
   final int lineIndex;
   final LayoutRect rect;
+  /// Actual source selection-box vertical extent, distinct from flow height.
+  /// Font boxes can overhang a short line-height (notably Amiri headers).
+  final double? glyphTop;
+  final double? glyphBottom;
   final double baseline;
   final double ascent;
   final double descent;

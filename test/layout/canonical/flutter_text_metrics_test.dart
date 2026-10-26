@@ -12,6 +12,36 @@ import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 
 void main() {
+  testWidgets('glyph overhang is recorded without inflating native paragraph flow', (_) async {
+    await FlutterTextMetrics.ensureFontsLoaded();
+    const metrics = FlutterTextMetrics();
+    for (final font in <PaperFont>[PaperFont.amiri, PaperFont.naskh]) {
+      const text = 'بسم الله الرحمن الرحيم';
+      final style = LayoutTextStyle(font: font, fontSizePt: 17, lineHeightFactor: 1);
+      final paragraph = metrics.layoutParagraph(spans: <MetricSpan>[
+        MetricSpan(semanticNodeId: 'header', semanticNode: null, text: text,
+          contentKind: LayoutContentKind.text, semanticRole: LayoutSemanticRole.text,
+          style: style, direction: DocumentDirection.rtl, logicalIndex: 0),
+      ], width: 300, direction: DocumentDirection.rtl, alignment: PaperAlign.center,
+        resolveJustification: false);
+      final painter = TextPainter(text: TextSpan(text: text, style: TextStyle(
+        fontFamily: font.family, fontSize: LayoutUnits.ptToPx(17), height: 1)),
+        textDirection: TextDirection.rtl, textAlign: TextAlign.center,
+        textScaler: TextScaler.noScaling)
+        ..layout(minWidth: LayoutUnits.ptToPx(300), maxWidth: LayoutUnits.ptToPx(300));
+      try {
+        final boxes = painter.getBoxesForSelection(const TextSelection(baseOffset: 0, extentOffset: text.length));
+        final line = paragraph.lines.single;
+        expect(paragraph.height, closeTo(LayoutUnits.pxToPt(painter.height), 1e-6));
+        expect(line.top + line.height, lessThanOrEqualTo(paragraph.height + 1e-6));
+        expect(line.glyphTop, closeTo(LayoutUnits.pxToPt(boxes.map((b) => b.top).reduce((a, b) => a < b ? a : b)), 1e-6));
+        expect(line.glyphBottom, closeTo(LayoutUnits.pxToPt(boxes.map((b) => b.bottom).reduce((a, b) => a > b ? a : b)), 1e-6));
+      } finally {
+        painter.dispose();
+      }
+    }
+  });
+
   testWidgets('styled run hit bounds use the actual preview paint baseline and box height', (_) async {
     await FlutterTextMetrics.ensureFontsLoaded();
     const metrics = FlutterTextMetrics();

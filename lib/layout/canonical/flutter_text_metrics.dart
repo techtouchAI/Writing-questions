@@ -297,7 +297,11 @@ class FlutterTextMetrics implements FontMetricsProvider {
       ),
     );
     painter.setPlaceholderDimensions(placeholderDimensions);
-    painter.layout(maxWidth: LayoutUnits.ptToPx(width));
+    // Printed source paragraphs are stretched to their declared column.
+    // With minWidth=0 TextPainter shrinks its content width and translates
+    // centered/RTL placeholder paint offsets; a second realignment then only
+    // approximates the actual RenderParagraph positions.
+    painter.layout(minWidth: LayoutUnits.ptToPx(width), maxWidth: LayoutUnits.ptToPx(width));
     final plainText = painter.text!.toPlainText(includePlaceholders: true);
 
     try {
@@ -542,8 +546,9 @@ class FlutterTextMetrics implements FontMetricsProvider {
                   _translateFragment(fragment, alignmentOffset),
               ];
         // LineMetrics.height is rounded to integer logical pixels. It is
-        // NOT the source paragraph's glyph/flow extent. Read the actual boxes
-        // from this same laid-out paragraph; preserve painter.height below.
+        // NOT the source paragraph's unrounded logical flow height. Keep
+        // actual glyph boxes separately: an Amiri glyph may overhang a short
+        // header line without adding that overhang to paragraph flow.
         var glyphTop = metric.baseline - metric.ascent;
         var glyphBottom = metric.baseline + metric.descent;
         if (fragments.isNotEmpty) {
@@ -565,14 +570,16 @@ class FlutterTextMetrics implements FontMetricsProvider {
         lines.add(
           MeasuredLine(
             index: index,
-            top: LayoutUnits.pxToPt(glyphTop),
+            top: LayoutUnits.pxToPt(metric.baseline - metric.ascent),
+            glyphTop: LayoutUnits.pxToPt(glyphTop),
+            glyphBottom: LayoutUnits.pxToPt(glyphBottom),
             baseline: LayoutUnits.pxToPt(metric.baseline),
             ascent: LayoutUnits.pxToPt(metric.ascent),
             descent: LayoutUnits.pxToPt(metric.descent),
             leading: LayoutUnits.pxToPt(
               metric.height - metric.ascent - metric.descent,
             ),
-            height: LayoutUnits.pxToPt(glyphBottom - glyphTop),
+            height: LayoutUnits.pxToPt(metric.ascent + metric.descent),
             naturalWidth: naturalWidth,
             resolvedWidth: resolvedWidth,
             isJustified: isJustified,

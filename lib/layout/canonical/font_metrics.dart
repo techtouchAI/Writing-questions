@@ -93,6 +93,8 @@ class MeasuredLine {
     required this.justificationOpportunityCount,
     required this.extraSpacePerOpportunity,
     required this.fragments,
+    this.glyphTop,
+    this.glyphBottom,
   });
 
   final int index;
@@ -102,6 +104,8 @@ class MeasuredLine {
   final double descent;
   final double leading;
   final double height;
+  final double? glyphTop;
+  final double? glyphBottom;
   final double naturalWidth;
   final double resolvedWidth;
   final bool isJustified;
