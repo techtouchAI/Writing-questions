@@ -118,6 +118,7 @@ jobs:
             test/layout/canonical/production_mixed_math_evidence_test.dart \
             test/services/header_border_visibility_test.dart \
             test/layout/paper_metrics_test.dart \
+            test/services/structured_export_test.dart \
             test/wizard/canonical_editing_layer_test.dart \
             test/wizard/paper_field_ink_width_test.dart \
             test/layout/canonical/flutter_text_metrics_test.dart \

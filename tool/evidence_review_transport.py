@@ -54,6 +54,11 @@ def selected(root, profile='production'):
         raise ValueError('Unknown evidence profile')
     # Enumerate required companions, not merely files that happened to exist.
     names = {'production-font-assets.json'}
+    # Historical runs predate this case. New evidence must include the ENTIRE
+    # companion group if any member exists; never transport a partial PDF set.
+    option_evidence = {'optend-manifest.json', 'optend-long.pdf', 'optend-short.pdf'}
+    if any((root / name).exists() for name in option_evidence):
+        names.update(option_evidence)
     for width in (320, 360):
         for style in ('inline', 'display'):
             names.add(f'r13-math-{width}-{style}.png')

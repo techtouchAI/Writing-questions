@@ -12,6 +12,36 @@ import evidence_review_transport as transport
 
 
 class EvidenceTransportTest(unittest.TestCase):
+    def test_optional_long_option_companions_are_all_required(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            # A minimal historical production inventory. Build explicit fixture
+            # names instead of accepting whatever files happen to be present.
+            names = {'production-font-assets.json'}
+            for width in (320, 360):
+                (root / f'r9-{width}-manifest.json').write_text(json.dumps({'pageCount': 3}))
+                (root / f'r10-native-{width}-manifest.json').write_text(json.dumps({'lastBranchPage': 2}))
+                names.update({f'r9-{width}-same-live-plan.pdf', f'r10-native-{width}-same-live-plan.pdf'})
+                for style in ('inline', 'display'):
+                    names.add(f'r13-math-{width}-{style}.png')
+                for state in ('before-selection', 'question-selected', 'branch-selected'):
+                    names.add(f'r9-{width}-{state}-page-2-phone.png')
+                    for page in range(3):
+                        names.add(f'r9-{width}-{state}-page-{page}-paper.png')
+                for state in ('before-selection', 'option-selected'):
+                    for view in ('phone', 'paper'):
+                        names.add(f'r10-native-{width}-{state}-page-2-{view}.png')
+            for name in names:
+                (root / name).write_bytes(b'fixture')
+            list(transport.selected(root))  # Existing run remains retrievable.
+            (root / 'optend-manifest.json').write_text('{}')
+            with self.assertRaisesRegex(ValueError, 'Missing/unsafe'):
+                list(transport.selected(root))
+            for name in ('optend-long.pdf', 'optend-short.pdf'):
+                (root / name).write_bytes(b'fixture-pdf')
+            delivered = {path.name for path in transport.selected(root)}
+            self.assertTrue({'optend-manifest.json', 'optend-long.pdf', 'optend-short.pdf'} <= delivered)
+
     def test_validation_logs_distinguish_not_produced_from_success(self):
         names = {'production-first.log', 'native-editor-first.log', 'flutter-test.log',
                  'flutter-test-canonical-gate.log', 'flutter-analyze.log', 'flutter-build.log'}
