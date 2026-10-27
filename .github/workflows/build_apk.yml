@@ -130,6 +130,7 @@ jobs:
             test/wizard/real_reorder_export_test.dart \
             test/wizard/preview_button_audit_test.dart \
             test/wizard/visual_equation_editor_test.dart \
+            test/wizard/compound_equation_pipeline_test.dart \
             test/wizard/export_version_race_test.dart \
             test/wizard/asset_completion_race_test.dart \
             test/wizard/canonical_editing_layer_test.dart \

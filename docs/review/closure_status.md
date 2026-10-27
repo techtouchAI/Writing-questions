@@ -156,3 +156,13 @@ FAILURE: production8/0؛ native195/2/0، analyzer نظيف؛ full/APK/Visual/C6 
 الحالتان المتبقيتان هما عرض جميع قوالب الرياضيات/الكيمياء/الفيزياء عند320/360؛ بعد إصلاح التنقّل ظهرت البنى المركّبة الجذر/الدليل التي عرضها الطبيعي أكبر من قيود Wrap. أمثلة السجل: Rows في`visual_equation_editor.dart`1155/1198، تجاوز5.8/34/57px عند320.
 
 التعديل التالي يعطي **منطقة البناء داخل الحوار** تمريرًا أفقيًا مع scrollbar ظاهر؛ البنى تحتفظ بعرضها الطبيعي ولا تصغير خط أو تغيير MathStyle/serializer/هندسة الورقة/PDF. يبقى clip الافتراضي للـviewport؛ المكونات خارج النافذة قابلة للوصول بالتمرير، وحشوة داخلية تحفظ مقابض الحذف الموجودة. أضيفت4حالات narrow inline/display: سحب فعلي للـviewport، تحرير الذيل، undo/redo للنص، وحفظ المقطع كاملًا بنفس delimiters. بقيت5حالات المحرر الأصلية، وأضيف الملف كاملًا إلى native-first. لكل قالب فحص exception مستقل لتحديد السبب دون تراكم أخطاء مخفية. **التنفيذ التالي PENDING**؛ لا تفعيل أو قبول تكافؤ.
+
+## متابعةb79519f: native209/0، full1035/1؛ سبب كامل محفوظ
+
+SHA `b79519f1d52d5b763022f9d6ed33e5502eb1554f`؛
+[Main40593147542](https://github.com/techtouchAI/Writing-questions/actions/runs/40593147542):
+production8/0؛ native209/0/0 في19suite؛ full1035/1/0 في111suite؛ canonical3/0، analyzer نظيف. APK لم يُنفّذ لأن full فشل.
+[Extended40593147442](https://github.com/techtouchAI/Writing-questions/actions/runs/40593147442) SUCCESS.
+السجل الكامل full: `b5d1de51b1086657aa4f2c455e8a6e78171abe0d1dc3ae37b8559ea5f973f0c2`؛ native: `8ffbcb751c30418acc4cb7f571a976c38f38084fe3ad131284789e8238e3ebb7`.
+
+أول سبب فعلي للفشل الوحيد ليس StateError اللاحق: Scenario4/5/11 في`compound_equation_pipeline_test.dart` نقر حقل`x+1` عندx807.4 خارج الحوار ذي الحد الأيمن760، فأغلق modal barrier المحرر. بعد ذلك لم يوجد زر الحذف. بعد إتاحة تمرير المعادلة أفقيًا يجب أولًا إظهار الحقل المطلوب، كما يفعل المستخدم. أضيف `ensureVisible + real tap` للحقلين الأوسطين فقط، مع إبقاء المصدر الأصلي وتوقعات التركيز/الحذف/undo/redo/المقطع النهائي كاملة. أصبحت تحذيرات hit-test قاتلة في هذا الملف بدل السماح بإغلاقات صامتة. أضيف الملف كاملًا إلى native-first. الاختبارات4 الجديدة للتمرير/تحرير الذيل/التاريخ/inline/display وجميع75pointer cases نجحت فيb795، لا تُنقل نتيجتها إلى SHA التالي؛ التشغيل التالي PENDING.
