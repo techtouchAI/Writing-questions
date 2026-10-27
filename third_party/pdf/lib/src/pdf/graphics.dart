@@ -527,6 +527,7 @@ class PdfGraphics {
     double? trailingTj,
     List<String>? toUnicodeChars,
     List<PdfGlyphPlacement>? glyphPlacements,
+    String? actualText,
   }) {
     assert(() {
       if (_page.settings.verbose) {
@@ -535,6 +536,13 @@ class PdfGraphics {
       return true;
     }());
 
+    // OpenType clusters can contain several glyph components for one source
+    // character. ActualText is the PDF-standard logical extraction contract;
+    // it does not change any glyph, position, clipping, or drawing operator.
+    if (actualText != null) {
+      final hex = actualText.codeUnits.map((unit) => unit.toRadixString(16).padLeft(4, '0')).join();
+      _buf.putString('/Span<</ActualText<FEFF$hex>>>BDC ');
+    }
     _buf.putString('BT ');
 
     assert(() {
@@ -634,6 +642,7 @@ class PdfGraphics {
     }());
 
     _buf.putString('ET ');
+    if (actualText != null) _buf.putString('EMC ');
 
     assert(() {
       if (_page.settings.verbose) {

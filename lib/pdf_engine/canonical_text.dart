@@ -285,6 +285,7 @@ class CanonicalText extends pw.Widget {
       trailingTj: correction,
       toUnicodeChars: openType?.unicode ?? run.toUnicodeChars,
       glyphPlacements: openType?.placements(pdfFont as PdfTtfFont, fontSizePt),
+      actualText: openType == null ? null : text,
     );
     if (shear != 0) {
       canvas.restoreContext();

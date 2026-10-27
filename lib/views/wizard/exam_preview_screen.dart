@@ -314,6 +314,12 @@ class _TextInputDialogState extends State<_TextInputDialog> {
   }
 }
 
+/// Optional asynchronous export boundary for integration tests/embedders. The
+/// default remains the real PDF service; no alternate layout or document model.
+typedef PreviewPdfBuilder = Future<Uint8List> Function({
+  required ExamDocument document, LayoutDocument? layoutDocument,
+});
+
 typedef CanonicalPreviewLayoutResolver = Future<LayoutDocument> Function({
   required ExamDocument document,
   required DocumentIR sourceIr,
@@ -355,6 +361,7 @@ class ExamPreviewScreen extends StatefulWidget {
     this.canonicalLayoutResolver,
     this.canonicalPreviewAssetLoader,
     this.enableSeparateEditorCandidate = false,
+    this.pdfDocumentBuilder,
   });
 
   final VoidCallback onBackToQuestions;
@@ -364,6 +371,7 @@ class ExamPreviewScreen extends StatefulWidget {
   /// Integration candidate only. Requires BOTH injected canonical adapters;
   /// production remains on its repaired surface until the coverage gate passes.
   final bool enableSeparateEditorCandidate;
+  final PreviewPdfBuilder? pdfDocumentBuilder;
 
   @override
   State<ExamPreviewScreen> createState() => _ExamPreviewScreenState();
@@ -2555,7 +2563,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           'تغيّر المستند بعد حساب صفحات المراجعة. افتح المراجعة مجدداً.',
         );
       }
-      final bytes = await PdfExportService.buildDocumentPdfBytes(
+      final bytes = await (widget.pdfDocumentBuilder ?? PdfExportService.buildDocumentPdfBytes)(
               document: document,
               // التخطيط المعروض نفسه يُرسم، فلا يُعاد حساب هندسة في PDF.
               layoutDocument: layoutDocument ?? _pagePlan?.layout,
@@ -2563,9 +2571,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       if (!mounted) {
         return;
       }
+      // Font/frame/image encoding and library writes are asynchronous. A
+      // keyboard/media/external update can finish while the export is pending.
+      // Never publish bytes from a superseded document under the new version.
+      if (!identical(_controller, controller) || !identical(controller.document, document)) {
+        throw const ExportException('تغيّر المستند أثناء التصدير. أعد التصدير للنسخة الحالية.');
+      }
       await _saveToLibrary();
       if (!mounted) {
         return;
+      }
+      if (!identical(_controller, controller) || !identical(controller.document, document)) {
+        throw const ExportException('تغيّر المستند أثناء التصدير. أعد التصدير للنسخة الحالية.');
       }
       await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(

@@ -41,6 +41,22 @@ class EvidenceTransportTest(unittest.TestCase):
                 (root / name).write_bytes(b'fixture-pdf')
             delivered = {path.name for path in transport.selected(root)}
             self.assertTrue({'optend-manifest.json', 'optend-long.pdf', 'optend-short.pdf'} <= delivered)
+            editing = {f'drag-{width}-{kind}-{ending}' for width in (320, 360)
+                for kind in ('question', 'branch-within', 'branch-between')
+                for ending in ('before.png', 'after.png', 'after.pdf')}
+            (root / 'editing-manifest.json').write_text(json.dumps({'files': sorted(editing)}))
+            with self.assertRaisesRegex(ValueError, 'Missing/unsafe'):
+                list(transport.selected(root))
+            for name in editing:
+                (root / name).write_bytes(b'gesture-evidence-fixture')
+            self.assertTrue(editing <= {p.name for p in transport.selected(root)})
+            (root / 'editing-manifest.json').write_text(json.dumps({'files': sorted(editing)[:-1]}))
+            with self.assertRaisesRegex(ValueError, 'every gesture companion'):
+                list(transport.selected(root))
+            (root / 'editing-manifest.json').write_text(json.dumps({'files': sorted(editing)}))
+            (root / 'opentype-clusters.pdf').write_bytes(b'complex-cluster-original-fixture')
+            self.assertIn('opentype-clusters.pdf', {p.name for p in transport.selected(root)})
+            self.assertLessEqual(len(list(transport.selected(root))), 80)
 
     def test_validation_logs_distinguish_not_produced_from_success(self):
         names = {'production-first.log', 'native-editor-first.log', 'flutter-test.log',

@@ -123,6 +123,13 @@ jobs:
             test/layout/paper_metrics_test.dart \
             test/services/structured_export_test.dart \
             test/pdf_engine/opentype_header_test.dart \
+            test/pdf_engine/opentype_actualtext_test.dart \
+            test/pdf_engine/pdf_content_probe_gpos_test.dart \
+            test/pdf_engine/paginated_quranic_font_test.dart \
+            test/export_gate/p0_export_gate_test.dart \
+            test/wizard/real_reorder_export_test.dart \
+            test/wizard/export_version_race_test.dart \
+            test/wizard/asset_completion_race_test.dart \
             test/wizard/canonical_editing_layer_test.dart \
             test/wizard/paper_field_ink_width_test.dart \
             test/layout/canonical/flutter_text_metrics_test.dart \

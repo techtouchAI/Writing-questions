@@ -57,11 +57,21 @@ def selected(root, profile='production'):
         raise ValueError('Unknown evidence profile')
     # Enumerate required companions, not merely files that happened to exist.
     names = {'production-font-assets.json'}
+    if (root / 'opentype-clusters.pdf').exists():
+        names.add('opentype-clusters.pdf')
     # Historical runs predate this case. New evidence must include the ENTIRE
     # companion group if any member exists; never transport a partial PDF set.
     option_evidence = {'optend-manifest.json', 'optend-long.pdf', 'optend-short.pdf'}
     if any((root / name).exists() for name in option_evidence):
         names.update(option_evidence)
+    if (root / 'editing-manifest.json').exists():
+        expected_editing = {f'drag-{width}-{kind}-{ending}' for width in (320, 360)
+            for kind in ('question', 'branch-within', 'branch-between')
+            for ending in ('before.png', 'after.png', 'after.pdf')}
+        editing = json.loads((root / 'editing-manifest.json').read_text())
+        if set(editing['files']) != expected_editing or len(editing['files']) != len(expected_editing):
+            raise ValueError('Editing manifest must enumerate every gesture companion')
+        names.update(expected_editing | {'editing-manifest.json'})
     for width in (320, 360):
         for style in ('inline', 'display'):
             names.add(f'r13-math-{width}-{style}.png')

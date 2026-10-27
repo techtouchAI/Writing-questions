@@ -8,6 +8,7 @@ import argparse
 import hashlib
 from io import BytesIO
 import json
+import re
 from pathlib import Path
 
 
@@ -25,6 +26,38 @@ def outline_check(report):
     return (len(rows) == len(HEADER_WORDS)
             and {row.get('text') for row in rows} == HEADER_WORDS
             and all(row.get('sameOutlineSequence') is True for row in rows))
+
+
+QURAN_WORD_COUNTS = {'إِنَّا': 1, 'أَعْطَيْنَاكَ': 1, 'الْكَوْثَرَ': 2}
+
+
+def source_text_check(report):
+    """Bounded source metadata/control-character check, NOT RTL copy parity."""
+    counts = report.get('actualTextSourceCounts', {})
+    return (all(isinstance(counts.get(word), int) and counts[word] >= count
+                for word, count in QURAN_WORD_COUNTS.items())
+            and report.get('extractorControlCharacters') == []
+            and report.get('extractorReplacementCharacterCount') == 0)
+
+
+def audit_source_text(document):
+    sources, extracted = [], []
+    for page in document:
+        for ref in page.get_contents():
+            content = document.xref_stream(ref)
+            for value in re.findall(rb'/ActualText\s*<([0-9A-Fa-f]+)>', content):
+                decoded = bytes.fromhex(value.decode()).decode('utf-16-be')
+                if not decoded.startswith('\ufeff'):
+                    raise ValueError('ActualText must have a UTF-16 BOM')
+                sources.append(decoded[1:])
+        extracted.append(page.get_text())
+    text = ''.join(extracted)
+    return dict(actualTextSourceCounts={word: sources.count(word) for word in QURAN_WORD_COUNTS},
+        extractorControlCharacters=sorted({ord(char) for char in text if ord(char) < 32 and char not in '\n\r\t'}),
+        extractorReplacementCharacterCount=text.count('\ufffd'),
+        logicalCopyOrderVerified=False,
+        extractionLimitation='Validates exact source ActualText and no unknown-CID control artifacts. '
+            'MuPDF spatial RTL extraction order is not proof of logical copy/selection parity.')
 
 
 def audit(pdf_path, font_path, *, page=0, font_name='Amiri-Regular', size=17):
@@ -88,7 +121,7 @@ def audit(pdf_path, font_path, *, page=0, font_name='Amiri-Regular', size=17):
         pageIndex=page, font=font_name, sizePt=size,
         versions=dict(harfbuzz=hb.version_string(), fontTools=fontTools.__version__, pymupdf=pymupdf.VersionBind),
         limitation='Independent reference, not captured Flutter glyph IDs or a replacement for actual image review.',
-        words=rows)
+        words=rows, **audit_source_text(document))
 
 
 if __name__ == '__main__':
@@ -101,7 +134,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     report = audit(args.pdf, args.font)
     report['boundedOutlineCheckPassed'] = outline_check(report)
+    report['boundedSourceTextCheckPassed'] = source_text_check(report)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2))
-    if args.check and not report['boundedOutlineCheckPassed']:
+    if args.check and not (report['boundedOutlineCheckPassed'] and report['boundedSourceTextCheckPassed']):
         raise SystemExit(1)

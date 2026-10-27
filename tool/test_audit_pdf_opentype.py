@@ -2,7 +2,7 @@
 import copy
 import unittest
 
-from audit_pdf_opentype import HEADER_WORDS, outline_check
+from audit_pdf_opentype import HEADER_WORDS, QURAN_WORD_COUNTS, outline_check, source_text_check
 
 
 class OutlineCheckTest(unittest.TestCase):
@@ -42,6 +42,28 @@ class OutlineCheckTest(unittest.TestCase):
     def test_rejects_truthy_non_boolean_result(self):
         self.report['words'][0]['sameOutlineSequence'] = 'true'
         self.assertFalse(outline_check(self.report))
+
+
+class SourceTextCheckTest(unittest.TestCase):
+    def setUp(self):
+        self.report = dict(actualTextSourceCounts=dict(QURAN_WORD_COUNTS),
+            extractorControlCharacters=[], extractorReplacementCharacterCount=0)
+
+    def test_exact_source_tokens_and_no_control_artifacts(self):
+        self.assertTrue(source_text_check(self.report))
+
+    def test_missing_source_is_not_an_empty_success(self):
+        self.assertFalse(source_text_check({}))
+        self.report['actualTextSourceCounts'].pop('إِنَّا')
+        self.assertFalse(source_text_check(self.report))
+
+    def test_rejects_unknown_cid_control_artifacts(self):
+        self.report['extractorControlCharacters'] = [19]
+        self.assertFalse(source_text_check(self.report))
+
+    def test_rejects_replacement_characters(self):
+        self.report['extractorReplacementCharacterCount'] = 1
+        self.assertFalse(source_text_check(self.report))
 
 
 if __name__ == '__main__':
