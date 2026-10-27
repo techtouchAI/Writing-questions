@@ -33,7 +33,10 @@
 //   because the single-word line realigns to the origin in both
 //   directions (RTL mirrors about its own advance, LTR translates by
 //   zero), matching the replaced path;
-// * shaping mirrors package:pdf's default dispatch (logical-to-visual for
+// * Amiri Arabic uses the bundled OpenType shaper to emit actual GSUB glyphs
+//   and GPOS positions, retaining logical ToUnicode clusters and canonical
+//   word placement. Other faces retain the existing dispatch.
+// * legacy shaping mirrors package:pdf's default dispatch (logical-to-visual for
 //   RTL, raw otherwise), reusing the vendored shaper rather than
 //   re-implementing it; the vendored-patch verifier guards the dispatch
 //   snippet this mirrors so upstream drift fails loudly;
@@ -67,6 +70,8 @@ import 'dart:math' as math;
 import 'package:flutter/widgets.dart' show Matrix4;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+
+import 'opentype_shaper.dart';
 
 class CanonicalText extends pw.Widget {
   CanonicalText({
@@ -191,8 +196,11 @@ class CanonicalText extends pw.Widget {
     }
     final pdfFont = font.getFont(context);
     final run = shapedRun();
-    final shaped = run.glyphText;
-    final correction = trailingTjAdjustment(pdfFont);
+    final openType = OpenTypeShaper.applies(pdfFont, text)
+        ? OpenTypeShaper.shape(pdfFont as PdfTtfFont, text, rtl: rtl) : null;
+    final shaped = openType?.glyphText ?? run.glyphText;
+    final correction = openType == null ? trailingTjAdjustment(pdfFont)
+        : (openType.advance * fontSizePt - canonicalAdvancePt) * 1000 / fontSizePt;
     // Same scaled word metrics pw.Text measures the single word with (zero
     // letter spacing). The clip box is the replaced line box (font advance
     // by max height); the ink Td replicates its span point plus realigned
@@ -222,10 +230,23 @@ class CanonicalText extends pw.Widget {
     // baseline, while this canvas measures y downwards from the box top, so
     // the ink lands between `inkY - bottom` and `inkY - top`, where `top` is
     // the minimum yMin and `bottom` the maximum yMax of the shaped word.
-    final clipLeft = math.min(0.0, metrics.left);
-    final clipRight = math.max(pdfAdvancePt, metrics.right);
-    final clipTop = math.min(0.0, inkY - metrics.bottom);
-    final clipBottom = math.max(boxHeight, inkY - metrics.top);
+    var clipLeft = math.min(0.0, metrics.left);
+    var clipRight = math.max(pdfAdvancePt, metrics.right);
+    var clipTop = math.min(0.0, inkY - metrics.bottom);
+    var clipBottom = math.max(boxHeight, inkY - metrics.top);
+    if (openType != null) {
+      var pen = 0.0;
+      for (final glyph in openType.glyphs) {
+        final bounds = pdfFont.glyphMetrics(glyph.alias) * fontSizePt;
+        final x = pen + glyph.xOffset * fontSizePt;
+        final y = inkY + glyph.yOffset * fontSizePt;
+        clipLeft = math.min(clipLeft, x + bounds.left);
+        clipRight = math.max(clipRight, x + bounds.right);
+        clipTop = math.min(clipTop, y + bounds.top);
+        clipBottom = math.max(clipBottom, y + bounds.bottom);
+        pen += glyph.advance * fontSizePt;
+      }
+    }
     final canvas = context.canvas;
     canvas
       ..saveContext()
@@ -262,7 +283,8 @@ class CanonicalText extends pw.Widget {
       // same explicit `0 Tc` is emitted.
       charSpace: 0,
       trailingTj: correction,
-      toUnicodeChars: run.toUnicodeChars,
+      toUnicodeChars: openType?.unicode ?? run.toUnicodeChars,
+      glyphPlacements: openType?.placements(pdfFont as PdfTtfFont, fontSizePt),
     );
     if (shear != 0) {
       canvas.restoreContext();

@@ -17,6 +17,7 @@ dependencies:
     sdk: flutter
   path_provider: ^2.1.4
   # محرك رسم الـ PDF: الإصداران مثبّتان بدقة لضمان توافق CI مع Flutter 3.22.3.
+  ffi: ^2.1.2
   pdf: 3.11.3
   printing: 5.13.4
   # عرض صيغ LaTeX (جذور/كسور/تكاملات) داخل لوحة الورقة التفاعلية.

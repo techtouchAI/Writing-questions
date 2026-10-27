@@ -44,7 +44,10 @@ def selected(root, profile='production'):
         expected = {'vector.pdf', *(f'preview_page_{page}.png' for page in range(1, count + 1))}
         if set(manifest['files']) != expected or len(manifest['files']) != len(expected):
             raise ValueError('Visual manifest does not describe every required original')
-        for name in sorted(expected | {'manifest.json'}):
+        companions = {'manifest.json'}
+        if (root / 'arabic-header-outline.json').exists():
+            companions.add('arabic-header-outline.json')
+        for name in sorted(expected | companions):
             path = root / name
             if not path.is_file() or path.is_symlink():
                 raise ValueError(f'Missing/unsafe evidence: {name}')

@@ -62,6 +62,9 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Build pinned OpenType emission runtime
+        run: bash tool/build_opentype_shaper.sh
+
       - name: Resolve dependencies
         run: flutter pub get
 
@@ -119,6 +122,7 @@ jobs:
             test/services/header_border_visibility_test.dart \
             test/layout/paper_metrics_test.dart \
             test/services/structured_export_test.dart \
+            test/pdf_engine/opentype_header_test.dart \
             test/wizard/canonical_editing_layer_test.dart \
             test/wizard/paper_field_ink_width_test.dart \
             test/layout/canonical/flutter_text_metrics_test.dart \
@@ -819,6 +823,9 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Build pinned OpenType emission runtime
+        run: bash tool/build_opentype_shaper.sh
+
       - name: Resolve dependencies
         run: flutter pub get
 
@@ -1054,6 +1061,24 @@ jobs:
           summary="${summary//$'\r'/%0D}"
           summary="${summary//$'\n'/%0A}"
           echo "::notice title=مقاييس التحقق البصري::$summary"
+
+      - name: Verify actual PDF Arabic header contextual outlines
+        if: always()
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/header-shape-venv"
+          "$RUNNER_TEMP/header-shape-venv/bin/pip" install -q pymupdf fonttools uharfbuzz
+          "$RUNNER_TEMP/header-shape-venv/bin/python" tool/audit_pdf_opentype.py \
+            --pdf build/visual_parity/vector.pdf --font assets/fonts/Amiri-Regular.ttf \
+            --output build/visual_parity/arabic-header-outline.json --check
+          python3 - <<'PYHEADER'
+          import json
+          r=json.load(open('build/visual_parity/arabic-header-outline.json'))
+          summary={'pdfSha256':r['pdfSha256'], 'fontSha256':r['fontSha256'],
+            'boundedOutlineCheckPassed':r['boundedOutlineCheckPassed'],
+            'words':[{'text':w['text'],'sameOutlineSequence':w['sameOutlineSequence']} for w in r['words']]}
+          print('::notice title=Original PDF OpenType header::'+json.dumps(summary,ensure_ascii=False))
+          PYHEADER
 
       - name: Upload visual parity artifacts
         if: always()
