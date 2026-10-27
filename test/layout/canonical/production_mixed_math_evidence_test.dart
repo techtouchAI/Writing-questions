@@ -287,10 +287,10 @@ List<Map<String, Object>> _sourcePageBoundaries(WidgetTester tester,
 
 void main() {
   testWidgets('native line evidence excludes a trailing newline empty-line box', (tester) async {
-    await tester.pumpWidget(Directionality(textDirection: TextDirection.rtl,
-      child: DefaultTextStyle(style: const TextStyle(fontSize: 18, height: 1.3),
-        child: RepaintBoundary(key: const ValueKey('line-reader-canvas'),
-          child: Column(children: const [Text('الأول\n'), Text('التالي')])))));
+    await tester.pumpWidget(const Directionality(textDirection: TextDirection.rtl,
+      child: DefaultTextStyle(style: TextStyle(fontSize: 18, height: 1.3),
+        child: RepaintBoundary(key: ValueKey('line-reader-canvas'),
+          child: Column(children: [Text('الأول\n'), Text('التالي')])))));
     final canvas = tester.renderObject<RenderBox>(_key('line-reader-canvas'));
     final lines = _paintedSourceLines(tester, _key('line-reader-canvas'), canvas);
     expect(lines.map((line) => line.text).toList(), ['الأول', 'التالي']);

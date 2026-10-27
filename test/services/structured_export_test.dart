@@ -7,6 +7,9 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:writing_questions_app/layout/paper_metrics.dart';
+import 'package:writing_questions_app/layout/canonical/layout_document.dart';
+import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
+import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/layout/visual/visual_metrics.dart';
 import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
@@ -107,6 +110,36 @@ void main() {
         containsAll(<String>{'1', '-'}),
         reason: 'رقم النقطة وفاصلها يُرسمان كتسمية مستقلة عن نصها.',
       );
+    });
+    test('option label anchor is independent of content width and survives long option pagination', () async {
+      final source = _document();
+      final question = source.questions.single;
+      final point = question.items.single;
+      final changed = source.copyWith(questions: [question.copyWith(items: [
+        point.copyWith(options: [
+          point.options.first.copyWith(text: '${List.filled(80, 'نص خيار طويل English').join(' ')} OPTEND'),
+          ...point.options.skip(1),
+        ]),
+      ])]);
+      final engine = PaginatedPdfExamEngine();
+      final before = await engine.resolveLayoutDocument(document: source);
+      final after = await engine.resolveLayoutDocument(document: changed);
+      expect(after.pages.length, greaterThan(1));
+      double labelX(LayoutDocument layout) => layout.allLines.expand((line) => line.runs)
+          .expand((run) => run.words).firstWhere((word) => word.text.trim() == 'A').x;
+      expect(labelX(after), closeTo(labelX(before), 1e-6),
+        reason: 'A fixed native label column must not move when only option content changes.');
+      final shortPdf = PdfContentProbe.fromBytes(await engine.generate(document: source, layoutDocument: before));
+      final longPdf = PdfContentProbe.fromBytes(await engine.generate(document: changed, layoutDocument: after));
+      ProbedWord label(PdfContentProbe pdf) => pdf.words.firstWhere((word) => word.text.trim() == 'A');
+      expect(label(longPdf).x, closeTo(label(shortPdf).x, 1e-6));
+      expect(longPdf.words.any((word) => word.text.contains('OPTEND')), isTrue);
+      final tall = await CanonicalLayoutService.resolve(document: changed,
+        pageSize: const LayoutSize(width: 210 * 72 / 25.4, height: 20000));
+      final ids = after.allLines.map((line) => line.id).toList()..sort();
+      final referenceIds = tall.allLines.map((line) => line.id).toList()..sort();
+      expect(ids, referenceIds, reason: 'Every unsplit option line must survive exactly once.');
+      expect(ids.toSet().length, ids.length, reason: 'No duplicated option lines across page windows.');
     });
   });
 }

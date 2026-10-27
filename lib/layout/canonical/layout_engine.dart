@@ -811,33 +811,47 @@ class _LayoutBuilder {
             labelStyle, direction, LayoutSemanticRole.separator,
           ));
         }
-        if (option.labelContent.isNotEmpty && option.content.isNotEmpty) {
-          spans.add(_fixedSpacer(
-            '$id/${option.id}/labelGap',
-            optionStyle,
-            direction,
-            LayoutUnits.pxToPt(VisualMetrics.optionLabelGapPx),
-            option.labelTextSeparator,
+        // Match the native Row: intrinsic label + declared gap + Expanded
+        // content. A combined bidi paragraph makes the label move whenever
+        // the content's width changes (e.g. OptA versus OptB).
+        final labelMeasurement = fontMetrics.layoutParagraph(
+          spans: spans, width: boxWidth, direction: direction,
+          alignment: PaperAlign.start, resolveJustification: false,
+        );
+        final labelWidth = labelMeasurement.lines.fold<double>(0,
+          (value, line) => line.naturalWidth > value ? line.naturalWidth : value)
+            .clamp(0.0, boxWidth).toDouble();
+        final gap = option.labelContent.isNotEmpty && option.content.isNotEmpty
+            ? LayoutUnits.pxToPt(VisualMetrics.optionLabelGapPx) : 0.0;
+        final contentWidth = (boxWidth - labelWidth - gap).clamp(0.0, boxWidth).toDouble();
+        final cellChildren = <LayoutBlock>[];
+        if (labelWidth > 0) {
+          cellChildren.add(_moveBlock(_paragraphBlock(
+            id: '$id/${option.id}/label-block', kind: LayoutBlockKind.option,
+            semanticNode: option.label, spans: spans, style: labelStyle,
+            alignment: PaperAlign.start, direction: direction,
+            width: labelWidth,
+            x: direction == DocumentDirection.rtl ? cellX + boxWidth - labelWidth : cellX,
+          ), 0, LayoutUnits.pxToPt(VisualMetrics.optionLabelTopInsetPx)));
+        }
+        if (contentWidth > 0 && option.content.isNotEmpty) {
+          cellChildren.add(_contentBlock(
+            id: '$id/${option.id}/content-block', contentId: '$id/${option.id}/content', kind: LayoutBlockKind.option,
+            semanticNode: option.content, content: option.content,
+            style: optionStyle, alignment: option.alignment ?? ownerStyle?.align,
+            direction: option.direction == DocumentDirection.inherit ? direction : option.direction,
+            width: contentWidth,
+            x: direction == DocumentDirection.rtl ? cellX : cellX + labelWidth + gap,
           ));
         }
-        spans.addAll(_contentSpans(
-          option.content, '$id/${option.id}/content', optionStyle, direction,
+        final cellHeight = cellChildren.fold<double>(0,
+          (height, child) => child.rect.bottom > height ? child.rect.bottom : height);
+        rowBlocks.add(LayoutBlock(
+          id: '$id/${option.id}', semanticNodeId: '$id/${option.id}',
+          semanticNode: option, kind: LayoutBlockKind.option,
+          rect: LayoutRect.fromLTWH(cellX, 0, boxWidth, cellHeight),
+          lines: const <LayoutLine>[], children: List<LayoutBlock>.unmodifiable(cellChildren),
         ));
-        rowBlocks.add(
-          _paragraphBlock(
-            id: '$id/${option.id}',
-            kind: LayoutBlockKind.option,
-            semanticNode: option,
-            spans: spans,
-            style: optionStyle,
-            alignment: option.alignment ?? ownerStyle?.align,
-            direction: option.direction == DocumentDirection.inherit
-                ? direction
-                : option.direction,
-            width: boxWidth,
-            x: cellX,
-          ),
-        );
         if (rowBlocks.last.rect.height > rowHeight) rowHeight = rowBlocks.last.rect.height;
       }
       children.addAll(rowBlocks.map((block) => _moveBlock(block, 0, cursorY)));
@@ -915,6 +929,7 @@ class _LayoutBuilder {
 
   LayoutBlock _contentBlock({
     required String id,
+    String? contentId,
     required LayoutBlockKind kind,
     required Object semanticNode,
     required InlineContent content,
@@ -924,7 +939,7 @@ class _LayoutBuilder {
     required double x,
     required double width,
   }) {
-    final spans = _contentSpans(content, '$id/content', style, direction);
+    final spans = _contentSpans(content, contentId ?? '$id/content', style, direction);
     final segments = <List<MetricSpan>>[];
     var current = <MetricSpan>[];
     for (final span in spans) {
@@ -2009,7 +2024,7 @@ class _LayoutBuilder {
             reference.kind != FloatingReferenceKind.formula)) {
       return const <LayoutLine>[];
     }
-    final padding = LayoutUnits.pxToPt(4);
+    final padding = LayoutUnits.pxToPt(reference.kind == FloatingReferenceKind.formula ? 2 : 4);
     final style = reference.kind == FloatingReferenceKind.formula
         ? LayoutTextStyle(
             font: configuration.defaultFont,
@@ -2029,6 +2044,48 @@ class _LayoutBuilder {
       width: (width - 2 * padding).clamp(1.0, width).toDouble(),
       x: left + padding,
     );
+    if (reference.kind == FloatingReferenceKind.formula && block.lines.isNotEmpty) {
+      final line = block.lines.first;
+      final run = line.runs.firstWhere((run) => run.isMath);
+      final naturalWidth = run.mathBox?.widthPt ?? run.width;
+      final naturalHeight = run.mathBox?.heightPt ?? run.height;
+      if (naturalWidth > 0 && naturalHeight > 0) {
+        // Exactly the native FloatingElementView's 2px padding + centered
+        // BoxFit.contain, including upscaling. Keep the ORIGINAL font size
+        // and raster; fitting is a transform, never a different font shape.
+        final availableWidth = (width - 2 * padding).clamp(0.0, width).toDouble();
+        final height = LayoutUnits.pxToPt(input.heightPx);
+        final availableHeight = (height - 2 * padding).clamp(0.0, height).toDouble();
+        final scaleX = availableWidth / naturalWidth;
+        final scaleY = availableHeight / naturalHeight;
+        final scale = scaleX < scaleY ? scaleX : scaleY;
+        final fittedWidth = naturalWidth * scale;
+        final fittedHeight = naturalHeight * scale;
+        final fittedLeft = left + (width - fittedWidth) / 2;
+        final fittedTop = top + (height - fittedHeight) / 2;
+        final baseline = (run.mathBox?.baselinePt ?? naturalHeight) * scale;
+        final fittedRun = LayoutRun(
+          id: run.id, semanticNodeId: run.semanticNodeId, semanticNode: run.semanticNode,
+          contentKind: run.contentKind, semanticRole: run.semanticRole, text: run.text,
+          x: fittedLeft, advance: fittedWidth, width: fittedWidth, height: fittedHeight,
+          baselineOffset: baseline, direction: run.direction, style: run.style,
+          logicalIndex: run.logicalIndex, visualIndex: run.visualIndex,
+          words: const <LayoutWord>[], sourceStartOffset: run.sourceStartOffset,
+          sourceEndOffset: run.sourceEndOffset, sourceOffsetMap: run.sourceOffsetMap,
+          mathBox: run.mathBox, measurementSource: run.measurementSource,
+        );
+        return <LayoutLine>[LayoutLine(
+          id: line.id, semanticNodeId: line.semanticNodeId, semanticNode: line.semanticNode,
+          paragraphIndex: line.paragraphIndex, lineIndex: line.lineIndex,
+          rect: LayoutRect.fromLTWH(fittedLeft, fittedTop, fittedWidth, fittedHeight),
+          baseline: fittedTop + baseline, ascent: baseline, descent: fittedHeight - baseline,
+          leading: 0, direction: line.direction, alignment: PaperAlign.center,
+          runs: <LayoutRun>[fittedRun], logicalRunIds: <String>[run.id], visualRunIds: <String>[run.id],
+          naturalWidth: fittedWidth, resolvedWidth: fittedWidth, isJustified: false,
+          justificationOpportunityCount: 0, extraSpacePerOpportunity: 0,
+        )];
+      }
+    }
     return <LayoutLine>[
       for (final line in block.lines) _moveLine(line, 0, top + padding),
     ];

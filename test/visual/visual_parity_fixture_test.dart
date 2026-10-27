@@ -27,6 +27,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import '../support/production_evidence_fonts.dart';
 
 import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
@@ -101,6 +102,8 @@ Future<void> loadAppFonts() async {
   ]);
   await load('Amiri', <String>[ExamFont.quranicAsset]);
   await load('Tajawal', <String>['assets/fonts/Tajawal-Regular.ttf']);
+  // Widget tests do not automatically load package KaTeX fonts.
+  await loadProductionEvidenceFonts();
 }
 
 ExamDocument fixtureDocument() {
@@ -516,6 +519,7 @@ void main() {
       'pageCount': snapshots.length,
       'widthPx': snapshots.first['widthPx'],
       'heightPx': snapshots.first['heightPx'],
+      'fontInventory': jsonDecode(File('build/production_fragment_repro/production-font-assets.json').readAsStringSync()),
       'files': <String>[
         'vector.pdf',
         for (var index = 0; index < snapshots.length; index++)

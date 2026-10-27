@@ -878,7 +878,9 @@ class _DocumentIRBuilder {
     InlineContent? label;
     if (element.isFormula) {
       label = InlineContent(<InlineNode>[
-        MathNode(source: element.label, isBlock: true),
+        // FloatingElementView renders this independent object with
+        // MathStyle.text. Ownership by a floating block is not display style.
+        MathNode(source: element.label, isBlock: false),
       ]);
     } else if (element.label.isNotEmpty) {
       label = InlineContent.fromSource(element.label);

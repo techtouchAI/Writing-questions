@@ -12,6 +12,8 @@ import '../../support/production_evidence_fonts.dart';
 import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
 import 'package:writing_questions_app/layout/semantic/inline_nodes.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
+import 'package:writing_questions_app/models/floating_element.dart';
+import 'package:writing_questions_app/views/widgets/floating_element_view.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/services/math_snapshot_renderer.dart';
@@ -122,6 +124,40 @@ void main() {
           } finally { snapshot?.dispose(); reference.dispose(); }
         }
       }
+    });
+
+    testWidgets('floating formula shares native text style and fitted ink box at $width', (tester) async {
+      tester.view.physicalSize = Size(width, 1200); tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize); addTearDown(tester.view.resetDevicePixelRatio);
+      final element = FloatingElement(id: 'floating-fraction', type: FloatingElementType.formula,
+        label: r'\frac{a}{b}', dx: 20, dy: 100, width: 160, height: 60);
+      await tester.pumpWidget(MaterialApp(builder: (_, child) => MathSnapshotHost(child: child),
+        home: Align(alignment: Alignment.topLeft, child: RepaintBoundary(
+          key: const ValueKey('floating-source'), child: SizedBox(width: 160, height: 60,
+            child: FloatingElementView(element: element))))));
+      final source = tester.renderObject<RenderBox>(find.byKey(const ValueKey('floating-source')));
+      final math = tester.renderObject<RenderBox>(find.byType(SafeMathTex).first);
+      final actual = MatrixUtils.transformRect(math.getTransformTo(source), Offset.zero & math.size);
+      final document = ExamDocument(name: 'Actual floating formula fit',
+        header: ExamHeaderModel.initial(subject: 'الرياضيات'), questions: [
+          QuestionModel(id: 'floating-owner', questionNumber: 1, statement: 'قارن المعادلة', attachments: [element]),
+        ]);
+      final layout = await finish(tester, CanonicalLayoutService.resolve(document: document));
+      final placement = layout.pages.expand((page) => page.floatingElements).single;
+      final line = placement.labelLines.single;
+      final run = line.runs.singleWhere((run) => run.isMath);
+      expect(run.isBlockMath, isFalse, reason: 'Native FloatingElementView uses MathStyle.text.');
+      expect(run.measurementSource, 'mathSnapshot');
+      expect(run.style.fontSizePt, 30, reason: 'Fit is a transform, not larger-font shaping.');
+      final planned = Rect.fromLTWH(LayoutUnits.ptToPx(run.x - placement.rect.left),
+        LayoutUnits.ptToPx(line.baseline - run.baselineOffset - placement.rect.top),
+        LayoutUnits.ptToPx(run.width), LayoutUnits.ptToPx(run.height));
+      for (final pair in [(actual.left, planned.left), (actual.top, planned.top),
+          (actual.width, planned.width), (actual.height, planned.height)]) {
+        expect(pair.$1, closeTo(pair.$2, 1e-6));
+      }
+      expect(planned.top, greaterThanOrEqualTo(2));
+      expect(planned.bottom, lessThanOrEqualTo(58 + 1e-6));
     });
 
     testWidgets('real math acceptance preserves inline versus display metrics at $width', (tester) async {

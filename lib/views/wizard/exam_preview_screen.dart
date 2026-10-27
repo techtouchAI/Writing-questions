@@ -6766,7 +6766,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                     child: GestureDetector(
                       onTap: () => _editOptionLabel(owner, item.id, index),
                       child: Padding(
-                        padding: const EdgeInsets.only(top: 1),
+                        padding: const EdgeInsets.only(top: VisualMetrics.optionLabelTopInsetPx),
                         child: options[index].labelContent.isEmpty
                                 ? const Icon(Icons.tag, size: 12, color: Colors.grey)
                                 : _semanticInline(options[index].labelContent, bodyStyle),
