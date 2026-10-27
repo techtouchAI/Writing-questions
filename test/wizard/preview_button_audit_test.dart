@@ -562,6 +562,7 @@ void main() {
       for (final label in tab.value) {
         await tapPreviewCommand(tester, tab.key, label);
         expect(find.byType(Dialog), findsOneWidget);
+        expect(tester.takeException(), isNull, reason: '${tab.key}: $label');
         await _tap(tester, find.text('إلغاء'));
       }
     }

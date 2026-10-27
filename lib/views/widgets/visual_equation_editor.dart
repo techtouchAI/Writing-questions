@@ -123,6 +123,7 @@ class VisualEquationEditor extends StatefulWidget {
 }
 
 class _VisualEquationEditorState extends State<VisualEquationEditor> {
+  final ScrollController _modelScroll = ScrollController();
   static const int _maxHistory = 80;
   static final RegExp _trailingAtomPattern = RegExp(r'([A-Za-z0-9.]+)$');
 
@@ -154,6 +155,7 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
 
   @override
   void dispose() {
+    _modelScroll.dispose();
     for (final controller in _controllers.values) {
       controller.dispose();
     }
@@ -1095,7 +1097,29 @@ class _VisualEquationEditorState extends State<VisualEquationEditor> {
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: colorScheme.outlineVariant),
           ),
-          child: _buildSequence(_model.nodes),
+          child: LayoutBuilder(
+            builder: (context, constraints) => Scrollbar(
+              controller: _modelScroll,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: _modelScroll,
+                key: const Key('eq_model_horizontal_scroll'),
+                scrollDirection: Axis.horizontal,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                  // Structured roots/scripts/fractions are indivisible. Give
+                  // them natural width rather than compressing their typography
+                  // into the dialog. Keep the default viewport clip and make
+                  // every component reachable by real horizontal scrolling.
+                  // Internal padding also preserves the existing delete grips.
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: _buildSequence(_model.nodes),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
