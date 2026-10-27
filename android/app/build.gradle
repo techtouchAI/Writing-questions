@@ -22,6 +22,25 @@ if (keystorePropertiesFile.exists()) {
     keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
 }
 
+// Mirror Flutter 3.24's -Ptarget-platform selection for native compilation.
+// CMake otherwise builds x86 too, creating a native-only APK ABI with no Flutter
+// engine. Filter the CMake build, not APK packaging or Flutter's ABI splits.
+// Retain x86 when explicitly requested for a Flutter debug/emulator target.
+def writingPlatformAbis = [
+    'android-arm': 'armeabi-v7a',
+    'android-arm64': 'arm64-v8a',
+    'android-x86': 'x86',
+    'android-x64': 'x86_64',
+]
+def writingNativeAbis = (project.findProperty('target-platform') ?:
+        'android-arm,android-arm64,android-x64').split(',').collect { platform ->
+    def abi = writingPlatformAbis[platform]
+    if (abi == null) {
+        throw new GradleException("Unsupported native Flutter target: ${platform}")
+    }
+    abi
+}
+
 android {
     namespace 'com.techtouch.writing_questions_app'
     compileSdk flutter.compileSdkVersion
@@ -43,7 +62,10 @@ android {
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         externalNativeBuild {
-            cmake { cppFlags '-std=c++17' }
+            cmake {
+                cppFlags '-std=c++17'
+                abiFilters.addAll(writingNativeAbis)
+            }
         }
     }
 

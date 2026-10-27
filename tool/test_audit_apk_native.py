@@ -83,13 +83,15 @@ class ApkAuditTest(unittest.TestCase):
             root = Path(directory)
             font, apk = root / 'font.ttf', root / 'app.apk'
             font.write_bytes(b'pinned source font fixture')
-            def make(bundled, missing=None):
+            def make(bundled, missing=None, extra_native=False):
                 with zipfile.ZipFile(apk, 'w') as archive:
                     archive.writestr(FONT_ASSET, bundled)
                     for abi in ABIS:
                         archive.writestr(f'lib/{abi}/libflutter.so', b'engine fixture')
                         if abi != missing:
                             archive.writestr(f'lib/{abi}/libwriting_harfbuzz.so', elf(abi))
+                    if extra_native:
+                        archive.writestr('lib/x86/libwriting_harfbuzz.so', b'native-only ABI is not allowed')
             make(font.read_bytes())
             report = audit(apk, font)
             self.assertEqual(set(report['libraries']), set(ABIS))
@@ -98,6 +100,9 @@ class ApkAuditTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'source bytes changed'):
                 audit(apk, font)
             make(font.read_bytes(), missing='armeabi-v7a')
+            with self.assertRaisesRegex(ValueError, 'ABI inventory'):
+                audit(apk, font)
+            make(font.read_bytes(), extra_native=True)
             with self.assertRaisesRegex(ValueError, 'ABI inventory'):
                 audit(apk, font)
 

@@ -177,3 +177,13 @@ production8/0؛ native219/0/0 في20suite؛ full1038/0/0 في111suite؛ canonica
 سجل البناء المتحقق `090e7f1a8929bd5e602d1cbaadb7429b4e23688b8325cc6c4c8382138724fe9e`؛ full`ee641e7e60dba2873419b2ab7c245db3529fdf632a97d1ac09df1ffef7262abb`.
 
 أرشيف job الكامل ورابط job الفردي يعيدان EOF من signed hosts، بينما7سجلات أوامر أصلية نُقلت بنجاح. لا يحتوي تقرير الفشل سوى exit1، و`apk-native.json` لم يكن يُكتب عند exception. لا نغيّر ABI filters أو نحذف شرطًا تخمينًا. أضيف حفظ JSON للفشل مع السبب الفعلي/hash الـAPK و`auditPassed:false` وإعادة رمي الاستثناء، وإشعار error؛ اختبار CLI جديد يثبت بقاء exit غير صفري وعدم قبول APK تالف. فحص ZIP/ABI/ELF/الصادرات/الخط الأصلي **لم يتغير أو يُضعّف**. الغاية من التشغيل التالي إتاحة التشخيص الفعلي ثم إصلاح السبب؛ جميع بوابات SHA التالي لازمة، والحالةOPEN.
+
+## تشخيص1917adc الفعلي وإصلاح اختيار ABIs في CMake
+
+SHA `1917adc2a1d74c10ce70b726f6b19c557c61bdf9`؛
+[Main40597643558](https://github.com/techtouchAI/Writing-questions/actions/runs/40597643558) رفض التدقيق مجددًا، معproduction8/0 وnative219/0 وfull1038/0 وanalyzer نظيف وبناءAPK منفّذ.
+نُقل `apk-native.json` الأصلي وتحقق hash`4d283d33781f5a153a31c219e3e44c1354485a6f9397f323289f76aadd096eb0`.
+السبب الحرفي: `Flutter={'arm64-v8a', 'armeabi-v7a', 'x86_64'}, shaper={'x86_64', 'arm64-v8a', 'armeabi-v7a', 'x86'}`.
+APK المرفوض hash`6b3ddabe54a74d27ca55a13da4bb51487090cfb0e731fad480d1555d8cfb4aa8`.
+
+CMake بنى x86 افتراضيًا رغم عدم وجود Flutter engine له في release؛ ABI أصلي بلا engine قد يجعل APK يبدو قابلًا للتثبيت على جهاز غير مدعوم. قورن اختيار Flutter3.24.5 الأصلي في`packages/flutter_tools/gradle/src/main/groovy/flutter.groovy` (`getTargetPlatforms`/`PLATFORM_ARCH_MAP`). التعديل يجعل **قائمة بناء CMake** تتبع `-Ptarget-platform` نفسها وافتراض Flutter الثلاثي، دون تغيير فلاتر تغليف APK أو split-per-ABI أو تخفيف التدقيق. يبقى x86 قابلًا للبناء عند طلب`android-x86` صراحةً للـdebug/emulator. يرفض target مجهول بدل fallback صامت. أضيف regression صريح يبقي رفض native-only x86 إلى اختبارات ZIP الموجودة؛ المحلي7APK+12PDF+9transport PASS. يلزم الآن بناء حقيقي وتدقيق كل ELF على SHA الجديد؛ لا تُنقل نتائج191 إليه.
