@@ -157,3 +157,14 @@ models, hide overflow or relax any existing gate to close these gaps.
 - Native Amiri ActualText preserves logical source metadata. Spatial MuPDF RTL
   copy order is explicitly unverified, not silently counted as parity.
 - All new Dart tests are PENDING at this snapshot; source code is not a PASS.
+
+
+### Actual execution at513938a (not transferable to subsequent fix)
+
+Main40585963097 native-first116/2, analyzer clean, Extended40585962900 success.
+The new4 branch drags,2 external-version export races,2 image-completion races,
+3 independent raw-PDF measuring tests, and1 real OpenType/ActualText PDF test
+passed. BOTH question drags failed with a framework RangeError; no full-suite,
+APK, Visual or C6 execution followed. Stable-ID rebinding in DragTarget.builder
+and phase-specific FlutterErrorDetails assertions are added next; NOT proven yet.
+No activation and no promotion of this partial result into final acceptance.

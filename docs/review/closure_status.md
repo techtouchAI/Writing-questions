@@ -54,3 +54,23 @@ SHA-256 لأصول fbb المرصودة:
 المحلي: Python audit12 PASS، transport9 PASS بما فيه companion completeness؛ YAML وdiff-check PASS. لا Flutter/Dart محليًا؛ اختبارات Dart الجديدة لم تُنفَّذ عند كتابة هذا السجل.
 
 تبقى مصفوفة `closure_editing_inventory.md` المرجع للفجوات: IME كامل/المنصة/كل الحوارات والوسائط/كل عمليات التنسيق/كل الحدود/تكافؤ المرشح.42 invocation أو8 قياسات ليست إثباتًا وظيفيًا كاملًا. إذا بقي فشل/اختلاف مرئي/غياب APK أو تغطية أساسية فالحالة **OPEN** دون تفعيل.
+
+
+## متابعة تشغيل513938a (لا يُنقل إلى الإصلاح التالي)
+
+SHA `513938a93714d527bd85bcd519d33ed5d8f6061d`:
+[Main40585963097](https://github.com/techtouchAI/Writing-questions/actions/runs/40585963097)
+FAILURE، [Extended40585962900](https://github.com/techtouchAI/Writing-questions/actions/runs/40585962900) SUCCESS.
+production-first8/0؛ native-first116/2؛ analyzer نظيف؛ full/APK/Visual/C6 لم تُنفّذ.
+
+كل اختبارات GPOS/ActualText/Quran/P0 الأصلية وسباقي export/image نجحت؛ سحب
+الفروع4 حالات نجح، وسحب السؤال عند320/360 فشل بـRangeError بعد العمليات.
+السجل الكامل native SHA-256:
+`bce7d01e598e5e4ca51d3713966ff0dfb7fc5f418baab250e384d54877a93244`.
+
+المصدر يكشف أن DragTarget.builder يُعاد بناؤه مستقلًا بعد drop/leave ويستعمل
+BranchRef مفهرسًا ملتقطًا قبل تبديل السؤال؛ فالسؤال الجديد في الفهرس0 يحمل
+فرعًا واحدًا بينما المرجع القديم يطلب الفرع1. الإصلاح التالي يحسم المعرف
+الثابت للفرع داخل builder وكل event بدل هذا المرجع الملتقط؛ يغيّر الحارس
+والقراءة فقط، لا التخطيط أو التسامح. أُضيف حفظ FlutterErrorDetails وتوقعات
+بعد drop/undo/redo دون إسكات الأخطاء. **نتيجة الإصلاح PENDING**.

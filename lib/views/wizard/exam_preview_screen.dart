@@ -6369,16 +6369,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     BranchBlock data,
     CanonicalPagePlan? plan,
   ) {
-    final ref = BranchRef(
-      questionIndex: data.questionIndex,
-      branchIndex: data.index,
-    );
-    final branch = controller.document.branchAt(ref);
-    final selected = _isBranchSelected(ref);
-
     // مقبض السحب وحده يبدأ السحب (حتى لا يتعارض مع تحديد النص في الحقول)؛
     // الهدف هو كتلة الفرع كاملة.
-    final dragHandle = _locked
+    Widget buildDragHandle(BranchRef ref) => _locked
             ? Icon(
                 Icons.drag_indicator,
                 size: 16,
@@ -6424,9 +6417,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               );
 
     return DragTarget<BranchRef>(
-      key: ValueKey<String>('branch-target-${branch.id}'),
-      onWillAcceptWithDetails: (details) => !_locked && details.data != ref,
+      key: ValueKey<String>('branch-target-${data.id}'),
+      onWillAcceptWithDetails: (details) {
+        final target = _findBranchRef(controller.document, data.id);
+        return !_locked && target != null && details.data != target;
+      },
       onAcceptWithDetails: (details) {
+        final ref = _findBranchRef(controller.document, data.id);
+        if (ref == null || !controller.document.containsRef(details.data)) return;
         final from = details.data;
         if (from.questionIndex == ref.questionIndex) {
           // داخل السؤال نفسه: نقل وإعادة ترميز (المحتوى كما هو).
@@ -6437,6 +6435,16 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         }
       },
       builder: (context, candidates, _) {
+        // DragTarget can rebuild independently after drop/leave, before the
+        // provider rebuilds its parent. Question reorder changes branch owner
+        // indices immediately; a captured old ref can now address another
+        // question (or an out-of-range branch). Resolve the stable branch ID
+        // against the current model in EVERY builder/event, not only above it.
+        final ref = _findBranchRef(controller.document, data.id);
+        if (ref == null) return const SizedBox.shrink(); // Actually deleted owner.
+        final branch = controller.document.branchAt(ref);
+        final selected = _isBranchSelected(ref);
+        final dragHandle = buildDragHandle(ref);
         final highlighted = candidates.isNotEmpty;
         Widget body = GestureDetector(
           behavior: HitTestBehavior.translucent,

@@ -76,7 +76,9 @@ void main() {
   setUpAll(() {
     Directory(_out).createSync(recursive: true);
     File('$_out/editing-manifest.json').writeAsStringSync(jsonEncode({
-      'files': files, 'results': results, 'manualVisualReview': false,
+      'files': files, 'results': results, 'expectedCases': 6,
+      'completedCases': results.length, 'allCasesPassed': results.length == 6,
+      'manualVisualReview': false,
       'surface': 'production default; candidate OFF',
     }));
   });
@@ -87,6 +89,15 @@ void main() {
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
+        final failures = <FlutterErrorDetails>[];
+        final originalErrorHandler = FlutterError.onError!;
+        FlutterError.onError = (details) {
+          failures.add(details);
+          originalErrorHandler(details);
+        };
+        addTearDown(() => FlutterError.onError = originalErrorHandler);
+        void noFrameworkError(String phase) => expect(tester.takeException(), isNull,
+          reason: '$phase: ${failures.map((details) => details.toString()).join("\n")}');
         final controller = _Observed(document: _document());
         addTearDown(controller.dispose);
         await tester.pumpWidget(RepaintBoundary(key: const ValueKey('reorder-screen'),
@@ -122,6 +133,7 @@ void main() {
         }
         await gesture.up();
         await tester.pumpAndSettle();
+        noFrameworkError('real drop');
         final expected = kind == 'question'
           ? ['QBETA', 'BGAMMA', 'QALPHA', 'BALPHA', 'BBETA']
           : kind == 'branch-within'
@@ -163,8 +175,10 @@ void main() {
         expect(emitted, expected, reason: 'Inspect actual PDF words, not source order alone.');
         await _capture(tester, '$_out/$base-after.png');
         await _history(tester, 'تراجع');
+        noFrameworkError('undo');
         expect(jsonEncode(controller.document.toMap()), original);
         await _history(tester, 'إعادة');
+        noFrameworkError('redo');
         expect(jsonEncode(controller.document.toMap()), changed);
         expect(tester.takeException(), isNull);
         results.add({'widthDp': width, 'kind': kind, 'realLongPressDrag': true,
@@ -173,7 +187,9 @@ void main() {
           'pdfTokens': emitted, 'undoRestoresOriginal': true, 'redoRestoresChanged': true,
           'pdfUsesObservedLivePlan': true, 'pdfCoordinatesVerified': true});
         File('$_out/editing-manifest.json').writeAsStringSync(jsonEncode({
-          'files': files, 'results': results, 'manualVisualReview': false,
+          'files': files, 'results': results, 'expectedCases': 6,
+      'completedCases': results.length, 'allCasesPassed': results.length == 6,
+      'manualVisualReview': false,
           'surface': 'production default; candidate OFF',
         }));
       });
