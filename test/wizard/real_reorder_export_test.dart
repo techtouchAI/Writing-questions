@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:writing_questions_app/layout/canonical/canonical_page_plan.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
@@ -51,7 +52,7 @@ Offset _center(WidgetTester tester, Finder finder) {
 Future<void> _capture(WidgetTester tester, String path) async {
   await tester.runAsync(() async {
     final box = tester.renderObject<RenderRepaintBoundary>(find.byKey(const ValueKey('reorder-screen')));
-    final image = await box.toImage();
+    final image = await box.toImage(pixelRatio: 3);
     try {
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
       File(path).writeAsBytesSync(data!.buffer.asUint8List());
@@ -79,7 +80,8 @@ void main() {
       'files': files, 'results': results, 'expectedCases': 6,
       'completedCases': results.length, 'allCasesPassed': results.length == 6,
       'manualVisualReview': false,
-      'surface': 'production default; candidate OFF',
+      'surface': 'production screen; Arabic app locale; candidate OFF',
+      'capturePixelRatio': 3,
     }));
   });
   for (final width in [320.0, 360.0]) {
@@ -101,7 +103,10 @@ void main() {
         final controller = _Observed(document: _document());
         addTearDown(controller.dispose);
         await tester.pumpWidget(RepaintBoundary(key: const ValueKey('reorder-screen'),
-          child: MaterialApp(home: ChangeNotifierProvider<ExamWizardController>.value(
+          child: MaterialApp(debugShowCheckedModeBanner: false, locale: const Locale('ar'),
+            supportedLocales: const [Locale('ar'), Locale('en')],
+            localizationsDelegates: const [GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate], home: ChangeNotifierProvider<ExamWizardController>.value(
             value: controller, child: ExamPreviewScreen(onBackToQuestions: () {})))));
         for (var i = 0; i < 500 && controller.plan == null; i++) {
           await tester.pump(const Duration(milliseconds: 100));
@@ -161,7 +166,22 @@ void main() {
         File('$_out/$base-after.pdf').writeAsBytesSync(bytes!);
         final emitted = <String>[];
         for (var page = 0; page < PdfContentProbe.pageCountOf(bytes); page++) {
-          final words = PdfContentProbe.fromBytes(bytes, pageIndex: page).words;
+          final probe = PdfContentProbe.fromBytes(bytes, pageIndex: page);
+          final words = probe.words;
+          for (final line in probe.lines.where((line) => line.words.any((word) =>
+              word.text == 'QALPHA' || word.text == 'QBETA'))) {
+            final arabic = line.words.where((word) => const {'نص', 'مختلط'}.contains(word.text) ||
+              const {'نص', 'مختلط'}.contains(String.fromCharCodes(word.text.runes.toList().reversed))).toList()
+              ..sort((a, b) => a.x.compareTo(b.x));
+            expect(arabic, hasLength(2));
+            expect(arabic.first.x + arabic.first.advanceWidth, lessThan(arabic.last.x),
+              reason: 'Actual Arabic word advances in the LTR title may not overlap.');
+            final marks = line.words.where((word) => word.text.startsWith('(')).toList()
+              ..sort((a, b) => a.x.compareTo(b.x));
+            expect(marks, isNotEmpty);
+            expect(arabic.last.x + arabic.last.advanceWidth, lessThan(marks.first.x),
+              reason: 'The Arabic BiDi island must not consume the Latin marks interval.');
+          }
           for (final word in words.where((word) => _tokens.contains(word.text.trim()))) {
             emitted.add(word.text.trim());
             final planned = live.pages[page].blocks.expand((block) => block.allLines)
@@ -190,7 +210,8 @@ void main() {
           'files': files, 'results': results, 'expectedCases': 6,
       'completedCases': results.length, 'allCasesPassed': results.length == 6,
       'manualVisualReview': false,
-          'surface': 'production default; candidate OFF',
+          'surface': 'production screen; Arabic app locale; candidate OFF',
+      'capturePixelRatio': 3,
         }));
       });
     }

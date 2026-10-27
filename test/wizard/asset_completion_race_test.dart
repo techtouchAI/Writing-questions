@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:writing_questions_app/layout/canonical/canonical_layout_preview.dart';
 import 'package:writing_questions_app/layout/canonical/canonical_layout_service.dart';
@@ -54,7 +55,10 @@ void main() {
       addTearDown(controller.dispose);
       final delayed = Completer<CanonicalLayoutPreviewAssets>();
       var started = false;
-      await tester.pumpWidget(MaterialApp(home: ChangeNotifierProvider<ExamWizardController>.value(
+      await tester.pumpWidget(MaterialApp(debugShowCheckedModeBanner: false, locale: const Locale('ar'),
+            supportedLocales: const [Locale('ar'), Locale('en')],
+            localizationsDelegates: const [GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate], home: ChangeNotifierProvider<ExamWizardController>.value(
         value: controller, child: ExamPreviewScreen(onBackToQuestions: () {},
           canonicalLayoutResolver: ({required ExamDocument document, required DocumentIR sourceIr}) =>
             CanonicalLayoutService.resolve(document: document, sourceIr: sourceIr),

@@ -982,36 +982,28 @@ class FlutterTextMetrics implements FontMetricsProvider {
       final match = matches[index];
       final start = baseOffset + match.start;
       final end = baseOffset + match.end;
-      final caret = _caretBoundsDetailed(
-        painter,
-        start,
-        end,
-        fallbackLeft: fragmentLeftPx,
-        fallbackRight: fragmentRightPx,
-      );
-      var left = caret.left;
-      var right = caret.right;
-      if (caret.fellBack) {
-        // صندوق الكلمة نفسه (حدود الحبر) داخل المقطع، بشرط أن يقع داخل حدوده
-        // الأفقيّة وعلى السطر نفسه — وإلا بقي صندوق المقطع كما كان.
-        var boxLeft = double.infinity;
-        var boxRight = double.negativeInfinity;
-        for (final box in painter.getBoxesForSelection(
-          TextSelection(baseOffset: start, extentOffset: end),
-          boxHeightStyle: ui.BoxHeightStyle.strut,
-          boxWidthStyle: ui.BoxWidthStyle.tight,
-        )) {
-          if (box.right < fragmentLeftPx - 1 || box.left > fragmentRightPx + 1) {
-            continue;
-          }
-          if (box.left < boxLeft) boxLeft = box.left;
-          if (box.right > boxRight) boxRight = box.right;
-        }
-        if (boxRight - boxLeft > 0.5) {
-          left = boxLeft;
-          right = boxRight;
-        }
+      // At a BiDi edge, the downstream caret may belong to the NEXT visual
+      // run (e.g. Latin marks after an Arabic island). Use THIS word's native
+      // selection as the disambiguation reference, never the whole fragment.
+      var wordLeft = double.infinity;
+      var wordRight = double.negativeInfinity;
+      for (final box in painter.getBoxesForSelection(
+        TextSelection(baseOffset: start, extentOffset: end),
+        boxHeightStyle: ui.BoxHeightStyle.strut,
+        boxWidthStyle: ui.BoxWidthStyle.tight,
+      )) {
+        if (box.right < fragmentLeftPx - 1 || box.left > fragmentRightPx + 1) continue;
+        if (box.left < wordLeft) wordLeft = box.left;
+        if (box.right > wordRight) wordRight = box.right;
       }
+      final hasWordBox = wordRight > wordLeft;
+      final caret = _caretBoundsDetailed(
+        painter, start, end,
+        fallbackLeft: hasWordBox ? wordLeft : fragmentLeftPx,
+        fallbackRight: hasWordBox ? wordRight : fragmentRightPx,
+      );
+      final left = caret.left;
+      final right = caret.right;
       startsPx[index] = left;
       textPx[index] = right - left;
     }
@@ -1083,16 +1075,28 @@ class FlutterTextMetrics implements FontMetricsProvider {
     if (end <= start) {
       return (left: fallbackLeft, right: fallbackRight, fellBack: true);
     }
-    final startCaret = painter.getOffsetForCaret(
-      TextPosition(offset: start),
-      ui.Rect.zero,
-    );
-    final endCaret = painter.getOffsetForCaret(
-      TextPosition(offset: end),
-      ui.Rect.zero,
-    );
-    final left = startCaret.dx < endCaret.dx ? startCaret.dx : endCaret.dx;
-    final right = startCaret.dx > endCaret.dx ? startCaret.dx : endCaret.dx;
+    var left = fallbackLeft;
+    var right = fallbackRight;
+    var bestDistance = double.infinity;
+    // Both caret affinities are real native geometry. Pick the interval that
+    // matches this source selection, rather than borrowing a neighboring run's
+    // caret at a direction/line boundary. Interior-word behavior is unchanged.
+    final startCarets = [for (final affinity in ui.TextAffinity.values)
+      painter.getOffsetForCaret(TextPosition(offset: start, affinity: affinity), ui.Rect.zero)];
+    final endCarets = [for (final affinity in ui.TextAffinity.values)
+      painter.getOffsetForCaret(TextPosition(offset: end, affinity: affinity), ui.Rect.zero)];
+    for (final startCaret in startCarets) {
+      for (final endCaret in endCarets) {
+        final candidateLeft = startCaret.dx < endCaret.dx ? startCaret.dx : endCaret.dx;
+        final candidateRight = startCaret.dx > endCaret.dx ? startCaret.dx : endCaret.dx;
+        final distance = (candidateLeft - fallbackLeft).abs() + (candidateRight - fallbackRight).abs();
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          left = candidateLeft;
+          right = candidateRight;
+        }
+      }
+    }
     final advance = right - left;
     final selectionWidth = (fallbackRight - fallbackLeft).abs();
     // Neutral punctuation and bidi-boundary carets can straddle unrelated

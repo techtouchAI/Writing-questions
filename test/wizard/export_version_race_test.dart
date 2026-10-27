@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
@@ -30,7 +31,10 @@ void main() {
       addTearDown(controller.dispose);
       final release = Completer<void>();
       var encoded = false;
-      await tester.pumpWidget(MaterialApp(home: ChangeNotifierProvider<ExamWizardController>.value(
+      await tester.pumpWidget(MaterialApp(debugShowCheckedModeBanner: false, locale: const Locale('ar'),
+            supportedLocales: const [Locale('ar'), Locale('en')],
+            localizationsDelegates: const [GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate], home: ChangeNotifierProvider<ExamWizardController>.value(
         value: controller, child: ExamPreviewScreen(onBackToQuestions: () {},
           pdfDocumentBuilder: ({required ExamDocument document, LayoutDocument? layoutDocument}) async {
             // Generate REAL bytes from the exact snapshot provided by the real

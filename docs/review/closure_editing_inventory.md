@@ -168,3 +168,25 @@ passed. BOTH question drags failed with a framework RangeError; no full-suite,
 APK, Visual or C6 execution followed. Stable-ID rebinding in DragTarget.builder
 and phase-specific FlutterErrorDetails assertions are added next; NOT proven yet.
 No activation and no promotion of this partial result into final acceptance.
+
+
+### Broader narrow audits and newly observed visual defect
+
+At8bfcc66, all6 real drags passed; full979/0, analyzer clean, actual31.3MB APK
+built. This DOES NOT close visual parity: opening the earlier original branch
+PDF revealed Arabic words overlapping inside the LTR English title/marks.
+`FlutterTextMetrics._measureWords/_caretBoundsDetailed` and independent native
+selection/PDF non-overlap regressions are changed next; outcome is PENDING.
+
+`preview_button_audit_test.dart` has25 actual pointer/model/dialog cases,
+including all font/size/line-spacing/color presets,6 shape insertions, text
+insertion/guidance, image picker stubs/cancel/replace, resize and persistence.
+Previously its helper defaulted to1600dp. The same original assertions are now
+registered at1600/320/360 defaults; explicit width overrides remain explicit.
+These are stronger than callback invocation, but NOT actual platform image
+picking/IME, every math-template insertion, or all per-tool PDF/color parity.
+The new narrow execution and Arabic-locale/3x drag evidence are PENDING.
+
+No48dp assertion for scaled print drag handles, no full split-long-document
+reorder/media/format export matrix, and no universal candidate parity are
+claimed. All remaining gaps above still prevent CLOSED/candidate activation.

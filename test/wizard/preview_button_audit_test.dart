@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:writing_questions_app/providers/exam_document_provider.dart';
@@ -50,13 +51,22 @@ ExamDocument _document() => ExamDocument(
       ],
     );
 
+// Keep the original desktop cases and execute the same real-pointer/model
+// assertions on narrow viewports. This is NOT PDF/keyboard-platform parity.
+double _auditWidth = 1600;
+
 Future<void> _pump(WidgetTester tester, ExamWizardController controller,
-    {double width = 1600, VoidCallback? onBack, ExamDocumentProvider? library}) async {
-  tester.view.physicalSize = Size(width, 1600);
+    {double? width, VoidCallback? onBack, ExamDocumentProvider? library}) async {
+  final viewportWidth = width ?? _auditWidth;
+  tester.view.physicalSize = Size(viewportWidth, viewportWidth < 400 ? 1000 : 1600);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(MaterialApp(
+    debugShowCheckedModeBanner: false, locale: const Locale('ar'),
+    supportedLocales: const [Locale('ar'), Locale('en')],
+    localizationsDelegates: const [GlobalMaterialLocalizations.delegate,
+      GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
     home: MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: controller),
@@ -89,6 +99,9 @@ void main() {
   // "visible but untappable" controls, rather than calling callbacks directly.
   setUpAll(() => WidgetController.hitTestWarningShouldBeFatal = true);
   tearDownAll(() => WidgetController.hitTestWarningShouldBeFatal = false);
+  for (final width in [1600.0, 320.0, 360.0]) {
+    group('real pointer audit default viewport ${width.toInt()}dp', () {
+      setUp(() => _auditWidth = width);
 
   testWidgets('automatic font, size, spacing and color really clear overrides', (tester) async {
     final controller = ExamWizardController(document: _document());
@@ -689,4 +702,6 @@ void main() {
     expect(find.textContaining('تعذر فتح الصورة'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+    });
+  }
 }

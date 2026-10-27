@@ -70,6 +70,8 @@ class EvidenceTransportTest(unittest.TestCase):
             (root / 'manifest.json').write_text(json.dumps(manifest))
             self.assertEqual({p.name for p in transport.selected(root, 'validation')},
                              set(present + ['manifest.json']))
+            (root / 'apk-native.json').write_text(json.dumps({'deviceLaunchVerified': False}))
+            self.assertIn('apk-native.json', {p.name for p in transport.selected(root, 'validation')})
             manifest['notProduced'].remove('flutter-build.log')
             (root / 'manifest.json').write_text(json.dumps(manifest))
             with self.assertRaisesRegex(ValueError, 'every command'):

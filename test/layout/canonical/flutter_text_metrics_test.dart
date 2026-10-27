@@ -12,6 +12,40 @@ import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 
 void main() {
+  testWidgets('LTR title Arabic island words keep their native intervals before Latin marks', (_) async {
+    await FlutterTextMetrics.ensureFontsLoaded();
+    const source = 'QALPHA نص مختلط (5 marks)';
+    for (final width in [220.0, 250.0]) {
+      const style = LayoutTextStyle(font: PaperFont.naskh, fontSizePt: 12,
+        lineHeightFactor: 1.2, bold: true);
+      final paragraph = const FlutterTextMetrics().layoutParagraph(spans: const [
+        MetricSpan(semanticNodeId: 'reorder-title', semanticNode: null, text: source,
+          contentKind: LayoutContentKind.text, semanticRole: LayoutSemanticRole.text,
+          style: style, direction: DocumentDirection.ltr, logicalIndex: 0),
+      ], width: width, direction: DocumentDirection.ltr, alignment: null, resolveJustification: false);
+      final native = TextPainter(text: TextSpan(text: source, style: TextStyle(
+        fontFamily: PaperFont.naskh.family, fontWeight: FontWeight.bold,
+        fontSize: LayoutUnits.ptToPx(12), height: 1.2)), textDirection: TextDirection.ltr,
+        textScaler: TextScaler.noScaling)..layout(minWidth: LayoutUnits.ptToPx(width), maxWidth: LayoutUnits.ptToPx(width));
+      try {
+        final words = paragraph.lines.expand((line) => line.fragments)
+          .expand((fragment) => fragment.words).toList();
+        final intervals = <({double x, double right})>[];
+        for (final text in ['نص', 'مختلط']) {
+          final start = source.indexOf(text);
+          final reference = native.getBoxesForSelection(TextSelection(baseOffset: start, extentOffset: start + text.length),
+            boxHeightStyle: ui.BoxHeightStyle.strut, boxWidthStyle: ui.BoxWidthStyle.tight).single;
+          final actual = words.singleWhere((word) => word.text == text);
+          expect(actual.x, closeTo(LayoutUnits.pxToPt(reference.left), 1e-6), reason: text);
+          expect(actual.textAdvance, closeTo(LayoutUnits.pxToPt(reference.right - reference.left), 1e-6), reason: text);
+          intervals.add((x: actual.x, right: actual.x + actual.textAdvance));
+        }
+        intervals.sort((a, b) => a.x.compareTo(b.x));
+        expect(intervals.first.right, lessThan(intervals.last.x));
+      } finally { native.dispose(); }
+    }
+  });
+
   testWidgets('rounded-up and rounded-down native flow bands neither overlap nor grow the paragraph', (_) async {
     await FlutterTextMetrics.ensureFontsLoaded();
     const metrics = FlutterTextMetrics();

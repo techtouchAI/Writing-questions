@@ -128,6 +128,7 @@ jobs:
             test/pdf_engine/paginated_quranic_font_test.dart \
             test/export_gate/p0_export_gate_test.dart \
             test/wizard/real_reorder_export_test.dart \
+            test/wizard/preview_button_audit_test.dart \
             test/wizard/export_version_race_test.dart \
             test/wizard/asset_completion_race_test.dart \
             test/wizard/canonical_editing_layer_test.dart \
@@ -646,6 +647,19 @@ jobs:
           set -o pipefail
           flutter build apk --release 2>&1 | tee "$RUNNER_TEMP/flutter-build.log"
 
+      - name: Verify packaged OpenType runtime and pinned face for every APK ABI
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          python3 -m unittest discover -s tool -p test_audit_apk_native.py
+          python3 tool/audit_apk_native.py --apk build/app/outputs/flutter-apk/app-release.apk \
+            --font assets/fonts/Amiri-Regular.ttf --output "$RUNNER_TEMP/apk-native.json"
+          python3 - <<'PYAPK'
+          import json, os
+          from pathlib import Path
+          report = json.loads((Path(os.environ['RUNNER_TEMP']) / 'apk-native.json').read_text())
+          print('::notice title=APK native package audit::' + json.dumps(report, separators=(',', ':')))
+          PYAPK
+
       # تعذّر فشل بناء APK لا يُظهره محلّل Dart ولا الاختبارات (Kotlin/Gradle)،
       # فننشر أخطاء البناء نفسها كتعليقات على التشغيل.
       - name: Publish build diagnostics
@@ -678,6 +692,7 @@ jobs:
             ${{ runner.temp }}/flutter-test.log
             ${{ runner.temp }}/flutter-test-canonical-gate.log
             ${{ runner.temp }}/flutter-build.log
+            ${{ runner.temp }}/apk-native.json
             ${{ runner.temp }}/test-digest/*
             ${{ runner.temp }}/test-digest-gate/*
           if-no-files-found: ignore
