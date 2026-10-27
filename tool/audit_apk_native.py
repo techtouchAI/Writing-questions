@@ -83,7 +83,21 @@ if __name__ == '__main__':
     parser.add_argument('--font', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    report = audit(args.apk, args.font)
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        report = dict(audit(args.apk, args.font), auditPassed=True)
+    except Exception as error:
+        # A rejected APK is evidence too. Keep the gate failing, but preserve
+        # the exact causal error and package identity through the same audited
+        # transport instead of relying on inaccessible signed runner-log URLs.
+        report = dict(sourceSha=os.environ.get('GITHUB_SHA'),
+            sourceRun=os.environ.get('GITHUB_RUN_ID'), auditPassed=False,
+            errorType=type(error).__name__, error=str(error),
+            deviceLaunchVerified=False,
+            apkSha256=hashlib.sha256(args.apk.read_bytes()).hexdigest() if args.apk.is_file() else None)
+        args.output.write_text(json.dumps(report, indent=2))
+        message = str(error).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+        print('::error title=APK native package audit failure::' + message, flush=True)
+        raise
     args.output.write_text(json.dumps(report, indent=2))
     print(json.dumps(report, separators=(',', ':')))

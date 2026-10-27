@@ -166,3 +166,14 @@ production8/0؛ native209/0/0 في19suite؛ full1035/1/0 في111suite؛ canonica
 السجل الكامل full: `b5d1de51b1086657aa4f2c455e8a6e78171abe0d1dc3ae37b8559ea5f973f0c2`؛ native: `8ffbcb751c30418acc4cb7f571a976c38f38084fe3ad131284789e8238e3ebb7`.
 
 أول سبب فعلي للفشل الوحيد ليس StateError اللاحق: Scenario4/5/11 في`compound_equation_pipeline_test.dart` نقر حقل`x+1` عندx807.4 خارج الحوار ذي الحد الأيمن760، فأغلق modal barrier المحرر. بعد ذلك لم يوجد زر الحذف. بعد إتاحة تمرير المعادلة أفقيًا يجب أولًا إظهار الحقل المطلوب، كما يفعل المستخدم. أضيف `ensureVisible + real tap` للحقلين الأوسطين فقط، مع إبقاء المصدر الأصلي وتوقعات التركيز/الحذف/undo/redo/المقطع النهائي كاملة. أصبحت تحذيرات hit-test قاتلة في هذا الملف بدل السماح بإغلاقات صامتة. أضيف الملف كاملًا إلى native-first. الاختبارات4 الجديدة للتمرير/تحرير الذيل/التاريخ/inline/display وجميع75pointer cases نجحت فيb795، لا تُنقل نتيجتها إلى SHA التالي؛ التشغيل التالي PENDING.
+
+## متابعة07cd63f: full أخضر وAPK مبني، لكن package audit فشل ولم يُخفَ
+
+SHA `07cd63f0b42eb17dcd360abbd818b52359e26855`؛
+[Main40595329771](https://github.com/techtouchAI/Writing-questions/actions/runs/40595329771) FAILURE؛
+[Extended40595329723](https://github.com/techtouchAI/Writing-questions/actions/runs/40595329723) SUCCESS.
+production8/0؛ native219/0/0 في20suite؛ full1038/0/0 في111suite؛ canonical3/0؛ analyzer نظيف؛ Visual/C6/transports SUCCESS.
+**APK مبني فعليًا31.3MB في221.8s**، لكن خطوة`Verify packaged OpenType runtime and pinned face for every APK ABI` فشلت. لا يُعَد نجاح البناء قبولًا للتغليف.
+سجل البناء المتحقق `090e7f1a8929bd5e602d1cbaadb7429b4e23688b8325cc6c4c8382138724fe9e`؛ full`ee641e7e60dba2873419b2ab7c245db3529fdf632a97d1ac09df1ffef7262abb`.
+
+أرشيف job الكامل ورابط job الفردي يعيدان EOF من signed hosts، بينما7سجلات أوامر أصلية نُقلت بنجاح. لا يحتوي تقرير الفشل سوى exit1، و`apk-native.json` لم يكن يُكتب عند exception. لا نغيّر ABI filters أو نحذف شرطًا تخمينًا. أضيف حفظ JSON للفشل مع السبب الفعلي/hash الـAPK و`auditPassed:false` وإعادة رمي الاستثناء، وإشعار error؛ اختبار CLI جديد يثبت بقاء exit غير صفري وعدم قبول APK تالف. فحص ZIP/ABI/ELF/الصادرات/الخط الأصلي **لم يتغير أو يُضعّف**. الغاية من التشغيل التالي إتاحة التشخيص الفعلي ثم إصلاح السبب؛ جميع بوابات SHA التالي لازمة، والحالةOPEN.

@@ -1,6 +1,9 @@
 """Synthetic packaging tests; only the workflow's real APK is production proof."""
 from pathlib import Path
 import struct
+import json
+import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -37,6 +40,24 @@ def elf(abi, *, symbols=EXPORTS, defined=1, visibility=0):
 
 
 class ApkAuditTest(unittest.TestCase):
+    def test_cli_preserves_failed_apk_identity_without_accepting_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            apk, font, report = root / 'broken.apk', root / 'font.ttf', root / 'audit.json'
+            apk.write_bytes(b'not a valid APK')
+            font.write_bytes(b'font')
+            result = subprocess.run([sys.executable, str(Path(__file__).with_name('audit_apk_native.py')),
+                '--apk', str(apk), '--font', str(font), '--output', str(report)],
+                capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            evidence = json.loads(report.read_text())
+            self.assertFalse(evidence['auditPassed'])
+            self.assertFalse(evidence['deviceLaunchVerified'])
+            self.assertEqual(evidence['errorType'], 'BadZipFile')
+            self.assertEqual(evidence['error'], 'File is not a zip file')
+            self.assertEqual(len(evidence['apkSha256']), 64)
+            self.assertIn('APK native package audit failure', result.stdout)
+
     def test_all_expected_abi_dynamic_exports(self):
         for abi in ABIS:
             self.assertEqual(set(library_info(elf(abi), abi)['requiredExports']), EXPORTS)
