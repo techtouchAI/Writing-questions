@@ -26,9 +26,19 @@ Future<void> openPreviewSpecialty(WidgetTester tester, String tab) async {
   await tester.pumpAndSettle();
 }
 
-Future<void> tapPreviewMedia(WidgetTester tester, String label) async {
-  await openPreviewSpecialty(tester, 'وسائط');
-  final list = find.byKey(const ValueKey<String>('smart-media-commands'));
+/// Scrolls the active lazy command list before resolving and tapping its child.
+/// ensureVisible alone cannot materialize an unbuilt ListView child at 320dp.
+Future<void> tapPreviewCommand(WidgetTester tester, String tab, String label) async {
+  await openPreviewSpecialty(tester, tab);
+  final listKey = switch (tab) {
+    'نص' => 'smart-text-commands',
+    'وسائط' => 'smart-media-commands',
+    'رياضيات' => 'smart-formula-commands-كسر',
+    'كيمياء' => 'smart-formula-commands-ماء',
+    'فيزياء' => 'smart-formula-commands-قوانين نيوتن',
+    _ => throw ArgumentError.value(tab, 'tab'),
+  };
+  final list = find.byKey(ValueKey<String>(listKey));
   final element = find.descendant(of: list, matching: find.byType(Scrollable))
       .first.evaluate().single;
   final scrollable = find.byElementPredicate((candidate) => identical(candidate, element));
@@ -37,8 +47,12 @@ Future<void> tapPreviewMedia(WidgetTester tester, String label) async {
   final command = find.descendant(of: list, matching: find.text(label));
   await tester.scrollUntilVisible(command, 120, scrollable: scrollable);
   await tester.pumpAndSettle();
+  expect(command, findsOneWidget);
   await tester.ensureVisible(command);
   await tester.pumpAndSettle();
   await tester.tap(command);
   await tester.pumpAndSettle();
 }
+
+Future<void> tapPreviewMedia(WidgetTester tester, String label) =>
+    tapPreviewCommand(tester, 'وسائط', label);

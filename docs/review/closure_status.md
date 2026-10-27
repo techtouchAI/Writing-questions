@@ -122,3 +122,26 @@ APK الجديد، وليست بوابات SHA التالي. **OPEN** رغم ه�
 وفُتح raster صفحة0؛ اختلاف الترويسة BEFORE ظاهر. PNG المعاينة80/fbb/8bf
 نفسها بايتًا `3aa58a80a196f248449a7848ff96abccea654f2c40a248010d93142a14b3695a`،
 فلا يُفسَّر فرق PDF باختلاف إعدادات عينة المعاينة.
+
+## متابعة5eb88fd: فشل narrow audit وتشخيصه، لا قبول نهائي
+
+SHA `5eb88fdcc99c9bb63efaf5dcd407ee2ee68251ae`؛
+[Main40590392389](https://github.com/techtouchAI/Writing-questions/actions/runs/40590392389)
+FAILURE؛ [Extended40590392484](https://github.com/techtouchAI/Writing-questions/actions/runs/40590392484)
+SUCCESS. production8/0، native185/12/0 في18suite، analyzer نظيف17.3s.
+full/APK/Visual/C6 **SKIPPED وليس نجاحًا**. نُقلت4سجلات و80أصلًا كاملة وتحقق SHA-256.
+السجل native: `cfae66157efe52cfc1aa5d6f8364840d666a28fd47163440b91ee4b0ef53e8fd`.
+
+الأخطاء12 هي6حالات بكل عرض320/360:
+- أربع حالات بحثت عن أوامر lazy ListView قبل بنائها. `ensureVisible` لا يبني child غير موجود؛ يلزم تمرير قائمة التبويب الحقيقية أولًا. أضيف helper للتنقّل/التمرير/النقر الفعلي، لا استدعاء callbacks ولا حذف توقعات النموذج/الحوار.
+- حوار الإعدادات: Dropdown numerals وquestion label تجاوزا العرض بـ106px عند320. التعديل يقيّد العرض المتاح ويتيح item height طبيعيًا مع زر48dp، دون تصغير خط/حذف محتوى/إخفاء overflow. يُطبّق على font dropdown أيضًا.
+- مقبض تغيير الحجم: يتنافس PanRecognizer مع تمرير الصفحة، فيفوز التمرير عند الزوم الصغير. إضافة إلى ذلك delta المحلي للورقة لا يجوز قسمته على zoom ثانيةً. التعديل يستخدم pointer screen-space مباشرًا مع EagerRecognizer مثل سحب جسم العنصر، يحتفظ بحالة المؤشر عبر إعادة البناء، ويبقي tap/cancel والتدوير والتحرير والحذف. أُبقيت توقعات النمو الأصلية وأضيفت هندسة `36/zoom` و`24/zoom` (1e-4 للتجميع العددي فقط). تنفيذ التعديلات الجديدة **PENDING**.
+
+اجتازت5eb اختبارات حدود الكلمات المختلطة الستة في PDF واختبار TextPainter المستقل.
+فُتح بالفعل PDF بعد السحب وصورة PNG الأصلية3× عند320:
+- PDF `drag-320-branch-between-after.pdf`: `885399667b385a644c06dbdd06e9bb58d771d06467952e40d7b684c22c7f6adc`.
+- PNG `drag-320-branch-between-after.png`: `633ee921431a1a74bc93e1e9f19c312f326dd7802852202ccf1e213db7de3d01`.
+**تداخل كلمتي العربية مع الدرجة في PDF لم يعد ظاهرًا في هذه العينة**.
+لكن الفتح أثبت اختلافًا آخر فعليًا: native legacy يضع الدرجة على الحافة اليمنى، وPDF يضعها inline بعد المنطوق؛ native يحمل مقابض السحب داخل مساحة النص أيضًا. هذا ليس تكافؤًا كاملًا ولا تعالجه نتيجة عدم التداخل.
+المصدر legacy `_titleRow` (handle + Expanded statement + marks) لا يطابق تركيب عنوان الخطة المشتركة. لا masking في PDF ولا تفعيل المرشح لإخفاء هذا العيب؛ يلزم إكمال طبقة Option A المنفصلة وإثبات أدواتها على نفس الوثيقة قبل القبول. Chrome في widget-test يستخدم fallback/Ahem في بعض أزراره؛ PNG ليست دليل تشغيل Android.
+الحالة **OPEN / candidate OFF**، ولا نتائج SHA قديم تُنقل إلى التعديلات التالية.

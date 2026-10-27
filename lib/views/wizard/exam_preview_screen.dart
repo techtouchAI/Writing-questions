@@ -427,6 +427,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// هل تحرّك الإصبع فعليًّا في السحب الجاري؟ (للتفريق بين السحب والنقر).
   bool _dragMoved = false;
 
+  // Resize grips, like the body drag, must win before the enclosing page's
+  // scroll recognizer. Keep pointer state across document-triggered rebuilds.
+  int? _handlePointer;
+  Key? _handleKey;
+  Offset? _handleStart;
+  Offset? _handleLast;
+  bool _handleMoved = false;
+
   /// آخر نقر على أي عنصر عائم (معرّفه ووقته) — لكشف النقر المزدوج على
   /// مربع النص يدويًّا: الفوز الفوري بساحة الإيماءات في مسار السحب يمنع
   /// وصول النقرة إلى [GestureDetector].
@@ -3153,6 +3161,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   ),
                 ),
                 DropdownButtonFormField<PaperNumerals>(
+                  isExpanded: true,
+                  isDense: false,
+                  itemHeight: null,
                   value: settings.numerals,
                   decoration: const InputDecoration(
                     labelText: 'نسق الأرقام',
@@ -3175,6 +3186,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<QuestionLabelStyle>(
+                  isExpanded: true,
+                  isDense: false,
+                  itemHeight: null,
                   value: settings.questionLabelStyle,
                   decoration: const InputDecoration(
                     labelText: 'نمط تسمية الأسئلة',
@@ -3202,6 +3216,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<PaperFont>(
+                  isExpanded: true,
+                  isDense: false,
+                  itemHeight: null,
                   value: settings.defaultFont,
                   decoration: const InputDecoration(
                     labelText: 'الخط الافتراضي للورقة',
@@ -7263,26 +7280,77 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     required VoidCallback onTap,
     ValueChanged<DragUpdateDetails>? onPanUpdate,
   }) {
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        key: key,
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        onPanUpdate: onPanUpdate,
-        child: SizedBox(
-          width: 40,
-          height: 40,
-          child: Center(
-            child: CircleAvatar(
-              radius: 10,
-              backgroundColor: color,
-              child: Icon(icon, size: 12, color: Colors.white),
-            ),
-          ),
+    final content = SizedBox(
+      width: 40,
+      height: 40,
+      child: Center(
+        child: CircleAvatar(
+          radius: 10,
+          backgroundColor: color,
+          child: Icon(icon, size: 12, color: Colors.white),
         ),
       ),
     );
+    return Tooltip(
+      message: tooltip,
+      child: onPanUpdate == null
+          ? GestureDetector(
+              key: key,
+              behavior: HitTestBehavior.opaque,
+              onTap: onTap,
+              child: content,
+            )
+          : RawGestureDetector(
+              key: key,
+              behavior: HitTestBehavior.opaque,
+              gestures: <Type, GestureRecognizerFactory>{
+                EagerGestureRecognizer: GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
+                  () => EagerGestureRecognizer(),
+                  (EagerGestureRecognizer instance) {},
+                ),
+              },
+              child: Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: (event) {
+                  if (_handlePointer != null) return;
+                  _handlePointer = event.pointer;
+                  _handleKey = key;
+                  _handleStart = event.position;
+                  _handleLast = event.position;
+                  _handleMoved = false;
+                },
+                onPointerMove: (event) {
+                  if (_handlePointer != event.pointer || _handleKey != key) return;
+                  if (!_handleMoved && (event.position - _handleStart!).distance <= kTouchSlop) return;
+                  _handleMoved = true;
+                  // position is global screen space. GestureDetector.delta is
+                  // already local to the scaled paper and would be divided by
+                  // zoom a second time in _resizeAttachmentByDrag.
+                  final delta = event.position - _handleLast!;
+                  _handleLast = event.position;
+                  onPanUpdate(DragUpdateDetails(delta: delta, globalPosition: event.position));
+                },
+                onPointerUp: (event) {
+                  if (_handlePointer != event.pointer || _handleKey != key) return;
+                  final tapped = !_handleMoved;
+                  _clearHandlePointer();
+                  if (tapped) onTap();
+                },
+                onPointerCancel: (event) {
+                  if (_handlePointer == event.pointer && _handleKey == key) _clearHandlePointer();
+                },
+                child: content,
+              ),
+            ),
+    );
+  }
+
+  void _clearHandlePointer() {
+    _handlePointer = null;
+    _handleKey = null;
+    _handleStart = null;
+    _handleLast = null;
+    _handleMoved = false;
   }
 
   void _scaleAttachment(

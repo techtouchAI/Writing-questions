@@ -190,3 +190,21 @@ The new narrow execution and Arabic-locale/3x drag evidence are PENDING.
 No48dp assertion for scaled print drag handles, no full split-long-document
 reorder/media/format export matrix, and no universal candidate parity are
 claimed. All remaining gaps above still prevent CLOSED/candidate activation.
+
+### 5eb narrow execution / next patch
+
+Main40590392389 (SHA5eb88fd…) ran all75 existing pointer-audit cases at
+1600/320/360 defaults without excluding any original assertion. Native gate185
+passed/12failed, all12 in the narrow audit (six at each narrow width). Four per
+width require actual scrolling of lazy specialty command lists before lookup;
+settings dropdown horizontal overflow and resize scroll-arena failure are real
+production defects. Desktop25 remained green. Helpers now scroll the proper tab
+list before real taps; settings/resize production repairs and stricter absolute
+screen-to-paper resize checks await the next SHA's CI. No callback shortcut.
+
+Opened same-document5eb320 actual drag PNG3× and PDF: Arabic-word overlap in PDF
+is repaired in this sample; **legacy native/PDF marks alignment is visibly NOT
+parity** (edge vs inline). Legacy drag chrome still consumes print-row width.
+Canonical candidate remains OFF; completing its anchored edit/drag equivalents
+and full long-split/all-tools matrix is still required. Green targeted layout
+checks cannot close that visual discrepancy or establish device rendering/IME.

@@ -357,13 +357,13 @@ void main() {
   testWidgets('text insertion without a field gives guidance instead of silence', (tester) async {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
-    await _tap(tester, find.text('سطر جديد'));
+    await tapPreviewCommand(tester, 'نص', 'سطر جديد');
     expect(find.text('انقر داخل حقل نصي على الورقة أولاً.'), findsOneWidget);
     await _tap(tester, _field('branch-statement-b1'));
-    await _tap(tester, find.text('ملاحظة للمعلم'));
+    await tapPreviewCommand(tester, 'نص', 'ملاحظة للمعلم');
     expect(controller.questions.first.branches.single.content.statement, contains('ملاحظة: '));
     await _tap(tester, find.byTooltip('حذف الفرع'));
-    await _tap(tester, find.text('سطر جديد'));
+    await tapPreviewCommand(tester, 'نص', 'سطر جديد');
     expect(tester.takeException(), isNull);
   });
 
@@ -419,7 +419,7 @@ void main() {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
     await _tap(tester, _field('statement-q1'));
-    await _tap(tester, find.text('فرع جديد'));
+    await tapPreviewCommand(tester, 'نص', 'فرع جديد');
     expect(controller.questions.first.branches, hasLength(2));
     expect(controller.questions[1].branches, isEmpty);
     // أدوات الفرع صارت في شريط خارج الورقة وتعمل على فرع **محدَّد** (§19.15)؛
@@ -449,7 +449,7 @@ void main() {
     await _tap(tester, find.byTooltip('حذف السؤال').first);
     await _tap(tester, find.text('حذف'));
     expect(controller.questions, hasLength(2));
-    await _tap(tester, find.text('سؤال جديد'));
+    await tapPreviewCommand(tester, 'نص', 'سؤال جديد');
     expect(controller.questions, hasLength(3));
     expect(tester.takeException(), isNull);
   });
@@ -521,10 +521,12 @@ void main() {
     await _pump(tester, controller);
     final original = controller.document.settings.pageBorder;
     await _tap(tester, find.byTooltip('إعدادات الورقة'));
+    expect(tester.takeException(), isNull);
     await _tap(tester, find.text('إطار حول الصفحة'));
     await _tap(tester, find.text('إلغاء'));
     expect(controller.document.settings.pageBorder, original);
     await _tap(tester, find.byTooltip('إعدادات الورقة'));
+    expect(tester.takeException(), isNull);
     await _tap(tester, find.text('إطار حول الصفحة'));
     await _tap(tester, find.text('تطبيق'));
     expect(controller.document.settings.pageBorder, !original);
@@ -556,9 +558,9 @@ void main() {
       'كيمياء': ['ماء', 'ثاني أكسيد الكربون', 'حمض الكبريتيك', 'الأمونيا', 'سهم تفاعل', 'تفاعل عكوس', 'معادلة أيونية'],
       'فيزياء': ['قوانين نيوتن', 'نسبية', 'قانون أوم', 'الشغل', 'سرعة', 'متغير'],
     }.entries) {
-      await _tap(tester, find.text(tab.key));
+      await openPreviewSpecialty(tester, tab.key);
       for (final label in tab.value) {
-        await _tap(tester, find.text(label).last);
+        await tapPreviewCommand(tester, tab.key, label);
         expect(find.byType(Dialog), findsOneWidget);
         await _tap(tester, find.text('إلغاء'));
       }
@@ -605,11 +607,16 @@ void main() {
     final handle = find.byKey(const ValueKey('resize-element-resize'));
     await tester.ensureVisible(handle);
     // Arabic page: dx is measured from the right, so drag the resize handle left to widen.
+    final zoom = tester.widget<PreviewToolbar>(find.byType(PreviewToolbar)).zoom;
     await tester.drag(handle, const Offset(-36, 24));
     await tester.pumpAndSettle();
     final element = controller.questions.first.attachments.single;
     expect(element.width, greaterThan(100));
     expect(element.height, greaterThan(80));
+    // Global screen deltas must be converted to paper units exactly once;
+    // retain the original growth checks and also reject double zoom scaling.
+    expect(element.width, closeTo(100 + 36 / zoom, 1e-4));
+    expect(element.height, closeTo(80 + 24 / zoom, 1e-4));
     expect(tester.takeException(), isNull);
   });
 
@@ -651,10 +658,9 @@ void main() {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
     await _tap(tester, _field('branch-statement-b1'));
-    await _tap(tester, find.text('آية قرآنية'));
+    await tapPreviewCommand(tester, 'نص', 'آية قرآنية');
     expect(controller.questions.first.branches.single.content.statement, contains('﴿'));
-    await _tap(tester, find.text('رياضيات'));
-    await _tap(tester, find.text('كسر'));
+    await tapPreviewCommand(tester, 'رياضيات', 'كسر');
     await _tap(tester, find.text('إدراج'));
     expect(find.byTooltip('إلغاء الإدراج'), findsOneWidget);
     await _tap(tester, find.byTooltip('إلغاء الإدراج'));
