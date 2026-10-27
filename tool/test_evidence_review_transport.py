@@ -12,6 +12,32 @@ import evidence_review_transport as transport
 
 
 class EvidenceTransportTest(unittest.TestCase):
+    def test_validation_logs_distinguish_not_produced_from_success(self):
+        names = {'production-first.log', 'native-editor-first.log', 'flutter-test.log',
+                 'flutter-test-canonical-gate.log', 'flutter-analyze.log', 'flutter-build.log'}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            present = ['production-first.log', 'flutter-analyze.log']
+            for name in present:
+                (root / name).write_text('complete command output')
+            manifest = dict(files=present, notProduced=sorted(names - set(present)))
+            (root / 'manifest.json').write_text(json.dumps(manifest))
+            self.assertEqual({p.name for p in transport.selected(root, 'validation')},
+                             set(present + ['manifest.json']))
+            manifest['notProduced'].remove('flutter-build.log')
+            (root / 'manifest.json').write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ValueError, 'every command'):
+                list(transport.selected(root, 'validation'))
+
+    def test_validation_manifest_cannot_claim_a_missing_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'manifest.json').write_text(json.dumps(dict(files=['production-first.log'],
+                notProduced=['native-editor-first.log', 'flutter-test.log',
+                    'flutter-test-canonical-gate.log', 'flutter-analyze.log', 'flutter-build.log'])))
+            with self.assertRaisesRegex(ValueError, 'Missing/unsafe'):
+                list(transport.selected(root, 'validation'))
+
     def test_annotation_packing_stays_below_job_and_step_limits(self):
         rows = [{'file': f'evidence-{i}.png', 'inventoryCount': 80} for i in range(80)]
         with tempfile.TemporaryDirectory() as directory:

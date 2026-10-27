@@ -2,7 +2,7 @@
 
 Azure artifact redirects are inaccessible from the review sandbox. Unattached
 blobs provide a GitHub-hosted route without a commit, tree, ref, branch, release,
-or tracked binary. Only synthetic regression PNG/PDF/manifest files qualify.
+or tracked binary. Only synthetic regression evidence and allowlisted validation command logs qualify.
 Small Checks annotations carry references/checksums, NEVER binary payloads.
 """
 import argparse
@@ -22,6 +22,20 @@ def api(path, payload=None):
 
 
 def selected(root, profile='production'):
+    if profile == 'validation':
+        manifest = json.loads((root / 'manifest.json').read_text())
+        required = {'production-first.log', 'native-editor-first.log', 'flutter-test.log',
+                    'flutter-test-canonical-gate.log', 'flutter-analyze.log', 'flutter-build.log'}
+        present, absent = manifest['files'], manifest['notProduced']
+        if (len(present) != len(set(present)) or len(absent) != len(set(absent)) or
+                set(present) & set(absent) or set(present) | set(absent) != required):
+            raise ValueError('Validation logs must account for every command, including unexecuted ones')
+        for name in sorted(set(present) | {'manifest.json'}):
+            path = root / name
+            if not path.is_file() or path.is_symlink():
+                raise ValueError(f'Missing/unsafe evidence: {name}')
+            yield path
+        return
     if profile == 'visual':
         manifest = json.loads((root / 'manifest.json').read_text())
         count = manifest['pageCount']
@@ -158,7 +172,7 @@ def fetch(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest='command', required=True)
-    p = sub.add_parser('publish'); p.add_argument('--root', type=Path, required=True); p.add_argument('--index', type=Path, required=True); p.add_argument('--profile', choices=['production', 'visual'], default='production')
+    p = sub.add_parser('publish'); p.add_argument('--root', type=Path, required=True); p.add_argument('--index', type=Path, required=True); p.add_argument('--profile', choices=['production', 'visual', 'validation'], default='production')
     p = sub.add_parser('emit'); p.add_argument('--index', type=Path, required=True); p.add_argument('--group', type=int, required=True)
     p = sub.add_parser('fetch'); p.add_argument('--run', required=True); p.add_argument('--repository', default='techtouchAI/Writing-questions'); p.add_argument('--destination', type=Path, required=True); p.add_argument('--job-name', default='Original evidence review transport')
     args = parser.parse_args()

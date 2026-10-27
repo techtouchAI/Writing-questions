@@ -625,21 +625,6 @@ jobs:
             publish_one "$(cat "$RUNNER_TEMP/test-digest-gate/slowest.txt")" 'Slowest canonical-gate tests'
           fi
 
-      - name: Upload validation diagnostics on failure
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: flutter-validation-diagnostics
-          path: |
-            ${{ runner.temp }}/flutter-analyze.log
-            ${{ runner.temp }}/flutter-test.log
-            ${{ runner.temp }}/flutter-test-canonical-gate.log
-            ${{ runner.temp }}/flutter-build.log
-            ${{ runner.temp }}/test-digest/*
-            ${{ runner.temp }}/test-digest-gate/*
-          if-no-files-found: ignore
-          retention-days: 7
-
       - name: Build release APK
         id: build
         # Targeted runs (dispatch with test_path) iterate on tests only.
@@ -669,6 +654,23 @@ jobs:
           publish_excerpt 'Flutter/Gradle build errors' "$errors"
           publish_excerpt 'Flutter/Gradle build log tail' "$(tail -n 80 "$file")"
 
+      - name: Upload complete validation command diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: flutter-validation-diagnostics
+          path: |
+            ${{ runner.temp }}/production-first.log
+            ${{ runner.temp }}/native-editor-first.log
+            ${{ runner.temp }}/flutter-analyze.log
+            ${{ runner.temp }}/flutter-test.log
+            ${{ runner.temp }}/flutter-test-canonical-gate.log
+            ${{ runner.temp }}/flutter-build.log
+            ${{ runner.temp }}/test-digest/*
+            ${{ runner.temp }}/test-digest-gate/*
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Upload APK artifact
         if: ${{ inputs.test_path == '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -683,6 +685,44 @@ jobs:
   # بمحرّكات أخرى ويقارن كل صفحة بالمعاينة عبر RMSE فعلي (انظر
   # tool/verify_visual_parity.sh). فشل أي مسار هو فشل CI.
   # --------------------------------------------------------------------------
+  validation-log-review:
+    name: Full validation command log transport
+    needs: build
+    if: ${{ always() && github.event_name == 'push' && needs.build.result != 'cancelled' && contains(github.event.head_commit.message, '[review-evidence]') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out log transport
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Download complete command logs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: flutter-validation-diagnostics
+          path: ${{ runner.temp }}/command-logs
+      - name: Declare produced and unexecuted command logs
+        shell: bash
+        run: |
+          python3 - <<'PYLOG'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']) / 'command-logs'
+          names = ['production-first.log', 'native-editor-first.log', 'flutter-test.log',
+                   'flutter-test-canonical-gate.log', 'flutter-analyze.log', 'flutter-build.log']
+          (root / 'manifest.json').write_text(json.dumps({
+              'kind': 'Complete Flutter command output, not the GitHub setup/job archive',
+              'files': [n for n in names if (root / n).is_file()],
+              'notProduced': [n for n in names if not (root / n).is_file()],
+          }, indent=2))
+          PYLOG
+      - name: Publish complete hashed logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 tool/evidence_review_transport.py publish --profile validation --root "$RUNNER_TEMP/command-logs" --index "$RUNNER_TEMP/log-index.json"
+          python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/log-index.json" --group 0
+
   evidence-review:
     name: Original evidence review transport
     needs: build

@@ -88,3 +88,21 @@ native text-style math and native centered fitted box, leaving original
 snapshot font size/raster unchanged. Added actual-native-versus-plan geometry
 regressions at320/360 (1e-6), including denominator containment. No gate
 threshold or clip is altered. Arabic header shaping remains a separate defect.
+
+## Follow-up `04704ef` / run40463115820
+
+R1/R4 **8/0**, native **59/2**: the two NEW floating-fit regressions failed
+before full validation (actual left61.50269 vs planned63.5750px); original
+math/tail/source cases passed. The new harness incorrectly put its visible
+formula directly under MaterialApp, inheriting WidgetsApp's bold debug style
+(the previously established156px-vs140px problem), unlike production Scaffold.
+Move only the test into the actual Scaffold context and explicitly assert
+normal inherited weight; do not change production typography or precision.
+Full/options/analyze/APK/Visual validation is not inferred from this red run.
+
+Complete Flutter command logs will additionally be uploaded on both success
+and failure, AFTER the build step. A separate allowlisted hash-checked transport
+accounts explicitly for all six commands, marking skipped/unproduced logs as
+`notProduced`, never as passed. This does not recover the inaccessible baseline
+GitHub job/setup archive and is not described as that archive. Offline transport
+regressions: **8/8**; diagnostic digest self-tests: **32/32**.

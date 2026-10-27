@@ -132,9 +132,11 @@ void main() {
       final element = FloatingElement(id: 'floating-fraction', type: FloatingElementType.formula,
         label: r'\frac{a}{b}', dx: 20, dy: 100, width: 160, height: 60);
       await tester.pumpWidget(MaterialApp(builder: (_, child) => MathSnapshotHost(child: child),
-        home: Align(alignment: Alignment.topLeft, child: RepaintBoundary(
+        home: Scaffold(body: Align(alignment: Alignment.topLeft, child: RepaintBoundary(
           key: const ValueKey('floating-source'), child: SizedBox(width: 160, height: 60,
-            child: FloatingElementView(element: element))))));
+            child: FloatingElementView(element: element)))))));
+      expect(DefaultTextStyle.of(tester.element(find.byType(FloatingElementView))).style.fontWeight,
+        FontWeight.w400, reason: 'Use the actual Scaffold body, not WidgetsApp bold debug text.');
       final source = tester.renderObject<RenderBox>(find.byKey(const ValueKey('floating-source')));
       final math = tester.renderObject<RenderBox>(find.byType(SafeMathTex).first);
       final actual = MatrixUtils.transformRect(math.getTransformTo(source), Offset.zero & math.size);
