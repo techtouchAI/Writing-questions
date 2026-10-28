@@ -143,14 +143,20 @@ class _HeaderStepScreenState extends State<HeaderStepScreen> {
       ),
       // زر المتابعة ثابت أسفل الشاشة (كخطوة الأسئلة): يبقى ظاهراً وقابلاً
       // للنقر مهما طال النموذج، بدل دفنه تحت الحقول.
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.all(12),
-        child: SizedBox(
-          height: 50,
-          child: FilledButton.icon(
-            onPressed: _submit,
-            icon: const Icon(Icons.arrow_back),
-            label: const Text('التالي: إعداد السؤال الأول', style: TextStyle(fontSize: 16)),
+      // Scaffold resizes its body for the IME, but not bottomNavigationBar.
+      // Reserve the actual keyboard inset outside the navigation SafeArea;
+      // otherwise the semantic button still exists underneath the keyboard.
+      bottomNavigationBar: Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+        child: SafeArea(
+          minimum: const EdgeInsets.all(12),
+          child: SizedBox(
+            height: 50,
+            child: FilledButton.icon(
+              onPressed: _submit,
+              icon: const Icon(Icons.arrow_back),
+              label: const Text('التالي: إعداد السؤال الأول', style: TextStyle(fontSize: 16)),
+            ),
           ),
         ),
       ),

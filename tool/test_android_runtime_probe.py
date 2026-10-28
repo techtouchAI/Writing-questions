@@ -17,6 +17,21 @@ class RuntimeReporting(unittest.TestCase):
         self.assertEqual(probe.centre(node), (36, 48))
         self.assertEqual(probe.label(node), 'اسم\nName')
 
+    def test_keyboard_geometry_rejects_the_observed_050ea_hidden_button(self):
+        dump = ('  Window #7 Window{abc u0 InputMethod}:\n'
+                '    touchable region=SkRegion((0,852,900,1600))\n'
+                '    isVisible=true\n')
+        top = probe.keyboard_top(dump)
+        self.assertEqual(top, 852)
+        hidden = probe.nodes('<hierarchy><node bounds="[30,1385][870,1510]"/></hierarchy>')[0]
+        visible = probe.nodes('<hierarchy><node bounds="[30,690][870,815]"/></hierarchy>')[0]
+        self.assertFalse(probe.entirely_above(hidden, top))
+        self.assertTrue(probe.entirely_above(visible, top))
+        with self.assertRaises(ValueError):
+            probe.keyboard_top('unmeasurable')
+        with self.assertRaises(ValueError):
+            probe.keyboard_top(dump.replace('isVisible=true', 'isVisible=false'))
+
     def test_environment_failure_still_writes_honest_report_and_inventory(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -52,11 +67,14 @@ class RuntimeReporting(unittest.TestCase):
                 text = {'home': 'إنشاء ورقة أسئلة جديدة', 'header': 'اسم',
                         'editing': 'Runtime2026_123', 'dismissed': 'التالي: إعداد السؤال الأول',
                         'question': 'السؤال', 'reopened': 'Runtime2026_123'}[state['screen']]
-                return f'<hierarchy><node text="{text}" bounds="[0,0][100,100]" class="android.widget.EditText"/></hierarchy>'
+                extra = '<node content-desc="التالي: إعداد السؤال الأول" bounds="[0,600][100,700]"/>' if state['screen']=='editing' else ''
+                return f'<hierarchy><node text="{text}" bounds="[0,0][100,100]" class="android.widget.EditText"/>{extra}</hierarchy>'
             if args[:2] == ('exec-out', 'screencap'):
                 return b'unit screenshot placeholder'
             if args[:3] == ('shell', 'dumpsys', 'input_method'):
                 return f'mInputShown={str(state["screen"] == "editing").lower()}'
+            if args[:4] == ('shell', 'dumpsys', 'window', 'windows'):
+                return '  Window #7 Window{abc u0 InputMethod}:\n    touchable region=SkRegion((0,800,900,1600))\n    isVisible=true\n'
             return 'unit fixture'
 
         with tempfile.TemporaryDirectory() as directory:

@@ -475,38 +475,44 @@ class _QuestionStepScreenState extends State<QuestionStepScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.all(12),
-        child: Row(
-          children: <Widget>[
-            Expanded(
-              child: FilledButton.icon(
-                onPressed: () {
-                  if (_validate(context, controller)) {
-                    controller.goToNextQuestion();
-                  }
-                },
-                icon: const Icon(Icons.arrow_back),
-                label: Text(
-                  questionIndex < controller.questions.length - 1
-                      ? 'التالي: ${controller.document.displayQuestionLabel(controller.questions[questionIndex + 1])}'
-                      : 'التالي: سؤال جديد',
+      // Scaffold resizes its body for the IME, but not bottomNavigationBar.
+      // Reserve the actual keyboard inset outside the navigation SafeArea;
+      // otherwise the semantic button still exists underneath the keyboard.
+      bottomNavigationBar: Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+        child: SafeArea(
+          minimum: const EdgeInsets.all(12),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () {
+                    if (_validate(context, controller)) {
+                      controller.goToNextQuestion();
+                    }
+                  },
+                  icon: const Icon(Icons.arrow_back),
+                  label: Text(
+                    questionIndex < controller.questions.length - 1
+                        ? 'التالي: ${controller.document.displayQuestionLabel(controller.questions[questionIndex + 1])}'
+                        : 'التالي: سؤال جديد',
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  if (_validate(context, controller)) {
-                    widget.onFinish();
-                  }
-                },
-                icon: const Icon(Icons.preview),
-                label: const Text('إنهاء وعرض النموذج'),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    if (_validate(context, controller)) {
+                      widget.onFinish();
+                    }
+                  },
+                  icon: const Icon(Icons.preview),
+                  label: const Text('إنهاء وعرض النموذج'),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

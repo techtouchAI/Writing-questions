@@ -468,6 +468,102 @@ class FalseAlarms(unittest.TestCase):
                            for v in violations))
 
 
+class OriginOwnershipAndSpacing(unittest.TestCase):
+    def fixture(self, shift=0, origins=True):
+        words = [preview_word('A', 10, 20, 100, 12, False),
+                 preview_word('\u00a0', 20, 22, 100, 12, False),
+                 preview_word('B', 22, 32, 100, 12, False)]
+        chars = [gate.PdfChar('A', 10, 20, 100, 12, origin_x=10 if origins else None),
+                 gate.PdfChar('B', 22 + shift, 32 + shift, 100, 12,
+                              origin_x=22 + shift if origins else None)]
+        return [preview_line(words, 100)], [pdf_page(chars)]
+
+    def test_nbsp_requires_advance_not_ink_and_publishes_measurement(self):
+        preview, pages = self.fixture()
+        violations, samples, coverage = gate.compare(preview, pages, edges='origin')
+        self.assertEqual(violations, [])
+        self.assertEqual(samples['word_spacing'], [0])
+        self.assertEqual((coverage['spacers'], coverage['verified_spacers']), (1, 1))
+
+    def test_collapsed_and_expanded_space_fail_even_within_word_edge_bound(self):
+        for shift in (-0.25, 0.25):
+            with self.subTest(shift=shift):
+                preview, pages = self.fixture(shift)
+                violations, _, coverage = gate.compare(preview, pages, edges='origin')
+                self.assertIn('WORD-SPACING', {v.category for v in violations})
+                self.assertEqual(coverage['verified_spacers'], 0)
+
+    def test_missing_pdf_origins_cannot_pass_spacing(self):
+        preview, pages = self.fixture(origins=False)
+        violations, _, _ = gate.compare(preview, pages)
+        self.assertIn('SPACING-UNVERIFIED', {v.category for v in violations})
+
+    def test_missing_neighbour_is_unverified_as_well_as_missing_content(self):
+        preview, pages = self.fixture()
+        pages[0].chars.pop()
+        violations, _, _ = gate.compare(preview, pages)
+        self.assertTrue({'SPACING-UNVERIFIED', 'WORD-MISSING'} <=
+                        {v.category for v in violations})
+
+    def test_shared_endpoint_belongs_to_start_not_narrow_previous_mark(self):
+        words = [preview_word(':', 7, 10, 100, 12, False),
+                 preview_word('ABC', 10, 31, 100, 12, False)]
+        for residual in (-0.00003, 0, 0.00003):
+            with self.subTest(residual=residual):
+                char = gate.PdfChar('A', 10, 15, 100, 12, origin_x=10 + residual)
+                owned, outside = gate._assign(words, [char], gate.Bounds().assign_tol)
+                self.assertEqual(owned, [[], [char]])
+                self.assertEqual(outside, [])
+
+    def test_whitespace_only_line_never_crashes_or_silently_passes(self):
+        line = preview_line([preview_word('\u00a0', 10, 12, 100, 12, False)], 100)
+        violations, _, _ = gate.compare([line], [pdf_page(pdf_chars('X', 10, 12, 100))])
+        self.assertIn('SPACING-UNVERIFIED', {v.category for v in violations})
+
+
+class DisjointLineIslands(unittest.TestCase):
+    def fixture(self):
+        words = [preview_word('L', 10, 20, 100, 12, False),
+                 preview_word('R', 100, 110, 100, 12, False)]
+        chars = pdf_chars('L', 10, 20, 100) + pdf_chars('R', 100, 110, 100)
+        return words, chars
+
+    def test_one_source_line_owns_both_islands_around_inline_math(self):
+        words, chars = self.fixture()
+        self.assertEqual(len(gate._cluster_lines(chars)), 2)
+        violations, _, coverage = gate.compare([preview_line(words, 100)], [pdf_page(chars)])
+        self.assertEqual(violations, [])
+        self.assertEqual(coverage['words'], 2)
+
+    def test_independent_same_baseline_columns_are_not_joined(self):
+        words, chars = self.fixture()
+        lines = [preview_line([word], 100) for word in words]
+        pairs, missing, extra = gate._match_lines(lines, gate._cluster_lines(chars), gate.Bounds().line_window_pt)
+        self.assertEqual((len(pairs), len(missing), len(extra)), (2, 0, 0))
+        self.assertTrue(all(len(pair[2]) == 1 for pair in pairs))
+        self.assertEqual(gate.compare(lines, [pdf_page(chars)])[0], [])
+
+    def test_unexpected_text_in_same_baseline_gap_is_still_rejected(self):
+        words, chars = self.fixture()
+        chars += pdf_chars('X', 55, 60, 100)
+        violations, _, _ = gate.compare([preview_line(words, 100)], [pdf_page(chars)])
+        self.assertIn('WORD-EXTRA', {v.category for v in violations})
+
+    def test_cluster_average_cannot_hide_one_displaced_island(self):
+        words, chars = self.fixture()
+        chars[0].baseline += 0.8
+        chars[1].baseline += 1.2
+        violations, _, _ = gate.compare([preview_line(words, 100)], [pdf_page(chars)])
+        self.assertIn('BASELINE', {v.category for v in violations})
+
+    def test_off_baseline_island_is_not_hidden_by_grouping(self):
+        words, chars = self.fixture()
+        chars[1].baseline += 3
+        violations, _, _ = gate.compare([preview_line(words, 100)], [pdf_page(chars)])
+        self.assertIn('LINE-EXTRA', {v.category for v in violations})
+        self.assertIn('WORD-MISSING', {v.category for v in violations})
+
+
 class RealArtifacts(unittest.TestCase):
     """Injection on the gate's own artifacts, when they are present.
 

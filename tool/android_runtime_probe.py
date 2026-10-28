@@ -34,6 +34,33 @@ def centre(node):
     return (coords[0] + coords[2]) // 2, (coords[1] + coords[3]) // 2
 
 
+def keyboard_top(window_dump):
+    """Actual InputMethod touchable region, not the full transparent window.
+
+    Android 15's IME window covers almost the entire screen, but the keyboard
+    starts at its touchable region (852 px in the preserved failing evidence).
+    Missing/unparseable evidence is an error, never guessed from a focused node.
+    """
+    sections = re.findall(r'^\s*Window #[^\n]*InputMethod[^\n]*:\n(.*?)(?=^\s*Window #|\Z)',
+                          window_dump, flags=re.MULTILINE | re.DOTALL)
+    tops = []
+    for section in sections:
+        if 'isVisible=true' not in section:
+            continue
+        region = re.search(r'touchable region=SkRegion\(([^\n]+)\)', section)
+        if region:
+            tops.extend(int(y0) for _, y0, _, _ in re.findall(
+                r'\((-?\d+),(-?\d+),(-?\d+),(-?\d+)\)', region.group(1)))
+    if not tops:
+        raise ValueError('Cannot measure visible InputMethod touchable top')
+    return min(tops)
+
+
+def entirely_above(node, top):
+    left, y0, right, bottom = [int(v) for v in re.findall(r'-?\d+', node.attrib['bounds'])]
+    return left >= 0 and right > left and y0 >= 0 and bottom > y0 and bottom <= top
+
+
 def label(node):
     return node.get('text', '') + '\n' + node.get('content-desc', '')
 
@@ -99,6 +126,14 @@ def main():
         ime = (out / '03-keyboard-visible-ime.txt').read_text()
         check('real emulator keyboard visible', bool(re.search(r'(?:mInputShown|isInputViewShown)=true', ime)),
               'Visibility must be observed in dumpsys, not inferred from focus.')
+        next_open = [n for n in nodes(xml) if 'التالي: إعداد السؤال الأول' in label(n)]
+        top = keyboard_top((out / '03-keyboard-visible-window.txt').read_text())
+        report['keyboardOcclusion'] = dict(keyboardTopPx=top,
+            nextBounds=[n.attrib['bounds'] for n in next_open],
+            assertion='entire button bounds above actual IME touchable top, not node presence')
+        check('header Next entirely above the OPEN keyboard',
+              bool(next_open) and all(entirely_above(n, top) for n in next_open),
+              json.dumps(report['keyboardOcclusion']))
         adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
         time.sleep(2)
         xml = snapshot('04-keyboard-dismissed')

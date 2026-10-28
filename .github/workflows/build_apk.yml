@@ -144,6 +144,40 @@ jobs:
           print('::notice title=Mixed header BEFORE regression::'+json.dumps(message))
           PYBEFORE
 
+      - name: Prove both wizard navigation bars were hidden behind the keyboard
+        if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[closure-audit]') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline=050ea339399c7415b6f19ab67d185fe8ac973822
+          git fetch --no-tags --depth=1 origin "$baseline"
+          files=(lib/views/wizard/header_step_screen.dart lib/views/wizard/question_step_screen.dart)
+          restore_sources() {
+            for file in "${files[@]}"; do git show "$GITHUB_SHA:$file" > "$file"; done
+          }
+          trap restore_sources EXIT
+          for file in "${files[@]}"; do git show "$baseline:$file" > "$file"; done
+          status=0
+          flutter test --reporter json test/wizard/keyboard_navigation_insets_test.dart \
+            2>&1 | tee "$RUNNER_TEMP/keyboard-navigation-before.log" || status=$?
+          restore_sources
+          test "$status" -ne 0
+          python3 - <<'PYBEFORE'
+          import json, os
+          events=[]
+          for line in open(os.path.join(os.environ['RUNNER_TEMP'], 'keyboard-navigation-before.log')):
+              try: events.append(json.loads(line))
+              except ValueError: pass
+          names={e['test']['id']:e['test']['name'] for e in events if e.get('type')=='testStart'}
+          failed=[e['testID'] for e in events if e.get('type')=='testDone' and e.get('result') in ('failure','error')]
+          if len(failed)!=4 or not all('navigation stays above IME' in names.get(i,'') and
+              any('500.0' in e.get('error','') for e in events if e.get('testID')==i) for i in failed):
+              raise SystemExit('Must reproduce exactly four geometric keyboard-occlusion failures, not setup/compile failures.')
+          print('::notice title=Keyboard navigation BEFORE regression::'+json.dumps(dict(
+              baseline='050ea339399c7415b6f19ab67d185fe8ac973822',failed=[names[i] for i in failed],
+              currentSourcesRestored=True,afterRun='native-editor-first must pass the unchanged four tests')))
+          PYBEFORE
+
       - name: Prove the actual math operators lose ink with baseline cubic minification
         if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[closure-audit]') }}
         shell: bash
@@ -194,6 +228,7 @@ jobs:
             test/pdf_engine/pdf_content_probe_gpos_test.dart \
             test/pdf_engine/paginated_quranic_font_test.dart \
             test/export_gate/p0_export_gate_test.dart \
+            test/wizard/keyboard_navigation_insets_test.dart \
             test/wizard/real_reorder_export_test.dart \
             test/wizard/preview_button_audit_test.dart \
             test/wizard/visual_equation_editor_test.dart \
@@ -757,6 +792,7 @@ jobs:
           path: |
             ${{ runner.temp }}/production-first.log
             ${{ runner.temp }}/native-editor-first.log
+            ${{ runner.temp }}/keyboard-navigation-before.log
             ${{ runner.temp }}/header-direction-before.log
             ${{ runner.temp }}/math-minification-before.log
             ${{ runner.temp }}/flutter-analyze.log
@@ -872,6 +908,7 @@ jobs:
           from pathlib import Path
           root = Path(os.environ['RUNNER_TEMP']) / 'command-logs'
           names = ['production-first.log', 'native-editor-first.log', 'flutter-test.log',
+                   'keyboard-navigation-before.log',
                    'flutter-test-canonical-gate.log', 'flutter-analyze.log', 'flutter-build.log']
           (root / 'manifest.json').write_text(json.dumps({
               'kind': 'Complete Flutter command output, not the GitHub setup/job archive',
