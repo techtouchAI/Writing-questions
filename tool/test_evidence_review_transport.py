@@ -112,6 +112,36 @@ class EvidenceTransportTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Missing/unsafe'):
                 list(transport.selected(root, 'visual'))
 
+    def test_visual_geometry_report_and_source_are_an_atomic_pair(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            names = ['vector.pdf', 'preview_page_1.png']
+            (root / 'manifest.json').write_text(json.dumps(dict(pageCount=1, files=names)))
+            for name in names:
+                (root / name).write_bytes(b'original')
+            (root / 'geometry_gate.json').write_text('{}')
+            with self.assertRaisesRegex(ValueError, 'Missing/unsafe'):
+                list(transport.selected(root, 'visual'))
+            (root / 'preview_positions.json').write_text('{}')
+            self.assertTrue({'geometry_gate.json', 'preview_positions.json'} <=
+                {p.name for p in transport.selected(root, 'visual')})
+
+    def test_android_inventory_is_complete_and_flat(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            names = ['runtime.json', 'logcat.txt', 'keyboard.png']
+            (root / 'manifest.json').write_text(json.dumps(dict(files=names)))
+            for name in names:
+                (root / name).write_text('fixture')
+            self.assertEqual({p.name for p in transport.selected(root, 'android')},
+                             set(names + ['manifest.json']))
+            (root / 'keyboard.png').unlink()
+            with self.assertRaisesRegex(ValueError, 'Missing/unsafe'):
+                list(transport.selected(root, 'android'))
+            (root / 'manifest.json').write_text(json.dumps(dict(files=['../runtime.json', 'logcat.txt'])))
+            with self.assertRaises(ValueError):
+                list(transport.selected(root, 'android'))
+
     def test_visual_manifest_cannot_omit_a_companion(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

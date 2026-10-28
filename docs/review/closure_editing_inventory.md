@@ -1,3 +1,26 @@
+## حالة المراجعة الحالية — لا قبول شامل
+
+Baseline4b1f: Main40600056283 نجح8/219/1038/3/analyze/actualAPK؛ لكن C6 WOULD FAIL83،
+واختلاف الدرجة/الرأس مرئي. المرجع الأعلى هو [closure_status.md](closure_status.md).
+الـPENDING القديمة أدناه موسومة تاريخية؛ لا تنقلها إلى نتيجة الشفرة الجديدة.
+
+| نطاق التحرير | أقوى دليل baseline | ما يزال غير مثبت |
+|---|---|---|
+| question/branch reorder | 6 actual long-press drags320/360، model كامل/undo/redo/live-PDF | كل split/long/boundary/media/format combination؛ كل صفحة بصريًا |
+| Text/Math/Chemistry/Physics/Media | R8 targets42 command instances؛ native audits تشمل75 width-cases | كل command → insert/edit/delete/history → preview/PDF، لا مجرد وجود أو invocation |
+| point/option/blank/continuation | اختبارات canonical والإنتاج الحالية | كل original/continuation/endpage320/360 مع نفس model/coords و48dp |
+| format/mixed/math/color | اختبارات native/PDF وactual raw operators الحالية | كل أداة/نطاق/حد صفحة؛ حبر + في Visual sample يحتاج تشخيصًا |
+| assets/concurrent export | actual delayed old/new image + document-version races | platform picker وكل نوع asset/format/load/export ordering |
+| printed drag / text / marks handles | أضيف mounted-frame inventory لجميع primitives في6 حالات قبل/بعد مع transformed screen-dp وscreenshot/hit sample | effective48×48، overlap، containment/accessibility، dialogs/continuation/platform selection؛ كل صف effectiveTargetVerified=false |
+| Android keyboard/focus/save | أضيف real-APK emulator smoke evidence path؛ PENDING | Arabic/English composition، long multiline/options، insets/navigation/export، actual IME matrix |
+
+لا استنتاج شامل من R8 أو من قياس allocated/rendered bounds. الجرد الجديد محدود
+بالإطارات الملتقطة وليس كل حالات التطبيق؛ جميع الحالات غير المقاسة **unverified**.
+التقرير الشامل يحدد قواعد الدرجة غير المحسومة و83 مخالفة C6 فردية. candidate OFF.
+
+---
+## جرد وسجل تاريخي محفوظان للتتبع
+
 # Editing inventory — source map, NOT final acceptance
 
 Scope: branch `arena/8513fa6c-writing-questions`, subsequent work after

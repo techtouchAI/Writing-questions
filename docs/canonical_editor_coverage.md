@@ -1,3 +1,17 @@
+## تحديث المراجعة الحالية — OPEN / candidate OFF
+
+خط الأساس4b1f458 فقط:8production/219native/1038full/3canonical/analyze/actualAPK نجحت؛
+C6 WOULD FAIL83، واختلاف edge/inline marks قائم. لا تحويل لنجاح الوظائف إلى قبول شامل.
+التقرير الشامل [review/closure_status.md](review/closure_status.md) والجرد المحدث
+[review/closure_editing_inventory.md](review/closure_editing_inventory.md) يتقدمان
+على حالات التنفيذ التاريخية أدناه. اتجاه الرأس ومصدر القياس C6 أُصلحا في المصدر
+بانتظار CI/الفحص؛ candidate لم يُفعّل. السحب المتاح في الإنتاج لا يثبت وجود بديل
+السحب القانوني، ولا تصلح صناديق الورق المكبرة كبرهان effective48dp. مصفوفة كل أداة،
+كل مقطع، وكل Android/IME لا تزال غير مكتملة. لا نتيجة final-SHA تُفترض هنا.
+
+---
+التغطية والسجل التاريخيان:
+
 # الخيار أ: جدول التغطية وخطة التفعيل
 
 حالة البداية: `d4febcc61a2f473b0eec26f84dee87eb673efa21`، فوق دمج PR #47.

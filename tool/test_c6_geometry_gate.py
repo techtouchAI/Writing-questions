@@ -69,6 +69,49 @@ def arabic_line():
     return [preview_line(words, 100.0, runs)], pdf_page(chars, rules=rules)
 
 
+class RenderedSourceIdentity(unittest.TestCase):
+    def fixture(self, root):
+        raw = {'vector.pdf': b'pdf', 'preview_page_1.png': b'png'}
+        for name, value in raw.items():
+            (root / name).write_bytes(value)
+        return dict(pages=[{}], provenance={'kind': 'rendered-canonical-preview-plan'},
+                    artifactByteLengths={name: len(value) for name, value in raw.items()})
+
+    def test_live_source_is_bound_and_mutation_is_rejected(self):
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = self.fixture(root)
+            gate.bind_rendered_source(data, root)
+            gate.validate_rendered_source(data, root)
+            (root / 'vector.pdf').write_bytes(b'BAD')  # Same length, different bytes.
+            with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
+                gate.validate_rendered_source(data, root)
+            with self.assertRaisesRegex(ValueError, 'already bound'):
+                gate.bind_rendered_source(data, root)
+
+    def test_standalone_reconstruction_is_not_a_rendered_source(self):
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            data = self.fixture(Path(directory))
+            data['provenance']['kind'] = 'standalone-reconstruction'
+            with self.assertRaisesRegex(ValueError, 'actual rendered'):
+                gate.bind_rendered_source(data, directory)
+            with self.assertRaisesRegex(ValueError, 'actual rendered'):
+                gate.validate_rendered_source(data, directory)
+
+    def test_partial_inventory_and_stale_length_are_rejected(self):
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            data = self.fixture(Path(directory))
+            data['artifactByteLengths']['vector.pdf'] += 1
+            with self.assertRaisesRegex(ValueError, 'byte identity'):
+                gate.bind_rendered_source(data, directory)
+            del data['artifactByteLengths']['preview_page_1.png']
+            with self.assertRaisesRegex(ValueError, 'every captured'):
+                gate.bind_rendered_source(data, directory)
+
+
 class Core(unittest.TestCase):
     def test_agreeing_pair_passes(self):
         preview, page = arabic_line()

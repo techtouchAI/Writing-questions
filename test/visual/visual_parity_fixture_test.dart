@@ -28,6 +28,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import '../support/production_evidence_fonts.dart';
+import '../support/c6_preview_positions.dart';
 
 import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
@@ -536,6 +537,19 @@ void main() {
           .writeAsBytesSync(snapshots[index]['pngBytes'] as Uint8List);
     }
     File('$_artifactDir/vector.pdf').writeAsBytesSync(vectorPdfBytes);
+    // C6 MUST observe the object used above for BOTH PNG and PDF. Resolving
+    // again outside MathSnapshotHost produces different math metrics/flow.
+    final positions = c6PreviewPositions(canonicalLayout,
+      sourceKind: 'rendered-canonical-preview-plan');
+    positions['artifactByteLengths'] = <String, int>{
+      'vector.pdf': vectorPdfBytes.length,
+      for (var index = 0; index < snapshots.length; index++)
+        'preview_page_${index + 1}.png': (snapshots[index]['pngBytes'] as Uint8List).length,
+    };
+    Directory('$_artifactDir/c6diag/text_positions').createSync(recursive: true);
+    File('$_artifactDir/c6diag/text_positions/preview_positions.json')
+      .writeAsStringSync(jsonEncode(positions));
+
     File('$_artifactDir/manifest.json')
         .writeAsStringSync(const JsonEncoder.withIndent('  ').convert(manifest));
 

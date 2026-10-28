@@ -6,7 +6,8 @@ antialiasing with it. This gate does not rasterise at all: it reads the text
 origins, glyph boxes, image rectangles and underline rules out of `vector.pdf`
 and compares them, in points, with the geometry the Preview says it paints
 (the same `LayoutDocument`, measured by TextPainter in
-`test/visual/diag_c6_text_positions_test.dart`). A renderer cannot move a
+`test/visual/visual_parity_fixture_test.dart` (the standalone reconstructed
+probe is retained separately, never substituted for this live-plan evidence)). A renderer cannot move a
 number here; only layout, shaping, styling or emission can, which is exactly
 what the ceiling is supposed to catch.
 
@@ -49,6 +50,8 @@ Exit codes: 0 pass (or `report` mode), 1 violations in `enforce` mode,
 2 cannot measure (missing artifacts) -- never silently green.
 """
 import argparse
+import hashlib
+from pathlib import Path
 import json
 import os
 import sys
@@ -285,6 +288,46 @@ def read_preview(path):
     if data.get('schema') != SCHEMA:
         raise ValueError(f'unexpected schema {data.get("schema")!r}')
     return data
+
+
+def bind_rendered_source(data, root):
+    """Bind files emitted by the live-plan fixture, never a re-resolved plan.
+
+    The fixture asserts in-memory LayoutDocument identity for PNG/PDF/positions.
+    This post-fixture binding adds file digests, not a claim that a digest alone
+    proves in-memory identity. It must not be used to refresh stale evidence.
+    """
+    root = Path(root)
+    provenance = data.get('provenance', {})
+    if provenance.get('kind') != 'rendered-canonical-preview-plan':
+        raise ValueError('C6 positions did not come from the actual rendered preview plan')
+    if 'artifactSha256' in provenance:
+        raise ValueError('C6 evidence is already bound; refusing to refresh its identity')
+    expected = {'vector.pdf', *(f'preview_page_{i+1}.png' for i in range(len(data['pages'])))}
+    lengths = data.get('artifactByteLengths', {})
+    if set(lengths) != expected or not data['pages']:
+        raise ValueError('C6 fixture must account for PDF and every captured preview page')
+    hashes = {}
+    for name in sorted(expected):
+        raw = (root / name).read_bytes()
+        if len(raw) != lengths[name]:
+            raise ValueError(f'C6 fixture byte identity mismatch: {name}')
+        hashes[name] = hashlib.sha256(raw).hexdigest()
+    provenance['artifactSha256'] = hashes
+    provenance['binding'] = 'CI post-fixture hashes; in-memory plan identity asserted by fixture'
+
+
+def validate_rendered_source(data, root):
+    provenance = data.get('provenance', {})
+    if provenance.get('kind') != 'rendered-canonical-preview-plan':
+        raise ValueError('C6 positions did not come from the actual rendered preview plan')
+    expected = {'vector.pdf', *(f'preview_page_{i+1}.png' for i in range(len(data['pages'])))}
+    hashes = provenance.get('artifactSha256', {})
+    if set(hashes) != expected or not data['pages']:
+        raise ValueError('C6 source inventory is missing a PDF/preview identity')
+    for name in sorted(expected):
+        if hashlib.sha256((Path(root) / name).read_bytes()).hexdigest() != hashes[name]:
+            raise ValueError(f'C6 source checksum mismatch: {name}')
 
 
 def _tight_words(run, baseline):
@@ -1024,6 +1067,8 @@ def main(argv=None):
                         help='report: publish the verdict, exit 0. '
                              'enforce: exit 1 on any violation.')
     parser.add_argument('--json', default=None)
+    parser.add_argument('--bind-rendered-source', action='store_true')
+    parser.add_argument('--require-rendered-source', action='store_true')
     args = parser.parse_args(argv)
 
     preview_path = os.path.join(args.artifacts, PREVIEW_REL)
@@ -1034,6 +1079,11 @@ def main(argv=None):
         return 2
 
     data = read_preview(preview_path)
+    if args.bind_rendered_source:
+        bind_rendered_source(data, args.artifacts)
+        Path(preview_path).write_text(json.dumps(data, ensure_ascii=False, indent=1))
+    if args.require_rendered_source or args.bind_rendered_source:
+        validate_rendered_source(data, args.artifacts)
     preview = preview_lines(data, boxes='caret')
     tight = preview_lines(data, boxes='tight')
     pages = read_pdf_pages(pdf_path)
@@ -1076,6 +1126,7 @@ def main(argv=None):
     payload = {
         'mode': args.mode,
         'adopted_as_merge_gate': False,
+        'sourceProvenance': data.get('provenance'),
         'bounds': bounds.__dict__,
         'coverage': coverage,
         'distribution': {k: distribution(v) for k, v in samples.items()},

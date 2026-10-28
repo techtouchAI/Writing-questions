@@ -60,6 +60,50 @@ Future<void> _capture(WidgetTester tester, String path) async {
   });
 }
 
+// Inventory every mounted interactive primitive in these actual production
+// frames. Bounds are transformed to screen dp (NOT unscaled paper pixels).
+// A render-path hit sample is diagnostic, NOT proof of gesture ownership or a
+// 48dp effective target. Dialogs, later pages and platform handles are excluded
+// explicitly; do not extrapolate this inventory to all editing states.
+List<Map<String, Object?>> _touchInventory(WidgetTester tester) {
+  final viewport = Offset.zero & (tester.view.physicalSize / tester.view.devicePixelRatio);
+  final rows = <Map<String, Object?>>[];
+  for (final element in tester.allElements) {
+    final widget = element.widget;
+    final interactive = widget is EditableText || widget is Draggable<Object> ||
+      (widget is InkResponse && (widget.onTap != null || widget.onLongPress != null || widget.onDoubleTap != null)) ||
+      (widget is GestureDetector && (widget.onTap != null || widget.onLongPress != null ||
+        widget.onPanUpdate != null || widget.onScaleUpdate != null));
+    if (!interactive) continue;
+    final object = element.findRenderObject();
+    if (object is! RenderBox || !object.attached || !object.hasSize) {
+      rows.add({'widget': widget.runtimeType.toString(), 'key': widget.key?.toString(),
+        'measurement': 'unavailable', 'effectiveTargetVerified': false});
+      continue;
+    }
+    final rect = MatrixUtils.transformRect(object.getTransformTo(null), Offset.zero & object.size);
+    String? tooltip;
+    element.visitAncestorElements((ancestor) {
+      if (ancestor.widget is Tooltip) {
+        tooltip = (ancestor.widget as Tooltip).message;
+        return false;
+      }
+      return true;
+    });
+    rows.add({'widget': widget.runtimeType.toString(), 'key': widget.key?.toString(),
+      'tooltip': tooltip, 'text': widget is EditableText ? widget.controller.text : null,
+      'measurement': 'transformed rendered bounds, not effective gesture ownership',
+      'rectDp': [rect.left, rect.top, rect.right, rect.bottom],
+      'widthDp': rect.width, 'heightDp': rect.height,
+      'fullyInViewport': viewport.contains(rect.topLeft) && viewport.contains(rect.bottomRight),
+      'renderedBoundsMeet48': rect.width >= 48 && rect.height >= 48,
+      'centreContainsRenderObjectInHitPath': viewport.contains(rect.center) &&
+        tester.hitTestOnBinding(rect.center).path.any((entry) => identical(entry.target, object)),
+      'effectiveTargetVerified': false});
+  }
+  return rows;
+}
+
 Future<void> _history(WidgetTester tester, String label) async {
   final button = find.byTooltip(label);
   await tester.ensureVisible(button);
@@ -120,6 +164,8 @@ void main() {
         final beforePlan = controller.plan!.layout;
         final base = 'drag-${width.toInt()}-$kind';
         Directory(_out).createSync(recursive: true);
+        final beforeTargets = _touchInventory(tester);
+        expect(beforeTargets.where((row) => row['widget'] == 'EditableText'), isNotEmpty);
         await _capture(tester, '$_out/$base-before.png');
 
         Finder question(int index) => find.byWidgetPredicate((w) => w is LongPressDraggable<int> && w.data == index);
@@ -193,6 +239,7 @@ void main() {
           }
         }
         expect(emitted, expected, reason: 'Inspect actual PDF words, not source order alone.');
+        final afterTargets = _touchInventory(tester);
         await _capture(tester, '$_out/$base-after.png');
         await _history(tester, 'تراجع');
         noFrameworkError('undo');
@@ -201,7 +248,11 @@ void main() {
         noFrameworkError('redo');
         expect(jsonEncode(controller.document.toMap()), changed);
         expect(tester.takeException(), isNull);
-        results.add({'widthDp': width, 'kind': kind, 'realLongPressDrag': true,
+        results.add({'widthDp': width, 'kind': kind,
+          'touchInventoryScope': 'Mounted production-frame primitives only; all effective targets, overlaps, dialogs, platform handles and continuation states remain unverified.',
+          'beforeScreenshot': '$base-before.png', 'afterScreenshot': '$base-after.png',
+          'beforeTargets': beforeTargets, 'afterTargets': afterTargets,
+          'headerModel': controller.document.header.toMap(), 'realLongPressDrag': true,
           'from': [from.dx, from.dy], 'to': [to.dx, to.dy],
           'modelBefore': jsonDecode(original), 'modelAfter': jsonDecode(changed),
           'pdfTokens': emitted, 'undoRestoresOriginal': true, 'redoRestoresChanged': true,

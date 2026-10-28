@@ -31,6 +31,8 @@ def selected(root, profile='production'):
                 set(present) & set(absent) or set(present) | set(absent) != required):
             raise ValueError('Validation logs must account for every command, including unexecuted ones')
         companions = {'manifest.json'}
+        if (root / 'header-direction-before.log').exists():
+            companions.add('header-direction-before.log')
         if (root / 'apk-native.json').exists():
             companions.add('apk-native.json')
         for name in sorted(set(present) | companions):
@@ -50,7 +52,25 @@ def selected(root, profile='production'):
         companions = {'manifest.json'}
         if (root / 'arabic-header-outline.json').exists():
             companions.add('arabic-header-outline.json')
+        c6 = {'geometry_gate.json', 'preview_positions.json'}
+        if any((root / name).exists() for name in c6):
+            companions.update(c6)
         for name in sorted(expected | companions):
+            path = root / name
+            if not path.is_file() or path.is_symlink():
+                raise ValueError(f'Missing/unsafe evidence: {name}')
+            yield path
+        return
+    if profile == 'android':
+        manifest = json.loads((root / 'manifest.json').read_text())
+        names = manifest['files']
+        if len(names) != len(set(names)) or not 1 <= len(names) <= 60:
+            raise ValueError('Invalid Android evidence inventory')
+        if not {'runtime.json', 'logcat.txt'} <= set(names):
+            raise ValueError('Android evidence must include result and runtime log')
+        for name in sorted(set(names) | {'manifest.json'}):
+            if Path(name).name != name:
+                raise ValueError('Unsafe Android evidence path')
             path = root / name
             if not path.is_file() or path.is_symlink():
                 raise ValueError(f'Missing/unsafe evidence: {name}')
@@ -193,7 +213,7 @@ def fetch(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest='command', required=True)
-    p = sub.add_parser('publish'); p.add_argument('--root', type=Path, required=True); p.add_argument('--index', type=Path, required=True); p.add_argument('--profile', choices=['production', 'visual', 'validation'], default='production')
+    p = sub.add_parser('publish'); p.add_argument('--root', type=Path, required=True); p.add_argument('--index', type=Path, required=True); p.add_argument('--profile', choices=['production', 'visual', 'validation', 'android'], default='production')
     p = sub.add_parser('emit'); p.add_argument('--index', type=Path, required=True); p.add_argument('--group', type=int, required=True)
     p = sub.add_parser('fetch'); p.add_argument('--run', required=True); p.add_argument('--repository', default='techtouchAI/Writing-questions'); p.add_argument('--destination', type=Path, required=True); p.add_argument('--job-name', default='Original evidence review transport')
     args = parser.parse_args()

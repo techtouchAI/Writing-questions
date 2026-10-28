@@ -1,0 +1,1272 @@
+{
+  "verdict": "WOULD FAIL",
+  "counts": {
+    "BASELINE": 2,
+    "BRACKET-COUNT": 2,
+    "LINE-EXTRA": 6,
+    "LINE-MISSING": 1,
+    "LINE-SHIFT": 6,
+    "MATH-IMAGE": 4,
+    "WORD-CONTENT": 12,
+    "WORD-MISSING": 50
+  },
+  "findingCount": 83,
+  "findings": [
+    {
+      "id": "C6-001",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '6' at x=366.52..372.66 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 1,
+        "messageLine": 2,
+        "rowSha256": "addc79f35b21c25b424d74c21a74b221433c070399df62cb4534b8175a66b3f3"
+      }
+    },
+    {
+      "id": "C6-002",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 1,
+        "messageLine": 3,
+        "rowSha256": "d5f06155e5b97107ab1e11cf1211eebd382e8522170da6b718fd05a7ec7ba714"
+      }
+    },
+    {
+      "id": "C6-003",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 1,
+        "messageLine": 4,
+        "rowSha256": "3a480e5e8ffb7bea8e014528103caae0601e9688bd59137851fb2f9180760fd4"
+      }
+    },
+    {
+      "id": "C6-004",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '(' at x=367.87..372.26 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 1,
+        "messageLine": 5,
+        "rowSha256": "f47a31d46b607e2de04206164c3a1fc3a85406e598ae7e9df6d8ebc4e8461466"
+      }
+    },
+    {
+      "id": "C6-005",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '7' at x=374.69..380.84 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 1,
+        "messageLine": 6,
+        "rowSha256": "5713cc7cdc894ea63a9682a5f3a7640efaa19e282573554ac6e1860dbd241ceb"
+      }
+    },
+    {
+      "id": "C6-006",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 1,
+        "messageLine": 7,
+        "rowSha256": "d5f06155e5b97107ab1e11cf1211eebd382e8522170da6b718fd05a7ec7ba714"
+      }
+    },
+    {
+      "id": "C6-007",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 1,
+        "messageLine": 8,
+        "rowSha256": "3a480e5e8ffb7bea8e014528103caae0601e9688bd59137851fb2f9180760fd4"
+      }
+    },
+    {
+      "id": "C6-008",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside 'أن' at x=513.31..523.38 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 2,
+        "rowSha256": "ca2c89c5bfcac589bef514978a4b63fc76006445b93eff0fee0845eaecee982f"
+      }
+    },
+    {
+      "id": "C6-009",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside 'لاحظ' at x=526.02..549.01 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 3,
+        "rowSha256": "9b51bfcf22294e0ab0f76560c768a124b039ef6cfa7fb27961c79fde91eb5340"
+      }
+    },
+    {
+      "id": "C6-010",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside ')' at x=365.30..369.16 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 4,
+        "rowSha256": "e0ec263c555d29892d402c3e47e48b02ea0071040b0794a6c9d585b2b6ae130d"
+      }
+    },
+    {
+      "id": "C6-011",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside 'درجة' at x=369.16..388.71 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 5,
+        "rowSha256": "7d577549e0295ee1028fde774f45ca0f0e62a5477172f996add8428577f1c832"
+      }
+    },
+    {
+      "id": "C6-012",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '\\xa0' at x=388.71..391.23 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 6,
+        "rowSha256": "6175100ff9cf1720b80cd1a6edd5d1adf70c1830416aefc8f99bb5feb64ef1dd"
+      }
+    },
+    {
+      "id": "C6-013",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '٥' at x=391.23..395.78 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 7,
+        "rowSha256": "0070d4a79686d2c59b3d14e2094b0c47e477e3d65d97d4e8bdf02e490754fe24"
+      }
+    },
+    {
+      "id": "C6-014",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '(' at x=395.78..399.64 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 8,
+        "rowSha256": "604278b82edb9147f1781eee883c70da322f3dd4065620f0c757ef90cf4a6a54"
+      }
+    },
+    {
+      "id": "C6-015",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '\\xa0' at x=399.64..402.16 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 9,
+        "rowSha256": "ef74883cef98e79e365175a7fbecb10624b34de06ec0afa5dccd78e8055fb96c"
+      }
+    },
+    {
+      "id": "C6-016",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '.' at x=402.16..404.94 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 10,
+        "rowSha256": "2a95a5254aaa4ca5ce467c3d4fc21e8ba3add801feee2bd03c8815aac2b79597"
+      }
+    },
+    {
+      "id": "C6-017",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '-' at x=543.31..546.21 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 11,
+        "rowSha256": "ef86b43e38a805a66495f1702c7c6c2942838cb2e9669db087afd28230dc1602"
+      }
+    },
+    {
+      "id": "C6-018",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '١' at x=546.21..549.01 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 12,
+        "rowSha256": "e53c53fd37b5ed4ede2e91005658e27cda8ecb0c9503b73ee8e988709203f3c5"
+      }
+    },
+    {
+      "id": "C6-019",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '\\xa0' at x=68.10..70.53 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 13,
+        "rowSha256": "84ac3920aa24dac603798f4c551cd576bebeb6d05ebbb63918a8556a5a80ee77"
+      }
+    },
+    {
+      "id": "C6-020",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '\\xa0' at x=85.65..88.08 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 14,
+        "rowSha256": "9361e0be37f473f508da8c51db487456374d2f1bf69fa51169d53a614db36493"
+      }
+    },
+    {
+      "id": "C6-021",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '.' at x=179.03..181.98 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 15,
+        "rowSha256": "dc633af3f65c966c0faedbf98a5204b110b1f425a49273f1811f70b46155069a"
+      }
+    },
+    {
+      "id": "C6-022",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '(' at x=371.23..375.63 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 16,
+        "rowSha256": "b22e6d400498b6c50dac525a9ce86d4468e90d907ae675379f374b3cd42255bf"
+      }
+    },
+    {
+      "id": "C6-023",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '\\xa0' at x=375.63..378.06 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 17,
+        "rowSha256": "206bd1ebaae8f17d8786aff5c672921e2e00fa454b4d6e95877f0e8193aa0067"
+      }
+    },
+    {
+      "id": "C6-024",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 18,
+        "rowSha256": "d5f06155e5b97107ab1e11cf1211eebd382e8522170da6b718fd05a7ec7ba714"
+      }
+    },
+    {
+      "id": "C6-025",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 19,
+        "rowSha256": "3a480e5e8ffb7bea8e014528103caae0601e9688bd59137851fb2f9180760fd4"
+      }
+    },
+    {
+      "id": "C6-026",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '٤' at x=354.59..359.95 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 20,
+        "rowSha256": "dafb5b692e997e7b616fbe7d43868126a2538ba8bfb25fa28a9dc2eb5f54d0a2"
+      }
+    },
+    {
+      "id": "C6-027",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '5' at x=366.78..372.92 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 21,
+        "rowSha256": "222228ea9bcf1bbb4abb9afc90af4c7818785b6236b4c4a17891534c90d6d4e2"
+      }
+    },
+    {
+      "id": "C6-028",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 22,
+        "rowSha256": "d5f06155e5b97107ab1e11cf1211eebd382e8522170da6b718fd05a7ec7ba714"
+      }
+    },
+    {
+      "id": "C6-029",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 23,
+        "rowSha256": "3a480e5e8ffb7bea8e014528103caae0601e9688bd59137851fb2f9180760fd4"
+      }
+    },
+    {
+      "id": "C6-030",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '\\xa0' at x=351.90..354.33 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 24,
+        "rowSha256": "0993076cf9041f085977e56724c2bde5d03ff0c7606e3a2862fa8d660ea34db3"
+      }
+    },
+    {
+      "id": "C6-031",
+      "check": "WORD-MISSING",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyp",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 2,
+        "messageLine": 25,
+        "rowSha256": "2e0a103e234fff77df255b95bc6419ab8d8fac92d47493c8436313e57c30f930"
+      }
+    },
+    {
+      "id": "C6-032",
+      "check": "WORD-CONTENT",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "box '٢' holds '' (100% different) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Compare source code points, actual native glyphs, PDF outlines and ToUnicode/ActualText; extraction mismatch alone does not establish the painted defect.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 2,
+        "rowSha256": "efc9c3eae0ecc62ed24d7789ac07babe12fb09ab37465965bb49de7f52c4c6ca"
+      }
+    },
+    {
+      "id": "C6-033",
+      "check": "WORD-CONTENT",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "box '١٠' holds '٠' (50% different) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Compare source code points, actual native glyphs, PDF outlines and ToUnicode/ActualText; extraction mismatch alone does not establish the painted defect.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 3,
+        "rowSha256": "19b7be9124435ba56757e4460f76a0dddc8d72e0bec8d7ff4e777f6c8a918737"
+      }
+    },
+    {
+      "id": "C6-034",
+      "check": "WORD-CONTENT",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "box 'هو' holds 'ه' (50% different) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Compare source code points, actual native glyphs, PDF outlines and ToUnicode/ActualText; extraction mismatch alone does not establish the painted defect.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 4,
+        "rowSha256": "a306e828266e77c3b16630817005dba8fde522a0a95ee0de451f9e1e65d90b52"
+      }
+    },
+    {
+      "id": "C6-035",
+      "check": "WORD-CONTENT",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "box 'المعادلة' holds 'اةفلمي' (50% different) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Compare source code points, actual native glyphs, PDF outlines and ToUnicode/ActualText; extraction mismatch alone does not establish the painted defect.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 5,
+        "rowSha256": "560374afbd896348af3e9cf8b89497e06da5dc694c92fefe64f78107b7f22a91"
+      }
+    },
+    {
+      "id": "C6-036",
+      "check": "WORD-CONTENT",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "box 'في' holds 'دقي' (50% different) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Compare source code points, actual native glyphs, PDF outlines and ToUnicode/ActualText; extraction mismatch alone does not establish the painted defect.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 6,
+        "rowSha256": "aa82a6fa2ebd4af04c45c99454405484f03b94b4bd634be6482bd0bf3ed60ac6"
+      }
+    },
+    {
+      "id": "C6-037",
+      "check": "WORD-CONTENT",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "box 'حل' holds 'ح' (50% different) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Compare source code points, actual native glyphs, PDF outlines and ToUnicode/ActualText; extraction mismatch alone does not establish the painted defect.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 7,
+        "rowSha256": "c3b150423784b10c8f296951ad0019dcb66d9e7b87f68ddea6d788694ea313ae"
+      }
+    },
+    {
+      "id": "C6-038",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside ':' at x=402.14..405.15 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 8,
+        "rowSha256": "42872ed4d6a356fe59cda218866169711a446fb64399623c3f0aa9b87dd6a459"
+      }
+    },
+    {
+      "id": "C6-039",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '﴿' at x=453.05..460.55 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 9,
+        "rowSha256": "3c0fa3bbf528ad5993a3e311ea3f15fadf909e5f541d08f6accd2e70a49cd144"
+      }
+    },
+    {
+      "id": "C6-040",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '\\xa0' at x=447.41..449.73 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 10,
+        "rowSha256": "5ceffad729dbb2fda1e53df42fd00ff1267345be379487d176f34c100114cfe2"
+      }
+    },
+    {
+      "id": "C6-041",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '(' at x=454.45..458.08 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 11,
+        "rowSha256": "dd78d00b1ddac58d552e9b042ffb8d2ca803314a92c26e76d93756fa07d37dd6"
+      }
+    },
+    {
+      "id": "C6-042",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '\\xa0' at x=459.18..461.50 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 12,
+        "rowSha256": "4e342d0b4e2e938f4628f7df3fe6d17299f9f588033ce5dc7b8d68dd487db820"
+      }
+    },
+    {
+      "id": "C6-043",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '\\xa0' at x=469.85..472.17 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 13,
+        "rowSha256": "394881df0e76e4b445b37ae7f91ccc5966fd17c23636199c02457b2bc05ffbf2"
+      }
+    },
+    {
+      "id": "C6-044",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside ')' at x=227.36..230.78 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 14,
+        "rowSha256": "638aa2bd562374978732268fb2b2c713fa84f23ccb9aa2a22725e2fd04eed556"
+      }
+    },
+    {
+      "id": "C6-045",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside 'درجة' at x=230.78..252.68 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 15,
+        "rowSha256": "22451de7f21c199b607f1f28d175bcf121241930bff2b273e8c6803df6b727e8"
+      }
+    },
+    {
+      "id": "C6-046",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '\\xa0' at x=252.68..255.31 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 16,
+        "rowSha256": "9bbfb52cf9b4453bc22cfe749734cd7892b62dd08548a38f3bb29edd3760f783"
+      }
+    },
+    {
+      "id": "C6-047",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '١٥' at x=255.31..263.31 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 17,
+        "rowSha256": "849dbdc141d8f0b25bbfb9dfa17f6ce3af5ac89388ffcced4b9f57b3fd3e4c1b"
+      }
+    },
+    {
+      "id": "C6-048",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '(' at x=263.31..266.72 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 18,
+        "rowSha256": "9576f9732b47ff9e3827735ca703f0a906395c33bf6fe08322285cb14b363703"
+      }
+    },
+    {
+      "id": "C6-049",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '\\xa0' at x=266.72..269.36 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 19,
+        "rowSha256": "fd673671e9219c9c7f72c5070f65b9e3d7457346a32422405aac44669ae3322c"
+      }
+    },
+    {
+      "id": "C6-050",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '.' at x=269.36..272.97 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 20,
+        "rowSha256": "30c33e3fe80bfd0cfe42355d36ffc24bc173cb52135035be6e46fdfc2c18168e"
+      }
+    },
+    {
+      "id": "C6-051",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside 'أوجد' at x=415.09..436.50 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 21,
+        "rowSha256": "de60be1da41dc17039cd6d442bf74e2ceb0c353849de6ebef55f4a29f121e30f"
+      }
+    },
+    {
+      "id": "C6-052",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '/' at x=480.50..483.88 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 22,
+        "rowSha256": "20d46c0f1abe7941718e3acf3fb1841f2dd4f2253d10c58666cc3c02d7cf25fa"
+      }
+    },
+    {
+      "id": "C6-053",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside 'الثاني' at x=483.88..510.17 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 23,
+        "rowSha256": "63c531ef874ec5f62db9380697957d79b9ee51eaff9fdfcf0eb6001debc88594"
+      }
+    },
+    {
+      "id": "C6-054",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside 'السؤال' at x=512.81..549.01 (deleted, moved away or reordered) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 24,
+        "rowSha256": "4e0e9bfb513f8a1c53eea799cc9462408878df20db34e5d257fedc54676b25b2"
+      }
+    },
+    {
+      "id": "C6-055",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside '.' at x=337.22..340.13 (deleted, moved away or reordered) cause=unresolved",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 25,
+        "rowSha256": "64929186da92598a142b38ccee813a5e788afbb94e270755c682c71dea58f926"
+      }
+    },
+    {
+      "id": "C6-056",
+      "check": "WORD-MISSING",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "no glyphs inside 'وأن' at x=448.55..464.04 (deleted, moved away or reordered) ca",
+      "classification": "inconclusive",
+      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "evidence": {
+        "annotationChunk": 3,
+        "messageLine": 26,
+        "rowSha256": "fc2828f1bb8b38a8559beb422ed596ef5054617c4d6306c4d14b34b2d85ba8ab"
+      }
+    },
+    {
+      "id": "C6-057",
+      "check": "BASELINE",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "baseline moved 6.75pt: ')درجة\\xa0٥(\\xa0.المعادلةحل-١'",
+      "classification": "inconclusive",
+      "explanation": "Compare the actual native baseline and PDF glyph origin; do not widen the 1pt bound.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 12,
+        "rowSha256": "a44d215c8f0bc35c230a18bc65dcc8a19cf765b577464fb54e8d8aab14bd0cc4"
+      }
+    },
+    {
+      "id": "C6-058",
+      "check": "BASELINE",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "baseline moved 3.84pt: '.ثم،وأنأنلاحظ'",
+      "classification": "inconclusive",
+      "explanation": "Compare the actual native baseline and PDF glyph origin; do not widen the 1pt bound.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 13,
+        "rowSha256": "eda6b1761ce4d913228f7d9741a194df2a13273853a8528d07b7ac348729e301"
+      }
+    },
+    {
+      "id": "C6-059",
+      "check": "BRACKET-COUNT",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "preview ')(' vs pdf ''",
+      "classification": "inconclusive",
+      "explanation": "Locate every source bracket in native ink, PDF paint and logical extraction; BiDi is not an exemption.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 14,
+        "rowSha256": "9031db50b1ee24292034582235f686db68c63244e2dd083b7d10c0c6a6d0bbed"
+      }
+    },
+    {
+      "id": "C6-060",
+      "check": "BRACKET-COUNT",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "preview ')(' vs pdf ''",
+      "classification": "inconclusive",
+      "explanation": "Locate every source bracket in native ink, PDF paint and logical extraction; BiDi is not an exemption.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 15,
+        "rowSha256": "9031db50b1ee24292034582235f686db68c63244e2dd083b7d10c0c6a6d0bbed"
+      }
+    },
+    {
+      "id": "C6-061",
+      "check": "LINE-EXTRA",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "PDF line with no Preview line at baseline 712.98: ')ةجرد١٥(.'",
+      "classification": "inconclusive",
+      "explanation": "Identify this PDF line against the complete native page; rule out duplicate or displaced content.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 16,
+        "rowSha256": "e9207e216ff391e533cb520d5437b1e79f411224d7f30f2b5ffaaa2a6ee1e79a"
+      }
+    },
+    {
+      "id": "C6-062",
+      "check": "LINE-EXTRA",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "PDF line with no Preview line at baseline 712.98: '/يناثلالاؤسلا'",
+      "classification": "inconclusive",
+      "explanation": "Identify this PDF line against the complete native page; rule out duplicate or displaced content.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 17,
+        "rowSha256": "d82cb49f72b20d32172ca08568095b143a9e2305cd6cec222e8e39d1eb136001"
+      }
+    },
+    {
+      "id": "C6-063",
+      "check": "LINE-EXTRA",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "PDF line with no Preview line at baseline 740.82: 'نأو'",
+      "classification": "inconclusive",
+      "explanation": "Identify this PDF line against the complete native page; rule out duplicate or displaced content.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 18,
+        "rowSha256": "a47f56f4cc871968a7ded005257a273fb93eab9e1ee1307bc20b6da6d506d896"
+      }
+    },
+    {
+      "id": "C6-064",
+      "check": "LINE-EXTRA",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "PDF line with no Preview line at baseline 740.82: 'نأظحال'",
+      "classification": "inconclusive",
+      "explanation": "Identify this PDF line against the complete native page; rule out duplicate or displaced content.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 19,
+        "rowSha256": "a0e14b88ac6e6986aaad79f8ea374879c80bdace7e4c706c5ca84c80310e5396"
+      }
+    },
+    {
+      "id": "C6-065",
+      "check": "LINE-EXTRA",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "PDF line with no Preview line at baseline 767.32: ')ةجرد٥(.'",
+      "classification": "inconclusive",
+      "explanation": "Identify this PDF line against the complete native page; rule out duplicate or displaced content.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 20,
+        "rowSha256": "d577637035f9e686116a2b60e293ca2691d07003390b2756b6fa6b9030a60c6f"
+      }
+    },
+    {
+      "id": "C6-066",
+      "check": "LINE-EXTRA",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "PDF line with no Preview line at baseline 767.32: '-١'",
+      "classification": "inconclusive",
+      "explanation": "Identify this PDF line against the complete native page; rule out duplicate or displaced content.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 21,
+        "rowSha256": "06c591b5640d118c7dba2bf993499835d44d2408110c0c6f569e12b2a48353b5"
+      }
+    },
+    {
+      "id": "C6-067",
+      "check": "LINE-MISSING",
+      "page": 1,
+      "source": "float",
+      "result": "WOULD FAIL",
+      "detail": "no PDF line within 14.0pt of baseline 633.89 with overlapping x: ''",
+      "classification": "inconclusive",
+      "explanation": "Locate this source line in the PDF, including floating content and clipping.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 22,
+        "rowSha256": "1f57bcbb895f6079dff4853eb1e2fc758f3bac100e6748f19862f0f791260050"
+      }
+    },
+    {
+      "id": "C6-068",
+      "check": "LINE-SHIFT",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "line edges moved left d=57.56pt right d=147.32pt",
+      "classification": "inconclusive",
+      "explanation": "Compare physical line edges/centre on identical page geometry; inspect neighbouring text and wrapping.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 23,
+        "rowSha256": "4cac960e80dcd52627ff891b402df67a3f0ae524bff484adc014dded931ecb86"
+      }
+    },
+    {
+      "id": "C6-069",
+      "check": "LINE-SHIFT",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "line edges moved left d=25.71pt right d=143.39pt",
+      "classification": "inconclusive",
+      "explanation": "Compare physical line edges/centre on identical page geometry; inspect neighbouring text and wrapping.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 24,
+        "rowSha256": "2e5c4e33a0a69392cfcc01b8fd3fcd2c4ed9f646b19db7455db703537e344497"
+      }
+    },
+    {
+      "id": "C6-070",
+      "check": "LINE-SHIFT",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "line edges moved left d=78.61pt right d=53.23pt",
+      "classification": "inconclusive",
+      "explanation": "Compare physical line edges/centre on identical page geometry; inspect neighbouring text and wrapping.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 25,
+        "rowSha256": "2246e5416aff76c58b660e693241355e899c36ce1f20355876c73039de4b8838"
+      }
+    },
+    {
+      "id": "C6-071",
+      "check": "LINE-SHIFT",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "line centre moved 58.84pt",
+      "classification": "inconclusive",
+      "explanation": "Compare physical line edges/centre on identical page geometry; inspect neighbouring text and wrapping.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 26,
+        "rowSha256": "826fb4862233e761c3df448993bde91f6e40821c55801030815d260bc66fa9a5"
+      }
+    },
+    {
+      "id": "C6-072",
+      "check": "LINE-SHIFT",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "line centre moved 44.88pt",
+      "classification": "inconclusive",
+      "explanation": "Compare physical line edges/centre on identical page geometry; inspect neighbouring text and wrapping.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 27,
+        "rowSha256": "626cde4b1269839812924563ab588baa57710b727deeab23fc34c9dc09beff83"
+      }
+    },
+    {
+      "id": "C6-073",
+      "check": "LINE-SHIFT",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "line centre moved 12.69pt",
+      "classification": "inconclusive",
+      "explanation": "Compare physical line edges/centre on identical page geometry; inspect neighbouring text and wrapping.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 28,
+        "rowSha256": "e37a640a9a0c118c378ed056808e304dbdf9443122d85e9a710b41da84061e52"
+      }
+    },
+    {
+      "id": "C6-074",
+      "check": "MATH-IMAGE",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "maths text '\\\\begin{matrix} 1 & 2' left d=22.80pt",
+      "classification": "inconclusive",
+      "explanation": "Inspect the original equation glyph ink, MathStyle, asset and placement on both surfaces; an image rectangle alone is insufficient.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 29,
+        "rowSha256": "a5dec67f7b5ae163af0a6b3e5bb368d705b49613cbbd8e4e725d43549e6a71f7"
+      }
+    },
+    {
+      "id": "C6-075",
+      "check": "MATH-IMAGE",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "maths text 'x^2+2x+1=0' left d=11.96pt",
+      "classification": "inconclusive",
+      "explanation": "Inspect the original equation glyph ink, MathStyle, asset and placement on both surfaces; an image rectangle alone is insufficient.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 30,
+        "rowSha256": "3474a5d72135f4b81e04031eed3d61ca020ac624230f6193920d00835e24c5d4"
+      }
+    },
+    {
+      "id": "C6-076",
+      "check": "MATH-IMAGE",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "maths image 'x^2 - 4 = 0' left d=0.67pt width d=4.61pt",
+      "classification": "inconclusive",
+      "explanation": "Inspect the original equation glyph ink, MathStyle, asset and placement on both surfaces; an image rectangle alone is insufficient.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 31,
+        "rowSha256": "97d2dda63fc8c98771c5348bea547a283069a6c080a7b2bcde248fd1937f7a97"
+      }
+    },
+    {
+      "id": "C6-077",
+      "check": "MATH-IMAGE",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "maths image '\\\\sqrt{x^2}=|x|' left d=2.91pt width d=2.90pt",
+      "classification": "inconclusive",
+      "explanation": "Inspect the original equation glyph ink, MathStyle, asset and placement on both surfaces; an image rectangle alone is insufficient.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 32,
+        "rowSha256": "338e0b47bbd08f33356f8d95cf3b1a1cb0245f65671d8855a9de638322ab9a95"
+      }
+    },
+    {
+      "id": "C6-078",
+      "check": "WORD-CONTENT",
+      "page": 1,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "box 'قيمة' holds 'أجو' (100% different) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Compare source code points, actual native glyphs, PDF outlines and ToUnicode/ActualText; extraction mismatch alone does not establish the painted defect.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 33,
+        "rowSha256": "da988fc0600e69882d433b116a4102bae60f905d159c587f5b3ccf16412acf84"
+      }
+    },
+    {
+      "id": "C6-079",
+      "check": "WORD-CONTENT",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "box '٤' holds '' (100% different) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Compare source code points, actual native glyphs, PDF outlines and ToUnicode/ActualText; extraction mismatch alone does not establish the painted defect.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 34,
+        "rowSha256": "040a49911557fbc252851136d560c2542d197b164d5a530a39374dc4c35c9386"
+      }
+    },
+    {
+      "id": "C6-080",
+      "check": "WORD-CONTENT",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "box '٢' holds '' (100% different) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Compare source code points, actual native glyphs, PDF outlines and ToUnicode/ActualText; extraction mismatch alone does not establish the painted defect.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 35,
+        "rowSha256": "efc9c3eae0ecc62ed24d7789ac07babe12fb09ab37465965bb49de7f52c4c6ca"
+      }
+    },
+    {
+      "id": "C6-081",
+      "check": "WORD-CONTENT",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "box '٢' holds '' (100% different) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Compare source code points, actual native glyphs, PDF outlines and ToUnicode/ActualText; extraction mismatch alone does not establish the painted defect.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 36,
+        "rowSha256": "efc9c3eae0ecc62ed24d7789ac07babe12fb09ab37465965bb49de7f52c4c6ca"
+      }
+    },
+    {
+      "id": "C6-082",
+      "check": "WORD-CONTENT",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "box '٢' holds '' (100% different) cause=letters-absent-from-extract",
+      "classification": "inconclusive",
+      "explanation": "Compare source code points, actual native glyphs, PDF outlines and ToUnicode/ActualText; extraction mismatch alone does not establish the painted defect.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 37,
+        "rowSha256": "efc9c3eae0ecc62ed24d7789ac07babe12fb09ab37465965bb49de7f52c4c6ca"
+      }
+    },
+    {
+      "id": "C6-083",
+      "check": "WORD-CONTENT",
+      "page": 2,
+      "source": "block",
+      "result": "WOULD FAIL",
+      "detail": "box '٤' holds '' (100% different) cause=",
+      "classification": "inconclusive",
+      "explanation": "Compare source code points, actual native glyphs, PDF outlines and ToUnicode/ActualText; extraction mismatch alone does not establish the painted defect.",
+      "evidence": {
+        "annotationChunk": 4,
+        "messageLine": 38,
+        "rowSha256": "9621351f351e574997ebb093ac961600488fdafb9cdd0255646f5da4bdeaac95"
+      }
+    }
+  ],
+  "sourceAnnotationMessages": [
+    "hs inside '(' at x=359.69..364.09 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p2 [block]: no glyphs inside '6' at x=366.52..372.66 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p2 [block]: no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p2 [block]: no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p2 [block]: no glyphs inside '(' at x=367.87..372.26 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p2 [block]: no glyphs inside '7' at x=374.69..380.84 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p2 [block]: no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p2 [block]: no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved\nblock lines: 82 violation(s)\nfloat lines: 1 violation(s)\nverdict: WOULD FAIL (report mode; enforce would exit 1)",
+    "use=letters-absent-from-extract\n  WORD-MISSING p1 [block]: no glyphs inside 'أن' at x=513.31..523.38 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p1 [block]: no glyphs inside 'لاحظ' at x=526.02..549.01 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p1 [block]: no glyphs inside ')' at x=365.30..369.16 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside 'درجة' at x=369.16..388.71 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p1 [block]: no glyphs inside '\\xa0' at x=388.71..391.23 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside '٥' at x=391.23..395.78 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p1 [block]: no glyphs inside '(' at x=395.78..399.64 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside '\\xa0' at x=399.64..402.16 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside '.' at x=402.16..404.94 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside '-' at x=543.31..546.21 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside '١' at x=546.21..549.01 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p2 [block]: no glyphs inside '\\xa0' at x=68.10..70.53 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p2 [block]: no glyphs inside '\\xa0' at x=85.65..88.08 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p2 [block]: no glyphs inside '.' at x=179.03..181.98 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p2 [block]: no glyphs inside '(' at x=371.23..375.63 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p2 [block]: no glyphs inside '\\xa0' at x=375.63..378.06 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p2 [block]: no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p2 [block]: no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p2 [block]: no glyphs inside '٤' at x=354.59..359.95 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p2 [block]: no glyphs inside '5' at x=366.78..372.92 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p2 [block]: no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p2 [block]: no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p2 [block]: no glyphs inside '\\xa0' at x=351.90..354.33 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p2 [block]: no glyp",
+    "letters-absent-from-extract\n  WORD-CONTENT p2 [block]: box '٢' holds '' (100% different) cause=letters-absent-from-extract\n  WORD-CONTENT p1 [block]: box '١٠' holds '٠' (50% different) cause=letters-absent-from-extract\n  WORD-CONTENT p1 [block]: box 'هو' holds 'ه' (50% different) cause=letters-absent-from-extract\n  WORD-CONTENT p1 [block]: box 'المعادلة' holds 'اةفلمي' (50% different) cause=letters-absent-from-extract\n  WORD-CONTENT p1 [block]: box 'في' holds 'دقي' (50% different) cause=letters-absent-from-extract\n  WORD-CONTENT p1 [block]: box 'حل' holds 'ح' (50% different) cause=letters-absent-from-extract\n  WORD-MISSING p1 [block]: no glyphs inside ':' at x=402.14..405.15 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside '﴿' at x=453.05..460.55 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside '\\xa0' at x=447.41..449.73 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside '(' at x=454.45..458.08 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside '\\xa0' at x=459.18..461.50 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside '\\xa0' at x=469.85..472.17 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside ')' at x=227.36..230.78 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside 'درجة' at x=230.78..252.68 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p1 [block]: no glyphs inside '\\xa0' at x=252.68..255.31 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside '١٥' at x=255.31..263.31 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p1 [block]: no glyphs inside '(' at x=263.31..266.72 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside '\\xa0' at x=266.72..269.36 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside '.' at x=269.36..272.97 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside 'أوجد' at x=415.09..436.50 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p1 [block]: no glyphs inside '/' at x=480.50..483.88 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside 'الثاني' at x=483.88..510.17 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p1 [block]: no glyphs inside 'السؤال' at x=512.81..549.01 (deleted, moved away or reordered) cause=letters-absent-from-extract\n  WORD-MISSING p1 [block]: no glyphs inside '.' at x=337.22..340.13 (deleted, moved away or reordered) cause=unresolved\n  WORD-MISSING p1 [block]: no glyphs inside 'وأن' at x=448.55..464.04 (deleted, moved away or reordered) ca",
+    "baseline: n=77 p50=0.000 p95=0.000 p99=6.750 max=6.750pt (bound 1.0)\nword_left: n=670 p50=0.000 p95=7.062 p99=7.062 max=11.429pt (bound 6.5)\nword_right: n=670 p50=0.017 p95=7.062 p99=9.535 max=14.159pt (bound 6.5)\nsize: n=670 p50=0.000 p95=0.000 p99=0.000 max=0.000pt (bound 0.25)\nmath_rect: n=6 p50=4.611 p95=22.805 p99=22.805 max=22.805pt (bound 2.0)\ncontent: n=670 p50=0.000 p95=0.250 p99=1.000 max=1.000pt (bound 0.4)\nline_edge: n=77 p50=0.010 p95=2.960 p99=147.316 max=147.316pt (bound 4.0)\nline_center: n=77 p50=0.005 p95=0.675 p99=58.844 max=58.844pt (bound 2.0)\ncoverage: box_source=caret, bracket_lines=26, chars=2820, edges=origin, lines=77, math_runs=6, pages=2, rtl_lines=71, skipped_math_only=0, underlines=54, words=720\nviolations: BASELINE=2, BRACKET-COUNT=2, LINE-EXTRA=6, LINE-MISSING=1 (float 1), LINE-SHIFT=6, MATH-IMAGE=4, WORD-CONTENT=12, WORD-MISSING=50\ncauses: letters-absent-from-extract=31, unresolved=31\n  BASELINE p1 [block]: baseline moved 6.75pt: ')درجة\\xa0٥(\\xa0.المعادلةحل-١'\n  BASELINE p1 [block]: baseline moved 3.84pt: '.ثم،وأنأنلاحظ'\n  BRACKET-COUNT p1 [block]: preview ')(' vs pdf ''\n  BRACKET-COUNT p1 [block]: preview ')(' vs pdf ''\n  LINE-EXTRA p1 [block]: PDF line with no Preview line at baseline 712.98: ')ةجرد١٥(.'\n  LINE-EXTRA p1 [block]: PDF line with no Preview line at baseline 712.98: '/يناثلالاؤسلا'\n  LINE-EXTRA p1 [block]: PDF line with no Preview line at baseline 740.82: 'نأو'\n  LINE-EXTRA p1 [block]: PDF line with no Preview line at baseline 740.82: 'نأظحال'\n  LINE-EXTRA p1 [block]: PDF line with no Preview line at baseline 767.32: ')ةجرد٥(.'\n  LINE-EXTRA p1 [block]: PDF line with no Preview line at baseline 767.32: '-١'\n  LINE-MISSING p1 [float]: no PDF line within 14.0pt of baseline 633.89 with overlapping x: ''\n  LINE-SHIFT p1 [block]: line edges moved left d=57.56pt right d=147.32pt\n  LINE-SHIFT p1 [block]: line edges moved left d=25.71pt right d=143.39pt\n  LINE-SHIFT p1 [block]: line edges moved left d=78.61pt right d=53.23pt\n  LINE-SHIFT p1 [block]: line centre moved 58.84pt\n  LINE-SHIFT p1 [block]: line centre moved 44.88pt\n  LINE-SHIFT p1 [block]: line centre moved 12.69pt\n  MATH-IMAGE p1 [block]: maths text '\\\\begin{matrix} 1 & 2' left d=22.80pt\n  MATH-IMAGE p1 [block]: maths text 'x^2+2x+1=0' left d=11.96pt\n  MATH-IMAGE p1 [block]: maths image 'x^2 - 4 = 0' left d=0.67pt width d=4.61pt\n  MATH-IMAGE p1 [block]: maths image '\\\\sqrt{x^2}=|x|' left d=2.91pt width d=2.90pt\n  WORD-CONTENT p1 [block]: box 'قيمة' holds 'أجو' (100% different) cause=letters-absent-from-extract\n  WORD-CONTENT p2 [block]: box '٤' holds '' (100% different) cause=letters-absent-from-extract\n  WORD-CONTENT p2 [block]: box '٢' holds '' (100% different) cause=letters-absent-from-extract\n  WORD-CONTENT p2 [block]: box '٢' holds '' (100% different) cause=letters-absent-from-extract\n  WORD-CONTENT p2 [block]: box '٢' holds '' (100% different) cause=letters-absent-from-extract\n  WORD-CONTENT p2 [block]: box '٤' holds '' (100% different) cause="
+  ],
+  "classificationPolicy": "No job-exit inference; no exclusions, tolerance changes or presumed extractor exemptions.",
+  "sourceSha": "4b1f458efd36453a66114c512ce5ff3043962129",
+  "sourceRun": "40600056283",
+  "annotationsSha256": "42ca2fd2853184fe439aa4b28e536586eb4f4285e3ec62748ac6c816b215489c",
+  "evidenceUrl": "https://github.com/techtouchAI/Writing-questions/actions/runs/40600056283"
+}

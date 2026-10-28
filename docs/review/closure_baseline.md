@@ -1,3 +1,15 @@
+## خط الأساس الحالي — تحديث مراجعة الإغلاق
+
+المرجع الحالي قبل التعديلات الجديدة هو `4b1f458efd36453a66114c512ce5ff3043962129`،
+Main40600056283 وExtended40600056273. أُعيد التحقق من الهوية ونقل الأصول.
+8production/219native/1038full/3canonical/analyze/actual30.6MBAPK نجحت في baseline؛
+C6 رغم job-success يقول WOULD FAIL83؛ deviceLaunchVerified=false.
+التقرير الشامل الحالي في [closure_status.md](closure_status.md) يتقدم على السجل أدناه.
+لا تُنقل نتيجة baseline إلى تغييرات الاتجاه/مصدر قياسC6/الأدلة الجديدة.
+
+---
+السجل التالي تاريخي:
+
 # Closure baseline — OPEN, no production activation
 
 ## Identity and transport
