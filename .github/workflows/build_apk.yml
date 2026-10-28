@@ -175,7 +175,9 @@ jobs:
                       for e in events if e.get('type')=='error'][:4])
           print('::notice title=Keyboard BEFORE observed failures::'+json.dumps(diagnostic))
           if len(failed)!=4 or not all('navigation stays above IME' in names.get(i,'') and
-              any('500.0' in e.get('error','') for e in events if e.get('testID')==i) for i in failed):
+              any('Expected: a value less than or equal to <500.0>' in
+                  (e.get('error','') + e.get('message',''))
+                  for e in events if e.get('testID')==i) for i in failed):
               raise SystemExit('Must reproduce exactly four geometric keyboard-occlusion failures, not setup/compile failures.')
           print('::notice title=Keyboard navigation BEFORE regression::'+json.dumps(dict(
               baseline='050ea339399c7415b6f19ab67d185fe8ac973822',failed=[names[i] for i in failed],
