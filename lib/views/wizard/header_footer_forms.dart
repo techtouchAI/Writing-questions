@@ -20,7 +20,11 @@ class _SectionTitle extends StatelessWidget {
       children: <Widget>[
         Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 6),
-        Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        // Section labels are unprinted form UI. Let them wrap at narrow
+        // widths instead of overflowing next to the fixed-size icon.
+        Expanded(
+          child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ),
       ],
     );
   }

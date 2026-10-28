@@ -24,6 +24,7 @@ void main() {
         addTearDown(tester.view.resetDevicePixelRatio);
         addTearDown(tester.view.resetViewInsets);
         final controller = ExamWizardController();
+        if (!header) controller.updateQuestionBody(0, 'Editable العربية 123');
         var submitted = false;
         final screen = header
             ? HeaderStepScreen(
@@ -47,7 +48,13 @@ void main() {
           ),
         ));
         await tester.pumpAndSettle();
-        final next = find.byWidgetPredicate((widget) => widget is FilledButton).first;
+        // PointsEditor also owns a FilledButton ('تطبيق'). Never let a
+        // generic first-button finder stand in for the actual navigation.
+        final next = find.ancestor(
+          of: find.text(header ? 'التالي: إعداد السؤال الأول' : 'التالي: سؤال جديد'),
+          matching: find.byWidgetPredicate((widget) => widget is FilledButton),
+        );
+        expect(next, findsOneWidget);
         final original = tester.getRect(next);
         for (final inset in [300.0, 0.0, 360.0, 0.0]) {
           tester.view.viewInsets = FakeViewPadding(bottom: inset);
@@ -68,12 +75,18 @@ void main() {
           }
           if (inset == 0) expect(rect, original);
         }
-        if (header) {
+        {
           tester.view.viewInsets = const FakeViewPadding(bottom: 300);
           await tester.pumpAndSettle();
           await tester.tap(next);
           await tester.pump();
-          expect(submitted, isTrue);
+          if (header) {
+            expect(submitted, isTrue);
+          } else {
+            expect(controller.currentQuestionIndex, 1);
+            expect(controller.questions.length, 2);
+            expect(controller.questions.first.body, 'Editable العربية 123');
+          }
         }
         await tester.pumpWidget(const SizedBox.shrink());
         controller.dispose();
