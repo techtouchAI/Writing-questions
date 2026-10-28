@@ -31,8 +31,9 @@ def selected(root, profile='production'):
                 set(present) & set(absent) or set(present) | set(absent) != required):
             raise ValueError('Validation logs must account for every command, including unexecuted ones')
         companions = {'manifest.json'}
-        if (root / 'header-direction-before.log').exists():
-            companions.add('header-direction-before.log')
+        for diagnostic in ('header-direction-before.log', 'math-minification-before.log'):
+            if (root / diagnostic).exists():
+                companions.add(diagnostic)
         if (root / 'apk-native.json').exists():
             companions.add('apk-native.json')
         for name in sorted(set(present) | companions):

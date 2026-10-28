@@ -66,7 +66,7 @@ void main() {
         // Native TextPainter is an independent BiDi oracle using the same span,
         // assets and actual available width, not a PDF-specific visual offset.
         final reference = TextPainter(text: native.text, textDirection: direction,
-          textAlign: native.textAlign)..layout(maxWidth: native.size.width);
+          textAlign: native.textAlign)..layout(minWidth: native.size.width, maxWidth: native.size.width);
         final text = native.text.toPlainText();
         for (var offset = 0; offset < text.length; offset++) {
           final selection = TextSelection(baseOffset: offset, extentOffset: offset + 1);

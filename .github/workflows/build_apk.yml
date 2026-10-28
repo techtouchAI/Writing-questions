@@ -135,15 +135,45 @@ jobs:
               except ValueError: pass
           names={e['test']['id']: e['test']['name'] for e in events if e.get('type')=='testStart'}
           failed=[e['testID'] for e in events if e.get('type')=='testDone' and e.get('result') in ('failure', 'error')]
-          errors=[e for e in events if e.get('type')=='error']
           if (len(failed)!=1 or 'for English' not in names.get(failed[0], '') or
-              not any('TextDirection.ltr' in e.get('error', '') for e in errors)):
+              not any('TextDirection.ltr' in (e.get('error', '') + e.get('message', '')) for e in events if e.get('testID') == failed[0])):
               raise SystemExit('Pre-fix run did not reproduce exactly the expected English direction defect.')
           message={'baseline':'4b1f458efd36453a66114c512ce5ff3043962129',
                    'expectedFailure': names[failed[0]], 'cause':'RTL inherited instead of semantic LTR',
                    'currentSourcesRestored':True, 'afterRun':'native-editor-first must pass unchanged regression'}
           print('::notice title=Mixed header BEFORE regression::'+json.dumps(message))
           PYBEFORE
+
+      - name: Prove the actual math operators lose ink with baseline cubic minification
+        if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[closure-audit]') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=lib/layout/canonical/canonical_layout_preview.dart
+          restore_source() { git show "$GITHUB_SHA:$file" > "$file"; }
+          trap restore_source EXIT
+          git show "4b1f458efd36453a66114c512ce5ff3043962129:$file" > "$file"
+          status=0
+          flutter test --reporter json test/layout/canonical/math_minification_ink_test.dart \
+            2>&1 | tee "$RUNNER_TEMP/math-minification-before.log" || status=$?
+          restore_source
+          test "$status" -ne 0
+          python3 - <<'PYMATHBEFORE'
+          import json, os
+          events=[]
+          for line in open(os.path.join(os.environ['RUNNER_TEMP'], 'math-minification-before.log')):
+              try: events.append(json.loads(line))
+              except ValueError: pass
+          names={e['test']['id']:e['test']['name'] for e in events if e.get('type')=='testStart'}
+          failed=[e['testID'] for e in events if e.get('type')=='testDone' and e.get('result') in ('failure','error')]
+          if (len(failed)!=1 or 'native minified math' not in names.get(failed[0],'') or
+              not any('Actual plus operator ink' in e.get('message','') for e in events if e.get('testID')==failed[0])):
+              raise SystemExit('Pre-fix run did not reproduce the expected actual operator ink dropout.')
+          for e in events:
+              if e.get('type')=='print' and 'MATH_INK_EVIDENCE' in e.get('message',''):
+                  print('::notice title=Math ink BEFORE::'+e['message'].replace('\n',' '))
+          print('::notice title=Math ink BEFORE scope::Expected real-glyph minification failure reproduced; current sources restored; after regression must pass unchanged.')
+          PYMATHBEFORE
 
       - name: Verify native editor candidate before the full suite
         id: native_editor_first
@@ -154,6 +184,7 @@ jobs:
           flutter test --reporter json --timeout 120s \
             test/wizard/canonical_editor_candidate_test.dart \
             test/layout/canonical/math_visual_acceptance_test.dart \
+            test/layout/canonical/math_minification_ink_test.dart \
             test/layout/canonical/production_mixed_math_evidence_test.dart \
             test/services/header_border_visibility_test.dart \
             test/layout/paper_metrics_test.dart \
@@ -727,6 +758,7 @@ jobs:
             ${{ runner.temp }}/production-first.log
             ${{ runner.temp }}/native-editor-first.log
             ${{ runner.temp }}/header-direction-before.log
+            ${{ runner.temp }}/math-minification-before.log
             ${{ runner.temp }}/flutter-analyze.log
             ${{ runner.temp }}/flutter-test.log
             ${{ runner.temp }}/flutter-test-canonical-gate.log

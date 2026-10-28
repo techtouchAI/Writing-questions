@@ -314,7 +314,11 @@ class _CanonicalLayoutPreviewPainter extends CustomPainter {
     if (run.isMath) {
       final image = assets.mathImages[run.id];
       if (image != null) {
-        _drawImage(image, canvas, destination, contain: true);
+        // These snapshots are normally minified about 6x at 96dpi. Cubic
+        // `high` samples can miss thin +/fraction strokes; `medium` uses
+        // mipmaps/area prefiltering. Keep the exact glyph bytes/geometry.
+        _drawImage(image, canvas, destination, contain: true,
+            filterQuality: FilterQuality.medium);
       } else {
         _paintText(canvas, line, run, EquationModel.readableText(run.text));
       }
@@ -472,6 +476,7 @@ class _CanonicalLayoutPreviewPainter extends CustomPainter {
     Canvas canvas,
     Rect destination, {
     required bool contain,
+    FilterQuality filterQuality = FilterQuality.high,
   }) {
     final source = Rect.fromLTWH(
       0,
@@ -498,7 +503,7 @@ class _CanonicalLayoutPreviewPainter extends CustomPainter {
       image,
       source,
       target,
-      Paint()..filterQuality = FilterQuality.high,
+      Paint()..filterQuality = filterQuality,
     );
   }
 
