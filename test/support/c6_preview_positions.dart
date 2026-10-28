@@ -58,6 +58,7 @@ Map<String, Object?> _lineRecord(LayoutLine line, String source) {
 Map<String, Object?> _runRecord(LayoutLine line, LayoutRun run) {
   final style = run.style;
   final record = <String, Object?>{
+    'id': run.id,
     'text': run.text,
     'xPt': run.x,
     'widthPt': run.width,

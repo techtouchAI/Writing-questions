@@ -541,6 +541,16 @@ void main() {
     // again outside MathSnapshotHost produces different math metrics/flow.
     final positions = c6PreviewPositions(canonicalLayout,
       sourceKind: 'rendered-canonical-preview-plan');
+    for (final pageRecord in positions['pages']! as List<Map<String, Object?>>) {
+      for (final lineRecord in pageRecord['lines']! as List<Map<String, Object?>>) {
+        for (final runRecord in lineRecord['runs']! as List<Map<String, Object?>>) {
+          if (runRecord['isMath'] == true) {
+            runRecord['renderMode'] = firstPreview.assets.mathImages.containsKey(runRecord['id'])
+                ? 'image' : 'text-fallback';
+          }
+        }
+      }
+    }
     positions['artifactByteLengths'] = <String, int>{
       'vector.pdf': vectorPdfBytes.length,
       for (var index = 0; index < snapshots.length; index++)

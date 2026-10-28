@@ -539,7 +539,7 @@ def compare(preview, pages, bounds=None, max_report=40, edges='ink',
     violations = []
     coverage = {'pages': 0, 'lines': 0, 'words': 0, 'chars': 0,
                 'rtl_lines': 0, 'bracket_lines': 0, 'math_runs': 0,
-                'underlines': 0, 'skipped_math_only': 0}
+                'underlines': 0, 'skipped_math_only': 0, 'math_only_lines': 0}
 
     by_page = {}
     for line in preview:
@@ -561,9 +561,28 @@ def compare(preview, pages, bounds=None, max_report=40, edges='ink',
                                         f'preview {first.width:.2f}x'
                                         f'{first.height:.2f}pt, pdf '
                                         f'{page.width:.2f}x{page.height:.2f}pt'))
+        # An image-only formula has no PDF text baseline to pair. Verify its
+        # typed math paint directly; do not drop it or pretend LINE-MISSING is
+        # intended. A missing/moved/resized image still fails MATH-IMAGE.
+        math_only = [line for line in lines if not line.words and
+                     any(run.get('isMath') for run in line.runs)]
+        text_lines = [line for line in lines if line not in math_only]
+        fallback_chars = set()
+        for line in math_only:
+            coverage['math_only_lines'] += 1
+            near = [c for c in page.chars if abs(c.baseline - line.baseline) <= bounds.line_window_pt]
+            start = len(violations)
+            _check_math(page_index, line, near, page, bounds, samples, violations, coverage)
+            _check_underline(page_index, line, page, violations, coverage)
+            _tag(violations, line.source, start)
+            for run in line.runs:
+                if not run.get('isMath') or run.get('renderMode') == 'image':
+                    continue
+                x, width = float(run['xPt']), float(run.get('widthPt', 0))
+                fallback_chars.update(id(c) for c in near if c.x0 >= x - 2 and c.x1 <= x + width + 2)
         pairs, unmatched, extra = _match_lines(
-            lines, _cluster_lines(page.chars), bounds.line_window_pt,
-            bounds.float_window_pt)
+            text_lines, _cluster_lines([c for c in page.chars if id(c) not in fallback_chars]),
+            bounds.line_window_pt, bounds.float_window_pt)
         for line, baseline, group in pairs:
             delta = abs(baseline - line.baseline)
             if line.words:
@@ -594,7 +613,7 @@ def compare(preview, pages, bounds=None, max_report=40, edges='ink',
                 f'{"".join(c.text for c in group)[:40]!r}'))
     # A vacuous run must never read as a pass: no paired line means the tool
     # measured nothing, whatever it printed above.
-    if coverage['lines'] == 0:
+    if coverage['lines'] == 0 and coverage['math_only_lines'] == 0:
         violations.append(Violation(
             0, 'NO-LINES', 'no Preview line was paired with a PDF line; '
                            'the artifacts are empty or unreadable'))
@@ -841,7 +860,7 @@ def _check_math(page_index, line, chars, page, bounds, samples, violations,
         x = float(run['xPt'])
         width = float(run.get('widthPt', 0))
         inside = [c for c in chars if c.x0 >= x - 2 and c.x1 <= x + width + 2]
-        if inside:
+        if inside and run.get('renderMode') != 'image':
             # Text fallback: the emitted string is a readable rendering of the
             # formula, so its natural width is not the layout box's width. Only
             # the placement is comparable; the image path checks both.
@@ -853,23 +872,31 @@ def _check_math(page_index, line, chars, page, bounds, samples, violations,
                     f'maths text {run.get("text", "")[:20]!r} left '
                     f'd={left:.2f}pt', left))
             continue
-        candidates = [img for img in page.images
-                      if img.x0 < x + width and img.x1 > x]
+        height = float(run.get('heightPt', 0))
+        top = (line.baseline - float(run['layoutBaselineOffsetPt'])
+               if 'layoutBaselineOffsetPt' in run else None)
+        candidates = list(page.images)
         if not candidates:
             violations.append(Violation(
                 page_index, 'MATH-IMAGE',
                 f'maths run {run.get("text", "")[:20]!r} is neither text nor '
                 f'an image at x={x:.2f}..{x + width:.2f}'))
             continue
-        image = min(candidates, key=lambda i: abs(i.x0 - x))
-        left = abs(image.x0 - x)
-        span = abs((image.x1 - image.x0) - width)
-        samples['math_rect'].append(max(left, span))
-        if left > bounds.math_rect_pt or span > bounds.math_rect_pt:
+        def deltas(image):
+            result = [abs(image.x0 - x), abs((image.x1 - image.x0) - width)]
+            if top is not None:
+                result.extend([abs(image.y0 - top), abs((image.y1 - image.y0) - height)])
+            return result
+        image = min(candidates, key=lambda candidate: max(deltas(candidate)))
+        differences = deltas(image)
+        samples['math_rect'].append(max(differences))
+        if max(differences) > bounds.math_rect_pt:
+            vertical = (f' top d={differences[2]:.2f}pt height d={differences[3]:.2f}pt'
+                        if top is not None else '')
             violations.append(Violation(
                 page_index, 'MATH-IMAGE',
-                f'maths image {run.get("text", "")[:20]!r} left d={left:.2f}pt '
-                f'width d={span:.2f}pt', max(left, span)))
+                f'maths image {run.get("text", "")[:20]!r} left d={differences[0]:.2f}pt '
+                f'width d={differences[1]:.2f}pt' + vertical, max(differences)))
 
 
 def distribution(values):

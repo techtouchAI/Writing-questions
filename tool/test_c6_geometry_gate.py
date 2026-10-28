@@ -112,6 +112,60 @@ class RenderedSourceIdentity(unittest.TestCase):
                 gate.bind_rendered_source(data, directory)
 
 
+class TypedMathPaint(unittest.TestCase):
+    def pair(self, render_mode='image', image=True):
+        run = dict(text='x^2', xPt=200.0, widthPt=30.0, heightPt=20.0,
+                   layoutBaselineOffsetPt=10.0, isMath=True, renderMode=render_mode)
+        preview = [preview_line([], 100.0, runs=[run])]
+        preview[0].source = 'float'
+        page = pdf_page([], images=[gate.PdfImageRect(200.0, 90.0, 230.0, 110.0)] if image else [])
+        return preview, page
+
+    def test_image_only_formula_is_measured_not_skipped_or_missing_text(self):
+        preview, page = self.pair()
+        violations, samples, coverage = gate.compare(preview, [page])
+        self.assertEqual(violations, [])
+        self.assertEqual(coverage['math_only_lines'], 1)
+        self.assertEqual(coverage['math_runs'], 1)
+        self.assertEqual(coverage['skipped_math_only'], 0)
+        self.assertEqual(samples['math_rect'], [0.0])
+
+    def test_deleted_image_is_rejected_with_its_actual_paint_type(self):
+        preview, page = self.pair(image=False)
+        violations, _, _ = gate.compare(preview, [page])
+        self.assertIn('MATH-IMAGE', {v.category for v in violations})
+        self.assertTrue(all(v.source == 'float' for v in violations))
+
+    def test_all_four_image_edges_are_enforced_without_widening_bounds(self):
+        for edge in ['x0', 'x1', 'y0', 'y1']:
+            with self.subTest(edge=edge):
+                preview, page = self.pair()
+                image = page.images[0]
+                setattr(image, edge, getattr(image, edge) + gate.Bounds().math_rect_pt + 0.01)
+                violations, _, _ = gate.compare(preview, [page])
+                self.assertIn('MATH-IMAGE', {v.category for v in violations})
+
+    def test_wrong_line_image_cannot_substitute_at_the_same_x(self):
+        preview, page = self.pair()
+        page.images[0].y0 += 100
+        page.images[0].y1 += 100
+        violations, _, _ = gate.compare(preview, [page])
+        self.assertIn('MATH-IMAGE', {v.category for v in violations})
+
+    def test_captured_native_image_cannot_silently_become_pdf_text_fallback(self):
+        preview, page = self.pair(image=False)
+        page.chars = pdf_word('x^2', 200.0, 230.0, 100.0)
+        violations, _, _ = gate.compare(preview, [page])
+        self.assertIn('MATH-IMAGE', {v.category for v in violations})
+
+    def test_declared_text_fallback_still_works_but_is_not_extra_pdf_text(self):
+        preview, page = self.pair(render_mode='text-fallback', image=False)
+        page.chars = pdf_word('x^2', 200.0, 230.0, 100.0)
+        violations, _, coverage = gate.compare(preview, [page])
+        self.assertEqual(violations, [])
+        self.assertEqual(coverage['math_runs'], 1)
+
+
 class Core(unittest.TestCase):
     def test_agreeing_pair_passes(self):
         preview, page = arabic_line()

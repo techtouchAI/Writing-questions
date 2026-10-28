@@ -199,16 +199,27 @@
       "source": "float",
       "result": "WOULD FAIL",
       "detail": "no PDF line within 14.0pt of baseline 633.89 with overlapping x: ''",
-      "classification": "inconclusive",
-      "explanation": "Locate this source line in the PDF, including floating content and clipping.",
+      "classification": "confirmed-defect",
+      "explanation": "The standalone probe records the floating fraction as a math-only line. The baseline PNG and PDF both visibly contain the fraction; the PDF embeds an image, not a text line. The old gate routes unmatched image-only math to LINE-MISSING without executing _check_math. Fix routes it through required math-image geometry, including vertical position/height, without excluding it.",
       "evidence": {
         "annotationChunk": 4,
         "annotationChunksCovered": [
           4
         ],
         "messageLine": 22,
-        "rowSha256": "1f57bcbb895f6079dff4853eb1e2fc758f3bac100e6748f19862f0f791260050"
-      }
+        "rowSha256": "1f57bcbb895f6079dff4853eb1e2fc758f3bac100e6748f19862f0f791260050",
+        "reviewEvidence": {
+          "pdfSha256": "09a75d3e96925267923ea637ae5e6eca888b42baa71522ba4127750b61ab3b57",
+          "imageRectPt": [
+            390.4371643066406,
+            598.3193969726562,
+            415.0746765136719,
+            640.2199096679688
+          ],
+          "code": "tool/c6_geometry_gate.py compare(): unmatched math-only lines bypass _check_math; both originals opened"
+        }
+      },
+      "defectOwner": "C6 diagnostic: typed math paint matching"
     },
     {
       "id": "C6-012",
@@ -650,16 +661,22 @@
       "source": "block",
       "result": "WOULD FAIL",
       "detail": "no glyphs inside '\\xa0' at x=447.41..449.73 (deleted, moved away or reordered) cause=unresolved",
-      "classification": "inconclusive",
-      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "classification": "confirmed-defect",
+      "explanation": "read_pdf_pages discards every whitespace glyph, while _caret_words retains the NBSP token and _compare_line demands a glyph inside it. This cannot establish missing printed ink. Actual spacing/advance must still be independently verified; no exclusion or tolerance change is applied, so this remains WOULD FAIL and blocks closure.",
       "evidence": {
         "annotationChunk": 3,
         "annotationChunksCovered": [
           3
         ],
         "messageLine": 10,
-        "rowSha256": "5ceffad729dbb2fda1e53df42fd00ff1267345be379487d176f34c100114cfe2"
-      }
+        "rowSha256": "5ceffad729dbb2fda1e53df42fd00ff1267345be379487d176f34c100114cfe2",
+        "reviewEvidence": {
+          "reader": "tool/c6_geometry_gate.py read_pdf_pages: if not text or text.isspace(): continue",
+          "expectedToken": "U+00A0, retained by _caret_words",
+          "status": "Unfixed: requires independent advance/adjacent-origin proof, not a skip"
+        }
+      },
+      "defectOwner": "C6 diagnostic: whitespace ink/advance contract"
     },
     {
       "id": "C6-037",
@@ -686,16 +703,22 @@
       "source": "block",
       "result": "WOULD FAIL",
       "detail": "no glyphs inside '\\xa0' at x=459.18..461.50 (deleted, moved away or reordered) cause=unresolved",
-      "classification": "inconclusive",
-      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "classification": "confirmed-defect",
+      "explanation": "read_pdf_pages discards every whitespace glyph, while _caret_words retains the NBSP token and _compare_line demands a glyph inside it. This cannot establish missing printed ink. Actual spacing/advance must still be independently verified; no exclusion or tolerance change is applied, so this remains WOULD FAIL and blocks closure.",
       "evidence": {
         "annotationChunk": 3,
         "annotationChunksCovered": [
           3
         ],
         "messageLine": 12,
-        "rowSha256": "4e342d0b4e2e938f4628f7df3fe6d17299f9f588033ce5dc7b8d68dd487db820"
-      }
+        "rowSha256": "4e342d0b4e2e938f4628f7df3fe6d17299f9f588033ce5dc7b8d68dd487db820",
+        "reviewEvidence": {
+          "reader": "tool/c6_geometry_gate.py read_pdf_pages: if not text or text.isspace(): continue",
+          "expectedToken": "U+00A0, retained by _caret_words",
+          "status": "Unfixed: requires independent advance/adjacent-origin proof, not a skip"
+        }
+      },
+      "defectOwner": "C6 diagnostic: whitespace ink/advance contract"
     },
     {
       "id": "C6-039",
@@ -704,16 +727,22 @@
       "source": "block",
       "result": "WOULD FAIL",
       "detail": "no glyphs inside '\\xa0' at x=469.85..472.17 (deleted, moved away or reordered) cause=unresolved",
-      "classification": "inconclusive",
-      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "classification": "confirmed-defect",
+      "explanation": "read_pdf_pages discards every whitespace glyph, while _caret_words retains the NBSP token and _compare_line demands a glyph inside it. This cannot establish missing printed ink. Actual spacing/advance must still be independently verified; no exclusion or tolerance change is applied, so this remains WOULD FAIL and blocks closure.",
       "evidence": {
         "annotationChunk": 3,
         "annotationChunksCovered": [
           3
         ],
         "messageLine": 13,
-        "rowSha256": "394881df0e76e4b445b37ae7f91ccc5966fd17c23636199c02457b2bc05ffbf2"
-      }
+        "rowSha256": "394881df0e76e4b445b37ae7f91ccc5966fd17c23636199c02457b2bc05ffbf2",
+        "reviewEvidence": {
+          "reader": "tool/c6_geometry_gate.py read_pdf_pages: if not text or text.isspace(): continue",
+          "expectedToken": "U+00A0, retained by _caret_words",
+          "status": "Unfixed: requires independent advance/adjacent-origin proof, not a skip"
+        }
+      },
+      "defectOwner": "C6 diagnostic: whitespace ink/advance contract"
     },
     {
       "id": "C6-040",
@@ -758,16 +787,22 @@
       "source": "block",
       "result": "WOULD FAIL",
       "detail": "no glyphs inside '\\xa0' at x=252.68..255.31 (deleted, moved away or reordered) cause=unresolved",
-      "classification": "inconclusive",
-      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "classification": "confirmed-defect",
+      "explanation": "read_pdf_pages discards every whitespace glyph, while _caret_words retains the NBSP token and _compare_line demands a glyph inside it. This cannot establish missing printed ink. Actual spacing/advance must still be independently verified; no exclusion or tolerance change is applied, so this remains WOULD FAIL and blocks closure.",
       "evidence": {
         "annotationChunk": 3,
         "annotationChunksCovered": [
           3
         ],
         "messageLine": 16,
-        "rowSha256": "9bbfb52cf9b4453bc22cfe749734cd7892b62dd08548a38f3bb29edd3760f783"
-      }
+        "rowSha256": "9bbfb52cf9b4453bc22cfe749734cd7892b62dd08548a38f3bb29edd3760f783",
+        "reviewEvidence": {
+          "reader": "tool/c6_geometry_gate.py read_pdf_pages: if not text or text.isspace(): continue",
+          "expectedToken": "U+00A0, retained by _caret_words",
+          "status": "Unfixed: requires independent advance/adjacent-origin proof, not a skip"
+        }
+      },
+      "defectOwner": "C6 diagnostic: whitespace ink/advance contract"
     },
     {
       "id": "C6-043",
@@ -812,16 +847,22 @@
       "source": "block",
       "result": "WOULD FAIL",
       "detail": "no glyphs inside '\\xa0' at x=266.72..269.36 (deleted, moved away or reordered) cause=unresolved",
-      "classification": "inconclusive",
-      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "classification": "confirmed-defect",
+      "explanation": "read_pdf_pages discards every whitespace glyph, while _caret_words retains the NBSP token and _compare_line demands a glyph inside it. This cannot establish missing printed ink. Actual spacing/advance must still be independently verified; no exclusion or tolerance change is applied, so this remains WOULD FAIL and blocks closure.",
       "evidence": {
         "annotationChunk": 3,
         "annotationChunksCovered": [
           3
         ],
         "messageLine": 19,
-        "rowSha256": "fd673671e9219c9c7f72c5070f65b9e3d7457346a32422405aac44669ae3322c"
-      }
+        "rowSha256": "fd673671e9219c9c7f72c5070f65b9e3d7457346a32422405aac44669ae3322c",
+        "reviewEvidence": {
+          "reader": "tool/c6_geometry_gate.py read_pdf_pages: if not text or text.isspace(): continue",
+          "expectedToken": "U+00A0, retained by _caret_words",
+          "status": "Unfixed: requires independent advance/adjacent-origin proof, not a skip"
+        }
+      },
+      "defectOwner": "C6 diagnostic: whitespace ink/advance contract"
     },
     {
       "id": "C6-046",
@@ -1029,16 +1070,22 @@
       "source": "block",
       "result": "WOULD FAIL",
       "detail": "no glyphs inside '\\xa0' at x=388.71..391.23 (deleted, moved away or reordered) cause=unresolved",
-      "classification": "inconclusive",
-      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "classification": "confirmed-defect",
+      "explanation": "read_pdf_pages discards every whitespace glyph, while _caret_words retains the NBSP token and _compare_line demands a glyph inside it. This cannot establish missing printed ink. Actual spacing/advance must still be independently verified; no exclusion or tolerance change is applied, so this remains WOULD FAIL and blocks closure.",
       "evidence": {
         "annotationChunk": 2,
         "annotationChunksCovered": [
           2
         ],
         "messageLine": 6,
-        "rowSha256": "6175100ff9cf1720b80cd1a6edd5d1adf70c1830416aefc8f99bb5feb64ef1dd"
-      }
+        "rowSha256": "6175100ff9cf1720b80cd1a6edd5d1adf70c1830416aefc8f99bb5feb64ef1dd",
+        "reviewEvidence": {
+          "reader": "tool/c6_geometry_gate.py read_pdf_pages: if not text or text.isspace(): continue",
+          "expectedToken": "U+00A0, retained by _caret_words",
+          "status": "Unfixed: requires independent advance/adjacent-origin proof, not a skip"
+        }
+      },
+      "defectOwner": "C6 diagnostic: whitespace ink/advance contract"
     },
     {
       "id": "C6-058",
@@ -1083,16 +1130,22 @@
       "source": "block",
       "result": "WOULD FAIL",
       "detail": "no glyphs inside '\\xa0' at x=399.64..402.16 (deleted, moved away or reordered) cause=unresolved",
-      "classification": "inconclusive",
-      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "classification": "confirmed-defect",
+      "explanation": "read_pdf_pages discards every whitespace glyph, while _caret_words retains the NBSP token and _compare_line demands a glyph inside it. This cannot establish missing printed ink. Actual spacing/advance must still be independently verified; no exclusion or tolerance change is applied, so this remains WOULD FAIL and blocks closure.",
       "evidence": {
         "annotationChunk": 2,
         "annotationChunksCovered": [
           2
         ],
         "messageLine": 9,
-        "rowSha256": "ef74883cef98e79e365175a7fbecb10624b34de06ec0afa5dccd78e8055fb96c"
-      }
+        "rowSha256": "ef74883cef98e79e365175a7fbecb10624b34de06ec0afa5dccd78e8055fb96c",
+        "reviewEvidence": {
+          "reader": "tool/c6_geometry_gate.py read_pdf_pages: if not text or text.isspace(): continue",
+          "expectedToken": "U+00A0, retained by _caret_words",
+          "status": "Unfixed: requires independent advance/adjacent-origin proof, not a skip"
+        }
+      },
+      "defectOwner": "C6 diagnostic: whitespace ink/advance contract"
     },
     {
       "id": "C6-061",
@@ -1155,16 +1208,22 @@
       "source": "block",
       "result": "WOULD FAIL",
       "detail": "no glyphs inside '\\xa0' at x=68.10..70.53 (deleted, moved away or reordered) cause=unresolved",
-      "classification": "inconclusive",
-      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "classification": "confirmed-defect",
+      "explanation": "read_pdf_pages discards every whitespace glyph, while _caret_words retains the NBSP token and _compare_line demands a glyph inside it. This cannot establish missing printed ink. Actual spacing/advance must still be independently verified; no exclusion or tolerance change is applied, so this remains WOULD FAIL and blocks closure.",
       "evidence": {
         "annotationChunk": 2,
         "annotationChunksCovered": [
           2
         ],
         "messageLine": 13,
-        "rowSha256": "84ac3920aa24dac603798f4c551cd576bebeb6d05ebbb63918a8556a5a80ee77"
-      }
+        "rowSha256": "84ac3920aa24dac603798f4c551cd576bebeb6d05ebbb63918a8556a5a80ee77",
+        "reviewEvidence": {
+          "reader": "tool/c6_geometry_gate.py read_pdf_pages: if not text or text.isspace(): continue",
+          "expectedToken": "U+00A0, retained by _caret_words",
+          "status": "Unfixed: requires independent advance/adjacent-origin proof, not a skip"
+        }
+      },
+      "defectOwner": "C6 diagnostic: whitespace ink/advance contract"
     },
     {
       "id": "C6-065",
@@ -1173,16 +1232,22 @@
       "source": "block",
       "result": "WOULD FAIL",
       "detail": "no glyphs inside '\\xa0' at x=85.65..88.08 (deleted, moved away or reordered) cause=unresolved",
-      "classification": "inconclusive",
-      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "classification": "confirmed-defect",
+      "explanation": "read_pdf_pages discards every whitespace glyph, while _caret_words retains the NBSP token and _compare_line demands a glyph inside it. This cannot establish missing printed ink. Actual spacing/advance must still be independently verified; no exclusion or tolerance change is applied, so this remains WOULD FAIL and blocks closure.",
       "evidence": {
         "annotationChunk": 2,
         "annotationChunksCovered": [
           2
         ],
         "messageLine": 14,
-        "rowSha256": "9361e0be37f473f508da8c51db487456374d2f1bf69fa51169d53a614db36493"
-      }
+        "rowSha256": "9361e0be37f473f508da8c51db487456374d2f1bf69fa51169d53a614db36493",
+        "reviewEvidence": {
+          "reader": "tool/c6_geometry_gate.py read_pdf_pages: if not text or text.isspace(): continue",
+          "expectedToken": "U+00A0, retained by _caret_words",
+          "status": "Unfixed: requires independent advance/adjacent-origin proof, not a skip"
+        }
+      },
+      "defectOwner": "C6 diagnostic: whitespace ink/advance contract"
     },
     {
       "id": "C6-066",
@@ -1227,16 +1292,22 @@
       "source": "block",
       "result": "WOULD FAIL",
       "detail": "no glyphs inside '\\xa0' at x=375.63..378.06 (deleted, moved away or reordered) cause=unresolved",
-      "classification": "inconclusive",
-      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "classification": "confirmed-defect",
+      "explanation": "read_pdf_pages discards every whitespace glyph, while _caret_words retains the NBSP token and _compare_line demands a glyph inside it. This cannot establish missing printed ink. Actual spacing/advance must still be independently verified; no exclusion or tolerance change is applied, so this remains WOULD FAIL and blocks closure.",
       "evidence": {
         "annotationChunk": 2,
         "annotationChunksCovered": [
           2
         ],
         "messageLine": 17,
-        "rowSha256": "206bd1ebaae8f17d8786aff5c672921e2e00fa454b4d6e95877f0e8193aa0067"
-      }
+        "rowSha256": "206bd1ebaae8f17d8786aff5c672921e2e00fa454b4d6e95877f0e8193aa0067",
+        "reviewEvidence": {
+          "reader": "tool/c6_geometry_gate.py read_pdf_pages: if not text or text.isspace(): continue",
+          "expectedToken": "U+00A0, retained by _caret_words",
+          "status": "Unfixed: requires independent advance/adjacent-origin proof, not a skip"
+        }
+      },
+      "defectOwner": "C6 diagnostic: whitespace ink/advance contract"
     },
     {
       "id": "C6-069",
@@ -1353,16 +1424,22 @@
       "source": "block",
       "result": "WOULD FAIL",
       "detail": "no glyphs inside '\\xa0' at x=351.90..354.33 (deleted, moved away or reordered) cause=unresolved",
-      "classification": "inconclusive",
-      "explanation": "Locate this exact source token and interval in native ink and PDF paint/extraction; whitespace requires advance/spacing proof, not an automatic exclusion.",
+      "classification": "confirmed-defect",
+      "explanation": "read_pdf_pages discards every whitespace glyph, while _caret_words retains the NBSP token and _compare_line demands a glyph inside it. This cannot establish missing printed ink. Actual spacing/advance must still be independently verified; no exclusion or tolerance change is applied, so this remains WOULD FAIL and blocks closure.",
       "evidence": {
         "annotationChunk": 2,
         "annotationChunksCovered": [
           2
         ],
         "messageLine": 24,
-        "rowSha256": "0993076cf9041f085977e56724c2bde5d03ff0c7606e3a2862fa8d660ea34db3"
-      }
+        "rowSha256": "0993076cf9041f085977e56724c2bde5d03ff0c7606e3a2862fa8d660ea34db3",
+        "reviewEvidence": {
+          "reader": "tool/c6_geometry_gate.py read_pdf_pages: if not text or text.isspace(): continue",
+          "expectedToken": "U+00A0, retained by _caret_words",
+          "status": "Unfixed: requires independent advance/adjacent-origin proof, not a skip"
+        }
+      },
+      "defectOwner": "C6 diagnostic: whitespace ink/advance contract"
     },
     {
       "id": "C6-076",
@@ -1526,5 +1603,9 @@
   "sourceSha": "4b1f458efd36453a66114c512ce5ff3043962129",
   "sourceRun": "40600056283",
   "annotationsSha256": "42ca2fd2853184fe439aa4b28e536586eb4f4285e3ec62748ac6c816b215489c",
-  "evidenceUrl": "https://github.com/techtouchAI/Writing-questions/actions/runs/40600056283"
+  "evidenceUrl": "https://github.com/techtouchAI/Writing-questions/actions/runs/40600056283",
+  "classificationCounts": {
+    "inconclusive": 71,
+    "confirmed-defect": 12
+  }
 }

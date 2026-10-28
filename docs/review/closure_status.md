@@ -46,8 +46,13 @@ MATH-IMAGE4، WORD-CONTENT12، WORD-MISSING50.
 سطر، رقم الصفحة، source، نتيجة الفحص، تفسير ما يلزم إثباته، رقم chunk/السطر
 وSHA256، ونصوص التعليقات الأصلية. أُعيد وصل chunks بترتيب الإرسال قبل تحليل الصفوف،
 لأن Checks API يعكس الترتيب، والناشر يقطع أحيانًا وسط الكلمة. لا دمج للمخالفات المتكررة ولا إسقاط لها.
-**كل واحدة مصنفة حاليًا «غير حاسمة»**: خلل مصدر القياس مثبت، لكن لا يثبت وحده
-أي صف بعينه أو ينفي عيبًا في الطباعة. لا توجد فروق مقصودة مقبولة بلا متطلب،
+**12 عيبًا تشخيصيًا مؤكدًا و71 غير حاسمة**: C6-011 يطلب سطرPDF نصيًا
+لكسر مرسوم صورةً موجودة في الأصلين؛ أُصلح المسار ليتحقق من الصورة وموضعها/حجمها
+أفقيًا وعموديًا مع اختبارات حذف/إزاحة/ارتفاع/صورة في سطر آخر ورفض fallback صامت.
+11صفًا من WORD-MISSING هي NBSP: القارئ يسقط whitespace ثم المقارن يطلب لها glyph،
+وهو خلل عقد قياس مؤكد؛ **لم يُستثنَ أي منها**. التقدم/المسافة الفعلية يحتاجان
+قياسًا مستقلاً قبل إصلاح التشخيص أو إعفاء الطباعة. إصلاح مصدر القياس لا ينفي
+أي عيب مطبوع آخر؛ لكل صف تفسيره وأدلته فيJSON. لا توجد فروق مقصودة مقبولة بلا متطلب،
 ولا إعفاء extraction/whitespace تلقائي. التصنيف النهائي يتطلب مقابلة التقرير
 الجديد بالأصول قبل/بعد لكل صف. جميعها تبقى مانعًا للإغلاق حتى الحسم.
 
@@ -63,7 +68,7 @@ MATH-IMAGE4، WORD-CONTENT12، WORD-MISSING50.
 | C6-008 | LINE-EXTRA / 1 / block | WOULD FAIL — غير حاسمة | PDF line with no Preview line at baseline 740.82: 'نأظحال' |
 | C6-009 | LINE-EXTRA / 1 / block | WOULD FAIL — غير حاسمة | PDF line with no Preview line at baseline 767.32: ')ةجرد٥(.' |
 | C6-010 | LINE-EXTRA / 1 / block | WOULD FAIL — غير حاسمة | PDF line with no Preview line at baseline 767.32: '-١' |
-| C6-011 | LINE-MISSING / 1 / float | WOULD FAIL — غير حاسمة | no PDF line within 14.0pt of baseline 633.89 with overlapping x: '' |
+| C6-011 | LINE-MISSING / 1 / float | WOULD FAIL — عيب تشخيصي مؤكد | no PDF line within 14.0pt of baseline 633.89 with overlapping x: '' |
 | C6-012 | LINE-SHIFT / 1 / block | WOULD FAIL — غير حاسمة | line edges moved left d=57.56pt right d=147.32pt |
 | C6-013 | LINE-SHIFT / 1 / block | WOULD FAIL — غير حاسمة | line edges moved left d=25.71pt right d=143.39pt |
 | C6-014 | LINE-SHIFT / 1 / block | WOULD FAIL — غير حاسمة | line edges moved left d=78.61pt right d=53.23pt |
@@ -88,16 +93,16 @@ MATH-IMAGE4، WORD-CONTENT12، WORD-MISSING50.
 | C6-033 | WORD-CONTENT / 1 / block | WOULD FAIL — غير حاسمة | box 'حل' holds 'ح' (50% different) cause=letters-absent-from-extract |
 | C6-034 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside ':' at x=402.14..405.15 (deleted, moved away or reordered) cause=unresolved |
 | C6-035 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '﴿' at x=453.05..460.55 (deleted, moved away or reordered) cause=unresolved |
-| C6-036 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=447.41..449.73 (deleted, moved away or reordered) cause=unresolved |
+| C6-036 | WORD-MISSING / 1 / block | WOULD FAIL — عيب تشخيصي مؤكد | no glyphs inside '\xa0' at x=447.41..449.73 (deleted, moved away or reordered) cause=unresolved |
 | C6-037 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=454.45..458.08 (deleted, moved away or reordered) cause=unresolved |
-| C6-038 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=459.18..461.50 (deleted, moved away or reordered) cause=unresolved |
-| C6-039 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=469.85..472.17 (deleted, moved away or reordered) cause=unresolved |
+| C6-038 | WORD-MISSING / 1 / block | WOULD FAIL — عيب تشخيصي مؤكد | no glyphs inside '\xa0' at x=459.18..461.50 (deleted, moved away or reordered) cause=unresolved |
+| C6-039 | WORD-MISSING / 1 / block | WOULD FAIL — عيب تشخيصي مؤكد | no glyphs inside '\xa0' at x=469.85..472.17 (deleted, moved away or reordered) cause=unresolved |
 | C6-040 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside ')' at x=227.36..230.78 (deleted, moved away or reordered) cause=unresolved |
 | C6-041 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'درجة' at x=230.78..252.68 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-042 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=252.68..255.31 (deleted, moved away or reordered) cause=unresolved |
+| C6-042 | WORD-MISSING / 1 / block | WOULD FAIL — عيب تشخيصي مؤكد | no glyphs inside '\xa0' at x=252.68..255.31 (deleted, moved away or reordered) cause=unresolved |
 | C6-043 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '١٥' at x=255.31..263.31 (deleted, moved away or reordered) cause=letters-absent-from-extract |
 | C6-044 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=263.31..266.72 (deleted, moved away or reordered) cause=unresolved |
-| C6-045 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=266.72..269.36 (deleted, moved away or reordered) cause=unresolved |
+| C6-045 | WORD-MISSING / 1 / block | WOULD FAIL — عيب تشخيصي مؤكد | no glyphs inside '\xa0' at x=266.72..269.36 (deleted, moved away or reordered) cause=unresolved |
 | C6-046 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '.' at x=269.36..272.97 (deleted, moved away or reordered) cause=unresolved |
 | C6-047 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'أوجد' at x=415.09..436.50 (deleted, moved away or reordered) cause=letters-absent-from-extract |
 | C6-048 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '/' at x=480.50..483.88 (deleted, moved away or reordered) cause=unresolved |
@@ -109,25 +114,25 @@ MATH-IMAGE4، WORD-CONTENT12، WORD-MISSING50.
 | C6-054 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'لاحظ' at x=526.02..549.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
 | C6-055 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside ')' at x=365.30..369.16 (deleted, moved away or reordered) cause=unresolved |
 | C6-056 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'درجة' at x=369.16..388.71 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-057 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=388.71..391.23 (deleted, moved away or reordered) cause=unresolved |
+| C6-057 | WORD-MISSING / 1 / block | WOULD FAIL — عيب تشخيصي مؤكد | no glyphs inside '\xa0' at x=388.71..391.23 (deleted, moved away or reordered) cause=unresolved |
 | C6-058 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '٥' at x=391.23..395.78 (deleted, moved away or reordered) cause=letters-absent-from-extract |
 | C6-059 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=395.78..399.64 (deleted, moved away or reordered) cause=unresolved |
-| C6-060 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=399.64..402.16 (deleted, moved away or reordered) cause=unresolved |
+| C6-060 | WORD-MISSING / 1 / block | WOULD FAIL — عيب تشخيصي مؤكد | no glyphs inside '\xa0' at x=399.64..402.16 (deleted, moved away or reordered) cause=unresolved |
 | C6-061 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '.' at x=402.16..404.94 (deleted, moved away or reordered) cause=unresolved |
 | C6-062 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '-' at x=543.31..546.21 (deleted, moved away or reordered) cause=unresolved |
 | C6-063 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '١' at x=546.21..549.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-064 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=68.10..70.53 (deleted, moved away or reordered) cause=unresolved |
-| C6-065 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=85.65..88.08 (deleted, moved away or reordered) cause=unresolved |
+| C6-064 | WORD-MISSING / 2 / block | WOULD FAIL — عيب تشخيصي مؤكد | no glyphs inside '\xa0' at x=68.10..70.53 (deleted, moved away or reordered) cause=unresolved |
+| C6-065 | WORD-MISSING / 2 / block | WOULD FAIL — عيب تشخيصي مؤكد | no glyphs inside '\xa0' at x=85.65..88.08 (deleted, moved away or reordered) cause=unresolved |
 | C6-066 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '.' at x=179.03..181.98 (deleted, moved away or reordered) cause=unresolved |
 | C6-067 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=371.23..375.63 (deleted, moved away or reordered) cause=unresolved |
-| C6-068 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=375.63..378.06 (deleted, moved away or reordered) cause=unresolved |
+| C6-068 | WORD-MISSING / 2 / block | WOULD FAIL — عيب تشخيصي مؤكد | no glyphs inside '\xa0' at x=375.63..378.06 (deleted, moved away or reordered) cause=unresolved |
 | C6-069 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
 | C6-070 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved |
 | C6-071 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '٤' at x=354.59..359.95 (deleted, moved away or reordered) cause=letters-absent-from-extract |
 | C6-072 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '5' at x=366.78..372.92 (deleted, moved away or reordered) cause=letters-absent-from-extract |
 | C6-073 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
 | C6-074 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved |
-| C6-075 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=351.90..354.33 (deleted, moved away or reordered) cause=unresolved |
+| C6-075 | WORD-MISSING / 2 / block | WOULD FAIL — عيب تشخيصي مؤكد | no glyphs inside '\xa0' at x=351.90..354.33 (deleted, moved away or reordered) cause=unresolved |
 | C6-076 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=359.69..364.09 (deleted, moved away or reordered) cause=unresolved |
 | C6-077 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '6' at x=366.52..372.66 (deleted, moved away or reordered) cause=letters-absent-from-extract |
 | C6-078 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
@@ -138,6 +143,15 @@ MATH-IMAGE4، WORD-CONTENT12، WORD-MISSING50.
 | C6-083 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved |
 
 ## مصفوفة التحرير والأهداف
+
+المخرجات الفعلية الوسيطة93ed86e (ليست SHA نهائيًا):6/6 سحبات ناجحة؛ لكل إطار
+96 primitive مبنيًا،52 صندوقًا داخل viewport بالكامل،34 صندوقًا دون48dp.
+مقبضا السؤال7.20×7.20dp عند320 و7.62×7.62عند360؛ مقابض الفروع6.40 و6.77dp.
+هذه قياسات screen-dp مرتبطة بـPNG فيediting-manifest، وليست إثبات hit ownership.
+تثبت ضرورة معالجة المقابض المطبوعة؛ لا يجوز تعميم R8 على هذه الأهداف الصغيرة.
+فُتح drag320 branch-between PNG/PDF بعد الإصلاح: ترتيب الرأس/colon صار متوافقًا
+في العينة، لكن الدرجة ما زالت edge مقابل inline. الأصلان/السجلات من93ed نُقلت
+بهوية/هاش. لا تنقل هذه الملاحظة إلى SHA نهائي غير مفحوص.
 
 المرجع المتراكم [closure_editing_inventory.md](closure_editing_inventory.md)
 و[canonical_editor_coverage.md](../canonical_editor_coverage.md)؛ أُضيفت الحالة
@@ -195,12 +209,16 @@ Native226passed/1failed، وانحدارا اتجاه الرأس نجحا. تح�
 عند حواف صورة73px ذات أحجام فردية. هذه **فرضية إصلاح قيد الاختبار**، لا نجاح
 معلن: بايتات الأصل/PDF ومقاس المحتوى ووجهته تبقى كما هي؛ لا تكبير خط أو حبر مصطنع.
 
-AFTER غير متوفر قبل تشغيل SHA الجديد. لا وصف لفرقٍ بأنه مُصلح قبل فتح أصليه.
+42ade1e: Native gate اجتاز بعد حماية mipmap؛ math regression الأصلي بنفس حد1pixel
+بقي كما هو، وfull قيد التنفيذ وقت إعداد التعديل التالي. النتيجة ليست قبولًا نهائيًا؛
+التغيير التالي يقوّي C6 typed math ويستلزم إعادة دورة SHA واحدة كاملة.
+
+AFTER النهائي غير متوفر قبل اكتمال تشغيل SHA الجديد. لا وصف لفرقٍ بأنه مُصلح قبل فتح أصليه.
 تبقى إعادة فحص equations/OPTEND/B109/كل الصفحات/RTL والمقاطع الطويلة واجبة.
 
 ## بوابات الشفرة الجديدة / موانع CLOSED
 
-قبل CI: Python inventory5/5، transport11/11، APK-audit7/7؛ geometry28/28
+قبل CI: Python inventory5/5، transport11/11، APK-audit7/7؛ geometry34/34
 و3 real-artifact tests لم تُنفذ محليًا لغياب المدخلات الجديدة (ليست PASS).
 لا Flutter محلي؛ tests/analyze/actualAPK/Visual/C6/Extended الجديدة **PENDING**.
 يُتبع تشغيل GitHub الجديد حتى نتيجته؛ لا تُنقل نتائج baseline إلى SHA جديد.
