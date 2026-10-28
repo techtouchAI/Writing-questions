@@ -86,6 +86,17 @@ class EvidenceTransportTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Missing/unsafe'):
                 list(transport.selected(root, 'validation'))
 
+    def test_keyboard_negative_control_is_transported_without_changing_command_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            names = ['production-first.log', 'native-editor-first.log', 'flutter-test.log',
+                     'flutter-test-canonical-gate.log', 'flutter-analyze.log', 'flutter-build.log']
+            (root / 'manifest.json').write_text(json.dumps(dict(files=names, notProduced=[])))
+            for name in names + ['keyboard-navigation-before.log']:
+                (root / name).write_text('complete original command output')
+            self.assertEqual({p.name for p in transport.selected(root, 'validation')},
+                             set(names + ['manifest.json', 'keyboard-navigation-before.log']))
+
     def test_annotation_packing_stays_below_job_and_step_limits(self):
         rows = [{'file': f'evidence-{i}.png', 'inventoryCount': 80} for i in range(80)]
         with tempfile.TemporaryDirectory() as directory:

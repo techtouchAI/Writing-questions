@@ -908,7 +908,6 @@ jobs:
           from pathlib import Path
           root = Path(os.environ['RUNNER_TEMP']) / 'command-logs'
           names = ['production-first.log', 'native-editor-first.log', 'flutter-test.log',
-                   'keyboard-navigation-before.log',
                    'flutter-test-canonical-gate.log', 'flutter-analyze.log', 'flutter-build.log']
           (root / 'manifest.json').write_text(json.dumps({
               'kind': 'Complete Flutter command output, not the GitHub setup/job archive',
