@@ -170,6 +170,10 @@ jobs:
               except ValueError: pass
           names={e['test']['id']:e['test']['name'] for e in events if e.get('type')=='testStart'}
           failed=[e['testID'] for e in events if e.get('type')=='testDone' and e.get('result') in ('failure','error')]
+          diagnostic=dict(failed=[names.get(i,str(i)) for i in failed],
+              errors=[dict(testID=e.get('testID'),error=e.get('error','')[:500])
+                      for e in events if e.get('type')=='error'][:4])
+          print('::notice title=Keyboard BEFORE observed failures::'+json.dumps(diagnostic))
           if len(failed)!=4 or not all('navigation stays above IME' in names.get(i,'') and
               any('500.0' in e.get('error','') for e in events if e.get('testID')==i) for i in failed):
               raise SystemExit('Must reproduce exactly four geometric keyboard-occlusion failures, not setup/compile failures.')
