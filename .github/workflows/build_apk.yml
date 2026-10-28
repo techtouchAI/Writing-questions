@@ -927,6 +927,10 @@ jobs:
         run: |
           python3 tool/evidence_review_transport.py publish --profile validation --root "$RUNNER_TEMP/command-logs" --index "$RUNNER_TEMP/log-index.json"
           python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/log-index.json" --group 0
+      # Six command logs, the manifest, APK audit and three negative controls
+      # total eleven originals. Keep a separate step's five-notice budget.
+      - name: Publish remaining hashed log references
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/log-index.json" --group 1
 
   evidence-review:
     name: Original evidence review transport

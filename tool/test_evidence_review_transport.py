@@ -97,6 +97,68 @@ class EvidenceTransportTest(unittest.TestCase):
             self.assertEqual({p.name for p in transport.selected(root, 'validation')},
                              set(names + ['manifest.json', 'keyboard-navigation-before.log']))
 
+    def test_workflow_publishes_every_validation_companion_not_only_first_ten(self):
+        # Real 29fbb92 regression: six commands + manifest + APK audit + three
+        # negative controls = 11 originals. A successful job emitted group 0
+        # only; the strict reader correctly refused the truncated inventory.
+        import re
+        import base64
+        import hashlib
+        workflow = (Path(__file__).resolve().parents[1] /
+                    '.github/workflows/build_apk.yml').read_text()
+        job = workflow.split('\n  validation-log-review:', 1)[1].split('\n  evidence-review:', 1)[0]
+        groups = [int(n) for n in re.findall(
+            r'emit --index "\$RUNNER_TEMP/log-index.json" --group (\d+)', job)]
+        names = ['production-first.log', 'native-editor-first.log', 'flutter-test.log',
+                 'flutter-test-canonical-gate.log', 'flutter-analyze.log', 'flutter-build.log']
+        companions = ['apk-native.json', 'header-direction-before.log',
+                      'math-minification-before.log', 'keyboard-navigation-before.log']
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'manifest.json').write_text(json.dumps(dict(files=names, notProduced=[])))
+            for name in names + companions:
+                (root / name).write_text('original ' + name)
+            blobs, rows = {}, []
+            for path in transport.selected(root, 'validation'):
+                raw = path.read_bytes()
+                blob = transport.git_blob_sha(raw)
+                blobs[blob] = dict(encoding='base64', content=base64.b64encode(raw).decode())
+                rows.append(dict(file=path.name, bytes=len(raw), blob=blob,
+                    sha256=hashlib.sha256(raw).hexdigest(), sourceSha='a' * 40, sourceRun='123'))
+            self.assertEqual(len(rows), 11)
+            digest = transport.inventory_sha(rows)
+            rows = [dict(row, inventoryCount=len(rows), inventorySha256=digest) for row in rows]
+            index = root / 'index.json'
+            index.write_text(json.dumps(rows))
+            annotations = []
+            for group in groups:
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    transport.emit(SimpleNamespace(index=index, group=group))
+                notices = output.getvalue().splitlines()
+                self.assertLessEqual(len(notices), 5, 'per-step annotation budget')
+                annotations.extend(dict(title='Evidence blob reference',
+                    message=line.split('::', 2)[2]) for line in notices)
+            self.assertLessEqual(len(annotations), 40, 'job annotation budget')
+            def api(endpoint):
+                if '/actions/runs/123/jobs?' in endpoint:
+                    return {'jobs': [dict(name='Full validation command log transport',
+                                         conclusion='success', id=456)]}
+                if endpoint.endswith('/actions/runs/123'):
+                    return {'head_sha': 'a' * 40}
+                if '/annotations?' in endpoint:
+                    return annotations
+                return blobs[endpoint.rsplit('/', 1)[1]]
+            destination = root / 'fetched'
+            with patch.object(transport, 'api', side_effect=api), contextlib.redirect_stdout(io.StringIO()):
+                transport.fetch(SimpleNamespace(repository='owner/repo', run='123',
+                    job_name='Full validation command log transport', destination=destination))
+            receipt = json.loads((destination / 'retrieval-provenance.json').read_text())
+            self.assertTrue(receipt['verifiedComplete'])
+            self.assertEqual(receipt['count'], 11)
+            for row in rows:
+                self.assertEqual((destination / row['file']).read_bytes(), (root / row['file']).read_bytes())
+
     def test_annotation_packing_stays_below_job_and_step_limits(self):
         rows = [{'file': f'evidence-{i}.png', 'inventoryCount': 80} for i in range(80)]
         with tempfile.TemporaryDirectory() as directory:
