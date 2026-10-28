@@ -44,7 +44,8 @@ MATH-IMAGE4، WORD-CONTENT12، WORD-MISSING50.
 
 الملف الآلي [c6_baseline_inventory.json](c6_baseline_inventory.json) يحتفظ بكل
 سطر، رقم الصفحة، source، نتيجة الفحص، تفسير ما يلزم إثباته، رقم chunk/السطر
-وSHA256، ونصوص التعليقات الأصلية. لا دمج للمخالفات المتكررة ولا إسقاط لها.
+وSHA256، ونصوص التعليقات الأصلية. أُعيد وصل chunks بترتيب الإرسال قبل تحليل الصفوف،
+لأن Checks API يعكس الترتيب، والناشر يقطع أحيانًا وسط الكلمة. لا دمج للمخالفات المتكررة ولا إسقاط لها.
 **كل واحدة مصنفة حاليًا «غير حاسمة»**: خلل مصدر القياس مثبت، لكن لا يثبت وحده
 أي صف بعينه أو ينفي عيبًا في الطباعة. لا توجد فروق مقصودة مقبولة بلا متطلب،
 ولا إعفاء extraction/whitespace تلقائي. التصنيف النهائي يتطلب مقابلة التقرير
@@ -52,89 +53,89 @@ MATH-IMAGE4، WORD-CONTENT12، WORD-MISSING50.
 
 | ID | Check / page / source | النتيجة والتصنيف | الدليل الحرفي |
 |---|---|---|---|
-| C6-001 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '6' at x=366.52..372.66 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-002 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-003 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved |
-| C6-004 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=367.87..372.26 (deleted, moved away or reordered) cause=unresolved |
-| C6-005 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '7' at x=374.69..380.84 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-006 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-007 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved |
-| C6-008 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'أن' at x=513.31..523.38 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-009 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'لاحظ' at x=526.02..549.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-010 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside ')' at x=365.30..369.16 (deleted, moved away or reordered) cause=unresolved |
-| C6-011 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'درجة' at x=369.16..388.71 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-012 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=388.71..391.23 (deleted, moved away or reordered) cause=unresolved |
-| C6-013 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '٥' at x=391.23..395.78 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-014 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=395.78..399.64 (deleted, moved away or reordered) cause=unresolved |
-| C6-015 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=399.64..402.16 (deleted, moved away or reordered) cause=unresolved |
-| C6-016 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '.' at x=402.16..404.94 (deleted, moved away or reordered) cause=unresolved |
-| C6-017 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '-' at x=543.31..546.21 (deleted, moved away or reordered) cause=unresolved |
-| C6-018 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '١' at x=546.21..549.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-019 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=68.10..70.53 (deleted, moved away or reordered) cause=unresolved |
-| C6-020 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=85.65..88.08 (deleted, moved away or reordered) cause=unresolved |
-| C6-021 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '.' at x=179.03..181.98 (deleted, moved away or reordered) cause=unresolved |
-| C6-022 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=371.23..375.63 (deleted, moved away or reordered) cause=unresolved |
-| C6-023 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=375.63..378.06 (deleted, moved away or reordered) cause=unresolved |
-| C6-024 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-025 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved |
-| C6-026 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '٤' at x=354.59..359.95 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-027 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '5' at x=366.78..372.92 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-028 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-029 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved |
-| C6-030 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=351.90..354.33 (deleted, moved away or reordered) cause=unresolved |
-| C6-031 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyp |
-| C6-032 | WORD-CONTENT / 2 / block | WOULD FAIL — غير حاسمة | box '٢' holds '' (100% different) cause=letters-absent-from-extract |
-| C6-033 | WORD-CONTENT / 1 / block | WOULD FAIL — غير حاسمة | box '١٠' holds '٠' (50% different) cause=letters-absent-from-extract |
-| C6-034 | WORD-CONTENT / 1 / block | WOULD FAIL — غير حاسمة | box 'هو' holds 'ه' (50% different) cause=letters-absent-from-extract |
-| C6-035 | WORD-CONTENT / 1 / block | WOULD FAIL — غير حاسمة | box 'المعادلة' holds 'اةفلمي' (50% different) cause=letters-absent-from-extract |
-| C6-036 | WORD-CONTENT / 1 / block | WOULD FAIL — غير حاسمة | box 'في' holds 'دقي' (50% different) cause=letters-absent-from-extract |
-| C6-037 | WORD-CONTENT / 1 / block | WOULD FAIL — غير حاسمة | box 'حل' holds 'ح' (50% different) cause=letters-absent-from-extract |
-| C6-038 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside ':' at x=402.14..405.15 (deleted, moved away or reordered) cause=unresolved |
-| C6-039 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '﴿' at x=453.05..460.55 (deleted, moved away or reordered) cause=unresolved |
-| C6-040 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=447.41..449.73 (deleted, moved away or reordered) cause=unresolved |
-| C6-041 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=454.45..458.08 (deleted, moved away or reordered) cause=unresolved |
-| C6-042 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=459.18..461.50 (deleted, moved away or reordered) cause=unresolved |
-| C6-043 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=469.85..472.17 (deleted, moved away or reordered) cause=unresolved |
-| C6-044 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside ')' at x=227.36..230.78 (deleted, moved away or reordered) cause=unresolved |
-| C6-045 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'درجة' at x=230.78..252.68 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-046 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=252.68..255.31 (deleted, moved away or reordered) cause=unresolved |
-| C6-047 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '١٥' at x=255.31..263.31 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-048 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=263.31..266.72 (deleted, moved away or reordered) cause=unresolved |
-| C6-049 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=266.72..269.36 (deleted, moved away or reordered) cause=unresolved |
-| C6-050 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '.' at x=269.36..272.97 (deleted, moved away or reordered) cause=unresolved |
-| C6-051 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'أوجد' at x=415.09..436.50 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-052 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '/' at x=480.50..483.88 (deleted, moved away or reordered) cause=unresolved |
-| C6-053 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'الثاني' at x=483.88..510.17 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-054 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'السؤال' at x=512.81..549.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
-| C6-055 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '.' at x=337.22..340.13 (deleted, moved away or reordered) cause=unresolved |
-| C6-056 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'وأن' at x=448.55..464.04 (deleted, moved away or reordered) ca |
-| C6-057 | BASELINE / 1 / block | WOULD FAIL — غير حاسمة | baseline moved 6.75pt: ')درجة\xa0٥(\xa0.المعادلةحل-١' |
-| C6-058 | BASELINE / 1 / block | WOULD FAIL — غير حاسمة | baseline moved 3.84pt: '.ثم،وأنأنلاحظ' |
-| C6-059 | BRACKET-COUNT / 1 / block | WOULD FAIL — غير حاسمة | preview ')(' vs pdf '' |
-| C6-060 | BRACKET-COUNT / 1 / block | WOULD FAIL — غير حاسمة | preview ')(' vs pdf '' |
-| C6-061 | LINE-EXTRA / 1 / block | WOULD FAIL — غير حاسمة | PDF line with no Preview line at baseline 712.98: ')ةجرد١٥(.' |
-| C6-062 | LINE-EXTRA / 1 / block | WOULD FAIL — غير حاسمة | PDF line with no Preview line at baseline 712.98: '/يناثلالاؤسلا' |
-| C6-063 | LINE-EXTRA / 1 / block | WOULD FAIL — غير حاسمة | PDF line with no Preview line at baseline 740.82: 'نأو' |
-| C6-064 | LINE-EXTRA / 1 / block | WOULD FAIL — غير حاسمة | PDF line with no Preview line at baseline 740.82: 'نأظحال' |
-| C6-065 | LINE-EXTRA / 1 / block | WOULD FAIL — غير حاسمة | PDF line with no Preview line at baseline 767.32: ')ةجرد٥(.' |
-| C6-066 | LINE-EXTRA / 1 / block | WOULD FAIL — غير حاسمة | PDF line with no Preview line at baseline 767.32: '-١' |
-| C6-067 | LINE-MISSING / 1 / float | WOULD FAIL — غير حاسمة | no PDF line within 14.0pt of baseline 633.89 with overlapping x: '' |
-| C6-068 | LINE-SHIFT / 1 / block | WOULD FAIL — غير حاسمة | line edges moved left d=57.56pt right d=147.32pt |
-| C6-069 | LINE-SHIFT / 1 / block | WOULD FAIL — غير حاسمة | line edges moved left d=25.71pt right d=143.39pt |
-| C6-070 | LINE-SHIFT / 1 / block | WOULD FAIL — غير حاسمة | line edges moved left d=78.61pt right d=53.23pt |
-| C6-071 | LINE-SHIFT / 1 / block | WOULD FAIL — غير حاسمة | line centre moved 58.84pt |
-| C6-072 | LINE-SHIFT / 1 / block | WOULD FAIL — غير حاسمة | line centre moved 44.88pt |
-| C6-073 | LINE-SHIFT / 1 / block | WOULD FAIL — غير حاسمة | line centre moved 12.69pt |
-| C6-074 | MATH-IMAGE / 1 / block | WOULD FAIL — غير حاسمة | maths text '\\begin{matrix} 1 & 2' left d=22.80pt |
-| C6-075 | MATH-IMAGE / 1 / block | WOULD FAIL — غير حاسمة | maths text 'x^2+2x+1=0' left d=11.96pt |
-| C6-076 | MATH-IMAGE / 1 / block | WOULD FAIL — غير حاسمة | maths image 'x^2 - 4 = 0' left d=0.67pt width d=4.61pt |
-| C6-077 | MATH-IMAGE / 1 / block | WOULD FAIL — غير حاسمة | maths image '\\sqrt{x^2}=\|x\|' left d=2.91pt width d=2.90pt |
-| C6-078 | WORD-CONTENT / 1 / block | WOULD FAIL — غير حاسمة | box 'قيمة' holds 'أجو' (100% different) cause=letters-absent-from-extract |
-| C6-079 | WORD-CONTENT / 2 / block | WOULD FAIL — غير حاسمة | box '٤' holds '' (100% different) cause=letters-absent-from-extract |
-| C6-080 | WORD-CONTENT / 2 / block | WOULD FAIL — غير حاسمة | box '٢' holds '' (100% different) cause=letters-absent-from-extract |
-| C6-081 | WORD-CONTENT / 2 / block | WOULD FAIL — غير حاسمة | box '٢' holds '' (100% different) cause=letters-absent-from-extract |
-| C6-082 | WORD-CONTENT / 2 / block | WOULD FAIL — غير حاسمة | box '٢' holds '' (100% different) cause=letters-absent-from-extract |
-| C6-083 | WORD-CONTENT / 2 / block | WOULD FAIL — غير حاسمة | box '٤' holds '' (100% different) cause= |
+| C6-001 | BASELINE / 1 / block | WOULD FAIL — غير حاسمة | baseline moved 6.75pt: ')درجة\xa0٥(\xa0.المعادلةحل-١' |
+| C6-002 | BASELINE / 1 / block | WOULD FAIL — غير حاسمة | baseline moved 3.84pt: '.ثم،وأنأنلاحظ' |
+| C6-003 | BRACKET-COUNT / 1 / block | WOULD FAIL — غير حاسمة | preview ')(' vs pdf '' |
+| C6-004 | BRACKET-COUNT / 1 / block | WOULD FAIL — غير حاسمة | preview ')(' vs pdf '' |
+| C6-005 | LINE-EXTRA / 1 / block | WOULD FAIL — غير حاسمة | PDF line with no Preview line at baseline 712.98: ')ةجرد١٥(.' |
+| C6-006 | LINE-EXTRA / 1 / block | WOULD FAIL — غير حاسمة | PDF line with no Preview line at baseline 712.98: '/يناثلالاؤسلا' |
+| C6-007 | LINE-EXTRA / 1 / block | WOULD FAIL — غير حاسمة | PDF line with no Preview line at baseline 740.82: 'نأو' |
+| C6-008 | LINE-EXTRA / 1 / block | WOULD FAIL — غير حاسمة | PDF line with no Preview line at baseline 740.82: 'نأظحال' |
+| C6-009 | LINE-EXTRA / 1 / block | WOULD FAIL — غير حاسمة | PDF line with no Preview line at baseline 767.32: ')ةجرد٥(.' |
+| C6-010 | LINE-EXTRA / 1 / block | WOULD FAIL — غير حاسمة | PDF line with no Preview line at baseline 767.32: '-١' |
+| C6-011 | LINE-MISSING / 1 / float | WOULD FAIL — غير حاسمة | no PDF line within 14.0pt of baseline 633.89 with overlapping x: '' |
+| C6-012 | LINE-SHIFT / 1 / block | WOULD FAIL — غير حاسمة | line edges moved left d=57.56pt right d=147.32pt |
+| C6-013 | LINE-SHIFT / 1 / block | WOULD FAIL — غير حاسمة | line edges moved left d=25.71pt right d=143.39pt |
+| C6-014 | LINE-SHIFT / 1 / block | WOULD FAIL — غير حاسمة | line edges moved left d=78.61pt right d=53.23pt |
+| C6-015 | LINE-SHIFT / 1 / block | WOULD FAIL — غير حاسمة | line centre moved 58.84pt |
+| C6-016 | LINE-SHIFT / 1 / block | WOULD FAIL — غير حاسمة | line centre moved 44.88pt |
+| C6-017 | LINE-SHIFT / 1 / block | WOULD FAIL — غير حاسمة | line centre moved 12.69pt |
+| C6-018 | MATH-IMAGE / 1 / block | WOULD FAIL — غير حاسمة | maths text '\\begin{matrix} 1 & 2' left d=22.80pt |
+| C6-019 | MATH-IMAGE / 1 / block | WOULD FAIL — غير حاسمة | maths text 'x^2+2x+1=0' left d=11.96pt |
+| C6-020 | MATH-IMAGE / 1 / block | WOULD FAIL — غير حاسمة | maths image 'x^2 - 4 = 0' left d=0.67pt width d=4.61pt |
+| C6-021 | MATH-IMAGE / 1 / block | WOULD FAIL — غير حاسمة | maths image '\\sqrt{x^2}=\|x\|' left d=2.91pt width d=2.90pt |
+| C6-022 | WORD-CONTENT / 1 / block | WOULD FAIL — غير حاسمة | box 'قيمة' holds 'أجو' (100% different) cause=letters-absent-from-extract |
+| C6-023 | WORD-CONTENT / 2 / block | WOULD FAIL — غير حاسمة | box '٤' holds '' (100% different) cause=letters-absent-from-extract |
+| C6-024 | WORD-CONTENT / 2 / block | WOULD FAIL — غير حاسمة | box '٢' holds '' (100% different) cause=letters-absent-from-extract |
+| C6-025 | WORD-CONTENT / 2 / block | WOULD FAIL — غير حاسمة | box '٢' holds '' (100% different) cause=letters-absent-from-extract |
+| C6-026 | WORD-CONTENT / 2 / block | WOULD FAIL — غير حاسمة | box '٢' holds '' (100% different) cause=letters-absent-from-extract |
+| C6-027 | WORD-CONTENT / 2 / block | WOULD FAIL — غير حاسمة | box '٤' holds '' (100% different) cause=letters-absent-from-extract |
+| C6-028 | WORD-CONTENT / 2 / block | WOULD FAIL — غير حاسمة | box '٢' holds '' (100% different) cause=letters-absent-from-extract |
+| C6-029 | WORD-CONTENT / 1 / block | WOULD FAIL — غير حاسمة | box '١٠' holds '٠' (50% different) cause=letters-absent-from-extract |
+| C6-030 | WORD-CONTENT / 1 / block | WOULD FAIL — غير حاسمة | box 'هو' holds 'ه' (50% different) cause=letters-absent-from-extract |
+| C6-031 | WORD-CONTENT / 1 / block | WOULD FAIL — غير حاسمة | box 'المعادلة' holds 'اةفلمي' (50% different) cause=letters-absent-from-extract |
+| C6-032 | WORD-CONTENT / 1 / block | WOULD FAIL — غير حاسمة | box 'في' holds 'دقي' (50% different) cause=letters-absent-from-extract |
+| C6-033 | WORD-CONTENT / 1 / block | WOULD FAIL — غير حاسمة | box 'حل' holds 'ح' (50% different) cause=letters-absent-from-extract |
+| C6-034 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside ':' at x=402.14..405.15 (deleted, moved away or reordered) cause=unresolved |
+| C6-035 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '﴿' at x=453.05..460.55 (deleted, moved away or reordered) cause=unresolved |
+| C6-036 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=447.41..449.73 (deleted, moved away or reordered) cause=unresolved |
+| C6-037 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=454.45..458.08 (deleted, moved away or reordered) cause=unresolved |
+| C6-038 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=459.18..461.50 (deleted, moved away or reordered) cause=unresolved |
+| C6-039 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=469.85..472.17 (deleted, moved away or reordered) cause=unresolved |
+| C6-040 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside ')' at x=227.36..230.78 (deleted, moved away or reordered) cause=unresolved |
+| C6-041 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'درجة' at x=230.78..252.68 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-042 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=252.68..255.31 (deleted, moved away or reordered) cause=unresolved |
+| C6-043 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '١٥' at x=255.31..263.31 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-044 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=263.31..266.72 (deleted, moved away or reordered) cause=unresolved |
+| C6-045 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=266.72..269.36 (deleted, moved away or reordered) cause=unresolved |
+| C6-046 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '.' at x=269.36..272.97 (deleted, moved away or reordered) cause=unresolved |
+| C6-047 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'أوجد' at x=415.09..436.50 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-048 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '/' at x=480.50..483.88 (deleted, moved away or reordered) cause=unresolved |
+| C6-049 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'الثاني' at x=483.88..510.17 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-050 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'السؤال' at x=512.81..549.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-051 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '.' at x=337.22..340.13 (deleted, moved away or reordered) cause=unresolved |
+| C6-052 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'وأن' at x=448.55..464.04 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-053 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'أن' at x=513.31..523.38 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-054 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'لاحظ' at x=526.02..549.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-055 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside ')' at x=365.30..369.16 (deleted, moved away or reordered) cause=unresolved |
+| C6-056 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside 'درجة' at x=369.16..388.71 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-057 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=388.71..391.23 (deleted, moved away or reordered) cause=unresolved |
+| C6-058 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '٥' at x=391.23..395.78 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-059 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=395.78..399.64 (deleted, moved away or reordered) cause=unresolved |
+| C6-060 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=399.64..402.16 (deleted, moved away or reordered) cause=unresolved |
+| C6-061 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '.' at x=402.16..404.94 (deleted, moved away or reordered) cause=unresolved |
+| C6-062 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '-' at x=543.31..546.21 (deleted, moved away or reordered) cause=unresolved |
+| C6-063 | WORD-MISSING / 1 / block | WOULD FAIL — غير حاسمة | no glyphs inside '١' at x=546.21..549.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-064 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=68.10..70.53 (deleted, moved away or reordered) cause=unresolved |
+| C6-065 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=85.65..88.08 (deleted, moved away or reordered) cause=unresolved |
+| C6-066 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '.' at x=179.03..181.98 (deleted, moved away or reordered) cause=unresolved |
+| C6-067 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=371.23..375.63 (deleted, moved away or reordered) cause=unresolved |
+| C6-068 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=375.63..378.06 (deleted, moved away or reordered) cause=unresolved |
+| C6-069 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-070 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved |
+| C6-071 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '٤' at x=354.59..359.95 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-072 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '5' at x=366.78..372.92 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-073 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-074 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved |
+| C6-075 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '\xa0' at x=351.90..354.33 (deleted, moved away or reordered) cause=unresolved |
+| C6-076 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=359.69..364.09 (deleted, moved away or reordered) cause=unresolved |
+| C6-077 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '6' at x=366.52..372.66 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-078 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-079 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved |
+| C6-080 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=367.87..372.26 (deleted, moved away or reordered) cause=unresolved |
+| C6-081 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '7' at x=374.69..380.84 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-082 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered) cause=letters-absent-from-extract |
+| C6-083 | WORD-MISSING / 2 / block | WOULD FAIL — غير حاسمة | no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered) cause=unresolved |
 
 ## مصفوفة التحرير والأهداف
 
@@ -184,7 +185,7 @@ AFTER غير متوفر قبل تشغيل SHA الجديد. لا وصف لفرق
 
 ## بوابات الشفرة الجديدة / موانع CLOSED
 
-قبل CI: Python inventory4/4، transport11/11، APK-audit7/7؛ geometry28/28
+قبل CI: Python inventory5/5، transport11/11، APK-audit7/7؛ geometry28/28
 و3 real-artifact tests لم تُنفذ محليًا لغياب المدخلات الجديدة (ليست PASS).
 لا Flutter محلي؛ tests/analyze/actualAPK/Visual/C6/Extended الجديدة **PENDING**.
 يُتبع تشغيل GitHub الجديد حتى نتيجته؛ لا تُنقل نتائج baseline إلى SHA جديد.

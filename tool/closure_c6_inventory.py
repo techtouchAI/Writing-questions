@@ -7,6 +7,7 @@ extractor's cause hint. Every finding starts inconclusive until individually
 reviewed against native glyphs, PDF paint and source geometry.
 """
 import argparse
+from bisect import bisect_right
 from collections import Counter
 import hashlib
 import json
@@ -30,29 +31,47 @@ REVIEW = {
 def inventory(annotations):
     selected = [r for r in annotations if r.get('title') == TITLE]
     messages = [r['message'] for r in selected]
-    lines = [line for message in messages for line in message.splitlines()]
+    # Checks API returns these same-path annotations newest first. notice()
+    # splits at character 3000, INCLUDING inside a word/row. Reassemble before
+    # parsing, keeping the original API chunk indices as evidence references.
+    order = list(range(len(messages)))
+    if messages and (messages[-1].startswith('baseline:') or messages[-1].startswith('violations:')) and 'verdict: WOULD FAIL' in messages[0]:
+        order.reverse()
+    ordered = [messages[i] for i in order]
+    text = ''.join(ordered)
+    lines = text.splitlines()
     summaries = [line for line in lines if line.startswith('violations: ')]
     if len(summaries) != 1 or not any('verdict: WOULD FAIL' in line for line in lines):
         raise ValueError('Expected one complete actual WOULD FAIL report')
     counts = dict((k, int(v)) for k, v in re.findall(r'([A-Z][A-Z-]+)=(\d+)', summaries[0]))
-    findings = []
-    for chunk, message in enumerate(messages, 1):
-        for line_number, line in enumerate(message.splitlines(), 1):
-            match = ROW.fullmatch(line)
-            if not match:
-                continue
+    ends, total = [], 0
+    for message in ordered:
+        total += len(message)
+        ends.append(total)
+    findings, offset = [], 0
+    for full_line in text.splitlines(keepends=True):
+        line = full_line.rstrip('\r\n')
+        match = ROW.fullmatch(line)
+        if match:
             category, page, source, detail = match.groups()
             if category not in REVIEW:
                 raise ValueError(f'Unreviewed category {category}')
+            start_chunk = bisect_right(ends, offset)
+            end_chunk = bisect_right(ends, offset + len(line) - 1)
+            local_offset = offset - (ends[start_chunk - 1] if start_chunk else 0)
             findings.append(dict(id=f'C6-{len(findings) + 1:03d}', check=category,
                 page=int(page), source=source, result='WOULD FAIL', detail=detail,
                 classification='inconclusive', explanation=REVIEW[category],
-                evidence=dict(annotationChunk=chunk, messageLine=line_number,
-                              rowSha256=hashlib.sha256(line.encode()).hexdigest())))
+                evidence=dict(annotationChunk=order[start_chunk] + 1,
+                    annotationChunksCovered=[order[i] + 1 for i in range(start_chunk, end_chunk + 1)],
+                    messageLine=ordered[start_chunk][:local_offset].count('\n') + 1,
+                    rowSha256=hashlib.sha256(line.encode()).hexdigest())))
+        offset += len(full_line)
     if Counter(r['check'] for r in findings) != Counter(counts):
         raise ValueError('Missing/truncated/duplicate annotation chunks: counts do not reconcile')
     return dict(verdict='WOULD FAIL', counts=counts, findingCount=len(findings),
                 findings=findings, sourceAnnotationMessages=messages,
+                reassembledChunkOrder=[i + 1 for i in order],
                 classificationPolicy='No job-exit inference; no exclusions, tolerance changes or presumed extractor exemptions.')
 
 
