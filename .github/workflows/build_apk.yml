@@ -821,7 +821,11 @@ jobs:
           retention-days: 14
 
   android-runtime-evidence:
-    name: Android emulator launch and IME probe (partial acceptance)
+    name: Android IME acceptance (${{ matrix.width }}dp)
+    strategy:
+      fail-fast: false
+      matrix:
+        width: [320, 360]
     needs: build
     if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[android-runtime]') }}
     runs-on: ubuntu-24.04
@@ -846,6 +850,11 @@ jobs:
         run: |
           test -c /dev/kvm || { echo '::error title=Android environment blocker::Runner has no KVM device'; exit 1; }
           sudo chmod 666 /dev/kvm
+      - name: Build separate native test IME and prepare PDF verifier
+        run: |
+          bash tool/build_acceptance_ime.sh "$RUNNER_TEMP/acceptance-ime"
+          python3 -m venv "$RUNNER_TEMP/runtime-python"
+          "$RUNNER_TEMP/runtime-python/bin/pip" install pymupdf
       - name: Install, launch, edit, observe actual IME, save and reopen
         uses: ReactiveCircus/android-emulator-runner@324029e2f414c084d8b15ba075288885e74aef9c # v2.34.0
         with:
@@ -856,14 +865,14 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           script: |
-            adb shell wm size 900x1600
+            adb shell wm size ${{ matrix.width == 320 && 800 || 900 }}x1600
             adb shell wm density 400
-            python3 tool/android_runtime_probe.py --apk "$RUNNER_TEMP/runtime-apk/app-release.apk" --output "$RUNNER_TEMP/android-runtime"
+            "$RUNNER_TEMP/runtime-python/bin/python" tool/android_runtime_probe.py --apk "$RUNNER_TEMP/runtime-apk/app-release.apk" --ime-apk "$RUNNER_TEMP/acceptance-ime/acceptance-ime.apk" --output "$RUNNER_TEMP/android-runtime"
       - name: Upload original Android runtime evidence (not full IME acceptance)
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: android-runtime-evidence
+          name: android-runtime-evidence-${{ matrix.width }}dp
           path: ${{ runner.temp }}/android-runtime
           if-no-files-found: warn
           retention-days: 14
@@ -884,6 +893,13 @@ jobs:
       - name: Publish runtime references 4
         if: always()
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 3
+
+      - name: Publish runtime references 5
+        if: always()
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 4
+      - name: Publish runtime references 6
+        if: always()
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 5
 
   # --------------------------------------------------------------------------
   # التحقق البصري الخارجي: يُصيّر Vector PDF وExact المستقل
@@ -1422,6 +1438,7 @@ jobs:
           run_suite -m unittest tool/test_c6_geometry_gate.py -v
           run_suite -m unittest discover -s tool -p 'test_closure_c6_inventory.py' -v
           run_suite -m unittest discover -s tool -p 'test_android_runtime_probe.py' -v
+          run_suite -m unittest discover -s tool -p 'test_android_ime_acceptance.py' -v
           run_suite -m unittest tool/test_c6_visual_calibration.py -v
 
       # [C6-GEOMETRY] الاختبارات السلبية على **المخرجات الحقيقية**: تُحقن

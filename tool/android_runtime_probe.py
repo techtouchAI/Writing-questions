@@ -69,6 +69,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apk', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--ime-apk', type=Path, help='Separate real test InputMethodService, not adb text injection')
     args = parser.parse_args()
     out = args.output
     out.mkdir(parents=True, exist_ok=True)
@@ -148,6 +149,13 @@ def main():
         xml = snapshot('06-reopened')
         check('saved document survives process restart', 'Runtime2026_123' in xml,
               'The actual library UI must contain the edited name after a force-stop/relaunch.')
+        if args.ime_apk is not None:
+            from android_ime_acceptance import run_acceptance
+            report['imeAcceptance'] = run_acceptance(adb, out, snapshot, tap, check,
+                nodes, label, keyboard_top, entirely_above, args.ime_apk)
+            report['closureBlockers'] = [
+                'Commercial keyboard prediction/swipe/handwriting and all platform focus/media/export races are not covered.',
+                'This emulator evidence is not physical-device evidence; full editor acceptance has separate gates.']
         report['smokePassed'] = True
     except Exception as error:
         report['smokePassed'] = False
