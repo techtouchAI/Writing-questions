@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import shlex
 import time
+import xml.etree.ElementTree as ET
 
 PACKAGE = 'com.techtouch.writing_questions_app'
 IME_PACKAGE = 'org.writingquestions.acceptanceime'
@@ -23,9 +24,36 @@ def require_exact_text(nodes, expected):
     matches = [n for n in nodes if n.get('class') == 'android.widget.EditText'
                and n.get('text') == expected and n.get('package') == PACKAGE]
     if len(matches) != 1:
-        actual = [n.get('text') for n in nodes if n.get('class') == 'android.widget.EditText']
-        raise AssertionError(f'Expected one exact native editable value {expected!r}; got {actual!r}')
+        actual = [n.get('text', '') for n in nodes if n.get('class') == 'android.widget.EditText']
+        def summary(value):
+            mismatch = next((i for i, pair in enumerate(zip(expected, value))
+                             if pair[0] != pair[1]), min(len(expected), len(value)))
+            return dict(codePoints=len(value), sha256=hashlib.sha256(value.encode()).hexdigest(),
+                        firstMismatchCodePoint=mismatch,
+                        expectedContext=expected[max(0, mismatch-24):mismatch+48],
+                        actualContext=value[max(0, mismatch-24):mismatch+48])
+        # Full originals remain in native XML + InputConnection trace. Keep the
+        # FIRST actual difference visible in bounded GitHub annotations too;
+        # dumping an 8k expected value hid the actual value through truncation.
+        raise AssertionError('Expected one exact native editable value: ' + json.dumps(dict(
+            expectedCodePoints=len(expected), expectedSha256=hashlib.sha256(expected.encode()).hexdigest(),
+            exactMatches=len(matches), nativeEditables=[summary(value) for value in actual]), ensure_ascii=False))
     return matches[0]
+
+
+def require_key_events(events, previous_count, name):
+    composed = {'Arabic': 'سَلَامٌ', 'English': ' English', 'digits': ' 123٤٥٦',
+                'multiline': MULTILINE, 'long': BODY[len(MULTILINE)+1:]}
+    direct = {'clear': ('commitText', ''), 'newline': ('commitText', '\n'),
+              'select all': ('setSelection', 'all'), 'end': ('setSelection', 'end'),
+              'copy': ('copy', ''), 'paste': ('paste', '')}
+    new = events[previous_count:]
+    if not new or any(not e.get('accepted') or e.get('package') != PACKAGE for e in new):
+        raise AssertionError('Native IME key produced no accepted input events: ' + name)
+    expected = ('finishComposingText', composed[name]) if name in composed else direct[name]
+    if (new[-1].get('operation'), new[-1].get('input')) != expected:
+        raise AssertionError('Native IME key did not finish its own expected operation: ' + name)
+    return len(events)
 
 
 def validate_trace(text):
@@ -35,7 +63,7 @@ def validate_trace(text):
     for operation in ['setSelection', 'setComposingText', 'commitText', 'finishComposingText', 'copy', 'paste']:
         if not any(e['operation'] == operation for e in events):
             raise AssertionError('Missing actual IME operation: ' + operation)
-    for token in ['سَ', 'سَلَامٌ', ' English', ' 123٤٥٦', MULTILINE]:
+    for token in ['سَ', 'سَلَامٌ', ' English', ' 123٤٥٦', MULTILINE, BODY[len(MULTILINE)+1:]]:
         if not any(e['operation'] == 'setComposingText' and e['input'] == token for e in events):
             raise AssertionError('Missing actual composition for ' + repr(token))
     return events
@@ -60,9 +88,49 @@ def dump_interactive_windows(adb):
     output = adb('shell', 'am', 'instrument', '-w',
                  'org.writingquestions.acceptanceautomation/.WindowDump', timeout=60)
     match = re.search(r'^INSTRUMENTATION_RESULT: xml=(<.*>)\r?$', output, flags=re.MULTILINE)
-    if not match:
+    codes = re.findall(r'^INSTRUMENTATION_CODE: (-?\d+)\r?$', output, flags=re.MULTILINE)
+    if (not match or codes != ['0'] or
+            re.search(r'^INSTRUMENTATION_RESULT: error=', output, flags=re.MULTILINE)):
         raise AssertionError('Native interactive-window observer failed: ' + output)
-    return match.group(1)
+    value = match.group(1)
+    if ET.fromstring(value).tag != 'hierarchy':
+        raise AssertionError('Native observer returned an unexpected XML root')
+    return value
+
+
+def display_size(output):
+    # `wm size` reports Physical first and Override second. Pointer events use
+    # Override; selecting the first match would swipe outside a 320/360dp screen.
+    sizes = re.findall(r'(\d+)x(\d+)', output)
+    if not sizes:
+        raise AssertionError('Actual Android display size is unavailable')
+    return tuple(map(int, sizes[-1]))
+
+
+def visible_editable_point(xml, width, height):
+    root = ET.fromstring(xml)
+    found = []
+    def visit(node, ancestors):
+        if node.get('class') == 'android.widget.EditText' and node.get('package') == PACKAGE:
+            found.append((node, ancestors))
+        for child in node:
+            visit(child, ancestors + [node])
+    visit(root, [])
+    if len(found) != 1:
+        raise AssertionError('Active rich dialog must expose exactly one native editable')
+    node, ancestors = found[0]
+    left, top, right, bottom = _bounds(node)
+    left, top, right, bottom = max(0, left), max(0, top), min(width, right), min(height, bottom)
+    # A long multiline native node may span thousands of pixels. Tap ONLY its
+    # visible intersection with the ACTUAL ancestor scroll viewport, not its
+    # off-screen semantic centre. This changes no layout or hit-target size.
+    for parent in ancestors:
+        if parent.get('scrollable') == 'true':
+            x0, y0, x1, y1 = _bounds(parent)
+            left, top, right, bottom = max(left, x0), max(top, y0), min(right, x1), min(bottom, y1)
+    if right <= left or bottom <= top:
+        raise AssertionError('Native editable has no reachable visible intersection')
+    return ((left + right) // 2, (top + bottom) // 2)
 
 
 def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, entirely_above, keyboard_apk, automation_apk):
@@ -95,8 +163,23 @@ def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, e
             raise AssertionError('Native control not reachable: ' + wanted)
         return candidates[-1]
 
+    event_count = 0
     def key(name):
-        tap(find('IME ' + name, package=IME_PACKAGE, clickable=True))
+        nonlocal event_count
+        control = find('IME ' + name, package=IME_PACKAGE, clickable=True)
+        tap(control)
+        trace = adb('exec-out', 'run-as', IME_PACKAGE, 'cat', 'files/events.jsonl')
+        (out/'ime-events.jsonl').write_text(trace)
+        events = [json.loads(line) for line in trace.splitlines() if line.strip()]
+        # A successful adb TAP is not proof that a native key received it.
+        # System navigation consumed "long" in cf278d4. No retry or text API.
+        try:
+            event_count = require_key_events(events, event_count, name)
+        except AssertionError as error:
+            raise AssertionError(f'{error}; nativeBounds={control.get("bounds")}; '
+                                 f'eventsBefore={event_count}; eventsAfter={len(events)}') from error
+        check('actual native IME key completes: ' + name, True,
+              json.dumps(dict(nativeBounds=control.get('bounds'), eventsThrough=event_count)))
 
     def edit_exact(expected):
         return require_exact_text(nodes(xml()), expected)
@@ -114,10 +197,17 @@ def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, e
 
     def open_rich(wanted):
         tap(find(wanted, clickable=True))
-        editable = [n for n in nodes(xml()) if n.get('class') == 'android.widget.EditText' and n.get('package') == PACKAGE]
+        current_xml = xml()
+        editable = [n for n in nodes(current_xml) if n.get('class') == 'android.widget.EditText' and n.get('package') == PACKAGE]
         check('rich editor exposes its actual native input', len(editable) == 1,
               'The active dialog, not an unrelated question number, must expose one text editor.')
-        tap(editable[0])
+        point = visible_editable_point(current_xml, *display_size(adb('shell', 'wm', 'size')))
+        adb('shell', 'input', 'tap', str(point[0]), str(point[1]))
+        time.sleep(2)
+        focused = [n for n in nodes(xml()) if n.get('class') == 'android.widget.EditText'
+                   and n.get('package') == PACKAGE and n.get('focused') == 'true']
+        check('rich editor accepts actual native focus', len(focused) == 1,
+              f'Pointer in the measured visible native viewport at {point}, not an off-screen text centre.')
 
     def preview_back():
         # The real app bar's leading button is top-right in this RTL screen.
@@ -157,10 +247,10 @@ def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, e
     snapshot('10-ime-live-preview')
     # Actual horizontal toolbar scroll. The toolbar is below status/appbar and
     # question-actions bar, at 24+56+48+30 logical dp, independently of paper zoom.
-    size = re.search(r'(\d+)x(\d+)', adb('shell', 'wm', 'size'))
+    width, _ = display_size(adb('shell', 'wm', 'size'))
     density = re.findall(r'(\d+)', adb('shell', 'wm', 'density'))
-    if not size or not density: raise AssertionError('Cannot determine actual screen/density')
-    width = int(size.group(1)); y = round((24 + 56 + 48 + 30) * int(density[-1]) / 160)
+    if not density: raise AssertionError('Cannot determine actual density')
+    y = round((24 + 56 + 48 + 30) * int(density[-1]) / 160)
     export = None
     for direction in [1] * 10 + [-1] * 10:
         candidates = [n for n in nodes(xml()) if n.get('package') == PACKAGE and n.get('clickable') == 'true'

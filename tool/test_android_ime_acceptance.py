@@ -11,7 +11,7 @@ class ActualInputContract(unittest.TestCase):
         events = [dict(operation=op, input='', accepted=True, package=ime.PACKAGE)
                   for op in ['setSelection','copy','paste','commitText','finishComposingText']]
         events.extend(dict(operation='setComposingText',input=text,accepted=True,package=ime.PACKAGE)
-                      for text in ['سَ','سَلَامٌ',' English',' 123٤٥٦',ime.MULTILINE])
+                      for text in ['سَ','سَلَامٌ',' English',' 123٤٥٦',ime.MULTILINE,ime.BODY[len(ime.MULTILINE)+1:]])
         return events
 
     def test_installed_keyboard_must_reach_actual_android_registry_before_enable(self):
@@ -37,6 +37,10 @@ class ActualInputContract(unittest.TestCase):
             'org.writingquestions.acceptanceautomation/.WindowDump'))
         with self.assertRaisesRegex(AssertionError,'observer failed'):
             ime.dump_interactive_windows(lambda *args,**kwargs:'INSTRUMENTATION_RESULT: error=no roots')
+        for result in ['INSTRUMENTATION_CODE: 1', 'INSTRUMENTATION_CODE: -1',
+                       'INSTRUMENTATION_RESULT: error=failed\nINSTRUMENTATION_CODE: 0', '']:
+            with self.subTest(result=result), self.assertRaisesRegex(AssertionError,'observer failed'):
+                ime.dump_interactive_windows(lambda *args,**kwargs:'INSTRUMENTATION_RESULT: xml='+xml+'\n'+result)
         source=(Path(__file__).parent/'android_automation_fixture/src/org/writingquestions/acceptanceautomation/WindowDump.java').read_text()
         self.assertIn('FLAG_RETRIEVE_INTERACTIVE_WINDOWS',source)
         self.assertIn('automation.getWindows()',source)
@@ -45,6 +49,42 @@ class ActualInputContract(unittest.TestCase):
         manifest=ET.parse(Path(__file__).parent/'android_automation_fixture/AndroidManifest.xml').getroot()
         self.assertEqual(manifest.find('instrumentation').get('{http://schemas.android.com/apk/res/android}targetPackage'),
             'org.writingquestions.acceptanceautomation')
+
+    def test_actual_override_and_visible_scroll_intersection_drive_pointer(self):
+        self.assertEqual(ime.display_size('Physical size: 1080x1920\nOverride size: 800x1600'),(800,1600))
+        self.assertEqual(ime.display_size('Physical size: 900x1600'),(900,1600))
+        with self.assertRaises(AssertionError):ime.display_size('unavailable')
+        xml='<hierarchy><node scrollable="true" bounds="[16,100][304,300]"><node package="'+ime.PACKAGE+'" class="android.widget.EditText" bounds="[16,-2000][304,4000]"/></node></hierarchy>'
+        self.assertEqual(ime.visible_editable_point(xml,320,640),(160,200))
+        with self.assertRaisesRegex(AssertionError,'no reachable'):
+            ime.visible_editable_point(xml.replace('[16,100][304,300]','[16,700][304,900]'),320,640)
+        with self.assertRaisesRegex(AssertionError,'exactly one'):
+            ime.visible_editable_point('<hierarchy/>',320,640)
+
+    def test_long_native_mismatch_diagnostic_keeps_actual_difference_and_hashes(self):
+        actual=ime.BODY.replace('أول','اول',1)
+        node=ET.Element('node',{'class':'android.widget.EditText','package':ime.PACKAGE,'text':actual})
+        with self.assertRaises(AssertionError) as error:ime.require_exact_text([node],ime.BODY)
+        detail=json.loads(str(error.exception).split(': ',1)[1])
+        self.assertEqual(detail['expectedCodePoints'],len(ime.BODY))
+        self.assertEqual(detail['expectedSha256'],ime.hashlib.sha256(ime.BODY.encode()).hexdigest())
+        self.assertEqual(detail['nativeEditables'][0]['firstMismatchCodePoint'],ime.BODY.index('أ'))
+        self.assertIn('اول',detail['nativeEditables'][0]['actualContext'])
+        self.assertLess(len(str(error.exception)),1500)
+
+    def test_native_tap_is_not_accepted_without_that_keys_own_input_event(self):
+        prefix=self.trace()
+        with self.assertRaisesRegex(AssertionError,'no accepted input events'):
+            ime.require_key_events(prefix,len(prefix),'long')
+        event=dict(operation='finishComposingText', input=ime.BODY[len(ime.MULTILINE)+1:],
+                   accepted=True,package=ime.PACKAGE)
+        self.assertEqual(ime.require_key_events(prefix+[event],len(prefix),'long'),len(prefix)+1)
+        for change in [dict(accepted=False),dict(package='other'),dict(input='wrong'),dict(operation='paste')]:
+            bad=dict(event,**change)
+            with self.assertRaises(AssertionError):ime.require_key_events(prefix+[bad],len(prefix),'long')
+        source=(Path(__file__).parent/'android_ime_fixture/src/org/writingquestions/acceptanceime/AcceptanceIme.java').read_text()
+        self.assertIn('WindowInsets.Type.navigationBars()',source)
+        self.assertIn('view.setPadding(',source)
 
     def test_actual_operations_and_each_language_are_required(self):
         events=self.trace()

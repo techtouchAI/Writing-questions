@@ -1,10 +1,12 @@
 package org.writingquestions.acceptanceime;
 
 import android.inputmethodservice.InputMethodService;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.view.inputmethod.ExtractedText;
 import android.view.inputmethod.ExtractedTextRequest;
 import android.view.inputmethod.InputConnection;
@@ -37,6 +39,21 @@ public final class AcceptanceIme extends InputMethodService {
         root.setBackgroundColor(0xfff5f5f5);
         root.setPadding(dp(4), dp(4), dp(4), dp(4));
         root.setLayoutParams(new ViewGroup.LayoutParams(-1, -2));
+        // Android15 draws the IME navigation controls above an edge-to-edge
+        // input view. Without its REAL bottom inset, the last48dp row extends
+        // under the system hide-keyboard target: tapping "long" hides the IME
+        // and never invokes our listener (53-event failure originals at320/360).
+        // Grow the wrap-content keyboard, retaining full48dp rows ABOVE it;
+        // do not offset pointer coordinates or disable system navigation.
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            int bottom = Build.VERSION.SDK_INT >= 30
+                    ? insets.getInsets(WindowInsets.Type.navigationBars()).bottom
+                    : insets.getSystemWindowInsetBottom();
+            view.setPadding(view.getPaddingLeft(), view.getPaddingTop(),
+                    view.getPaddingRight(), bottom);
+            return insets;
+        });
+        root.requestApplyInsets();
         status = new TextView(this);
         status.setTextColor(0xff000000);
         status.setTextSize(12);
