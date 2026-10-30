@@ -99,7 +99,8 @@ List<Map<String, Object?>> _touchInventory(WidgetTester tester) {
       'measurement': 'transformed rendered bounds, not effective gesture ownership',
       'rectDp': [rect.left, rect.top, rect.right, rect.bottom],
       'widthDp': rect.width, 'heightDp': rect.height,
-      'fullyInViewport': viewport.contains(rect.topLeft) && viewport.contains(rect.bottomRight),
+      'fullyInViewport': rect.left >= viewport.left && rect.top >= viewport.top &&
+        rect.right <= viewport.right && rect.bottom <= viewport.bottom,
       'renderedBoundsMeet48': rect.width >= 48 && rect.height >= 48,
       'centreContainsRenderObjectInHitPath': viewport.contains(rect.center) &&
         tester.hitTestOnBinding(rect.center).path.any((entry) => identical(entry.target, object)),
@@ -193,8 +194,13 @@ void main() {
         for (var i = 0; i < rects.length; i++) {
           expect(rects[i].width, 48);
           expect(rects[i].height, 48);
-          expect(viewport.contains(rects[i].topLeft), isTrue);
-          expect(viewport.contains(rects[i].bottomRight), isTrue);
+          // Rect.contains(its bottomRight) is FALSE by definition (exclusive
+          // right/bottom). A48dp handle flush with the screen is nevertheless
+          // fully contained. Compare rectangle edges, with ZERO tolerance.
+          expect(rects[i].left, greaterThanOrEqualTo(viewport.left));
+          expect(rects[i].top, greaterThanOrEqualTo(viewport.top));
+          expect(rects[i].right, lessThanOrEqualTo(viewport.right));
+          expect(rects[i].bottom, lessThanOrEqualTo(viewport.bottom));
           for (var j = i + 1; j < rects.length; j++) {
             expect(rects[i].overlaps(rects[j]), isFalse);
           }

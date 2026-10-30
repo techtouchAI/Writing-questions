@@ -92,6 +92,39 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('outside cancellation stops edge scroll after source row is recycled', (tester) async {
+    final c = ExamWizardController(document: ExamDocument(name: 'Cancel long reorder',
+      header: ExamHeaderModel.initial(subject: 'English'),
+      questions: [for (var i = 0; i < 30; i++)
+        QuestionModel(id: 'q$i', questionNumber: i + 1, statement: 'TOKEN$i')]));
+    await _mount(tester, c);
+    final original = jsonEncode(c.document.toMap());
+    final gesture = await _start(tester, 'q0');
+    final list = find.descendant(of: find.byType(CanonicalReorderPanel), matching: find.byType(ListView));
+    final window = tester.getRect(list);
+    await gesture.moveTo(Offset(window.center.dx, window.bottom - 1));
+    for (var i = 0; i < 50; i++) {
+      await tester.pump(const Duration(milliseconds: 40));
+    }
+    expect(_handle('q0'), findsNothing, reason: 'Must actually recycle the original source row.');
+    final scrollable = find.descendant(of: list, matching: find.byType(Scrollable));
+    final position = tester.state<ScrollableState>(scrollable).position;
+    expect(position.pixels, greaterThan(300));
+    expect(position.pixels, lessThan(position.maxScrollExtent));
+    await gesture.moveTo(window.center);
+    final centredAt = position.pixels;
+    await tester.pump(const Duration(seconds: 1));
+    expect(position.pixels, centredAt,
+      reason: 'A recycled source must not leave an obsolete edge pointer while dragging inside.');
+    await gesture.moveTo(const Offset(319, 650)); // Outside the native panel.
+    await gesture.up();
+    final stoppedAt = position.pixels;
+    await tester.pump(const Duration(seconds: 1));
+    expect(position.pixels, stoppedAt, reason: 'No orphaned timer may scroll after cancellation.');
+    expect(jsonEncode(c.document.toMap()), original);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('locked native handles do not mutate model', (tester) async {
     final c = ExamWizardController(document: _document());
     await _mount(tester, c, locked: true);

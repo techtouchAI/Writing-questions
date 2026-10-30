@@ -133,7 +133,15 @@ class _CanonicalReorderPanelState extends State<CanonicalReorderPanel> {
             label: 'سؤال ${document.formatNumber(q + 1)} — فرع ${document.formatNumber(b + 1)}: ${document.questions[q].branches[b].content.statement}'),
       ],
     ];
-    return Material(color: Theme.of(context).colorScheme.surface, elevation: 2,
+    // The source row can be recycled while edge-scrolling. Its Draggable
+    // onDragEnd is then not guaranteed to run. The panel stays in the original
+    // pointer route, so cancellation/up ALWAYS stops the timer, including an
+    // outside drop or a concurrently deleted source.
+    return Listener(onPointerMove: (event) {
+      if (_timer != null) _pointer = event.position;
+    }, onPointerUp: (_) => _stopScroll(),
+      onPointerCancel: (_) => _stopScroll(),
+      child: Material(color: Theme.of(context).colorScheme.surface, elevation: 2,
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         SizedBox(height: 48, child: Row(children: [
           const SizedBox(width: 8),
@@ -151,6 +159,6 @@ class _CanonicalReorderPanelState extends State<CanonicalReorderPanel> {
             },
             itemBuilder: (context, index) =>
               _row(entries[index].entity, entries[index].label))),
-      ]));
+      ])));
   }
 }
