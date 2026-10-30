@@ -15,6 +15,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      - name: Check out read-only diagnostic helpers
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Verify exact-reference comparison regressions (not PDF repair acceptance)
+        run: python3 -m unittest discover -s tool -p test_pdf_source_diagnostic.py
       - name: Retrieve complete original job logs and publish verified byte references
         env:
           GH_TOKEN: ${{ github.token }}
