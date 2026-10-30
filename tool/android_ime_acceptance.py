@@ -56,10 +56,21 @@ def wait_for_ime_registration(adb, *, timeout=30, clock=time.monotonic, sleep=ti
         sleep(.5)
 
 
-def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, entirely_above, keyboard_apk):
+def dump_interactive_windows(adb):
+    output = adb('shell', 'am', 'instrument', '-w',
+                 'org.writingquestions.acceptanceautomation/.WindowDump', timeout=60)
+    match = re.search(r'^INSTRUMENTATION_RESULT: xml=(<.*>)\r?$', output, flags=re.MULTILINE)
+    if not match:
+        raise AssertionError('Native interactive-window observer failed: ' + output)
+    return match.group(1)
+
+
+def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, entirely_above, keyboard_apk, automation_apk):
     check('separate test IME APK installation', 'Success' in adb('install', '-r', str(keyboard_apk)),
           'Separate keyboard fixture; production APK is unchanged.')
-    (out/'ime-registration.txt').write_text(wait_for_ime_registration(adb))
+    registration = wait_for_ime_registration(adb)
+    check('separate read-only window observer installation', 'Success' in adb('install', '-r', str(automation_apk)),
+          'Observer process is distinct from the IME and editor; no input injection.')
     adb('shell', 'ime', 'enable', IME_COMPONENT)
     adb('shell', 'ime', 'set', IME_COMPONENT)
     check('actual test IME selected', IME_PACKAGE in adb('shell', 'settings', 'get', 'secure', 'default_input_method'),
@@ -71,8 +82,9 @@ def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, e
           'Only the test document cache is read; no application data is written.')
 
     def xml():
-        adb('shell', 'uiautomator', 'dump', '/sdcard/ime-window.xml', timeout=60)
-        return adb('exec-out', 'cat', '/sdcard/ime-window.xml')
+        value = dump_interactive_windows(adb)
+        (out/'ime-windows.xml').write_text(value)
+        return value
 
     def find(wanted, *, package=PACKAGE, clickable=False):
         candidates = [n for n in nodes(xml()) if wanted in label(n) and n.get('package') == package
@@ -195,7 +207,8 @@ def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, e
     check('real composing operations target this application', True,
           f'{len(events)} accepted native InputConnection events; trace retained verbatim.')
     return dict(passed=True, keyboardApkSha256=hashlib.sha256(Path(keyboard_apk).read_bytes()).hexdigest(),
-                inputMethod=IME_COMPONENT, fullEditedContentVerified=True,
+                inputMethod=IME_COMPONENT, registeredMethods=registration, fullEditedContentVerified=True,
+                observerApkSha256=hashlib.sha256(Path(automation_apk).read_bytes()).hexdigest(),
                 actualPdfSha256=hashlib.sha256(raw).hexdigest(), pdfPages=len(pdf),
                 limitation='UI-driven test InputMethodService; not Gboard prediction/swipe/handwriting or all focus/media/export races.')
 

@@ -869,7 +869,7 @@ jobs:
           script: |
             adb shell wm size ${{ matrix.width == 320 && 800 || 900 }}x1600
             adb shell wm density 400
-            "$RUNNER_TEMP/runtime-python/bin/python" tool/android_runtime_probe.py --apk "$RUNNER_TEMP/runtime-apk/app-release.apk" --ime-apk "$RUNNER_TEMP/acceptance-ime/acceptance-ime.apk" --output "$RUNNER_TEMP/android-runtime"
+            "$RUNNER_TEMP/runtime-python/bin/python" tool/android_runtime_probe.py --apk "$RUNNER_TEMP/runtime-apk/app-release.apk" --ime-apk "$RUNNER_TEMP/acceptance-ime/acceptance-ime.apk" --automation-apk "$RUNNER_TEMP/acceptance-ime/acceptance-automation.apk" --output "$RUNNER_TEMP/android-runtime"
       - name: Upload original Android runtime evidence (not full IME acceptance)
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -883,7 +883,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: acceptance-ime-${{ matrix.width }}dp
-          path: ${{ runner.temp }}/acceptance-ime/acceptance-ime.apk
+          path: |
+            ${{ runner.temp }}/acceptance-ime/acceptance-ime.apk
+            ${{ runner.temp }}/acceptance-ime/acceptance-automation.apk
           if-no-files-found: warn
           retention-days: 14
 

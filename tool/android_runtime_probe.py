@@ -70,7 +70,10 @@ def main():
     parser.add_argument('--apk', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--ime-apk', type=Path, help='Separate real test InputMethodService, not adb text injection')
+    parser.add_argument('--automation-apk', type=Path, help='Separate read-only native window observer')
     args = parser.parse_args()
+    if args.ime_apk is not None and args.automation_apk is None:
+        parser.error('--ime-apk requires --automation-apk to observe actual IME windows')
     out = args.output
     out.mkdir(parents=True, exist_ok=True)
     report = dict(sourceSha=os.environ.get('GITHUB_SHA'), sourceRun=os.environ.get('GITHUB_RUN_ID'),
@@ -84,6 +87,7 @@ def main():
 
     if args.ime_apk is not None:
         report['testImeApkSha256'] = hashlib.sha256(args.ime_apk.read_bytes()).hexdigest()
+        report['windowObserverApkSha256'] = hashlib.sha256(args.automation_apk.read_bytes()).hexdigest()
 
     def check(name, condition, detail):
         report['checks'].append(dict(name=name, passed=bool(condition), detail=detail))
@@ -155,7 +159,7 @@ def main():
         if args.ime_apk is not None:
             from android_ime_acceptance import run_acceptance
             report['imeAcceptance'] = run_acceptance(adb, out, snapshot, tap, check,
-                nodes, label, keyboard_top, entirely_above, args.ime_apk)
+                nodes, label, keyboard_top, entirely_above, args.ime_apk, args.automation_apk)
             report['inputMethod'] = report['imeAcceptance']['inputMethod']
             report['closureBlockers'] = [
                 'Commercial keyboard prediction/swipe/handwriting and all platform focus/media/export races are not covered.',

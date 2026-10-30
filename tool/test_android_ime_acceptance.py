@@ -26,6 +26,26 @@ class ActualInputContract(unittest.TestCase):
             ime.wait_for_ime_registration(lambda *args:'another/.Ime',timeout=1,
                 clock=lambda:now[0],sleep=lambda s:now.__setitem__(0,now[0]+s))
 
+    def test_observer_reads_native_windows_in_a_third_process(self):
+        xml='<hierarchy><node package="'+ime.IME_PACKAGE+'" text="IME clear"/></hierarchy>'
+        calls=[]
+        def adb(*args,**kwargs):
+            calls.append(args)
+            return 'INSTRUMENTATION_RESULT: xml='+xml+'\r\nINSTRUMENTATION_CODE: 0\n'
+        self.assertEqual(ime.dump_interactive_windows(adb),xml)
+        self.assertEqual(calls[0],('shell','am','instrument','-w',
+            'org.writingquestions.acceptanceautomation/.WindowDump'))
+        with self.assertRaisesRegex(AssertionError,'observer failed'):
+            ime.dump_interactive_windows(lambda *args,**kwargs:'INSTRUMENTATION_RESULT: error=no roots')
+        source=(Path(__file__).parent/'android_automation_fixture/src/org/writingquestions/acceptanceautomation/WindowDump.java').read_text()
+        self.assertIn('FLAG_RETRIEVE_INTERACTIVE_WINDOWS',source)
+        self.assertIn('automation.getWindows()',source)
+        self.assertNotIn('InputConnection',source)
+        self.assertNotIn('setText',source)
+        manifest=ET.parse(Path(__file__).parent/'android_automation_fixture/AndroidManifest.xml').getroot()
+        self.assertEqual(manifest.find('instrumentation').get('{http://schemas.android.com/apk/res/android}targetPackage'),
+            'org.writingquestions.acceptanceautomation')
+
     def test_actual_operations_and_each_language_are_required(self):
         events=self.trace()
         self.assertEqual(ime.validate_trace('\n'.join(map(json.dumps,events))),events)

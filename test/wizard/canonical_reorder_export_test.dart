@@ -129,6 +129,7 @@ void main() {
       'files': files, 'results': results, 'expectedCases': 6,
       'completedCases': results.length, 'allCasesPassed': results.length == 6,
       'manualVisualReview': false,
+      'uiFontLimitation': 'Widget-test default UI font is Ahem; paper uses registered production fonts. Native UI labels require Android evidence.',
       'surface': 'injected canonical candidate only; production stays OFF',
       'capturePixelRatio': 3,
     }));
@@ -304,6 +305,7 @@ void main() {
           'files': files, 'results': results, 'expectedCases': 6,
       'completedCases': results.length, 'allCasesPassed': results.length == 6,
       'manualVisualReview': false,
+      'uiFontLimitation': 'Widget-test default UI font is Ahem; paper uses registered production fonts. Native UI labels require Android evidence.',
           'surface': 'injected canonical candidate only; production stays OFF',
       'capturePixelRatio': 3,
         }));
