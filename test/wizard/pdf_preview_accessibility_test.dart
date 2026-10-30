@@ -62,70 +62,74 @@ void main() {
       final document = pw.Document()..addPage(pw.Page(build: (_) => pw.Text('Unchanged PDF bytes')));
       final bytes = await document.save();
       final semantics = tester.ensureSemantics();
-      addTearDown(semantics.dispose);
-      await tester.pumpWidget(MaterialApp(home: PdfPreviewScreen(pdfBytes: bytes,
-        title: 'PDF', fileName: 'mixed-Arabic-123.pdf')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 200));
-      final rectangles = <Rect>[];
-      for (final label in ['طباعة PDF', 'مشاركة PDF']) {
-        // Tooltip wraps the real package action, not a replacement callback.
-        final action = label == 'طباعة PDF' ? find.byType(PdfPrintAction) : find.byType(PdfShareAction);
-        expect(action, findsOneWidget);
-        final target = find.descendant(of: action, matching: find.byType(IconButton));
-        expect(target, findsOneWidget);
-        final rect = tester.getRect(target);
-        expect(rect.width, greaterThanOrEqualTo(48));
-        expect(rect.height, greaterThanOrEqualTo(48));
-        expect(rect.left, greaterThanOrEqualTo(0));
-        expect(rect.right, lessThanOrEqualTo(width));
-        expect(rect.top, greaterThanOrEqualTo(0));
-        expect(rect.bottom, lessThanOrEqualTo(800));
-        expect(tester.getSemantics(target).label, contains(label));
-        rectangles.add(rect);
-        for (final point in [rect.topLeft + const Offset(1, 1), rect.topRight + const Offset(-1, 1),
-          rect.bottomLeft + const Offset(1, -1), rect.bottomRight - const Offset(1, 1)]) {
-          await tester.tapAt(point);
-          await tester.pump();
+      try {
+        await tester.pumpWidget(MaterialApp(home: PdfPreviewScreen(pdfBytes: bytes,
+          title: 'PDF', fileName: 'mixed-Arabic-123.pdf')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 200));
+        final rectangles = <Rect>[];
+        for (final label in ['طباعة PDF', 'مشاركة PDF']) {
+          // Tooltip wraps the real package action, not a replacement callback.
+          final action = label == 'طباعة PDF' ? find.byType(PdfPrintAction) : find.byType(PdfShareAction);
+          expect(action, findsOneWidget);
+          final target = find.descendant(of: action, matching: find.byType(IconButton));
+          expect(target, findsOneWidget);
+          final rect = tester.getRect(target);
+          expect(rect.width, greaterThanOrEqualTo(48));
+          expect(rect.height, greaterThanOrEqualTo(48));
+          expect(rect.left, greaterThanOrEqualTo(0));
+          expect(rect.right, lessThanOrEqualTo(width));
+          expect(rect.top, greaterThanOrEqualTo(0));
+          expect(rect.bottom, lessThanOrEqualTo(800));
+          expect(tester.getSemantics(target).label, contains(label));
+          rectangles.add(rect);
+          for (final point in [rect.topLeft + const Offset(1, 1), rect.topRight + const Offset(-1, 1),
+            rect.bottomLeft + const Offset(1, -1), rect.bottomRight - const Offset(1, 1)]) {
+            await tester.tapAt(point);
+            await tester.pump();
+          }
         }
-      }
-      var expectedZoom = 1.0;
-      for (final label in ['تصغير المعاينة', 'تكبير المعاينة', 'إعادة الحجم الأصلي']) {
-        // IconButton's internal Tooltip may wrap only the24dp icon; measure
-        // the real receiving button, then prove all four corner hits act.
-        final target = find.byWidgetPredicate((widget) => widget is IconButton && widget.tooltip == label);
-        expect(target, findsOneWidget);
-        final rect = tester.getRect(target);
-        expect(rect.width, greaterThanOrEqualTo(48));
-        expect(rect.height, greaterThanOrEqualTo(48));
-        expect(rect.left, greaterThanOrEqualTo(0));
-        expect(rect.right, lessThanOrEqualTo(width));
-        expect(rect.top, greaterThanOrEqualTo(0));
-        expect(rect.bottom, lessThanOrEqualTo(800));
-        for (final previous in rectangles) {
-          expect(previous.overlaps(rect), isFalse, reason: '$label must not overlap another PDF target.');
+        var expectedZoom = 1.0;
+        for (final label in ['تصغير المعاينة', 'تكبير المعاينة', 'إعادة الحجم الأصلي']) {
+          // IconButton's internal Tooltip may wrap only the24dp icon; measure
+          // the real receiving button, then prove all four corner hits act.
+          final target = find.byWidgetPredicate((widget) => widget is IconButton && widget.tooltip == label);
+          expect(target, findsOneWidget);
+          final rect = tester.getRect(target);
+          expect(rect.width, greaterThanOrEqualTo(48));
+          expect(rect.height, greaterThanOrEqualTo(48));
+          expect(rect.left, greaterThanOrEqualTo(0));
+          expect(rect.right, lessThanOrEqualTo(width));
+          expect(rect.top, greaterThanOrEqualTo(0));
+          expect(rect.bottom, lessThanOrEqualTo(800));
+          for (final previous in rectangles) {
+            expect(previous.overlaps(rect), isFalse, reason: '$label must not overlap another PDF target.');
+          }
+          rectangles.add(rect);
+          for (final point in [rect.topLeft + const Offset(1, 1), rect.topRight + const Offset(-1, 1),
+            rect.bottomLeft + const Offset(1, -1), rect.bottomRight - const Offset(1, 1)]) {
+            await tester.tapAt(point);
+            await tester.pump();
+            expectedZoom = label == 'إعادة الحجم الأصلي' ? 1.0
+                : (expectedZoom + (label == 'تصغير المعاينة' ? -0.25 : 0.25)).clamp(0.6, 4.0).toDouble();
+            expect(find.text('${(expectedZoom * 100).round()}%'), findsOneWidget,
+              reason: 'The actual $label corner must change/reset zoom, not just appear in a hit path.');
+          }
         }
-        rectangles.add(rect);
-        for (final point in [rect.topLeft + const Offset(1, 1), rect.topRight + const Offset(-1, 1),
-          rect.bottomLeft + const Offset(1, -1), rect.bottomRight - const Offset(1, 1)]) {
-          await tester.tapAt(point);
-          await tester.pump();
-          expectedZoom = label == 'إعادة الحجم الأصلي' ? 1.0
-              : (expectedZoom + (label == 'تصغير المعاينة' ? -0.25 : 0.25)).clamp(0.6, 4.0).toDouble();
-          expect(find.text('${(expectedZoom * 100).round()}%'), findsOneWidget,
-            reason: 'The actual $label corner must change/reset zoom, not just appear in a hit path.');
+        expect(find.text('100%'), findsOneWidget);
+        expect(rectangles[0].overlaps(rectangles[1]), isFalse);
+        expect(platform.shares, hasLength(4));
+        expect(platform.prints, hasLength(4));
+        for (final output in [...platform.shares, ...platform.prints]) {
+          expect(output, orderedEquals(bytes));
         }
+        expect(platform.names, everyElement('mixed-Arabic-123.pdf'));
+        expect(platform.shareBounds, everyElement(rectangles[1]));
+        expect(tester.takeException(), isNull);
+      } finally {
+        // Flutter verifies live SemanticsHandles before addTearDown runs.
+        semantics.dispose();
       }
-      expect(find.text('100%'), findsOneWidget);
-      expect(rectangles[0].overlaps(rectangles[1]), isFalse);
-      expect(platform.shares, hasLength(4));
-      expect(platform.prints, hasLength(4));
-      for (final output in [...platform.shares, ...platform.prints]) {
-        expect(output, orderedEquals(bytes));
-      }
-      expect(platform.names, everyElement('mixed-Arabic-123.pdf'));
-      expect(platform.shareBounds, everyElement(rectangles[1]));
-      expect(tester.takeException(), isNull);
     });
   }
 

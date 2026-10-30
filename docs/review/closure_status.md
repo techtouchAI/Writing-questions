@@ -5,6 +5,27 @@
 الفرع: `arena/8513fa6c-writing-questions`.
 
 
+## فشلec72ff6 — إنهاء handle الاختبار قبل فحص Flutter، لا تخفيف للشروط
+
+[Main41124063647](https://github.com/techtouchAI/Writing-questions/actions/runs/41124063647)
+FAILURE عند end-of-test: `A SemanticsHandle was active at the end of the test`.
+اختبارا PDF وصلا بعد شروط الأسماء/48dp/نقر الزوايا/تغير zoom/الـbytes والـbounds؛
+لكن addTearDown ينفذ بعد فحص Flutter للـhandles في هذاSDK. صار dispose في
+try/finally داخل جسم الاختبار، فينجح التنظيف أيضًا عند فشل assertion.
+لا إزالة لفحص semantics أو شرط وظيفي أو geometric bound.
+Analyzer نظيف؛ [Extended41124063648](https://github.com/techtouchAI/Writing-questions/actions/runs/41124063648)
+SUCCESS؛ full/APK/Android/Visual/C6 SKIPPED وليس قبولًا. جُلبت7سجلات أصلية كاملة
+متحققة؛ تبقى baseline-negative logs منفصلة عن فشل الإصلاح. يلزم إعادة البوابات
+بعد تصحيح lifecycle؛ لا تُحتسب اختبارات النظافة الفاشلة نجاحًا للإصلاح.
+
+فحص6b المكتمل الإضافي: فُتحت صفحةPNG1 مع تصييرPDF1 والقصاصات الست للأصول
+الثلاثة، وPNG320longBODY. التصنيف المحدود للصفوف الثلاثة متسق مع outlines/origins
+ولا يثبت RMSE العام. جرد production6b: في كل إطار من12إطارًا (6gestures قبل/بعد)
+خمسة LongPressDraggable، أحجامها المرئية نحو6.4–7.62dp، لا48dp. جميع60قياسًا
+تخص المقابض نفسها المكررة في إطارات مختلفة، **ليست60مقبضًا مميزًا**؛ ownership
+والـ48dp الفعال بقيا unverified كما في original manifest، لا PASS مستنتجًا من green.
+الأصول candidate19 منفصلة عنproduction80؛ لم يُفعّل المرشح لإخفاء ذلك.
+
 ## فشل3dcadce وتشخيصه — ليس SHA قبول
 
 [Main41122953505](https://github.com/techtouchAI/Writing-questions/actions/runs/41122953505)
