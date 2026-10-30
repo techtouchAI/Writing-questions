@@ -1,0 +1,94 @@
+name: PR48 original failure logs (evidence only)
+
+on:
+  push:
+    branches: [arena/8513fa6c-writing-questions]
+    paths: [.github/workflows/pr48_failure_logs.yml]
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  collect-original-logs:
+    name: Original Android failure logs (165b7d9, not repair acceptance)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Retrieve complete original job logs and publish verified byte references
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: '41131387677'
+          SOURCE_SHA: '165b7d934187d4cd0df685e2a891e9eb30d18006'
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, io, json, os, pathlib, subprocess, zipfile
+
+          repository = os.environ['GITHUB_REPOSITORY']
+          assert repository == 'techtouchAI/Writing-questions'
+          source_run, source_sha = os.environ['SOURCE_RUN'], os.environ['SOURCE_SHA']
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'original-android-logs'
+          root.mkdir()
+
+          def api(path, payload=None):
+              command = ['gh', 'api', f'repos/{repository}/{path}']
+              if payload is not None:
+                  command += ['--method', 'POST', '--input', '-']
+              return subprocess.check_output(command, input=None if payload is None else json.dumps(payload).encode())
+
+          run = json.loads(api(f'actions/runs/{source_run}'))
+          assert run['head_sha'] == source_sha and run['conclusion'] == 'failure'
+          rows = []
+          for width, job_id in [(320, 124327354934), (360, 124327354965)]:
+              job = json.loads(api(f'actions/jobs/{job_id}'))
+              assert str(job['run_id']) == source_run
+              assert job['name'] == f'Android IME acceptance ({width}dp)'
+              assert job['conclusion'] == 'failure'
+              raw = api(f'actions/jobs/{job_id}/logs')
+              assert raw, 'Empty job log is not evidence'
+              files = {f'job-{width}.download': raw}
+              if zipfile.is_zipfile(io.BytesIO(raw)):
+                  with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                      members = sorted(name for name in archive.namelist() if not name.endswith('/'))
+                      assert members, 'Empty log archive'
+                      # Preserve the original archive AND every unmodified member.
+                      for index, name in enumerate(members):
+                          files[f'job-{width}-member-{index:03d}.log'] = archive.read(name)
+                      (root / f'job-{width}-members.json').write_text(json.dumps(members, indent=2))
+              else:
+                  raw.decode('utf-8')  # Fail rather than publish an HTML/binary error as a log.
+                  assert b'actual device PDF retains diacritized Arabic statement' in raw
+                  files[f'job-{width}.log'] = raw
+              for name, content in files.items():
+                  (root / name).write_bytes(content)
+                  blob = json.loads(api('git/blobs', {'encoding': 'base64', 'content': base64.b64encode(content).decode()}))
+                  expected = hashlib.sha1(f'blob {len(content)}\0'.encode() + content).hexdigest()
+                  assert blob['sha'] == expected
+                  rows.append(dict(file=name, bytes=len(content), sha256=hashlib.sha256(content).hexdigest(),
+                                   blob=blob['sha'], sourceSha=source_sha, sourceRun=source_run,
+                                   sourceJob=str(job_id), widthDp=width,
+                                   collectionSha=os.environ['GITHUB_SHA'], collectionRun=os.environ['GITHUB_RUN_ID']))
+          assert 4 <= len(rows) <= 35, 'Unexpected log inventory; never silently truncate references'
+          digest = hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+          manifest = {'kind': 'Complete original failure logs, not current-head acceptance',
+                      'inventoryCount': len(rows), 'inventorySha256': digest, 'files': rows}
+          (root / 'manifest.json').write_text(json.dumps(manifest, indent=2))
+          content = (root / 'manifest.json').read_bytes()
+          blob = json.loads(api('git/blobs', {'encoding': 'base64', 'content': base64.b64encode(content).decode()}))
+          expected = hashlib.sha1(f'blob {len(content)}\0'.encode() + content).hexdigest()
+          assert blob['sha'] == expected
+          packet = dict(file='manifest.json', blob=blob['sha'], bytes=len(content),
+                        sha256=hashlib.sha256(content).hexdigest(), inventoryCount=len(rows),
+                        inventorySha256=digest, sourceSha=source_sha, sourceRun=source_run,
+                        collectionSha=os.environ['GITHUB_SHA'], collectionRun=os.environ['GITHUB_RUN_ID'])
+          print('::notice title=Original failure log manifest::' + json.dumps(packet, separators=(',', ':')))
+          PY
+      - name: Retain original bytes and complete manifest
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: pr48-original-165b7d9-android-failure-logs
+          path: ${{ runner.temp }}/original-android-logs
+          if-no-files-found: error
+          retention-days: 14
