@@ -161,13 +161,15 @@ void main() {
                 CanonicalLayoutService.resolve(document: document, sourceIr: sourceIr),
               canonicalPreviewAssetLoader: ({required LayoutDocument layout, required ExamDocument document}) =>
                 CanonicalLayoutPreviewAssets.load(layout: layout, document: document))))));
-        for (var i = 0; i < 500 && controller.plan == null; i++) {
+        for (var i = 0; i < 500 && (controller.plan == null ||
+            find.byType(CanonicalLayoutPreviewPage).evaluate().isEmpty); i++) {
           await tester.pump(const Duration(milliseconds: 100));
           await tester.runAsync(() => Future<void>.delayed(Duration.zero));
         }
         await tester.pumpAndSettle();
         await _history(tester, 'ملاءمة الورقة للشاشة');
         expect(controller.plan, isNotNull);
+        expect(find.byType(CanonicalLayoutPreviewPage), findsWidgets);
         expect(identical(controller.plan!.layout.source, controller.documentIr), isTrue);
         final unchangedPlan = controller.plan!.layout;
         final reorderButton = find.byKey(const ValueKey<String>('canonical-action-reorder'));
@@ -193,7 +195,9 @@ void main() {
           expect(rects[i].height, 48);
           expect(viewport.contains(rects[i].topLeft), isTrue);
           expect(viewport.contains(rects[i].bottomRight), isTrue);
-          for (var j = i + 1; j < rects.length; j++) expect(rects[i].overlaps(rects[j]), isFalse);
+          for (var j = i + 1; j < rects.length; j++) {
+            expect(rects[i].overlaps(rects[j]), isFalse);
+          }
         }
         await _capture(tester, '$_out/$base-before.png');
 
@@ -280,7 +284,7 @@ void main() {
         expect(jsonEncode(controller.document.toMap()), changed);
         expect(tester.takeException(), isNull);
         results.add({'widthDp': width, 'kind': kind,
-          'touchInventoryScope': 'Mounted production-frame primitives only; all effective targets, overlaps, dialogs, platform handles and continuation states remain unverified.',
+          'touchInventoryScope': 'Native candidate reorder handles measured; corner gesture, containment and pairwise non-overlap tested. Other primitives are diagnostic only, not general48dp acceptance.',
           'nativeHandleRectsDp': [for (final r in rects) [r.left,r.top,r.right,r.bottom]],
           'realCornerDrag': true,
           'beforeScreenshot': '$base-before.png', 'afterScreenshot': '$base-after.png',
