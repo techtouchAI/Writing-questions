@@ -263,7 +263,7 @@ class EvidenceTransportTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'every required original'):
                 list(transport.selected(root, 'visual'))
 
-    def exercise_fetch(self, *, truncate=False, corrupt=False):
+    def exercise_fetch(self, *, truncate=False, corrupt=False, duplicate=False):
         rows = []
         blobs = {}
         import base64
@@ -277,7 +277,7 @@ class EvidenceTransportTest(unittest.TestCase):
         count = len(rows)
         digest = transport.inventory_sha(rows)
         rows = [dict(row, inventoryCount=count, inventorySha256=digest) for row in rows]
-        delivered = rows[:2] if truncate else rows
+        delivered = rows[:2] if truncate else rows + rows if duplicate else rows
         annotations = [dict(title='Evidence blob reference', message=json.dumps(delivered))]
         if corrupt:
             blobs[rows[0]['blob']]['content'] = base64.b64encode(b'not the original').decode()
@@ -296,7 +296,7 @@ class EvidenceTransportTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch.object(transport, 'api', fake_api):
             destination = Path(directory) / 'retrieved'
             args = SimpleNamespace(repository='owner/repo', run='123', destination=destination)
-            if truncate or corrupt:
+            if truncate or corrupt or duplicate:
                 with self.assertRaisesRegex(ValueError, 'inventory|checksum'):
                     transport.fetch(args)
                 self.assertFalse((destination / 'retrieval-provenance.json').exists())
@@ -309,6 +309,9 @@ class EvidenceTransportTest(unittest.TestCase):
 
     def test_complete_originals_are_verified(self):
         self.exercise_fetch()
+
+    def test_duplicate_complete_annotations_cannot_report_success(self):
+        self.exercise_fetch(duplicate=True)
 
     def test_truncated_annotations_cannot_report_success(self):
         self.exercise_fetch(truncate=True)

@@ -204,6 +204,8 @@ def fetch(args):
                 break
     if not rows:
         raise ValueError('No verified evidence references; refusing empty success')
+    if len({row['file'] for row in rows}) != len(rows):
+        raise ValueError('Duplicate evidence inventory references; refusing repeated annotations')
     if any(row.get('inventoryCount') != len(rows) for row in rows):
         raise ValueError('Incomplete evidence inventory: annotation truncation')
     digest = inventory_sha(rows)
