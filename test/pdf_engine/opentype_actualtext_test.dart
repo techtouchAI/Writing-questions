@@ -41,7 +41,7 @@ void main() {
   });
 
   for (final asset in [ExamFonts.regularAsset, ExamFonts.boldAsset]) {
-    test('actual canonical Naskh $asset preserves exact logical diacritics metadata and advance', () async {
+    test('actual canonical Naskh $asset rejects the reader-reversing whole-word wrapper and retains advance', () async {
       const source = 'سَلَامٌ';
       final document = pw.Document(compress: false);
       final font = pw.Font.ttf(await rootBundle.load(asset));
@@ -49,14 +49,15 @@ void main() {
         text: source, font: font, fontSizePt: 17, color: PdfColors.black,
         canonicalAdvancePt: 40, rtl: true, underline: false)));
       final bytes = await document.save();
-      final hex = source.codeUnits.map((unit) => unit.toRadixString(16).padLeft(4, '0')).join();
-      expect(latin1.decode(bytes).contains('/ActualText<FEFF$hex>'), isTrue,
-        reason: 'The production Naskh path must encode the original sequence, not visually reordered marks.');
+      expect(latin1.decode(bytes).contains('/ActualText'), isFalse,
+        reason: 'The rejected global wrapper reverses existing plain Arabic in '
+            'the real reader. Retain the prior ToUnicode path until an '
+            'interoperable source repair is proved on original PDFs.');
       final word = PdfContentProbe.fromBytes(bytes).words.single;
       expect(word.advanceWidth, closeTo(40, 1e-4));
       expect(word.text.contains('\uFFFD'), isFalse);
-      // Raw reader output is a separate, unchanged Android acceptance check;
-      // a correct ActualText string alone must not turn that gate green.
+      // This is regression containment, not diacritized-source acceptance.
+      // The unchanged actual Android PDF reader gate must still pass.
     });
   }
 

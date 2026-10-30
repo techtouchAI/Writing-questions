@@ -922,3 +922,33 @@ CMake بنى x86 افتراضيًا رغم عدم وجود Flutter engine له �
   or reversed plain Arabic) still must be inspected in the actual native PDF.
 
 Status remains **OPEN / candidate OFF / no merge / no branch deletion**.
+
+### 2026-10-30 — reject global ActualText: independently observed regression
+
+The `67a` production inventory was retrieved completely: **80 originals**,
+SHA-256 inventory `ff180c56e66f1365b0c650a00dc7a33928c07cb4ec50c6bbb120967f11f7fc4e`.
+Using PyMuPDF 2.0 / MuPDF 1.28.5, direct **unnormalized** extraction from those
+original PDFs was compared with the original `b51` counterparts:
+
+| Original | b51 raw output | 67a raw output |
+|---|---|---|
+| `optend-long.pdf` | `المادة:اللغة` / `العربية` | `ةداملا:ةغللا` / `ةيبرعلا` |
+| `r10-native-320-same-live-plan.pdf` | `نص` / `عربي` / `طويل` | `صن` / `يبرع` / `ليوط` |
+| `drag-320-question-after.pdf` | `نص` / `مختلط` | `صن` / `طلتخم` |
+
+These are fresh 67a-original findings, not Android-runtime results and not an
+extraction-normalization experiment. The metadata-only proposal is **rejected**:
+correct logical source inside a PDF tag did not preserve actual reader output.
+The global Naskh `ActualText` change and its differential-test adjustment are
+rolled back. The original byte/geometry parity test is restored verbatim; the
+two added regular/bold Naskh cases now guard against reintroducing the known
+reader-reversing wrapper, while explicitly **not** claiming diacritics acceptance.
+The raw-text retention in the Android gate remains. No reader check, font,
+glyph geometry, clip, page height, threshold, or test exclusion is changed.
+
+`0dbaa31` contains the now-superseded test-contract proposal; its runs cannot
+prove a source repair regardless of their outcome. A new SHA is needed for all
+final acceptance. The earlier real Android failure on diacritized `سَلَامٌ`
+remains **OPEN**. No architectural conflict or completion is declared merely
+from these failed attempts. Other outstanding matrices/48dp/inline legacy/raster
+requirements remain open as listed above. **candidate OFF; no merge/deletion.**

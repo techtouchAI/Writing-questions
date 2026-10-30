@@ -454,7 +454,7 @@ void main() {
   });
 
   test('differential parity with pw.Text: viewer-composed ink, underline, '
-      'color; exact logical metadata and unchanged painting operators', () async {
+      'color; only the TJ number and the widened clip differ', () async {
     for (final rtl in <bool>[true, false]) {
       for (final underline in <bool>[true, false]) {
         final word = rtl ? 'عِلْمًا' : 'STA1';
@@ -551,7 +551,7 @@ void main() {
           expect(canonicalOps.underline, isNull, reason: 'no line $label');
           expect(legacyOps.underline, isNull, reason: 'no line $label');
         }
-        // The intended text-advance delta: the trailing TJ correction number.
+        // The ONLY intended delta: the trailing TJ correction number.
         expect(legacyOps.tjNumber, isNull, reason: 'legacy TJ $label');
         expect(
           canonicalOps.tjNumber,
@@ -588,31 +588,7 @@ void main() {
               'UNDERLINE m l S',
             )
             .replaceFirst(RegExp(r'-?[\d.]+ w'), 'W w');
-        // Source metadata is an additional, non-painting contract. Assert
-        // its exact UTF-16BE payload and its single balanced text-object
-        // wrapper before comparing every remaining byte. Do not strip
-        // arbitrary marked content: a changed payload, extra tag, misplaced
-        // delimiter, or changed painting operator must still fail this test.
-        final canonicalStream = contentStream(canonical);
-        final sourceHex = word.codeUnits
-            .map((unit) => unit.toRadixString(16).padLeft(4, '0'))
-            .join()
-            .toUpperCase();
-        final sourceOpen = '/Span<</ActualText<FEFF$sourceHex>>>BDC ';
-        expect(sourceOpen.allMatches(canonicalStream).length, 1,
-            reason: 'one exact logical source payload $label');
-        expect('BDC'.allMatches(canonicalStream).length, 1,
-            reason: 'no additional marked-content opening $label');
-        expect('EMC'.allMatches(canonicalStream).length, 1,
-            reason: 'one balanced marked-content closing $label');
-        expect(canonicalStream, contains('${sourceOpen}BT '),
-            reason: 'source wraps the actual text object $label');
-        expect(canonicalStream, contains('ET EMC '),
-            reason: 'source closes immediately after the text object $label');
-        final paintingStream = canonicalStream
-            .replaceFirst(sourceOpen, '')
-            .replaceFirst('ET EMC ', 'ET ');
-        final normalized = withoutUnderline(withoutClip(paintingStream))
+        final normalized = withoutUnderline(withoutClip(contentStream(canonical)))
             .replaceFirst(
           RegExp(r'\[<[0-9A-Fa-f]+>\s*-?[\d.]+\]TJ'),
           '[<${canonicalOps.hex}>]TJ',
