@@ -23,19 +23,26 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
-          import base64, hashlib, io, json, os, pathlib, subprocess, zipfile
+          import base64, hashlib, io, json, os, pathlib, subprocess, traceback, zipfile
 
           repository = os.environ['GITHUB_REPOSITORY']
           assert repository == 'techtouchAI/Writing-questions'
           source_run, source_sha = os.environ['SOURCE_RUN'], os.environ['SOURCE_SHA']
           root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'original-android-logs'
           root.mkdir()
+          (root / 'collection-status.txt').write_text('Started original log collection; no acceptance implied.\n')
 
           def api(path, payload=None):
               command = ['gh', 'api', f'repos/{repository}/{path}']
               if payload is not None:
                   command += ['--method', 'POST', '--input', '-']
-              return subprocess.check_output(command, input=None if payload is None else json.dumps(payload).encode())
+              try:
+                  return subprocess.check_output(command, input=None if payload is None else json.dumps(payload).encode(), stderr=subprocess.PIPE)
+              except subprocess.CalledProcessError as error:
+                  detail = error.stderr.decode(errors='replace')
+                  (root / 'collection-error.txt').write_text(path + '\n' + detail)
+                  print('::error title=Original log retrieval failed::' + (path + ': ' + detail).replace('%', '%25').replace('\n', '%0A').replace('\r', '%0D'), flush=True)
+                  raise
 
           run = json.loads(api(f'actions/runs/{source_run}'))
           assert run['head_sha'] == source_sha and run['conclusion'] == 'failure'
