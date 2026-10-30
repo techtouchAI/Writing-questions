@@ -16,6 +16,9 @@ PACKAGE = 'com.techtouch.writing_questions_app'
 IME_PACKAGE = 'org.writingquestions.acceptanceime'
 IME_COMPONENT = IME_PACKAGE + '/.AcceptanceIme'
 NAME = 'سَلَامٌ English 123٤٥٦'
+MIXED_KEY_TEXT = {'Arabic': 'سَلَامٌ', 'English': ' English', 'digits': ' 123٤٥٦'}
+MIXED_ORDERS = [('English', 'digits', 'Arabic'), ('digits', 'Arabic', 'English'),
+                ('Arabic', 'English', 'digits')]
 MULTILINE = 'سطر أول English ١٢٣\nسطر ثانٍ 456'
 BODY = MULTILINE + '\n' + 'سطر عربي English ١٢٣ 456. ' * 320 + 'IMETAIL'
 
@@ -184,8 +187,25 @@ def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, e
     def edit_exact(expected):
         return require_exact_text(nodes(xml()), expected)
 
-    def fill_name():
-        key('clear'); key('Arabic'); key('English'); key('digits')
+    def fill_name(field=None):
+        # Same actual native field, different script-entry orders. Preserve
+        # each exact state and its delivered event range in runtime.json;
+        # do not replace UI input with a text/controller/data hook.
+        for order in MIXED_ORDERS if field else [MIXED_ORDERS[-1]]:
+            before = event_count
+            key('clear')
+            expected = ''
+            for language in order:
+                key(language)
+                expected += MIXED_KEY_TEXT[language]
+                edit_exact(expected)
+            if field:
+                observed = xml()
+                require_exact_text(nodes(observed), expected)
+                check('same native field / mixed input order / ' + field + ' / ' + '-'.join(order), True,
+                      json.dumps(dict(expected=expected,
+                          expectedSha256=hashlib.sha256(expected.encode()).hexdigest(),
+                          eventsFrom=before, eventsThrough=event_count, nativeXml=observed), ensure_ascii=False))
         edit_exact(NAME)
 
     def save_content():
@@ -221,7 +241,7 @@ def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, e
     tap(find('ورقة أسئلة جديدة (معالج متسلسل)', clickable=True))
     fields = [n for n in nodes(xml()) if n.get('class') == 'android.widget.EditText' and n.get('package') == PACKAGE]
     if not fields: raise AssertionError('New document name editor absent')
-    tap(fields[0]); fill_name()
+    tap(fields[0]); fill_name('document-name')
     key('select all'); key('copy'); key('end'); key('paste')
     edit_exact(NAME + NAME)
     check('actual Android copy/paste preserves mixed diacritics and digits', True, 'Exact native editable value after paste, no normalization.')
@@ -232,7 +252,7 @@ def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, e
     check('header navigation above test IME', entirely_above(next_button, top), next_button.get('bounds'))
     tap(next_button)  # Navigate while IME is OPEN, not only after dismissal.
     open_rich('منطوق السؤال')
-    fill_name(); snapshot('08-ime-mixed-statement'); save_content()
+    fill_name('question-statement'); snapshot('08-ime-mixed-statement'); save_content()
     # Dialog close can leave the IME hiding asynchronously; wait for the real
     # frame, not a synthetic viewInset supplied by a widget test.
     time.sleep(1)
@@ -240,7 +260,8 @@ def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, e
     key('clear'); key('multiline'); key('newline'); key('long')
     edit_exact(BODY)
     check('multiline and long source exact through actual IME', True,
-          f'{len(BODY)} code points including newline, Arabic, Latin, digits and IMETAIL.')
+          json.dumps(dict(codePoints=len(BODY), sha256=hashlib.sha256(BODY.encode()).hexdigest(),
+                          includes='newline, Arabic, Latin, digits and IMETAIL')))
     snapshot('09-ime-long-body'); save_content()
     tap(find('إنهاء وعرض النموذج', clickable=True))
     time.sleep(6)

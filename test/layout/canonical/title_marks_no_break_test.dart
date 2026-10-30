@@ -15,6 +15,7 @@ import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
 import 'package:writing_questions_app/layout/canonical/layout_engine.dart';
 import 'package:writing_questions_app/layout/document_ir.dart';
+import 'package:writing_questions_app/layout/document_direction.dart';
 import 'package:writing_questions_app/models/exam_document.dart';
 import 'package:writing_questions_app/models/exam_header_model.dart';
 import 'package:writing_questions_app/models/paper_settings.dart';
@@ -29,10 +30,11 @@ const String _longStatement =
 ExamDocument _document({
   required String statement,
   double marginMm = 15,
+  String subject = 'اللغة العربية',
 }) =>
     ExamDocument(
       name: 'ركيزة درجة السؤال',
-      header: ExamHeaderModel(subject: 'اللغة العربية'),
+      header: ExamHeaderModel(subject: subject),
       settings: PaperSettings(
         marginMm: marginMm,
         showQuestionMarks: true,
@@ -111,7 +113,7 @@ String _describe(LayoutLine line) =>
   final line = lines[marksLineIndices.single];
   // (2) لا تنفرد بسطر: معها كلمة من العنوان.
   final statementRuns = line.runs
-      .where((run) => !_isMarks(run) && run.text.trim().isNotEmpty)
+      .where((run) => run.semanticNodeId.startsWith('q1/title/statement') && run.text.trim().isNotEmpty)
       .toList();
   expect(
     statementRuns,
@@ -119,7 +121,18 @@ String _describe(LayoutLine line) =>
     reason: '[$caseName] سطر الدرجة لا يحمل كلمة من العنوان: ${_describe(line)}',
   );
 
-  // (3) نهاية السطر في RTL: الدرجة أقصى يسار سطرها.
+  // A label, an earlier word or the NBSP gap must not satisfy this check.
+  // Require the actual final source fragment, on the final title line.
+  final allStatementRuns = lines.expand((value) => value.runs).where((run) =>
+    run.semanticNodeId.startsWith('q1/title/statement') && run.text.trim().isNotEmpty).toList();
+  expect(allStatementRuns, isNotEmpty);
+  final lastSourceEnd = allStatementRuns.map((run) => run.sourceEndOffset)
+      .reduce((a, b) => a > b ? a : b);
+  expect(statementRuns.any((run) => run.sourceEndOffset == lastSourceEnd), isTrue,
+    reason: '[$caseName] The grade must remain with the final source word, not just any title text.');
+  expect(marksLineIndices.single, lines.length - 1);
+
+  // End means following the paragraph direction, never a fixed paper edge.
   final marksRuns = line.runs.where(_isMarks).toList();
   final marksRight = marksRuns
       .map((run) => run.x + run.advance)
@@ -127,9 +140,13 @@ String _describe(LayoutLine line) =>
   final statementLeft = statementRuns
       .map((run) => run.x)
       .reduce((a, b) => a < b ? a : b);
+  final marksLeft = marksRuns.map((run) => run.x).reduce((a, b) => a < b ? a : b);
+  final statementRight = statementRuns.map((run) => run.x + run.advance)
+      .reduce((a, b) => a > b ? a : b);
+  final ltr = layout.direction == DocumentDirection.ltr;
   expect(
-    marksRight,
-    lessThanOrEqualTo(statementLeft + 0.5),
+    ltr ? marksLeft : marksRight,
+    ltr ? greaterThanOrEqualTo(statementRight - 0.5) : lessThanOrEqualTo(statementLeft + 0.5),
     reason: '[$caseName] الدرجة ليست في نهاية السطر: يمين الدرجة='
         '$marksRight ويسار العنوان=$statementLeft.\n${_describe(line)}',
   );
@@ -174,4 +191,23 @@ void main() {
       caseName: 'هامش واسع',
     );
   });
+
+  for (final subject in ['اللغة العربية', 'English']) {
+    for (final entry in <String, String>{
+      'short mixed': subject == 'English' ? 'Explain 123 English' : 'اشرح الدلالة ١٢٣',
+      'wrapped mixed': List.filled(12, subject == 'English'
+        ? 'Explain English with نص عربي 123 and the final answer'
+        : 'اشرح المعنى مع English و١٢٣ ثم بيّن الدلالة النهائية').join(' '),
+      'explicit multiline': subject == 'English'
+        ? 'First line with Arabic نص\nSecond line 456 LASTWORD'
+        : 'السطر الأول مع English 123\nالسطر الأخير وكلمته النهائية',
+    }.entries) {
+      test('approved inline / $subject / ${entry.key}: final source word and unbroken grade', () {
+        final measured = _expectMarksRule(_layout(_document(
+          statement: entry.value, subject: subject)), caseName: '$subject / ${entry.key}');
+        if (entry.key != 'short mixed') expect(measured.titleLines, greaterThan(1));
+      });
+    }
+  }
+
 }

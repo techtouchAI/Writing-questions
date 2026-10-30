@@ -5,6 +5,69 @@
 الفرع: `arena/8513fa6c-writing-questions`.
 
 
+## متابعة6b72453 — أصل الفشل معروف؛ التعديل التالي ينتظر البوابات
+
+**هذا القسم يتقدم على السجل التاريخي أدناه. OPEN / candidate OFF؛ لا دمج ولا حذف.**
+اعتمد المستخدم صراحةً **inline بعد المنطوق حسب اتجاه السطر**، لا حافة الورقة؛
+الدرجة وحدة غير قابلة للتجزئة وتبقى مع آخر كلمة عند الالتفاف. تخطي السؤال القديم
+لم يعد الحالة الحالية. قاعدة NBSP موجودة أصلًا في `_titleBlock` المشترك؛ لا ندّعي
+أن قرار المستخدم أو إضافة اختبار يصلح صف `_titleRow` القديم ذي Expanded تلقائيًا.
+يبقى اختلاف ذلك الصف الإنتاجي مانعًا، إلى أن تثبت طبقة Option A كاملة قبل التفعيل.
+
+### قياس6b نفسه، لا642 ولاcf
+
+- [Main41103676578](https://github.com/techtouchAI/Writing-questions/actions/runs/41103676578)
+  انتهى FAILURE فقط في Android320/360: `Actual PDF share control not available`.
+  build/Visual/C6/transports SUCCESS؛ release attachment SKIPPED. نجاح C6 job التشخيصي
+  ليس قبولًا للـRMSE أو كل finding.
+- [Extended41103676730](https://github.com/techtouchAI/Writing-questions/actions/runs/41103676730)
+  SUCCESS. السجلات الكاملة المتحققة: production8، native249، full1068، canonical3،
+  صفر error/skip في هذه الأوامر؛ الأعداد تشمل setup/loading كما في السجل الأصلي.
+  الحالات غير المخفية:5/195/867/2. analyzer: No issues found؛ actual APK بُني.
+  ملفات `*-before.log` اختبارات baseline سالبة محفوظة، لا نتائج إصلاح جديدة.
+- APK الفعلي30,600,573byte، SHA256
+  `6bfdd30f31e91d5d2d3f19b9456e05942b7ad20688e2738bf4ab567e19c2d37e`؛
+  طابق audit وruntime **للـ320 والـ360** مع SHA/run نفسيهما.
+- جُلبت51 أصلًا كاملة لكل عرض،11سجلًا،14Visual،80إنتاج من6b عبر القارئ الصارم؛
+  لا dedup ولا تعطيل تحقق SHA/عدد/هوية. أصول الفشل محفوظة لا تستبدل بأصول تاريخية.
+  provenance والمصادر في `/home/user/final-followup/6b-*` خارج Git.
+- عبر InputConnection الفعلي وصل BODY كاملًا8360codepoint وIMETAIL؛ حفظ المحتوى
+  مع IME مفتوح ثم عرض PDF الحقيقي. لا يُحوّل هذا إلى نجاح fullsave/reopen/PDF:
+  المشاركة والفحص بعد إعادة التشغيل لم يُنجزا. صور09/11 وnative XML توثق المرحلة.
+
+### التعديل الحالي وماذا لا يغير
+
+`PdfPreviewScreen`: أيقونتا الحزمة printing5.13.4 الأصليتان بلا اسم في native
+accessibility، رغم وجودهما مرئيًا. نستعمل **نفس PdfPrintAction/PdfShareAction**
+والـbuild callback وbytes/filename وشروط قدرة المنصة، مع semanticLabel وTooltip
+وأهداف48dp. تُعطّل الإضافتان المجهولتان الافتراضيتان فقط، لا وظيفة الطباعة/المشاركة.
+لا نقر إحداثيات بديل، ولا تغيير fonts/PDF engine/pagination/clip/هوامش/ارتفاع صفحة.
+
+أُضيف انحدار320/360 يستدعي أفعال الحزمة الحقيقية حتى method channel، يتحقق من
+الأسماء والتباعد/containment و48dp ونقر الزوايا والـPDF bytes/filename/bounds،
+وثلاثة أزرار zoom والقدرات غير المتاحة. ليس دليل Android أو raster parity.
+اختبار marks لم يُحذف أو تُرخَ سماحيته؛ صار يشترط **آخر source fragment** والسطر
+الأخير، لا أي label/word، مع العربية/English ومختلط/قصير/طويل/سطر جديد.
+اختبارا PDF/marks ضمن native-first ثم full، لا استثناء ولا bypass.
+
+امتد actual IME إلى3ترتيبات Arabic/English/digits داخل **حقل الاسم نفسه وحقل
+المنطوق نفسه**، مع مقارنة حرفية بعد كل جزء، ونطاق events وXML كامل لكل ترتيب
+داخل runtime.json؛ ثم يعود المصدر النهائي نفسه قبل clipboard والحفظ والتصدير.
+لم يُضف hook أو تغيير بيانات إلى APK الإنتاج. Python المحلي15Android و16transport
+نجح؛ Flutter/analyze/APK/Android/Visual/C6/Extended للتعديل الحالي **لم تعمل بعد**.
+
+### C6 والقيود الباقية
+
+أُعيد تدقيق الأصول6b نفسها: الصفوف التاريخية الثلاثة حاضرة؛ outlines مطابقة،
+أخطاء أصل glyph القصوى0.000015021/0.000028571/0.000025979pt، وفحوص سلبية5 ناجحة
+على الأصول نفسها. ليس ادعاء التقاط glyph IDs من Flutter أو تطابق raster عام.
+RMSE العام، كل tool×content×boundary×history×PDF، جميع مقابض48dp الفعلية،
+الوسائط/التزامن الكامل، export أثناء التحرير وبعد إغلاق IME، وfull native reopen
+كلها لم تُغلق بهذه التغييرات. لا يغني نجاح العربية/الاسم عن long options/continuations.
+يلزم كل البوابات وفحص الأصول على SHA نهائي واحد؛ نجاحات6b ليست نتائج التعديل التالي.
+
+---
+
 ## الدورة الحالية بعد6732191 — تنفيذ وتحقق جاريان، OPEN
 
 ### حماية البداية

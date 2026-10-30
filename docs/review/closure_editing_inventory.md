@@ -1,3 +1,15 @@
+## متابعة6b — OPEN / candidate OFF
+
+المرجع الأحدث [التقرير الجامع](closure_status.md). اعتمد المستخدم inline بعد آخر كلمة؛ لم يعد القرار معلقًا.
+هذه موافقة على القاعدة المشتركة لا إصلاح تلقائي لصف الإنتاج القديم.
+Android6b أثبت longBODY8360 ونقله إلى معاينةPDF، لكنه فشل عند زر المشاركة المجهول؛
+fullreopen/PDF لم ينجحا بعد. إصلاح semantic actions وانحدارات48dp وأوامر IME مختلطة
+ينتظران بوابات SHA الجديد. لا تُسند نتائج6b أو التاريخ إلى هذا التعديل.
+جرد42أمرًا/75width-cases لا يزال أضيق من كل tool×content×boundary/history/PDF.
+كل مقبض غير مقاس48dp أو غير مختبر فعليًا يبقى unverified، دون تحويل تقديري إلىPASS.
+
+---
+
 ## إضافة مصفوفة منصة الإدخال — تنفيذ جديد مطلوب
 
 `tool/android_ime_acceptance.py` وfixture`InputMethodService` منفصلان عنAPKالإنتاج.

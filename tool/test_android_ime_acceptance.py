@@ -100,6 +100,18 @@ class ActualInputContract(unittest.TestCase):
             with self.assertRaises(AssertionError):ime.validate_trace('\n'.join(map(json.dumps,events)))
         with self.assertRaises(AssertionError):ime.validate_trace('')
 
+    def test_mixed_orders_preserve_exact_script_chunks_and_restore_final_source(self):
+        self.assertEqual(len(ime.MIXED_ORDERS), 3)
+        self.assertEqual({order[0] for order in ime.MIXED_ORDERS}, {'Arabic', 'English', 'digits'})
+        for order in ime.MIXED_ORDERS:
+            self.assertEqual(set(order), set(ime.MIXED_KEY_TEXT))
+            expected = ''.join(ime.MIXED_KEY_TEXT[key] for key in order)
+            node = ET.Element('node', {'class': 'android.widget.EditText', 'package': ime.PACKAGE, 'text': expected})
+            self.assertIs(ime.require_exact_text([node], expected), node)
+            with self.assertRaises(AssertionError):
+                ime.require_exact_text([node], expected.strip() if expected.startswith(' ') else expected + ' ')
+        self.assertEqual(''.join(ime.MIXED_KEY_TEXT[key] for key in ime.MIXED_ORDERS[-1]), ime.NAME)
+
     def test_native_value_is_exact_not_normalized_or_substring_matched(self):
         def node(value):
             return ET.Element('node',{'class':'android.widget.EditText','package':ime.PACKAGE,'text':value})

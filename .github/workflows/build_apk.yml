@@ -224,6 +224,7 @@ jobs:
           flutter test --reporter json --timeout 120s \
             test/wizard/canonical_editor_candidate_test.dart \
             test/layout/canonical/math_visual_acceptance_test.dart \
+            test/layout/canonical/title_marks_no_break_test.dart \
             test/layout/canonical/math_minification_ink_test.dart \
             test/layout/canonical/production_mixed_math_evidence_test.dart \
             test/services/header_border_visibility_test.dart \
@@ -235,6 +236,7 @@ jobs:
             test/pdf_engine/paginated_quranic_font_test.dart \
             test/export_gate/p0_export_gate_test.dart \
             test/wizard/keyboard_navigation_insets_test.dart \
+            test/wizard/pdf_preview_accessibility_test.dart \
             test/wizard/real_reorder_export_test.dart \
             test/wizard/canonical_reorder_export_test.dart \
             test/wizard/canonical_reorder_panel_test.dart \
