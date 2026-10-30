@@ -285,7 +285,12 @@ class CanonicalText extends pw.Widget {
       trailingTj: correction,
       toUnicodeChars: openType?.unicode ?? run.toUnicodeChars,
       glyphPlacements: openType?.placements(pdfFont as PdfTtfFont, fontSizePt),
-      actualText: openType == null ? null : text,
+      // Every face needs the logical source contract, not only Amiri's
+      // OpenType path. Naskh's legacy visual-order/harakat encoder otherwise
+      // leaves consumers only a reordered ToUnicode approximation. This PDF
+      // marked-content metadata does not change glyphs, ink, advances or clip.
+      // Reader interop is still checked by the unchanged real Android gate.
+      actualText: text,
     );
     if (shear != 0) {
       canvas.restoreContext();

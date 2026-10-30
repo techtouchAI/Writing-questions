@@ -5,6 +5,43 @@
 الفرع: `arena/8513fa6c-writing-questions`.
 
 
+## b51e5c7 — المشاركة الفعلية أُثبتت؛ فشل تالٍ في استخراج العربية
+
+[Main41125230151](https://github.com/techtouchAI/Writing-questions/actions/runs/41125230151)
+FAILURE فقط في Android320/360. production8/native266/full1078/canonical3 كلها
+صفر failure/skip؛ analyzer نظيف؛ APK فعلي30,603,617byte، hash
+`d97f08394c6c537435751ac93ae61cb808762d42fe8df5db4ba77dfc2279ba17`، مطابق لruntime
+كلا العرضين. Visual/C6 وكل النقل SUCCESS؛ release attachment SKIPPED.
+[Extended41125230076](https://github.com/techtouchAI/Writing-questions/actions/runs/41125230076)
+SUCCESS. جُلبت11/19/80/14/52/52 أصلًا كاملة متحققة علىSHA/run نفسيهما، في
+`/home/user/final-followup/b51-*`؛ لا نقل لنجاح سابق إلى b51.
+
+**نجح زر المشاركة الفعلي**: اُستخرج PDF التطبيق الحقيقي،3صفحات، IMETAIL مرة
+واحدة وEnglish322. نجحت ترتيبات السكربتات الثلاثة في كل من حقلي الاسم والمنطوق،
+وBODY8360 نفسه وSave فوق IME. الفشل التالي، المحفوظ دون تخفيف:
+`actual device PDF retains diacritized Arabic statement`؛ raw text يحمل
+`ٌسَلاَمEnglish 123٦٥٤` بدل `سَلَامٌ English 123٤٥٦`. fullreopen بعد ذلك
+**لم يُنفّذ**. لا يُحسب نجاح المشاركة نجاحًا لاستخراج كامل المصدر أو الحفظ/إعادة الفتح.
+
+### التشخيص والتعديل التالي
+
+المصدر هو `NotoNaskhArabic` الحقيقي (لا تبديل font أو نسخةAhem)، ومسار
+`CanonicalText` كان يمرر ActualText فقط لـAmiri/OpenType؛ Naskh يترك المستهلك
+مع ToUnicode من ترتيب مرئي قديم وتشكيل معاد ترتيبه. أضيف عقد ActualText
+المنطقي **لكل** كلمة قانونية، بنفس المصدر، دون أي تغيير glyph/clip/advance/
+font/pagination أو إعادة ترتيب payload لإرضاء مصيّر. انحداران regular/bold
+يتحققان من المحارف الأصلية والـadvance. يُحفظ raw استخراج Android أيضًا بصيغةtxt
+قبل الاختبار؛ **شرط العربية الفاشل لم يتغير** ولا normalization أو استثناء قارئ.
+
+هذا إصلاح لعقد المصدر المفقود، **ليس إثباتًا أن MuPDF سيعيد النص كاملًا**:
+تجربة metadata-only خارجGit على PDFb51 أثبتت أن ActualText صحيحًا في Amiri
+يمكن أن يخرج معكوسًا في MuPDF، وأن حذف metadata يغيّر الاستخراج دون تغيير الحبر.
+لا نعدّل PDF الإنتاج بعكس payload أو إخفاء glyphs/إضافة حبر نصي خفي. يلزم CI
+والـPDF الفعلي الجديد لتحديد ما يبقى عيب encoder وما يبقى interop للقراءة.
+نصوص التجارب وPDFs في `/home/user/final-followup/probe-*` تشخيصية فقط وليست
+مخرجات الإنتاج أو دليل إصلاح، ولا تُرفع إلىGit. بقية48dp/toolmatrix/legacy-inline/
+RMSE/export-during-editing لا تزالOPEN، والمرشحOFF.
+
 ## فشلec72ff6 — إنهاء handle الاختبار قبل فحص Flutter، لا تخفيف للشروط
 
 [Main41124063647](https://github.com/techtouchAI/Writing-questions/actions/runs/41124063647)

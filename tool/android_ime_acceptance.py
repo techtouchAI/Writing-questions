@@ -294,6 +294,7 @@ def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, e
     import pymupdf
     pdf = pymupdf.open(stream=raw,filetype='pdf')
     text='\n'.join(page.get_text() for page in pdf)
+    (out/'ime-document.txt').write_text(text, encoding='utf-8')
     check('actual device PDF preserves the long tail once', text.count('IMETAIL') == 1 and len(pdf) >= 2,
           f'{len(pdf)} actual PDF pages, IMETAIL count={text.count("IMETAIL")}')
     check('actual device PDF preserves every English token', text.count('English') == 322,

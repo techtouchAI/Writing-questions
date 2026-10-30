@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:writing_questions_app/pdf_engine/exam_fonts.dart';
+import 'package:writing_questions_app/pdf_engine/canonical_text.dart';
 import 'package:writing_questions_app/pdf_engine/opentype_shaper.dart';
 
 import 'pdf_content_probe.dart';
@@ -38,4 +39,25 @@ void main() {
     Directory('build/production_fragment_repro').createSync(recursive: true);
     File('build/production_fragment_repro/opentype-clusters.pdf').writeAsBytesSync(bytes);
   });
+
+  for (final asset in [ExamFonts.regularAsset, ExamFonts.boldAsset]) {
+    test('actual canonical Naskh $asset preserves exact logical diacritics metadata and advance', () async {
+      const source = 'سَلَامٌ';
+      final document = pw.Document(compress: false);
+      final font = pw.Font.ttf(await rootBundle.load(asset));
+      document.addPage(pw.Page(build: (_) => CanonicalText(
+        text: source, font: font, fontSizePt: 17, color: PdfColors.black,
+        canonicalAdvancePt: 40, rtl: true, underline: false)));
+      final bytes = await document.save();
+      final hex = source.codeUnits.map((unit) => unit.toRadixString(16).padLeft(4, '0')).join();
+      expect(latin1.decode(bytes).contains('/ActualText<FEFF$hex>'), isTrue,
+        reason: 'The production Naskh path must encode the original sequence, not visually reordered marks.');
+      final word = PdfContentProbe.fromBytes(bytes).words.single;
+      expect(word.advanceWidth, closeTo(40, 1e-4));
+      expect(word.text.contains('\uFFFD'), isFalse);
+      // Raw reader output is a separate, unchanged Android acceptance check;
+      // a correct ActualText string alone must not turn that gate green.
+    });
+  }
+
 }
