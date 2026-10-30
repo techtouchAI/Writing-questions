@@ -34,6 +34,10 @@ jobs:
 
           def api(path, payload=None):
               command = ['gh', 'api', f'repos/{repository}/{path}']
+              if path.endswith('/logs'):
+                  # Preserve original ANSI bytes; recent gh otherwise refuses
+                  # log output even when stdout is a pipe, not a terminal.
+                  command += ['--allow-escape-sequences']
               if payload is not None:
                   command += ['--method', 'POST', '--input', '-']
               try:
