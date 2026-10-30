@@ -82,6 +82,9 @@ def main():
             'All keyboard insets, focus/navigation, save visibility and export-state scenarios remain unverified.',
             'This emulator evidence is not physical-device evidence.'])
 
+    if args.ime_apk is not None:
+        report['testImeApkSha256'] = hashlib.sha256(args.ime_apk.read_bytes()).hexdigest()
+
     def check(name, condition, detail):
         report['checks'].append(dict(name=name, passed=bool(condition), detail=detail))
         if not condition:
@@ -153,6 +156,7 @@ def main():
             from android_ime_acceptance import run_acceptance
             report['imeAcceptance'] = run_acceptance(adb, out, snapshot, tap, check,
                 nodes, label, keyboard_top, entirely_above, args.ime_apk)
+            report['inputMethod'] = report['imeAcceptance']['inputMethod']
             report['closureBlockers'] = [
                 'Commercial keyboard prediction/swipe/handwriting and all platform focus/media/export races are not covered.',
                 'This emulator evidence is not physical-device evidence; full editor acceptance has separate gates.']
@@ -163,6 +167,25 @@ def main():
         report['closureBlockers'].insert(0, report['error'])
         raise
     finally:
+        if args.ime_apk is not None:
+            # Retain actual composition/focus evidence even if a UI assertion
+            # fails before the happy-path trace retrieval. Never replace the
+            # original failure with a collection error or synthetic document.
+            try:
+                trace = adb('exec-out', 'run-as', 'org.writingquestions.acceptanceime',
+                            'cat', 'files/events.jsonl')
+                (out / 'ime-events.jsonl').write_text(trace)
+            except Exception as error:
+                report['imeTraceCollectionError'] = str(error)
+            if not report.get('imeAcceptance', {}).get('passed'):
+                try:
+                    adb('shell', 'uiautomator', 'dump', '/sdcard/ime-final.xml', timeout=60)
+                    (out / 'ime-failure.xml').write_text(adb('exec-out', 'cat', '/sdcard/ime-final.xml'))
+                    (out / 'ime-failure.png').write_bytes(adb('exec-out', 'screencap', '-p', binary=True))
+                    report['imeFailureInputMethod'] = adb('shell', 'dumpsys', 'input_method')
+                    report['imeRegistryAtFailure'] = adb('shell', 'ime', 'list', '-a', '-s')
+                except Exception as error:
+                    report['imeFailureCollectionError'] = str(error)
         try:
             (out / 'logcat.txt').write_text(adb('logcat', '-d', '-t', '3000', timeout=30))
         except Exception as error:

@@ -14,6 +14,18 @@ class ActualInputContract(unittest.TestCase):
                       for text in ['سَ','سَلَامٌ',' English',' 123٤٥٦',ime.MULTILINE])
         return events
 
+    def test_installed_keyboard_must_reach_actual_android_registry_before_enable(self):
+        now=[0.0];calls=[]
+        def adb(*args):
+            calls.append(args)
+            return 'another/.Ime' if now[0] < 1 else ime.IME_COMPONENT+'\n'
+        ime.wait_for_ime_registration(adb,clock=lambda:now[0],sleep=lambda s:now.__setitem__(0,now[0]+s))
+        self.assertEqual(len(calls),3)
+        self.assertEqual(calls[0],('shell','ime','list','-a','-s'))
+        with self.assertRaisesRegex(AssertionError,'never registered'):
+            ime.wait_for_ime_registration(lambda *args:'another/.Ime',timeout=1,
+                clock=lambda:now[0],sleep=lambda s:now.__setitem__(0,now[0]+s))
+
     def test_actual_operations_and_each_language_are_required(self):
         events=self.trace()
         self.assertEqual(ime.validate_trace('\n'.join(map(json.dumps,events))),events)

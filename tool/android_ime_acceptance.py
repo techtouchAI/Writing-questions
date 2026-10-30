@@ -41,9 +41,25 @@ def validate_trace(text):
     return events
 
 
+def wait_for_ime_registration(adb, *, timeout=30, clock=time.monotonic, sleep=time.sleep):
+    # Package installation returns BEFORE InputMethodManager's package-change
+    # receiver necessarily rebuilds its registry. Observe registration, do not
+    # retry composition failures or silently bypass a rejected enable request.
+    deadline = clock() + timeout
+    observed = ''
+    while True:
+        observed = adb('shell', 'ime', 'list', '-a', '-s')
+        if IME_COMPONENT in [line.strip() for line in observed.splitlines()]:
+            return observed
+        if clock() >= deadline:
+            raise AssertionError('Installed IME never registered with Android: ' + observed)
+        sleep(.5)
+
+
 def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, entirely_above, keyboard_apk):
     check('separate test IME APK installation', 'Success' in adb('install', '-r', str(keyboard_apk)),
           'Separate keyboard fixture; production APK is unchanged.')
+    (out/'ime-registration.txt').write_text(wait_for_ime_registration(adb))
     adb('shell', 'ime', 'enable', IME_COMPONENT)
     adb('shell', 'ime', 'set', IME_COMPONENT)
     check('actual test IME selected', IME_PACKAGE in adb('shell', 'settings', 'get', 'secure', 'default_input_method'),

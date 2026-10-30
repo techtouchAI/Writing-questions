@@ -236,6 +236,8 @@ jobs:
             test/export_gate/p0_export_gate_test.dart \
             test/wizard/keyboard_navigation_insets_test.dart \
             test/wizard/real_reorder_export_test.dart \
+            test/wizard/canonical_reorder_export_test.dart \
+            test/wizard/canonical_reorder_panel_test.dart \
             test/wizard/preview_button_audit_test.dart \
             test/wizard/visual_equation_editor_test.dart \
             test/wizard/compound_equation_pipeline_test.dart \
@@ -831,7 +833,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
-      contents: write
+      contents: read
       actions: read
     steps:
       - name: Check out exact source
@@ -876,29 +878,49 @@ jobs:
           path: ${{ runner.temp }}/android-runtime
           if-no-files-found: warn
           retention-days: 14
-      - name: Publish original runtime evidence through the verified transport
+      - name: Upload the separate test keyboard APK
         if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: acceptance-ime-${{ matrix.width }}dp
+          path: ${{ runner.temp }}/acceptance-ime/acceptance-ime.apk
+          if-no-files-found: warn
+          retention-days: 14
+
+  android-runtime-review:
+    name: Original Android runtime review transport (${{ matrix.width }}dp)
+    needs: android-runtime-evidence
+    if: ${{ always() && needs.android-runtime-evidence.result != 'skipped' && needs.android-runtime-evidence.result != 'cancelled' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        width: [320, 360]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: android-runtime-evidence-${{ matrix.width }}dp
+          path: ${{ runner.temp }}/android-runtime
+      - name: Publish original runtime evidence through the verified transport
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 tool/evidence_review_transport.py publish --profile android --root "$RUNNER_TEMP/android-runtime" --index "$RUNNER_TEMP/android-index.json"
       - name: Publish runtime references 1
-        if: always()
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 0
       - name: Publish runtime references 2
-        if: always()
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 1
       - name: Publish runtime references 3
-        if: always()
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 2
       - name: Publish runtime references 4
-        if: always()
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 3
 
       - name: Publish runtime references 5
-        if: always()
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 4
       - name: Publish runtime references 6
-        if: always()
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 5
 
   # --------------------------------------------------------------------------
@@ -990,6 +1012,29 @@ jobs:
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 6
       - name: Publish evidence references 8
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 7
+
+  candidate-reorder-review:
+    name: Original candidate reorder review transport
+    needs: build
+    if: ${{ always() && github.event_name == 'push' && needs.build.result != 'cancelled' && contains(github.event.head_commit.message, '[review-evidence]') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: production-fragment-repro
+          path: ${{ runner.temp }}/candidate-originals
+      - name: Publish full separate candidate evidence inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tool/evidence_review_transport.py publish --profile candidate-reorder --root "$RUNNER_TEMP/candidate-originals" --index "$RUNNER_TEMP/candidate-index.json"
+      - name: Publish candidate references 1
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/candidate-index.json" --group 0
+      - name: Publish candidate references 2
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/candidate-index.json" --group 1
 
   visual-evidence-review:
     name: Original visual fixture review transport
@@ -1122,9 +1167,18 @@ jobs:
         shell: bash
         run: |
           python3 -m venv "$RUNNER_TEMP/c6geom-venv"
-          "$RUNNER_TEMP/c6geom-venv/bin/pip" install -q pymupdf
+          "$RUNNER_TEMP/c6geom-venv/bin/pip" install -q pymupdf numpy pillow fonttools uharfbuzz
           "$RUNNER_TEMP/c6geom-venv/bin/python" tool/c6_geometry_gate.py \
             build/visual_parity --mode report --bind-rendered-source --require-rendered-source
+
+      - name: Audit all three historical Quran word findings against actual paint
+        if: always()
+        shell: bash
+        run: |
+          cp build/visual_parity/c6diag/text_positions/preview_positions.json build/visual_parity/preview_positions.json
+          cp build/visual_parity/c6diag/geometry/geometry_gate.json build/visual_parity/geometry_gate.json
+          C6_ARTIFACTS=build/visual_parity "$RUNNER_TEMP/c6geom-venv/bin/python" -m unittest discover -s tool -p test_audit_c6_quran_words.py -v
+          "$RUNNER_TEMP/c6geom-venv/bin/python" tool/audit_c6_quran_words.py --root build/visual_parity --output build/visual_parity
 
       # [C6-RASTER] تشخيص غير ملزم: هل تُقرّب المعاينة (Flutter) وPoppler موضع
       # خط الأساس بقاعدة واحدة عند كسور مختلفة من البكسل؟ لا يغيّر البوابة

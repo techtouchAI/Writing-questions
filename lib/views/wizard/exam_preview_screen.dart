@@ -49,6 +49,7 @@ import '../widgets/tex_text.dart';
 import '../widgets/visual_equation_editor.dart';
 import 'canonical_preview_plan_controller.dart';
 import 'canonical_editing_layer.dart';
+import 'canonical_reorder_panel.dart';
 import 'header_footer_forms.dart';
 import 'paper_header_footer_view.dart';
 import 'paper_styles.dart';
@@ -464,6 +465,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// بالضغط المطوّل (لا مع كل ضغطة فيزعج المستخدم).
   bool _selectionHintShown = false;
   bool _showFormulas = false;
+  bool _showReorderPanel = false;
 
   double _zoom = 1.0;
   double _viewportWidth = 0;
@@ -3502,6 +3504,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           // مقاساتها (§19.15). مساحة اللمس 48dp كاملة، ويُعطَّل حين لا يكون
           // سؤال واحد محدَّداً حتى لا يعمل على السؤال الخطأ.
           _buildQuestionActionsBar(controller),
+          if (_separateEditorCandidate && _showReorderPanel)
+            CanonicalReorderPanel(controller: controller, locked: _locked || _isBusy,
+              onClose: () => setState(() => _showReorderPanel = false),
+              onChanged: () => setState(_clearSelection)),
           PreviewToolbar(
             selectionLabel: _selectionLabel(document),
             canUndo: controller.canUndo,
@@ -5681,7 +5687,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: <Widget>[
-                    if (_separateEditorCandidate) _buildCandidateEmptyFields(controller),
+                    if (_separateEditorCandidate) ...<Widget>[
+                      button(key: 'canonical-action-reorder', icon: Icons.reorder,
+                        tooltip: 'ترتيب الأسئلة والفروع بالسحب', enabled: !_isBusy,
+                        onPressed: () => setState(() => _showReorderPanel = !_showReorderPanel)),
+                      _buildCandidateEmptyFields(controller),
+                    ],
                     button(
                       key: 'question-action-edit-body',
                       icon: Icons.edit_note,

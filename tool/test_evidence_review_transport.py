@@ -58,6 +58,29 @@ class EvidenceTransportTest(unittest.TestCase):
             self.assertIn('opentype-clusters.pdf', {p.name for p in transport.selected(root)})
             self.assertLessEqual(len(list(transport.selected(root))), 80)
 
+    def test_candidate_profile_is_separate_and_all_companions_are_required(self):
+        expected = {f'candidate-drag-{width}-{kind}-{ending}' for width in (320, 360)
+                    for kind in ('question','branch-within','branch-between')
+                    for ending in ('before.png','after.png','after.pdf')}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / 'candidate-reorder-manifest.json'
+            manifest.write_text(json.dumps({'files': sorted(expected)}))
+            for name in expected: (root / name).write_bytes(b'actual-original-fixture')
+            self.assertEqual({p.name for p in transport.selected(root, 'candidate-reorder')},
+                             expected | {manifest.name})
+            missing = root / sorted(expected)[0]
+            missing.unlink()
+            with self.assertRaisesRegex(ValueError,'Missing/unsafe'):
+                list(transport.selected(root,'candidate-reorder'))
+            missing.write_bytes(b'fixture')
+            manifest.write_text(json.dumps({'files': sorted(expected)[:-1]}))
+            with self.assertRaisesRegex(ValueError,'every gesture companion'):
+                list(transport.selected(root,'candidate-reorder'))
+            manifest.write_text(json.dumps({'files': sorted(expected) + [sorted(expected)[0]]}))
+            with self.assertRaisesRegex(ValueError,'every gesture companion'):
+                list(transport.selected(root,'candidate-reorder'))
+
     def test_validation_logs_distinguish_not_produced_from_success(self):
         names = {'production-first.log', 'native-editor-first.log', 'flutter-test.log',
                  'flutter-test-canonical-gate.log', 'flutter-analyze.log', 'flutter-build.log'}
@@ -198,6 +221,24 @@ class EvidenceTransportTest(unittest.TestCase):
             (root / 'preview_positions.json').write_text('{}')
             self.assertTrue({'geometry_gate.json', 'preview_positions.json'} <=
                 {p.name for p in transport.selected(root, 'visual')})
+
+    def test_three_word_review_requires_report_and_all_six_original_crops(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base = ['vector.pdf','preview_page_1.png']
+            (root/'manifest.json').write_text(json.dumps(dict(pageCount=1,files=base)))
+            for name in base: (root/name).write_bytes(b'original')
+            words = {'quran-word-geometry.json', *(f'historical-word-{i}-{kind}.png'
+                     for i in (1,2,3) for kind in ('preview','pdf'))}
+            (root/'quran-word-geometry.json').write_text('{}')
+            with self.assertRaisesRegex(ValueError,'Missing/unsafe'):
+                list(transport.selected(root,'visual'))
+            for name in words: (root/name).write_bytes(b'original-review-evidence')
+            self.assertEqual({p.name for p in transport.selected(root,'visual')},
+                             words | set(base) | {'manifest.json'})
+            (root/'historical-word-3-pdf.png').unlink()
+            with self.assertRaisesRegex(ValueError,'Missing/unsafe'):
+                list(transport.selected(root,'visual'))
 
     def test_android_inventory_is_complete_and_flat(self):
         with tempfile.TemporaryDirectory() as directory:
