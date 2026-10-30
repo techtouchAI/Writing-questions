@@ -1,7 +1,5 @@
 // Real printing5.13.4 actions; the platform boundary is recorded, not raster
 // parity or Android proof. Native instrumentation separately verifies this UI.
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
@@ -91,8 +89,11 @@ void main() {
           await tester.pump();
         }
       }
+      var expectedZoom = 1.0;
       for (final label in ['تصغير المعاينة', 'تكبير المعاينة', 'إعادة الحجم الأصلي']) {
-        final target = find.byTooltip(label);
+        // IconButton's internal Tooltip may wrap only the24dp icon; measure
+        // the real receiving button, then prove all four corner hits act.
+        final target = find.byWidgetPredicate((widget) => widget is IconButton && widget.tooltip == label);
         expect(target, findsOneWidget);
         final rect = tester.getRect(target);
         expect(rect.width, greaterThanOrEqualTo(48));
@@ -109,6 +110,10 @@ void main() {
           rect.bottomLeft + const Offset(1, -1), rect.bottomRight - const Offset(1, 1)]) {
           await tester.tapAt(point);
           await tester.pump();
+          expectedZoom = label == 'إعادة الحجم الأصلي' ? 1.0
+              : (expectedZoom + (label == 'تصغير المعاينة' ? -0.25 : 0.25)).clamp(0.6, 4.0).toDouble();
+          expect(find.text('${(expectedZoom * 100).round()}%'), findsOneWidget,
+            reason: 'The actual $label corner must change/reset zoom, not just appear in a hit path.');
         }
       }
       expect(find.text('100%'), findsOneWidget);

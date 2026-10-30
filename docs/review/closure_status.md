@@ -5,6 +5,21 @@
 الفرع: `arena/8513fa6c-writing-questions`.
 
 
+## فشل3dcadce وتشخيصه — ليس SHA قبول
+
+[Main41122953505](https://github.com/techtouchAI/Writing-questions/actions/runs/41122953505)
+FAILURE: اختبارا PDF320/360 الجديدان قاسا Tooltip الداخلي للـzoom (24dp)،
+لا IconButton المستقبِل. شرط48dp في فَعلي الطباعة/المشاركة اجتاز المرحلة السابقة
+بأفعال الحزمة الحقيقية؛ لا نعمم ذلك على كل الواجهة. تُقاس الآن ودجة IconButton
+ذات tooltip نفسه، وتبقى نقرات الزوايا الأربع؛ أضيف اشتراط نسبة zoom المتوقعة بعد
+كل نقرة لمنع نجاح وهمي. لم تُصغّر عتبة48 ولم تُلغَ أي حالة.
+ظهرت info واحدة unnecessary_import لـtyped_data بعد استيراد services؛ أُزيلت
+دون ignore أو analyzer exclusion. اختبارات marks العشرة (الأصلية+المضافة) نجحت،
+لكن full/APK/Android/Visual/C6 **لم تعمل** لهذاSHA، فلا تُنسب إليه نتائج6b.
+[Extended41122953618](https://github.com/techtouchAI/Writing-questions/actions/runs/41122953618)
+SUCCESS. جُلبت7أصول validation كاملة متحققة؛ manifest يصرح بالأوامر غير المنفذة.
+التعديل التصحيحي التالي يحتاج دورة جديدة كاملة؛ يبقى OPEN/candidate OFF.
+
 ## متابعة6b72453 — أصل الفشل معروف؛ التعديل التالي ينتظر البوابات
 
 **هذا القسم يتقدم على السجل التاريخي أدناه. OPEN / candidate OFF؛ لا دمج ولا حذف.**
