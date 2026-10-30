@@ -5,6 +5,50 @@
 الفرع: `arena/8513fa6c-writing-questions`.
 
 
+## أحدث متابعة — رُفض إصلاح metadata وأُزيل التراجع؛ القبول لم يكتمل
+
+**هذه الخلاصة تتقدم على جميع المقترحات والنتائج التاريخية أدناه.**
+التعديل الشامل لـNaskh في `67a3706`، ثم اقتراح تحديث اختبار stream في
+`0dbaa31`، **ليسا إصلاحًا مقبولًا**. فحص ملفات الإنتاج الأصلية الجديدة أثبت
+انعكاس كلمات سليمة: `العربية` أصبحت `ةيبرعلا`، و`نص عربي طويل` أصبحت
+`صن يبرع ليوط` في الاستخراج الخام. أعاد `86ccdc1` مسار الإنتاج واختبار
+byte/geometry parity إلى b51 **حرفيًا**، مع إبقاء حفظ raw Android txt وإضافة
+حارسي انحدار regular/bold ضد إعادة الوسم المعيب. لا تغيير في fonts/ink/clip/
+advance/pagination. الفشل الأصلي لاستخراج `سَلَامٌ` **لم يُصلح بعد**.
+
+- `67a` Main [41128959910](https://github.com/techtouchAI/Writing-questions/actions/runs/41128959910):
+  full **1079 PASS / 1 FAIL / 0 SKIP**؛ فشل الاختبار التفاضلي موثق أدناه.
+  انتهى workflow **cancelled** بعد ذلك؛ Visual/C6 والنقل البصري أُلغيت،
+  وAndroid/APK-dependent gates SKIPPED. لا نجاح Android من هذاSHA.
+  Extended [41128960107](https://github.com/techtouchAI/Writing-questions/actions/runs/41128960107) SUCCESS.
+  جُلبت كاملة inventories: logs9، production80، candidate19 فقط؛ لا جرد
+  visual/Android مكتمل لهذا التشغيل.
+- على `86ccdc1548c823c9c5d2d3b7c3966ccf46f53945`:
+  Main [41130640276](https://github.com/techtouchAI/Writing-questions/actions/runs/41130640276)
+  ما زال IN_PROGRESS عند تحديث هذه الخلاصة؛ Extended
+  [41130640303](https://github.com/techtouchAI/Writing-questions/actions/runs/41130640303)
+  SUCCESS. لا تستعاض نتائج b51 أو67a عن النتائج المفقودة.
+- محليًا: **31 اختبار Python PASS** (15 Android helper +16 transport)،
+  وdiff-check نظيف. استدعاء unittest الأول افتقد PYTHONPATH وفشل في import؛
+  أُعيد بالمسار الصحيح `PYTHONPATH=tool` فاجتازت الملفات الثلاثة كاملة.
+  لا Flutter/adb محليًا؛ هذه ليست شهادة Android أو composition فعلية.
+
+تشخيص إضافي **خارج الإنتاج فقط** باستخدام subset/widths وأماكن glyphs من
+PDF Android b51 الحقيقي: زيارة glyphs بترتيب منطقي، مع BT مستقل لكل glyph
+والـActualText الأصلي حول الكلمة، أعطت `سَلَامٌ` بالضبط. جميع rasters الأربع
+(3×) لها SHA256 واحد
+`033232593a8e7c16953f0ef1bce2c2fae05ffcb77b72bbed55387e0408a0d471`.
+لكن تجميع الزيارة نفسها في BT واحد أعطى `سَلَامٌمٌ`، **نتيجة مرفوضة** رغم
+اجتياز substring؛ ليست حلًا. السكربت والأصول التشخيصية:
+`/home/user/final-followup/probe_native_logical_order.py` و`native-order-*.pdf`.
+لا تعديل لإنتاج PDF بهذه التجربة ولا ادعاء أنها حل كامل أو تعارض معماري؛ يلزم
+إثبات الكلمات/الحركات/المختلط والتقدم والهندسة والـreader قبل اعتماد مسار كهذا.
+
+يبقى الحفظ/إعادة الفتح الكامل، والتصدير أثناء IME وبعد إغلاقه، وكل48dp الفعالة،
+ومصفوفة كل الأدوات/المحتوى/الحدود/الوسائط/async، وlegacy inline وRMSE العام
+**OPEN**. candidate OFF؛ لا merge ولا حذف فرع. سجل b51 أدناه تاريخي، بما فيه
+اقتراح ActualText الذي رُفض لاحقًا؛ لا يُقرأ كحالة الشفرة الحالية.
+
 ## b51e5c7 — المشاركة الفعلية أُثبتت؛ فشل تالٍ في استخراج العربية
 
 [Main41125230151](https://github.com/techtouchAI/Writing-questions/actions/runs/41125230151)
@@ -23,7 +67,7 @@ SUCCESS. جُلبت11/19/80/14/52/52 أصلًا كاملة متحققة علىSH
 `ٌسَلاَمEnglish 123٦٥٤` بدل `سَلَامٌ English 123٤٥٦`. fullreopen بعد ذلك
 **لم يُنفّذ**. لا يُحسب نجاح المشاركة نجاحًا لاستخراج كامل المصدر أو الحفظ/إعادة الفتح.
 
-### التشخيص والتعديل التالي
+### التشخيص والتعديل المقترح آنذاك — رُفض لاحقًا
 
 المصدر هو `NotoNaskhArabic` الحقيقي (لا تبديل font أو نسخةAhem)، ومسار
 `CanonicalText` كان يمرر ActualText فقط لـAmiri/OpenType؛ Naskh يترك المستهلك
