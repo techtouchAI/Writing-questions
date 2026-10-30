@@ -895,3 +895,30 @@ SHA `1917adc2a1d74c10ce70b726f6b19c557c61bdf9`؛
 APK المرفوض hash`6b3ddabe54a74d27ca55a13da4bb51487090cfb0e731fad480d1555d8cfb4aa8`.
 
 CMake بنى x86 افتراضيًا رغم عدم وجود Flutter engine له في release؛ ABI أصلي بلا engine قد يجعل APK يبدو قابلًا للتثبيت على جهاز غير مدعوم. قورن اختيار Flutter3.24.5 الأصلي في`packages/flutter_tools/gradle/src/main/groovy/flutter.groovy` (`getTargetPlatforms`/`PLATFORM_ARCH_MAP`). التعديل يجعل **قائمة بناء CMake** تتبع `-Ptarget-platform` نفسها وافتراض Flutter الثلاثي، دون تغيير فلاتر تغليف APK أو split-per-ABI أو تخفيف التدقيق. يبقى x86 قابلًا للبناء عند طلب`android-x86` صراحةً للـdebug/emulator. يرفض target مجهول بدل fallback صامت. أضيف regression صريح يبقي رفض native-only x86 إلى اختبارات ZIP الموجودة؛ المحلي7APK+12PDF+9transport PASS. يلزم الآن بناء حقيقي وتدقيق كل ELF على SHA الجديد؛ لا تُنقل نتائج191 إليه.
+
+### 2026-10-30 — 67a same-SHA follow-up: exact stream contract failure
+
+- Main run `41128959910` on `67a3706da2cbd22706a56ef06a7e991326ff95f6`
+  failed the full suite: **1079 passed / 1 failed / 0 skipped**. Extended run
+  `41128960107` completed successfully. The canonical gate passed all 3 tests.
+- The failure is `canonical_text_test.dart` differential parity: the complete
+  page-stream comparison expected no marked-content wrapper. Actual painting
+  bytes are surrounded by the new exact logical `ActualText` span. The raw
+  failure has been inspected, not classified from a green summary.
+- The follow-up keeps that test and all geometry, glyph, color, underline,
+  clipping and advance assertions. It additionally requires the exact UTF-16BE
+  source payload, exactly one opening/closing marked-content pair immediately
+  surrounding the actual text object, then compares all remaining stream bytes
+  with the existing legacy reference. No arbitrary metadata removal, tolerance
+  change, test exclusion, or reader-acceptance relaxation is introduced.
+- Android runtime and APK-dependent gates were **skipped** after the upstream
+  failure. This run therefore supplies **no** Android Arabic-source repair or
+  save/reopen acceptance. A fresh all-gates run is required after this test
+  contract update. New production/visual originals remain subject to review;
+  no prior SHA's evidence is substituted.
+- The local diagnostic reader reports PyMuPDF **2.0**, MuPDF **1.28.5**. The
+  previously inspected upstream master excerpts are not proof of the exact
+  installed source implementation. Exact extracted text (including repetitions
+  or reversed plain Arabic) still must be inspected in the actual native PDF.
+
+Status remains **OPEN / candidate OFF / no merge / no branch deletion**.
