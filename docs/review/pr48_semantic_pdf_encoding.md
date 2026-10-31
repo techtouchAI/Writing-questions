@@ -18,7 +18,10 @@
 سياسات القراءة: `pdfminer.six` يقرأ المجرى بترتيبه الخام، و`pypdf` يعكس محارف
 RTL حرفًا بحرف، فالشرطان متناقضان على المجرى نفسه ولا يجمعهما إلا نص متناظر.
 لذلك: **لا إصلاح إنتاجي، ولا SHA يحمل إصلاحًا، ولم تُشغّل بوابات قبول على إصلاح
-غير موجود.**
+غير موجود.** وأقوى دليل على أن العيب قائم هو ملف PDF أنتجه التطبيق نفسه على
+محاكي Android من هذا الفرع بكود غير معدَّل: المحرّكات الأربعة فشلت جميعًا في
+استخراج `سَلَامٌ` (القسم 3.1)، وبوابة IME على 320dp و360dp فشلت على الرأس
+`a1887c1`.
 
 ---
 
@@ -110,6 +113,48 @@ ToUnicode         : 064C 0645 064E 0627 0644 064E 0633
 
 أي أن النموذج يعيد إنتاج القناة الدلالية للإنتاج بدقة كافية لجعل كل نتيجة
 استخراج قابلة للنقل. أدلة الملفات: `docs/review/pr48_semantic_pdf_evidence.json`.
+
+### 3.1 إعادة إنتاج على ملف PDF مولَّد على جهاز Android (كود الإنتاج غير معدَّل)
+
+النموذج وحده لا يكفي؛ أُعيد الفحص على **ملف أنتجه التطبيق نفسه على محاكي
+Android بدقة 320dp** من هذا الفرع بكود إنتاج غير معدَّل:
+
+- التشغيل: `41193725651` (الرأس `a1887c1`)، مهمة `Android IME acceptance (320dp)`
+  انتهت بالفشل برسالة: «actual device PDF retains diacritized Arabic
+  statement»، و`smokePassed=false` في `runtime.json`.
+- الأدلة نُقلت كـ git blobs عبر `evidence_review_transport.py`، واستُرجعت
+  بأمر:
+
+  ```bash
+  python3 tool/evidence_review_transport.py fetch --run 41193725651 \
+    --job-name 'Original Android runtime review transport (320dp)' \
+    --destination /tmp/orig320
+  ```
+
+- الهوية: APK `b98f45ba…f3cb5acc`، ملف PDF `b1ee6511…225548092` (35,738 بايت،
+  3 صفحات)، الخطوط: `NotoNaskhArabic-Bold` للبيان و`Amiri-Regular` للترويسة.
+- أمر الفحص: `python3 tool/pdf_source_diagnostic.py ime-document.pdf
+  --reference 'سَلَامٌ'` → `substringCount = 0` و`delimitedExactCount = 0`
+  و`exactReferencePassed = false` **للمحركات الأربعة**، أي أن الفشل يتكرر على
+  المُخرَج الحقيقي لا في النموذج وحده.
+
+| المحرك | النص المستخرج للكلمة | سياق السطر |
+|---|---|---|
+| PyMuPDF 2.0 | `ٌسَلاَم` | `الأول/ٌسَلاَمEnglish 123٦٥٤` |
+| PDFium 5.14.0 | `سَلاَمٌ` | `السؤال الأول/ سَلاَمٌ 123٤٥٦ English` |
+| pdfminer.six | `ٌمَالَس` | `English 123٤٥٦` ثم `ٌمَالَس` |
+| pypdf 6.21.4 | `سَالَمٌ` | `السؤالاألول/سَالَمٌEnglish 123٤٥٦` |
+
+(بصمات النص الخام وعدد نقاط الشيفرة لكل محرك محفوظة في
+`realDeviceReproduction` داخل ملف الأدلة.)
+
+**ملاحظة تشخيصية إضافية ظهرت من الجهاز:** الترويسة المرسومة بخط `Amiri`
+(مسار `openType != null` الذي يمرّر `actualText` منطقيًا) استُخرجت **معكوسة
+كلمةً كلمة**: `مسب هللا نمحرلا ميحرلا` مقابل `بسم الله الرحمن الرحيم` في
+MuPDF، و`بسماللهالرحمنالرحيم` في pypdf، وهي مستوية على حروف PDFium أيضًا.
+هذه أعراض **السبب المعماري نفسه** (ترتيب الرسم يُقرأ كترتيب دلالي) لكن على
+مسار ترميز مختلف، وهي **عيب قائم مستقل** عن فشل الحركات: لا يُصلح في هذا
+النطاق ولا يُوسَّع له العمل، ومسجّل هنا حتى لا يُنسب لاحقًا إلى أي إصلاح.
 
 ---
 
@@ -328,11 +373,19 @@ ToUnicode         : 064C 0645 064E 0627 0644 064E 0633
 | إعادة إنتاج الفشل على المحرّكات الأربعة | **نُفّذ**، مطابقة حرفية (القسم 3) |
 | مصفوفة 11 عنصرًا × 11 ترميزًا × 4 محرّكات | **نُفّذت** (121 نتيجة + 44 مقارنة صور) |
 | اختبارات النموذج على صيغ مرفوضة (عكس، تكرار، substring، حركة ناقصة) | **PASS** |
-| `flutter analyze` / Flutter suite / APK / Android 320-360 / Visual / Extended | **لم تُنفّذ محليًا** (لا يوجد Flutter SDK في البيئة) |
+| `flutter analyze` / Flutter suite / APK | **نُفّذت في CI على هذا الرأس** (كود إنتاج غير معدَّل) |
+| بوابات Android 320dp/360dp (IME) | **نُفّذت على الجهاز، وفشلت** — الفشل هو العيب الأصلي نفسه (القسم 3.1) |
 | بوابات CI على SHA إصلاح | **لا SHA إصلاح** — لا شيء لتشغيله |
 
+حالة CI على الرأس `82c9bb0` (تشغيل `41191759155` و`41191759154`):
+`Analyze, test, and build APK` **success**، `Visual regression` **success**،
+`Extended / Diagnostic` **success**، `C6 diagnostics` **success**. ثم على الرأس
+`a1887c1` (تشغيل `41193725651`، بعد تفعيل بوابة الأجهزة صراحةً بوسم
+`[android-runtime]`): `Android IME acceptance (320dp)` و`(360dp)` **failure**
+بسبب عيب الحركات القائم، وهو متوقع لأن كود الإنتاج لم يُعدَّل ولا إصلاح موجود بعد.
+هذه النتائج تخص **الكود القائم** ولا تُنسب إلى أي إصلاح.
+
 الاختبارات المحلية تخص **أداة النموذج** فقط، ولا تُنسب إلى اختبارات التطبيق.
-لم يُقدَّم أي نجاح Android أو Flutter في هذا التقرير.
 
 ---
 
@@ -345,7 +398,9 @@ ToUnicode         : 064C 0645 064E 0627 0644 064E 0633
 | إساءة MuPDF/PDFium لترتيب الحركات و`ActualText` العربي | **Extractor limitation — مثبت بالقياس، ليس سببًا منفردًا يُبري الملف** |
 | اختبار `canonical_text_test.dart` الذي يثبت «المجرى = عكس المصدر» | **Test contract defect — مستقل** (يعقد العقد الداخلي القديم؛ لم يُعدّل) |
 | أثر إعادة الترتيب على بكسل التغطية (48 بكسل) | **موثق، ليس regression** — لم يتغير أي ملف إنتاج |
-| تطابق الأصول الأصلية 320dp/360dp | **Unverified في هذه الجلسة** (غير متوفرة) |
+| فشل بوابة Android IME على الكود القائم (320dp/360dp) | **Production defect — أُعيد إنتاجه على الجهاز** بالتشغيل `41193725651` |
+| عكس الترويسة `Amiri` كلمةً كلمة في MuPDF/pdfminer/pypdf | **Existing independent defect — أُعيد إنتاجه على الجهاز، خارج النطاق** |
+| تطابق الأصول الأصلية للتحقيق (`a39ba202`) | **Unverified** — الـ SHA غير موجود في هذا المستودع |
 
 ---
 
@@ -377,6 +432,13 @@ python3 tool/prototype_semantic_pdf/run_prototype.py --out ./artifacts
 python3 tool/prototype_semantic_pdf/probe_engine_model.py --out ./artifacts/engine-model
 python3 tool/prototype_semantic_pdf/probe_mechanisms.py  --out ./artifacts/mechanisms
 python3 -m unittest tool/test_prototype_semantic_pdf.py
+
+# إعادة الفحص على ملف أنتجه التطبيق على Android (كود إنتاج غير معدَّل):
+python3 tool/evidence_review_transport.py fetch --run 41193725651 \
+    --job-name 'Original Android runtime review transport (320dp)' \
+    --destination ./android-evidence
+python3 tool/pdf_source_diagnostic.py ./android-evidence/ime-document.pdf \
+    --reference 'سَلَامٌ'
 ```
 
 المخرجات (PDFs + PNGs + نصوص خام) **لا تُرفع إلى Git** وفق قواعد المستودع؛
@@ -400,8 +462,10 @@ python3 -m unittest tool/test_prototype_semantic_pdf.py
    أشكالًا كمسارات: تغطية 0 وSHA متطابق. أي ترميز يحقق تحسّنًا نصيًا جزئيًا
    يغيّر 5–82 بكسل تغطية.
 6. **الملفات الإنتاجية التي تغيّرت:** **لا شيء**.
-7. **الاختبارات:** 13 اختبار نموذج PASS؛ اختبارات Flutter/Android/CI **لم تُنفّذ**
-   محليًا؛ لا بوابات على SHA إصلاح لأن الإصلاح لم يُعتمد.
+7. **الاختبارات:** 13 اختبار نموذج PASS؛ `flutter analyze` والـsuite وبناء
+   APK والبوابة البصرية وExtended: **success في CI على رأس هذا الفرع** (كود
+   إنتاج غير معدَّل)؛ بوابتا Android IME على 320dp و360dp: **failure** بسبب
+   العيب القائم نفسه (القسم 3.1)؛ لا بوابات على SHA إصلاح لأن الإصلاح لم يُعتمد.
 8. **SHA الذي يحمل الإصلاح:** **لا يوجد.** رأس الفرع يحمل النموذج والتقرير فقط.
 9. **بوابات CI على ذلك SHA:** لا تنطبق؛ ولم تُدَّع أي نتيجة قبول.
 

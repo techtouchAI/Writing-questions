@@ -821,5 +821,85 @@
     "Artifacts (PDFs, PNGs, raw extraction) live outside Git; regenerate with tool/prototype_semantic_pdf/run_prototype.py.",
     "flat_match is whole-text equality after collapsing whitespace runs; no Arabic normalisation, no mark sorting, no substring acceptance.",
     "coverageDeltaPixelsVsBaseline is a binarised-ink comparison at 150 dpi: geometry, independent of anti-aliasing."
-  ]
+  ],
+  "realDeviceReproduction": {
+    "what": "PDF exported by the production app on an Android emulator at 320dp, unchanged production code (this branch)",
+    "workflowRun": 41193725651,
+    "workflowHeadSha": "a1887c1931a445790092c59249fdc97e3b3bff64",
+    "job": "Android IME acceptance (320dp) -> failure (expected: pre-existing defect, no fix exists)",
+    "evidenceTransportJob": "Original Android runtime review transport (320dp) -> success (evidence published as git blobs)",
+    "retrieveCommand": "python3 tool/evidence_review_transport.py fetch --run 41193725651 --job-name 'Original Android runtime review transport (320dp)' --destination /tmp/orig320",
+    "apkSha256": "b98f45baa802d6720e77379743f09e8d56e8576ff3022b541dedaf9c3fcb5acc",
+    "devicePdfSha256": "b1ee6511e6020479787ea7f3183971e4cce6d8fde7d816983f8743e225548092",
+    "devicePdfBytes": 35738,
+    "devicePdfPages": 3,
+    "runtimeSmokePassed": false,
+    "runtimeError": "AssertionError: actual device PDF retains diacritized Arabic statement: No normalization/extractor exemption; actual PDF text plus retained PNG/PDF for visual review.",
+    "fontOfReversedHeaderWord": "Amiri-Regular",
+    "fontOfStatement": "NotoNaskhArabic-Bold",
+    "diagnosticCommand": "python3 tool/pdf_source_diagnostic.py ime-document.pdf --reference 'سَلَامٌ'",
+    "perEngine": {
+      "mupdf": {
+        "rawTextSha256": "60d6f4f29d5898cbf70b6908ee845243e8693d49c46e1a4bda743cef785190ed",
+        "rawCodepoints": 7780,
+        "substringCount": 0,
+        "delimitedExactCount": 0,
+        "exactReferencePassed": false
+      },
+      "pdfium": {
+        "rawTextSha256": "322b14ec6b2e96c073e6c920bb4c45b3cdb80adc9491972364b6342d62480de3",
+        "rawCodepoints": 8763,
+        "substringCount": 0,
+        "delimitedExactCount": 0,
+        "exactReferencePassed": false
+      },
+      "pdfminer": {
+        "rawTextSha256": "5392d2ded07ed4244ef460731fc7f8147309f27d34d2a2b13a07699a0afc6958",
+        "rawCodepoints": 10318,
+        "substringCount": 0,
+        "delimitedExactCount": 0,
+        "exactReferencePassed": false
+      },
+      "pypdf": {
+        "rawTextSha256": "397ee43181f8c9693fbec2445babd6d709b1fdb897a6a5e6818e3342843429fd",
+        "rawCodepoints": 7123,
+        "substringCount": 0,
+        "delimitedExactCount": 0,
+        "exactReferencePassed": false
+      }
+    },
+    "allRequestedEnginesMatch": false,
+    "statementLines": {
+      "mupdf": "الأول/ٌسَلاَمEnglish 123٦٥٤",
+      "pdfium": "السؤال الأول/ سَلاَمٌ 123٤٥٦ English",
+      "pdfminer": null,
+      "pypdf": null
+    },
+    "headerBasmalaLines": {
+      "mupdf": [
+        "مسب",
+        "هللا",
+        "نمحرلا",
+        "ميحرلا"
+      ],
+      "pdfium": null,
+      "pypdf": "بسماللهالرحمنالرحيم"
+    },
+    "notes": [
+      "Same architectural root cause as the statement defect, different code path: the Amiri words carry a logical ActualText payload but are painted in visual order, and MuPDF/pdfminer/pypdf reverse them.",
+      "Reported as an existing independent symptom, not fixed and not widened in scope."
+    ],
+    "statementContext": {
+      "mupdf": "/٦٢٠٢⏎الدور⏎الأول⏎ادارة⏎للبنين⏎السؤال⏎الأول/ٌس",
+      "pdfium": "/٢٠٢٧⏎الدور الأول⏎ادارة⏎للبنين⏎السؤال الأول/ س",
+      "pdfminer": "English 123٤٥٦⏎ٌمَالَس⏎/⏎لوألا⏎لاؤسلا",
+      "pypdf": "ن⏎السؤالاألول/سَالَمٌEnglish 123٤٥٦⏎سطرأولEnglish١٢٣⏎ "
+    },
+    "statementExtracted": {
+      "mupdf": "ٌسَلاَم",
+      "pdfium": "سَلاَمٌ",
+      "pdfminer": "ٌمَالَس",
+      "pypdf": "سَالَمٌ"
+    }
+  }
 }
