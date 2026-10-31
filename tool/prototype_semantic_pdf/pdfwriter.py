@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import hashlib
 import zlib
-from dataclasses import dataclass, field
 
 from shaping import PrototypeFont
 
@@ -28,31 +27,6 @@ from shaping import PrototypeFont
 def _utf16_hex(text: str) -> str:
     data = text.encode('utf-16-be')
     return data.hex().upper()
-
-
-@dataclass(frozen=True)
-class PlacedGlyph:
-    gid: int
-    x: float          # absolute glyph origin, points
-    y: float
-    payload_logical: str
-    payload_legacy: str
-    cluster: int
-
-    @property
-    def cluster_text(self) -> str:
-        return self.payload_logical
-
-
-@dataclass
-class Word:
-    text: str                 # logical source of the word
-    rtl: bool
-    glyphs: list[PlacedGlyph]  # visual/drawing order
-    x: float                  # left edge of the drawn word
-    y: float
-    size: float
-    clusters: dict[int, str] = field(default_factory=dict)  # cluster -> logical text
 
 
 class FontEncoder:
@@ -76,8 +50,9 @@ class FontEncoder:
     def hex_text(self, cids: list[int]) -> str:
         return '<' + ''.join(f'{cid:04X}' for cid in cids) + '>'
 
-    # ---- PDF objects -----------------------------------------------------
-    def _to_unicode(self) -> bytes:
+    # ---- font objects ----------------------------------------------------
+    def to_unicode(self) -> bytes:
+        """`/ToUnicode` CMap: one `bfchar` per CID that carries a payload."""
         lines = [
             '/CIDInit /ProcSet findresource begin',
             '12 dict begin',
@@ -89,7 +64,8 @@ class FontEncoder:
             '<0000> <FFFF>',
             'endcodespacerange',
         ]
-        entries = [(cid, payload) for cid, (_, payload) in enumerate(self.pairs) if payload]
+        entries = [(cid, payload)
+                   for cid, (_, payload) in enumerate(self.pairs) if payload]
         for start in range(0, len(entries), 100):
             chunk = entries[start:start + 100]
             lines.append(f'{len(chunk)} beginbfchar')
@@ -99,60 +75,29 @@ class FontEncoder:
         lines += ['endcmap', 'CMapName currentdict /CMap defineresource pop', 'end', 'end']
         return ('\n'.join(lines) + '\n').encode('latin-1')
 
-    def _cid_to_gid(self) -> bytes:
-        out = bytearray()
-        for gid, _ in self.pairs:
-            out += gid.to_bytes(2, 'big')
-        return bytes(out)
+    def cid_to_gid(self) -> bytes:
+        return b''.join(gid.to_bytes(2, 'big') for gid, _ in self.pairs)
 
-    def _widths(self) -> str:
+    def widths(self) -> str:
         parts = []
         for cid, (gid, _) in enumerate(self.pairs):
             width = self.font.advance(gid)
             parts.append(f'{cid} [{round(width * 1000 / self.font.units_per_em)}]')
         return '[' + ' '.join(parts) + ']'
 
-    def font_objects(self) -> list[bytes]:
-        upem = self.font.units_per_em
-        head = self.font.ttf['head']
-        hhea = self.font.ttf['hhea']
-        raw_font = open(self.font.path, 'rb').read()
-        font_file = zlib.compress(raw_font)
-        return [
-            b'<< /Type /Font /Subtype /Type0 /BaseFont /ProtoNaskh /Encoding /Identity-H '
-            b'/DescendantFonts [4 0 R] /ToUnicode 5 0 R >>',
-            b'<< /Type /Font /Subtype /CIDFontType2 /BaseFont /ProtoNaskh '
-            b'/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> '
-            b'/FontDescriptor 6 0 R /DW 1000 /W 7 0 R /CIDToGIDMap 8 0 R >>',
-            b'__UNUSED__',
-            b'__UNUSED__',
-            b'__CMAP__',
-            (f'<< /Type /FontDescriptor /FontName /ProtoNaskh /Flags 4 '
-             f'/FontBBox [{head.xMin} {head.yMin} {head.xMax} {head.yMax}] '
-             f'/ItalicAngle 0 /Ascent {hhea.ascent} /Descent {hhea.descent} '
-             f'/CapHeight {hhea.ascent} /StemV 80 /FontFile2 9 0 R >>').encode('latin-1'),
-            self._widths().encode('latin-1'),
-            b'__CID2GID__',
-            b'__FONTFILE__',
-        ]
 
-
-def _stream(data: bytes, compress: bool = True) -> tuple[bytes, bytes]:
-    if compress:
-        packed = zlib.compress(data)
-        return (f'<< /Length {len(packed)} /Filter /FlateDecode >>'.encode(),
-                f'stream\n'.encode() + packed + b'\nendstream')
-    return (f'<< /Length {len(data)} >>'.encode(), b'stream\n' + data + b'\nendstream')
+def _stream(data: bytes) -> tuple[bytes, bytes]:
+    """Flate-compressed stream: `(dictionary, stream bytes)`."""
+    packed = zlib.compress(data)
+    return (f'<< /Length {len(packed)} /Filter /FlateDecode >>'.encode(),
+            b'stream\n' + packed + b'\nendstream')
 
 
 class PdfWriter:
     def __init__(self, encoder: FontEncoder):
         self.encoder = encoder
 
-    def _object(self, body: bytes, extra: bytes = b'') -> bytes:
-        return body
-
-    def build(self, page_contents: list[str], compress_font: bool = True) -> bytes:
+    def build(self, page_contents: list[str]) -> bytes:
         """Serialize a PDF with one page per content stream string."""
         objs: list[bytes] = []
         # 1 catalog, 2 pages tree, then per page: page object + content stream.
@@ -163,8 +108,8 @@ class PdfWriter:
         content_objs: dict[int, bytes] = {}
 
         enc = self.encoder
-        cmap_data = enc._to_unicode()
-        cid2gid_data = enc._cid_to_gid()
+        cmap_data = enc.to_unicode()
+        cid2gid_data = enc.cid_to_gid()
         raw_font = open(enc.font.path, 'rb').read()
         font_file_data = raw_font  # stream_obj() applies the Flate filter
 
@@ -183,9 +128,12 @@ class PdfWriter:
 
         head = enc.font.ttf['head']
         hhea = enc.font.ttf['hhea']
-        font_objects = enc.font_objects()
-        descendants = font_objects[1]
-        font = font_objects[0]
+        font = (b'<< /Type /Font /Subtype /Type0 /BaseFont /ProtoNaskh '
+                b'/Encoding /Identity-H /DescendantFonts [4 0 R] /ToUnicode 5 0 R >>')
+        descendants = (
+            b'<< /Type /Font /Subtype /CIDFontType2 /BaseFont /ProtoNaskh '
+            b'/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> '
+            b'/FontDescriptor 6 0 R /DW 1000 /W 7 0 R /CIDToGIDMap 8 0 R >>')
         descriptor = (f'<< /Type /FontDescriptor /FontName /ProtoNaskh /Flags 4 '
                       f'/FontBBox [{head.xMin} {head.yMin} {head.xMax} {head.yMax}] '
                       f'/ItalicAngle 0 /Ascent {hhea.ascent} /Descent {hhea.descent} '
@@ -203,7 +151,7 @@ class PdfWriter:
         objs.append(descendants)                                                # 4
         objs.append(stream_obj(cmap_data))                                      # 5 ToUnicode
         objs.append(descriptor)                                                 # 6
-        objs.append(enc._widths().encode('latin-1'))                            # 7 W
+        objs.append(enc.widths().encode('latin-1'))                              # 7 W
         objs.append(stream_obj(cid2gid_data))                                   # 8 CIDToGIDMap
         packed = zlib.compress(font_file_data)
         objs.append((f'<< /Length {len(packed)} /Length1 {len(font_file_data)} '

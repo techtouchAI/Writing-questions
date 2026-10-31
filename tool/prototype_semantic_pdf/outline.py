@@ -12,7 +12,6 @@ from __future__ import annotations
 from fontTools.misc.transform import Transform
 from fontTools.pens.basePen import BasePen
 from fontTools.pens.qu2cuPen import Qu2CuPen
-from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
 
 
