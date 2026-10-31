@@ -69,6 +69,103 @@ def arabic_line():
     return [preview_line(words, 100.0, runs)], pdf_page(chars, rules=rules)
 
 
+class RenderedSourceIdentity(unittest.TestCase):
+    def fixture(self, root):
+        raw = {'vector.pdf': b'pdf', 'preview_page_1.png': b'png'}
+        for name, value in raw.items():
+            (root / name).write_bytes(value)
+        return dict(pages=[{}], provenance={'kind': 'rendered-canonical-preview-plan'},
+                    artifactByteLengths={name: len(value) for name, value in raw.items()})
+
+    def test_live_source_is_bound_and_mutation_is_rejected(self):
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = self.fixture(root)
+            gate.bind_rendered_source(data, root)
+            gate.validate_rendered_source(data, root)
+            (root / 'vector.pdf').write_bytes(b'BAD')  # Same length, different bytes.
+            with self.assertRaisesRegex(ValueError, 'checksum mismatch'):
+                gate.validate_rendered_source(data, root)
+            with self.assertRaisesRegex(ValueError, 'already bound'):
+                gate.bind_rendered_source(data, root)
+
+    def test_standalone_reconstruction_is_not_a_rendered_source(self):
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            data = self.fixture(Path(directory))
+            data['provenance']['kind'] = 'standalone-reconstruction'
+            with self.assertRaisesRegex(ValueError, 'actual rendered'):
+                gate.bind_rendered_source(data, directory)
+            with self.assertRaisesRegex(ValueError, 'actual rendered'):
+                gate.validate_rendered_source(data, directory)
+
+    def test_partial_inventory_and_stale_length_are_rejected(self):
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            data = self.fixture(Path(directory))
+            data['artifactByteLengths']['vector.pdf'] += 1
+            with self.assertRaisesRegex(ValueError, 'byte identity'):
+                gate.bind_rendered_source(data, directory)
+            del data['artifactByteLengths']['preview_page_1.png']
+            with self.assertRaisesRegex(ValueError, 'every captured'):
+                gate.bind_rendered_source(data, directory)
+
+
+class TypedMathPaint(unittest.TestCase):
+    def pair(self, render_mode='image', image=True):
+        run = dict(text='x^2', xPt=200.0, widthPt=30.0, heightPt=20.0,
+                   layoutBaselineOffsetPt=10.0, isMath=True, renderMode=render_mode)
+        preview = [preview_line([], 100.0, runs=[run])]
+        preview[0].source = 'float'
+        page = pdf_page([], images=[gate.PdfImageRect(200.0, 90.0, 230.0, 110.0)] if image else [])
+        return preview, page
+
+    def test_image_only_formula_is_measured_not_skipped_or_missing_text(self):
+        preview, page = self.pair()
+        violations, samples, coverage = gate.compare(preview, [page])
+        self.assertEqual(violations, [])
+        self.assertEqual(coverage['math_only_lines'], 1)
+        self.assertEqual(coverage['math_runs'], 1)
+        self.assertEqual(coverage['skipped_math_only'], 0)
+        self.assertEqual(samples['math_rect'], [0.0])
+
+    def test_deleted_image_is_rejected_with_its_actual_paint_type(self):
+        preview, page = self.pair(image=False)
+        violations, _, _ = gate.compare(preview, [page])
+        self.assertIn('MATH-IMAGE', {v.category for v in violations})
+        self.assertTrue(all(v.source == 'float' for v in violations))
+
+    def test_all_four_image_edges_are_enforced_without_widening_bounds(self):
+        for edge in ['x0', 'x1', 'y0', 'y1']:
+            with self.subTest(edge=edge):
+                preview, page = self.pair()
+                image = page.images[0]
+                setattr(image, edge, getattr(image, edge) + gate.Bounds().math_rect_pt + 0.01)
+                violations, _, _ = gate.compare(preview, [page])
+                self.assertIn('MATH-IMAGE', {v.category for v in violations})
+
+    def test_wrong_line_image_cannot_substitute_at_the_same_x(self):
+        preview, page = self.pair()
+        page.images[0].y0 += 100
+        page.images[0].y1 += 100
+        violations, _, _ = gate.compare(preview, [page])
+        self.assertIn('MATH-IMAGE', {v.category for v in violations})
+
+    def test_captured_native_image_cannot_silently_become_pdf_text_fallback(self):
+        preview, page = self.pair(image=False)
+        page.chars = pdf_word('x^2', 200.0, 230.0, 100.0)
+        violations, _, _ = gate.compare(preview, [page])
+        self.assertIn('MATH-IMAGE', {v.category for v in violations})
+
+    def test_declared_text_fallback_still_works_but_is_not_extra_pdf_text(self):
+        preview, page = self.pair(render_mode='text-fallback', image=False)
+        page.chars = pdf_word('x^2', 200.0, 230.0, 100.0)
+        violations, _, coverage = gate.compare(preview, [page])
+        self.assertEqual(violations, [])
+        self.assertEqual(coverage['math_runs'], 1)
+
+
 class Core(unittest.TestCase):
     def test_agreeing_pair_passes(self):
         preview, page = arabic_line()
@@ -369,6 +466,102 @@ class FalseAlarms(unittest.TestCase):
         gate.classify_causes(violations, preview, [page])
         self.assertTrue(any(v.cause == 'origin-outside-interval'
                            for v in violations))
+
+
+class OriginOwnershipAndSpacing(unittest.TestCase):
+    def fixture(self, shift=0, origins=True):
+        words = [preview_word('A', 10, 20, 100, 12, False),
+                 preview_word('\u00a0', 20, 22, 100, 12, False),
+                 preview_word('B', 22, 32, 100, 12, False)]
+        chars = [gate.PdfChar('A', 10, 20, 100, 12, origin_x=10 if origins else None),
+                 gate.PdfChar('B', 22 + shift, 32 + shift, 100, 12,
+                              origin_x=22 + shift if origins else None)]
+        return [preview_line(words, 100)], [pdf_page(chars)]
+
+    def test_nbsp_requires_advance_not_ink_and_publishes_measurement(self):
+        preview, pages = self.fixture()
+        violations, samples, coverage = gate.compare(preview, pages, edges='origin')
+        self.assertEqual(violations, [])
+        self.assertEqual(samples['word_spacing'], [0])
+        self.assertEqual((coverage['spacers'], coverage['verified_spacers']), (1, 1))
+
+    def test_collapsed_and_expanded_space_fail_even_within_word_edge_bound(self):
+        for shift in (-0.25, 0.25):
+            with self.subTest(shift=shift):
+                preview, pages = self.fixture(shift)
+                violations, _, coverage = gate.compare(preview, pages, edges='origin')
+                self.assertIn('WORD-SPACING', {v.category for v in violations})
+                self.assertEqual(coverage['verified_spacers'], 0)
+
+    def test_missing_pdf_origins_cannot_pass_spacing(self):
+        preview, pages = self.fixture(origins=False)
+        violations, _, _ = gate.compare(preview, pages)
+        self.assertIn('SPACING-UNVERIFIED', {v.category for v in violations})
+
+    def test_missing_neighbour_is_unverified_as_well_as_missing_content(self):
+        preview, pages = self.fixture()
+        pages[0].chars.pop()
+        violations, _, _ = gate.compare(preview, pages)
+        self.assertTrue({'SPACING-UNVERIFIED', 'WORD-MISSING'} <=
+                        {v.category for v in violations})
+
+    def test_shared_endpoint_belongs_to_start_not_narrow_previous_mark(self):
+        words = [preview_word(':', 7, 10, 100, 12, False),
+                 preview_word('ABC', 10, 31, 100, 12, False)]
+        for residual in (-0.00003, 0, 0.00003):
+            with self.subTest(residual=residual):
+                char = gate.PdfChar('A', 10, 15, 100, 12, origin_x=10 + residual)
+                owned, outside = gate._assign(words, [char], gate.Bounds().assign_tol)
+                self.assertEqual(owned, [[], [char]])
+                self.assertEqual(outside, [])
+
+    def test_whitespace_only_line_never_crashes_or_silently_passes(self):
+        line = preview_line([preview_word('\u00a0', 10, 12, 100, 12, False)], 100)
+        violations, _, _ = gate.compare([line], [pdf_page(pdf_chars('X', 10, 12, 100))])
+        self.assertIn('SPACING-UNVERIFIED', {v.category for v in violations})
+
+
+class DisjointLineIslands(unittest.TestCase):
+    def fixture(self):
+        words = [preview_word('L', 10, 20, 100, 12, False),
+                 preview_word('R', 100, 110, 100, 12, False)]
+        chars = pdf_chars('L', 10, 20, 100) + pdf_chars('R', 100, 110, 100)
+        return words, chars
+
+    def test_one_source_line_owns_both_islands_around_inline_math(self):
+        words, chars = self.fixture()
+        self.assertEqual(len(gate._cluster_lines(chars)), 2)
+        violations, _, coverage = gate.compare([preview_line(words, 100)], [pdf_page(chars)])
+        self.assertEqual(violations, [])
+        self.assertEqual(coverage['words'], 2)
+
+    def test_independent_same_baseline_columns_are_not_joined(self):
+        words, chars = self.fixture()
+        lines = [preview_line([word], 100) for word in words]
+        pairs, missing, extra = gate._match_lines(lines, gate._cluster_lines(chars), gate.Bounds().line_window_pt)
+        self.assertEqual((len(pairs), len(missing), len(extra)), (2, 0, 0))
+        self.assertTrue(all(len(pair[2]) == 1 for pair in pairs))
+        self.assertEqual(gate.compare(lines, [pdf_page(chars)])[0], [])
+
+    def test_unexpected_text_in_same_baseline_gap_is_still_rejected(self):
+        words, chars = self.fixture()
+        chars += pdf_chars('X', 55, 60, 100)
+        violations, _, _ = gate.compare([preview_line(words, 100)], [pdf_page(chars)])
+        self.assertIn('WORD-EXTRA', {v.category for v in violations})
+
+    def test_cluster_average_cannot_hide_one_displaced_island(self):
+        words, chars = self.fixture()
+        chars[0].baseline += 0.8
+        chars[1].baseline += 1.2
+        violations, _, _ = gate.compare([preview_line(words, 100)], [pdf_page(chars)])
+        self.assertIn('BASELINE', {v.category for v in violations})
+
+    def test_off_baseline_island_is_not_hidden_by_grouping(self):
+        words, chars = self.fixture()
+        chars[1].baseline += 3
+        violations, _, _ = gate.compare([preview_line(words, 100)], [pdf_page(chars)])
+        self.assertIn('LINE-EXTRA', {v.category for v in violations})
+        self.assertIn('WORD-MISSING', {v.category for v in violations})
 
 
 class RealArtifacts(unittest.TestCase):

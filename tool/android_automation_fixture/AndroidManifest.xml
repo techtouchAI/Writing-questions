@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.writingquestions.acceptanceautomation">
+  <!-- A third, test-only process: instrumentation must never restart the IME
+       or the production application while observing its live input session. -->
+  <application android:label="Acceptance window observer" android:debuggable="true" />
+  <instrumentation android:name=".WindowDump" android:targetPackage="org.writingquestions.acceptanceautomation" android:functionalTest="false" />
+</manifest>

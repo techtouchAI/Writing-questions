@@ -6,7 +6,8 @@ antialiasing with it. This gate does not rasterise at all: it reads the text
 origins, glyph boxes, image rectangles and underline rules out of `vector.pdf`
 and compares them, in points, with the geometry the Preview says it paints
 (the same `LayoutDocument`, measured by TextPainter in
-`test/visual/diag_c6_text_positions_test.dart`). A renderer cannot move a
+`test/visual/visual_parity_fixture_test.dart` (the standalone reconstructed
+probe is retained separately, never substituted for this live-plan evidence)). A renderer cannot move a
 number here; only layout, shaping, styling or emission can, which is exactly
 what the ceiling is supposed to catch.
 
@@ -49,6 +50,8 @@ Exit codes: 0 pass (or `report` mode), 1 violations in `enforce` mode,
 2 cannot measure (missing artifacts) -- never silently green.
 """
 import argparse
+import hashlib
+from pathlib import Path
 import json
 import os
 import sys
@@ -58,6 +61,12 @@ from dataclasses import dataclass, field
 PREVIEW_REL = os.path.join('c6diag', 'text_positions', 'preview_positions.json')
 PDF_REL = 'vector.pdf'
 SCHEMA = 'c6-preview-positions-v1'
+
+# Pairing only: PDF float32 extraction of five-decimal text positions differs
+# by at most 3.06e-5 pt in the audited fixture. This resolves ownership at a
+# shared word boundary; no position/content acceptance bound is widened.
+ORIGIN_SERIALIZATION_PT = 0.001
+BASELINE_CLUSTER_PT = 0.5
 JSON_OUT = os.path.join('c6diag', 'geometry', 'geometry_gate.json')
 
 
@@ -101,6 +110,10 @@ class Bounds:
     line_match_pt: float = 2.0
     baseline_pt: float = 1.0
     word_edge_pt: float = 6.5
+    # Independent origin-to-origin spacing contract, including NBSP. The
+    # observed max residual is 3.06e-5 pt; 0.001 pt covers PDF serialization,
+    # not the shaper edge allowance. Missing origins FAIL as unverified.
+    word_spacing_pt: float = ORIGIN_SERIALIZATION_PT
     size_pt: float = 0.25
     math_rect_pt: float = 2.0
     underline_span_pt: float = 2.0
@@ -194,7 +207,7 @@ class PdfPage:
     images: list = field(default_factory=list)
 
 
-def _cluster_lines(chars, tol=0.5, gap=40.0):
+def _cluster_lines(chars, tol=BASELINE_CLUSTER_PT, gap=40.0):
     """Group PDF characters into lines by baseline *and* horizontal reach.
 
     Baseline alone is not enough: a header, a page number and a table cell can
@@ -285,6 +298,46 @@ def read_preview(path):
     if data.get('schema') != SCHEMA:
         raise ValueError(f'unexpected schema {data.get("schema")!r}')
     return data
+
+
+def bind_rendered_source(data, root):
+    """Bind files emitted by the live-plan fixture, never a re-resolved plan.
+
+    The fixture asserts in-memory LayoutDocument identity for PNG/PDF/positions.
+    This post-fixture binding adds file digests, not a claim that a digest alone
+    proves in-memory identity. It must not be used to refresh stale evidence.
+    """
+    root = Path(root)
+    provenance = data.get('provenance', {})
+    if provenance.get('kind') != 'rendered-canonical-preview-plan':
+        raise ValueError('C6 positions did not come from the actual rendered preview plan')
+    if 'artifactSha256' in provenance:
+        raise ValueError('C6 evidence is already bound; refusing to refresh its identity')
+    expected = {'vector.pdf', *(f'preview_page_{i+1}.png' for i in range(len(data['pages'])))}
+    lengths = data.get('artifactByteLengths', {})
+    if set(lengths) != expected or not data['pages']:
+        raise ValueError('C6 fixture must account for PDF and every captured preview page')
+    hashes = {}
+    for name in sorted(expected):
+        raw = (root / name).read_bytes()
+        if len(raw) != lengths[name]:
+            raise ValueError(f'C6 fixture byte identity mismatch: {name}')
+        hashes[name] = hashlib.sha256(raw).hexdigest()
+    provenance['artifactSha256'] = hashes
+    provenance['binding'] = 'CI post-fixture hashes; in-memory plan identity asserted by fixture'
+
+
+def validate_rendered_source(data, root):
+    provenance = data.get('provenance', {})
+    if provenance.get('kind') != 'rendered-canonical-preview-plan':
+        raise ValueError('C6 positions did not come from the actual rendered preview plan')
+    expected = {'vector.pdf', *(f'preview_page_{i+1}.png' for i in range(len(data['pages'])))}
+    hashes = provenance.get('artifactSha256', {})
+    if set(hashes) != expected or not data['pages']:
+        raise ValueError('C6 source inventory is missing a PDF/preview identity')
+    for name in sorted(expected):
+        if hashlib.sha256((Path(root) / name).read_bytes()).hexdigest() != hashes[name]:
+            raise ValueError(f'C6 source checksum mismatch: {name}')
 
 
 def _tight_words(run, baseline):
@@ -461,8 +514,9 @@ def _assign(preview_words, chars, tol, anchor_kind='origin'):
     Nearest, not first-containing: word boxes are adjacent, so a glyph a few
     points off (the shapers disagree by up to 6 pt at p99) can sit inside its
     neighbour's box, and a narrow box such as '/' would otherwise absorb the
-    glyphs of the word after it. Ties go to the narrower box, which is the more
-    specific claim. A character farther than `tol` from every box is *outside*
+    glyphs of the word after it. At a serialised shared boundary the word starting there owns the
+    origin (half-open intervals), even when its last Arabic glyph shares the
+    preceding punctuation endpoint. Other ties go to the narrower box. A character farther than `tol` from every box is *outside*
     the layout's words -- what a moved or an extra glyph looks like from here --
     and is reported, never dropped.
     """
@@ -476,7 +530,11 @@ def _assign(preview_words, chars, tol, anchor_kind='origin'):
                 distance = 0.0
             else:
                 distance = min(abs(anchor - word.x0), abs(anchor - word.x1))
-            key = (distance, word.x1 - word.x0)
+            # Resolve serialised shared-boundary origins to the word START,
+            # not the narrower preceding punctuation/space interval.
+            at_start = abs(anchor - word.x0) <= ORIGIN_SERIALIZATION_PT
+            key = (0.0 if at_start else distance, 0 if at_start else 1,
+                   abs(anchor - word.x0) if at_start else word.x1 - word.x0)
             if best is None or key < best[0]:
                 best = (key, index)
         if best is None or best[0][0] > tol:
@@ -492,11 +550,12 @@ def compare(preview, pages, bounds=None, max_report=40, edges='ink',
     bounds = bounds or Bounds()
     samples = {name: [] for name in ('baseline', 'word_left', 'word_right',
                                      'size', 'math_rect', 'content',
-                                     'line_edge', 'line_center')}
+                                     'line_edge', 'line_center', 'word_spacing')}
     violations = []
     coverage = {'pages': 0, 'lines': 0, 'words': 0, 'chars': 0,
                 'rtl_lines': 0, 'bracket_lines': 0, 'math_runs': 0,
-                'underlines': 0, 'skipped_math_only': 0}
+                'underlines': 0, 'skipped_math_only': 0, 'math_only_lines': 0,
+                'spacers': 0, 'verified_spacers': 0}
 
     by_page = {}
     for line in preview:
@@ -518,11 +577,33 @@ def compare(preview, pages, bounds=None, max_report=40, edges='ink',
                                         f'preview {first.width:.2f}x'
                                         f'{first.height:.2f}pt, pdf '
                                         f'{page.width:.2f}x{page.height:.2f}pt'))
+        # An image-only formula has no PDF text baseline to pair. Verify its
+        # typed math paint directly; do not drop it or pretend LINE-MISSING is
+        # intended. A missing/moved/resized image still fails MATH-IMAGE.
+        math_only = [line for line in lines if not line.words and
+                     any(run.get('isMath') for run in line.runs)]
+        text_lines = [line for line in lines if line not in math_only]
+        fallback_chars = set()
+        for line in math_only:
+            coverage['math_only_lines'] += 1
+            near = [c for c in page.chars if abs(c.baseline - line.baseline) <= bounds.line_window_pt]
+            start = len(violations)
+            _check_math(page_index, line, near, page, bounds, samples, violations, coverage)
+            _check_underline(page_index, line, page, violations, coverage)
+            _tag(violations, line.source, start)
+            for run in line.runs:
+                if not run.get('isMath') or run.get('renderMode') == 'image':
+                    continue
+                x, width = float(run['xPt']), float(run.get('widthPt', 0))
+                fallback_chars.update(id(c) for c in near if c.x0 >= x - 2 and c.x1 <= x + width + 2)
         pairs, unmatched, extra = _match_lines(
-            lines, _cluster_lines(page.chars), bounds.line_window_pt,
-            bounds.float_window_pt)
+            text_lines, _cluster_lines([c for c in page.chars if id(c) not in fallback_chars]),
+            bounds.line_window_pt, bounds.float_window_pt)
         for line, baseline, group in pairs:
-            delta = abs(baseline - line.baseline)
+            # Clustering/ownership must not average away a displaced island.
+            # Every extracted span baseline still faces the original 1 pt bound.
+            delta = max([abs(baseline - line.baseline)] +
+                        [abs(c.baseline - line.baseline) for c in group])
             if line.words:
                 coverage['lines'] += 1
                 samples['baseline'].append(delta)
@@ -551,7 +632,7 @@ def compare(preview, pages, bounds=None, max_report=40, edges='ink',
                 f'{"".join(c.text for c in group)[:40]!r}'))
     # A vacuous run must never read as a pass: no paired line means the tool
     # measured nothing, whatever it printed above.
-    if coverage['lines'] == 0:
+    if coverage['lines'] == 0 and coverage['math_only_lines'] == 0:
         violations.append(Violation(
             0, 'NO-LINES', 'no Preview line was paired with a PDF line; '
                            'the artifacts are empty or unreadable'))
@@ -591,7 +672,10 @@ def _match_lines(lines, pdf_lines, window, float_window=None):
         for position, (baseline, group) in enumerate(pdf_lines):
             if position in used:
                 continue
-            delta = abs(baseline - line.baseline)
+            # Clustering/ownership must not average away a displaced island.
+            # Every extracted span baseline still faces the original 1 pt bound.
+            delta = max([abs(baseline - line.baseline)] +
+                        [abs(c.baseline - line.baseline) for c in group])
             if delta > limit:
                 continue
             g_left = min(c.x0 for c in group) if group else 0.0
@@ -605,8 +689,29 @@ def _match_lines(lines, pdf_lines, window, float_window=None):
         else:
             used.add(best[1])
             pairs.append((line, best[2], best[3]))
-    extra = [(baseline, group) for position, (baseline, group)
-             in enumerate(pdf_lines) if position not in used]
+    # Horizontal clustering deliberately keeps independent header columns
+    # separate. A single source line may nevertheless own several islands
+    # around an inline image. Attach only *unclaimed* islands at that same PDF
+    # baseline, with positive overlap of the source line's horizontal extent.
+    # Every glyph then goes through ordinary word/content/position checks;
+    # nothing is discarded and columns already claimed by other source lines
+    # cannot be stolen. No baseline or word acceptance bound changes.
+    extra = []
+    for position, (baseline, group) in enumerate(pdf_lines):
+        if position in used:
+            continue
+        candidates = []
+        for index, (line, paired_baseline, paired_group) in enumerate(pairs):
+            left, right = _line_extent(line)
+            overlap = max(0.0, min(right, max(c.x1 for c in group)) - max(left, min(c.x0 for c in group)))
+            if abs(baseline - paired_baseline) <= BASELINE_CLUSTER_PT and overlap > 0:
+                candidates.append(((abs(baseline - line.baseline), -overlap), index))
+        if candidates:
+            _, index = min(candidates)
+            line, paired_baseline, paired_group = pairs[index]
+            pairs[index] = (line, paired_baseline, paired_group + group)
+        else:
+            extra.append((baseline, group))
     return pairs, unmatched, extra
 
 
@@ -627,12 +732,13 @@ def _multiset_difference(left, right):
 def _compare_line(page_index, line, chars, page, bounds, samples, violations,
                   coverage, edges='ink', anchor='origin'):
     source = line.source
-    preview_words = sorted(line.words, key=lambda w: (w.x0, w.x1))
+    spacers = [w for w in line.words if w.text and w.text.isspace()]
+    preview_words = sorted((w for w in line.words if not w.text.isspace()), key=lambda w: (w.x0, w.x1))
     first = len(violations)
     # A whole-line displacement, measured on the outer ink edges: the per-word
     # bound is wide enough to absorb shaper drift, so the line's two ends are
     # checked on their own.
-    if chars:
+    if chars and preview_words:
         line_left = abs(min(c.x0 for c in chars) - preview_words[0].x0)
         line_right = abs(max(c.x1 for c in chars) - preview_words[-1].x1)
         samples['line_edge'].append(max(line_left, line_right))
@@ -665,6 +771,8 @@ def _compare_line(page_index, line, chars, page, bounds, samples, violations,
 
     owned, outside = _assign(preview_words, chars, bounds.assign_tol, anchor)
     outside = [c for c in outside if not in_math(c)]
+    _check_spacing(page_index, spacers, preview_words, owned, bounds,
+                   samples, violations, coverage)
     coverage['words'] += len(preview_words)
     coverage['chars'] += len(chars)
     if line.words and line.words[0].rtl:
@@ -762,6 +870,48 @@ def _compare_line(page_index, line, chars, page, bounds, samples, violations,
     _tag(violations, source, first)
 
 
+def _check_spacing(page_index, spacers, words, owned, bounds, samples,
+                   violations, coverage):
+    """Measure unpainted advance from adjacent *PDF origins*, never ink.
+
+    Source words declare absolute advances; whitespace is an interval, not a
+    printable glyph. Both visible neighbours must have extracted PDF origins.
+    The span from their left origins includes the spacer; a collapsed/expanded
+    advance changes that span and fails. No neighbours/origins is UNVERIFIED,
+    not a pass. Word content/positions remain independently checked.
+    """
+    for spacer in spacers:
+        coverage['spacers'] += 1
+        left = [i for i, w in enumerate(words)
+                if w.x1 <= spacer.x0 + ORIGIN_SERIALIZATION_PT]
+        right = [i for i, w in enumerate(words)
+                 if w.x0 >= spacer.x1 - ORIGIN_SERIALIZATION_PT]
+        detail = f'{spacer.text!r} at x={spacer.x0:.5f}..{spacer.x1:.5f}'
+        if left and right:
+            li = max(left, key=lambda i: words[i].x1)
+            ri = min(right, key=lambda i: words[i].x0)
+            if (owned[li] and owned[ri] and
+                    all(c.origin_x is not None for c in owned[li] + owned[ri])):
+                actual = (min(c.origin_x for c in owned[ri]) -
+                          min(c.origin_x for c in owned[li]))
+                expected = words[ri].x0 - words[li].x0
+                delta = abs(actual - expected)
+                samples['word_spacing'].append(delta)
+                if delta > bounds.word_spacing_pt:
+                    violations.append(Violation(
+                        page_index, 'WORD-SPACING',
+                        f'{detail}: PDF origin span={actual:.5f}pt, '
+                        f'expected={expected:.5f}pt, delta={delta:.5f}pt',
+                        delta, word=spacer.text))
+                else:
+                    coverage['verified_spacers'] += 1
+                continue
+        violations.append(Violation(
+            page_index, 'SPACING-UNVERIFIED',
+            f'{detail}: missing adjacent words or PDF text origins',
+            word=spacer.text))
+
+
 def _tag(violations, source, start):
     for violation in violations[start:]:
         if not violation.source or violation.source == 'block':
@@ -798,7 +948,7 @@ def _check_math(page_index, line, chars, page, bounds, samples, violations,
         x = float(run['xPt'])
         width = float(run.get('widthPt', 0))
         inside = [c for c in chars if c.x0 >= x - 2 and c.x1 <= x + width + 2]
-        if inside:
+        if inside and run.get('renderMode') != 'image':
             # Text fallback: the emitted string is a readable rendering of the
             # formula, so its natural width is not the layout box's width. Only
             # the placement is comparable; the image path checks both.
@@ -810,23 +960,31 @@ def _check_math(page_index, line, chars, page, bounds, samples, violations,
                     f'maths text {run.get("text", "")[:20]!r} left '
                     f'd={left:.2f}pt', left))
             continue
-        candidates = [img for img in page.images
-                      if img.x0 < x + width and img.x1 > x]
+        height = float(run.get('heightPt', 0))
+        top = (line.baseline - float(run['layoutBaselineOffsetPt'])
+               if 'layoutBaselineOffsetPt' in run else None)
+        candidates = list(page.images)
         if not candidates:
             violations.append(Violation(
                 page_index, 'MATH-IMAGE',
                 f'maths run {run.get("text", "")[:20]!r} is neither text nor '
                 f'an image at x={x:.2f}..{x + width:.2f}'))
             continue
-        image = min(candidates, key=lambda i: abs(i.x0 - x))
-        left = abs(image.x0 - x)
-        span = abs((image.x1 - image.x0) - width)
-        samples['math_rect'].append(max(left, span))
-        if left > bounds.math_rect_pt or span > bounds.math_rect_pt:
+        def deltas(image):
+            result = [abs(image.x0 - x), abs((image.x1 - image.x0) - width)]
+            if top is not None:
+                result.extend([abs(image.y0 - top), abs((image.y1 - image.y0) - height)])
+            return result
+        image = min(candidates, key=lambda candidate: max(deltas(candidate)))
+        differences = deltas(image)
+        samples['math_rect'].append(max(differences))
+        if max(differences) > bounds.math_rect_pt:
+            vertical = (f' top d={differences[2]:.2f}pt height d={differences[3]:.2f}pt'
+                        if top is not None else '')
             violations.append(Violation(
                 page_index, 'MATH-IMAGE',
-                f'maths image {run.get("text", "")[:20]!r} left d={left:.2f}pt '
-                f'width d={span:.2f}pt', max(left, span)))
+                f'maths image {run.get("text", "")[:20]!r} left d={differences[0]:.2f}pt '
+                f'width d={differences[1]:.2f}pt' + vertical, max(differences)))
 
 
 def distribution(values):
@@ -847,6 +1005,7 @@ def notice(title, lines):
 
 
 BOUND_OF = {
+    'word_spacing': 'word_spacing_pt',
     'baseline': 'baseline_pt',
     'word_left': 'word_edge_pt',
     'word_right': 'word_edge_pt',
@@ -1024,6 +1183,8 @@ def main(argv=None):
                         help='report: publish the verdict, exit 0. '
                              'enforce: exit 1 on any violation.')
     parser.add_argument('--json', default=None)
+    parser.add_argument('--bind-rendered-source', action='store_true')
+    parser.add_argument('--require-rendered-source', action='store_true')
     args = parser.parse_args(argv)
 
     preview_path = os.path.join(args.artifacts, PREVIEW_REL)
@@ -1034,6 +1195,11 @@ def main(argv=None):
         return 2
 
     data = read_preview(preview_path)
+    if args.bind_rendered_source:
+        bind_rendered_source(data, args.artifacts)
+        Path(preview_path).write_text(json.dumps(data, ensure_ascii=False, indent=1))
+    if args.require_rendered_source or args.bind_rendered_source:
+        validate_rendered_source(data, args.artifacts)
     preview = preview_lines(data, boxes='caret')
     tight = preview_lines(data, boxes='tight')
     pages = read_pdf_pages(pdf_path)
@@ -1076,6 +1242,7 @@ def main(argv=None):
     payload = {
         'mode': args.mode,
         'adopted_as_merge_gate': False,
+        'sourceProvenance': data.get('provenance'),
         'bounds': bounds.__dict__,
         'coverage': coverage,
         'distribution': {k: distribution(v) for k, v in samples.items()},

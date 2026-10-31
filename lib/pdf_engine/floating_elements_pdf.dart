@@ -189,7 +189,7 @@ abstract final class FloatingElementsPdf {
         }
         continue;
       }
-      final raster = mathRasters?.lookup(segment.text, fontSize);
+      final raster = mathRasters?.lookup(segment.text, fontSize, isBlock: segment.isBlock);
       if (raster == null) {
         inline.add(
           pw.Text(EquationModel.readableText(segment.text), style: style, textAlign: align),

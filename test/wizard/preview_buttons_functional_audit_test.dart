@@ -42,6 +42,8 @@ import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 import 'package:writing_questions_app/views/wizard/paper_header_footer_view.dart';
 import 'package:writing_questions_app/views/wizard/preview_toolbar.dart';
 
+import 'preview_test_gestures.dart';
+
 ExamDocument _document() => ExamDocument(
       name: 'تدقيق وظيفي',
       header: ExamHeaderModel.initial(subject: 'اللغة العربية'),
@@ -1055,7 +1057,7 @@ void main() {
     await _pump(tester, controller);
     expect(controller.document.questions.first.dividerAfter, isNull);
 
-    await _tap(tester, _tool('إضافة فاصل'));
+    await tapPreviewMedia(tester, 'فاصل');
     final added = controller.document.questions.first.dividerAfter;
     expect(added, isNotNull);
     expect(added!.thickness, greaterThan(0));

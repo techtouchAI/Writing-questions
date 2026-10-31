@@ -39,6 +39,9 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    outputs:
+      production_gate: ${{ steps.production_first.outcome }}
+      native_editor_gate: ${{ steps.native_editor_first.outcome }}
 
     steps:
       # Immutable action references avoid surprise changes to the CI toolchain.
@@ -59,6 +62,9 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Build pinned OpenType emission runtime
+        run: bash tool/build_opentype_shaper.sh
+
       - name: Resolve dependencies
         run: flutter pub get
 
@@ -69,12 +75,204 @@ jobs:
       - name: Verify vendored pdf patch (Arabic RTL word spacing)
         run: dart run tool/verify_vendored_pdf_patch.dart
 
-      - name: Analyze source
-        id: analyze
+      - name: Reproduce production R1 and R4 before the full suite
+        id: production_first
         shell: bash
         run: |
           set -o pipefail
-          flutter analyze --fatal-infos 2>&1 | tee "$RUNNER_TEMP/flutter-analyze.log"
+          status=0
+          flutter test --reporter json --timeout 120s \
+            test/layout/canonical/production_fragment_regression_test.dart \
+            --name '^R[14] ' 2>&1 | tee "$RUNNER_TEMP/production-first.log" || status=$?
+          python3 tool/flutter_test_digest.py --log "$RUNNER_TEMP/production-first.log" \
+            --out "$RUNNER_TEMP/production-first-digest"
+          counts="$(cat "$RUNNER_TEMP/production-first-digest/counts.txt")"
+          echo "::notice title=Production R1 R4 first::$counts"
+          python3 - <<'PYTARGET'
+          import glob, json, os, re
+          root = os.path.join(os.environ['RUNNER_TEMP'], 'production-first-digest')
+          for path in glob.glob(os.path.join(root, 'excerpt_*.txt')):
+              message = open(path).read().replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::notice title=Targeted production failure::{message}')
+          matched = set()
+          for line in open(os.path.join(os.environ['RUNNER_TEMP'], 'production-first.log')):
+              try:
+                  event = json.loads(line)
+              except ValueError:
+                  continue
+              if event.get('type') == 'testStart':
+                  name = event.get('test', {}).get('name', '')
+                  if re.match(r'^R[14] ', name):
+                      matched.add(name)
+          if len(matched) < 5:
+              raise SystemExit(f'Targeted gate matched {len(matched)} real R1/R4 cases, expected at least 5; load/setup pseudo-tests do not count.')
+          PYTARGET
+          exit "$status"
+
+      - name: Prove the mixed-header regression fails on the unchanged baseline
+        if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[closure-audit]') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline=4b1f458efd36453a66114c512ce5ff3043962129
+          git fetch --no-tags --depth=1 origin "$baseline"
+          files=(lib/views/widgets/tex_text.dart lib/views/wizard/paper_header_footer_view.dart)
+          restore_sources() {
+            for file in "${files[@]}"; do git show "$GITHUB_SHA:$file" > "$file"; done
+          }
+          trap restore_sources EXIT
+          for file in "${files[@]}"; do git show "$baseline:$file" > "$file"; done
+          status=0
+          flutter test --reporter json test/services/header_border_visibility_test.dart \
+            --name 'semantic header direction' 2>&1 | tee "$RUNNER_TEMP/header-direction-before.log" || status=$?
+          restore_sources
+          test "$status" -ne 0
+          python3 - <<'PYBEFORE'
+          import json, os
+          events=[]
+          for line in open(os.path.join(os.environ['RUNNER_TEMP'], 'header-direction-before.log')):
+              try: events.append(json.loads(line))
+              except ValueError: pass
+          names={e['test']['id']: e['test']['name'] for e in events if e.get('type')=='testStart'}
+          failed=[e['testID'] for e in events if e.get('type')=='testDone' and e.get('result') in ('failure', 'error')]
+          if (len(failed)!=1 or 'for English' not in names.get(failed[0], '') or
+              not any('TextDirection.ltr' in (e.get('error', '') + e.get('message', '')) for e in events if e.get('testID') == failed[0])):
+              raise SystemExit('Pre-fix run did not reproduce exactly the expected English direction defect.')
+          message={'baseline':'4b1f458efd36453a66114c512ce5ff3043962129',
+                   'expectedFailure': names[failed[0]], 'cause':'RTL inherited instead of semantic LTR',
+                   'currentSourcesRestored':True, 'afterRun':'native-editor-first must pass unchanged regression'}
+          print('::notice title=Mixed header BEFORE regression::'+json.dumps(message))
+          PYBEFORE
+
+      - name: Prove both wizard navigation bars were hidden behind the keyboard
+        if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[closure-audit]') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline=050ea339399c7415b6f19ab67d185fe8ac973822
+          git fetch --no-tags --depth=1 origin "$baseline"
+          files=(lib/views/wizard/header_step_screen.dart lib/views/wizard/question_step_screen.dart)
+          restore_sources() {
+            for file in "${files[@]}"; do git show "$GITHUB_SHA:$file" > "$file"; done
+          }
+          trap restore_sources EXIT
+          for file in "${files[@]}"; do git show "$baseline:$file" > "$file"; done
+          status=0
+          flutter test --reporter json test/wizard/keyboard_navigation_insets_test.dart \
+            2>&1 | tee "$RUNNER_TEMP/keyboard-navigation-before.log" || status=$?
+          restore_sources
+          test "$status" -ne 0
+          python3 - <<'PYBEFORE'
+          import json, os
+          events=[]
+          for line in open(os.path.join(os.environ['RUNNER_TEMP'], 'keyboard-navigation-before.log')):
+              try: events.append(json.loads(line))
+              except ValueError: pass
+          names={e['test']['id']:e['test']['name'] for e in events if e.get('type')=='testStart'}
+          failed=[e['testID'] for e in events if e.get('type')=='testDone' and e.get('result') in ('failure','error')]
+          diagnostic=dict(failed=[names.get(i,str(i)) for i in failed],
+              errors=[dict(testID=e.get('testID'),error=e.get('error','')[:500])
+                      for e in events if e.get('type')=='error'][:4])
+          print('::notice title=Keyboard BEFORE observed failures::'+json.dumps(diagnostic))
+          if len(failed)!=4 or not all('navigation stays above IME' in names.get(i,'') and
+              any('Expected: a value less than or equal to <500.0>' in
+                  (e.get('error','') + e.get('message',''))
+                  for e in events if e.get('testID')==i) for i in failed):
+              raise SystemExit('Must reproduce exactly four geometric keyboard-occlusion failures, not setup/compile failures.')
+          print('::notice title=Keyboard navigation BEFORE regression::'+json.dumps(dict(
+              baseline='050ea339399c7415b6f19ab67d185fe8ac973822',failed=[names[i] for i in failed],
+              currentSourcesRestored=True,afterRun='native-editor-first must pass the unchanged four tests')))
+          PYBEFORE
+
+      - name: Prove the actual math operators lose ink with baseline cubic minification
+        if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[closure-audit]') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          file=lib/layout/canonical/canonical_layout_preview.dart
+          restore_source() { git show "$GITHUB_SHA:$file" > "$file"; }
+          trap restore_source EXIT
+          git show "4b1f458efd36453a66114c512ce5ff3043962129:$file" > "$file"
+          status=0
+          flutter test --reporter json test/layout/canonical/math_minification_ink_test.dart \
+            2>&1 | tee "$RUNNER_TEMP/math-minification-before.log" || status=$?
+          restore_source
+          test "$status" -ne 0
+          python3 - <<'PYMATHBEFORE'
+          import json, os
+          events=[]
+          for line in open(os.path.join(os.environ['RUNNER_TEMP'], 'math-minification-before.log')):
+              try: events.append(json.loads(line))
+              except ValueError: pass
+          names={e['test']['id']:e['test']['name'] for e in events if e.get('type')=='testStart'}
+          failed=[e['testID'] for e in events if e.get('type')=='testDone' and e.get('result') in ('failure','error')]
+          if (len(failed)!=1 or 'native minified math' not in names.get(failed[0],'') or
+              not any('Actual plus operator ink' in e.get('message','') for e in events if e.get('testID')==failed[0])):
+              raise SystemExit('Pre-fix run did not reproduce the expected actual operator ink dropout.')
+          for e in events:
+              if e.get('type')=='print' and 'MATH_INK_EVIDENCE' in e.get('message',''):
+                  print('::notice title=Math ink BEFORE::'+e['message'].replace('\n',' '))
+          print('::notice title=Math ink BEFORE scope::Expected real-glyph minification failure reproduced; current sources restored; after regression must pass unchanged.')
+          PYMATHBEFORE
+
+      - name: Verify native editor candidate before the full suite
+        id: native_editor_first
+        shell: bash
+        run: |
+          set -o pipefail
+          status=0
+          flutter test --reporter json --timeout 120s \
+            test/wizard/canonical_editor_candidate_test.dart \
+            test/layout/canonical/math_visual_acceptance_test.dart \
+            test/layout/canonical/title_marks_no_break_test.dart \
+            test/layout/canonical/math_minification_ink_test.dart \
+            test/layout/canonical/production_mixed_math_evidence_test.dart \
+            test/services/header_border_visibility_test.dart \
+            test/layout/paper_metrics_test.dart \
+            test/services/structured_export_test.dart \
+            test/pdf_engine/opentype_header_test.dart \
+            test/pdf_engine/opentype_actualtext_test.dart \
+            test/pdf_engine/pdf_content_probe_gpos_test.dart \
+            test/pdf_engine/paginated_quranic_font_test.dart \
+            test/export_gate/p0_export_gate_test.dart \
+            test/wizard/keyboard_navigation_insets_test.dart \
+            test/wizard/pdf_preview_accessibility_test.dart \
+            test/wizard/real_reorder_export_test.dart \
+            test/wizard/canonical_reorder_export_test.dart \
+            test/wizard/canonical_reorder_panel_test.dart \
+            test/wizard/preview_button_audit_test.dart \
+            test/wizard/visual_equation_editor_test.dart \
+            test/wizard/compound_equation_pipeline_test.dart \
+            test/wizard/export_version_race_test.dart \
+            test/wizard/asset_completion_race_test.dart \
+            test/wizard/canonical_editing_layer_test.dart \
+            test/wizard/paper_field_ink_width_test.dart \
+            test/layout/canonical/flutter_text_metrics_test.dart \
+            2>&1 | tee "$RUNNER_TEMP/native-editor-first.log" || status=$?
+          python3 tool/flutter_test_digest.py --log "$RUNNER_TEMP/native-editor-first.log" \
+            --out "$RUNNER_TEMP/native-editor-first-digest"
+          counts="$(cat "$RUNNER_TEMP/native-editor-first-digest/counts.txt")"
+          echo "::notice title=Native editor candidate first::$counts"
+          python3 - <<'PYNATIVE'
+          import glob, json, os
+          root = os.environ['RUNNER_TEMP']
+          for path in glob.glob(os.path.join(root, 'native-editor-first-digest', 'excerpt_*.txt')):
+              message = open(path).read().replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::notice title=Native editor failure::{message}')
+          matched = set()
+          for line in open(os.path.join(root, 'native-editor-first.log')):
+              try:
+                  event = json.loads(line)
+              except ValueError:
+                  continue
+              if event.get('type') == 'testStart':
+                  name = event.get('test', {}).get('name', '')
+                  if name.startswith('candidate native ') or name.startswith('printed ink '):
+                      matched.add(name)
+          if len(matched) < 5:
+              raise SystemExit(f'Native editor gate matched {len(matched)} real cases, expected at least 5.')
+          PYNATIVE
+          exit "$status"
 
       - name: Run required tests
         id: test
@@ -126,6 +324,14 @@ jobs:
           fi
           exit $gate_status
 
+      - name: Analyze source
+        id: analyze
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter analyze --fatal-infos 2>&1 | tee "$RUNNER_TEMP/flutter-analyze.log"
+
       # Structured diagnostics from the JSON reporter (see the digest step):
       # GitHub truncates every annotation at 4 KiB, so the digest pre-chunks
       # failure names/excerpts/timelines annotation-safe. Always exits 0 —
@@ -155,7 +361,7 @@ jobs:
       # deletion; floor 600 keeps a 30+ margin); canonical subset: exactly
       # test-1 + E7 + its load pseudo-test.
       - name: Guard against vacuous gate runs
-        if: ${{ always() && inputs.test_path == '' }}
+        if: ${{ !cancelled() && steps.production_first.outcome == 'success' && steps.native_editor_first.outcome == 'success' && inputs.test_path == '' }}
         shell: bash
         run: |
           total_of() {
@@ -194,6 +400,55 @@ jobs:
       # build/export_gate؛ تُرفع دائماً لأن الدليل هو غرض البوابة لا رقم
       # الخروج: من راجع الانحدار يريد vector.pdf وexact وخريطة
       # 15×3، لا رسالة «1 test failed». (حُذف editable.docx في C5.)
+      - name: Publish production fragment measurements
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob, json, os
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('## Production paper regression measurements\n')
+              for path in sorted(glob.glob('build/production_fragment_repro/*.json')):
+                  name = os.path.basename(path)
+                  data = json.load(open(path))
+                  text = json.dumps(data, ensure_ascii=False, indent=2)
+                  summary.write(f'### {name}\n```json\n{text}\n```\n')
+                  message = json.dumps(data, ensure_ascii=False)
+                  message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  print(f'::notice title=Production repro {name}::{message}')
+          PY
+
+      # GitHub keeps at most ten notices per step. The older measurement
+      # publisher already fills those slots, so mixed-math manifests need their
+      # own step to remain readable via Checks API as well as the artifact.
+      - name: Publish mixed-math and native-point evidence manifests
+        if: always()
+        env:
+          REQUIRE_MANIFESTS: ${{ steps.test.outcome == 'success' && inputs.test_path == '' && inputs.test_name == '' }}
+        shell: bash
+        run: |
+          python3 - <<'PYMATH'
+          import glob, json, os
+          for pattern, title in [('r9-*-manifest.json', 'Production mixed math'),
+                                 ('r10-native-*-manifest.json', 'Native point continuation')]:
+              paths = sorted(glob.glob(f'build/production_fragment_repro/{pattern}'))
+              if os.environ['REQUIRE_MANIFESTS'] == 'true' and len(paths) != 2:
+                  raise SystemExit(f'Expected both 320/360 {title} manifests, found {len(paths)}')
+              for path in paths:
+                  data = json.load(open(path))
+                  message = json.dumps(data, ensure_ascii=False).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                  print(f'::notice title={title} {os.path.basename(path)}::{message}')
+          PYMATH
+
+      - name: Upload production fragment reproductions
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: production-fragment-repro
+          path: build/production_fragment_repro
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Upload P0 export-gate artifacts
         if: always()
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -497,21 +752,6 @@ jobs:
             publish_one "$(cat "$RUNNER_TEMP/test-digest-gate/slowest.txt")" 'Slowest canonical-gate tests'
           fi
 
-      - name: Upload validation diagnostics on failure
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: flutter-validation-diagnostics
-          path: |
-            ${{ runner.temp }}/flutter-analyze.log
-            ${{ runner.temp }}/flutter-test.log
-            ${{ runner.temp }}/flutter-test-canonical-gate.log
-            ${{ runner.temp }}/flutter-build.log
-            ${{ runner.temp }}/test-digest/*
-            ${{ runner.temp }}/test-digest-gate/*
-          if-no-files-found: ignore
-          retention-days: 7
-
       - name: Build release APK
         id: build
         # Targeted runs (dispatch with test_path) iterate on tests only.
@@ -520,6 +760,19 @@ jobs:
         run: |
           set -o pipefail
           flutter build apk --release 2>&1 | tee "$RUNNER_TEMP/flutter-build.log"
+
+      - name: Verify packaged OpenType runtime and pinned face for every APK ABI
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          python3 -m unittest discover -s tool -p test_audit_apk_native.py
+          python3 tool/audit_apk_native.py --apk build/app/outputs/flutter-apk/app-release.apk \
+            --font assets/fonts/Amiri-Regular.ttf --output "$RUNNER_TEMP/apk-native.json"
+          python3 - <<'PYAPK'
+          import json, os
+          from pathlib import Path
+          report = json.loads((Path(os.environ['RUNNER_TEMP']) / 'apk-native.json').read_text())
+          print('::notice title=APK native package audit::' + json.dumps(report, separators=(',', ':')))
+          PYAPK
 
       # تعذّر فشل بناء APK لا يُظهره محلّل Dart ولا الاختبارات (Kotlin/Gradle)،
       # فننشر أخطاء البناء نفسها كتعليقات على التشغيل.
@@ -541,6 +794,27 @@ jobs:
           publish_excerpt 'Flutter/Gradle build errors' "$errors"
           publish_excerpt 'Flutter/Gradle build log tail' "$(tail -n 80 "$file")"
 
+      - name: Upload complete validation command diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: flutter-validation-diagnostics
+          path: |
+            ${{ runner.temp }}/production-first.log
+            ${{ runner.temp }}/native-editor-first.log
+            ${{ runner.temp }}/keyboard-navigation-before.log
+            ${{ runner.temp }}/header-direction-before.log
+            ${{ runner.temp }}/math-minification-before.log
+            ${{ runner.temp }}/flutter-analyze.log
+            ${{ runner.temp }}/flutter-test.log
+            ${{ runner.temp }}/flutter-test-canonical-gate.log
+            ${{ runner.temp }}/flutter-build.log
+            ${{ runner.temp }}/apk-native.json
+            ${{ runner.temp }}/test-digest/*
+            ${{ runner.temp }}/test-digest-gate/*
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Upload APK artifact
         if: ${{ inputs.test_path == '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -550,15 +824,263 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  android-runtime-evidence:
+    name: Android IME acceptance (${{ matrix.width }}dp)
+    strategy:
+      fail-fast: false
+      matrix:
+        width: [320, 360]
+    needs: build
+    if: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[android-runtime]') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Set up Java
+        uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download this run's real release APK
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: writing-questions-release-apk
+          path: ${{ runner.temp }}/runtime-apk
+      - name: Require hardware-accelerated emulator support
+        run: |
+          test -c /dev/kvm || { echo '::error title=Android environment blocker::Runner has no KVM device'; exit 1; }
+          sudo chmod 666 /dev/kvm
+      - name: Build separate native test IME and prepare PDF verifier
+        run: |
+          bash tool/build_acceptance_ime.sh "$RUNNER_TEMP/acceptance-ime"
+          python3 -m venv "$RUNNER_TEMP/runtime-python"
+          "$RUNNER_TEMP/runtime-python/bin/pip" install pymupdf
+      - name: Install, launch, edit, observe actual IME, save and reopen
+        uses: ReactiveCircus/android-emulator-runner@324029e2f414c084d8b15ba075288885e74aef9c # v2.34.0
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: |
+            adb shell wm size ${{ matrix.width == 320 && 800 || 900 }}x1600
+            adb shell wm density 400
+            "$RUNNER_TEMP/runtime-python/bin/python" tool/android_runtime_probe.py --apk "$RUNNER_TEMP/runtime-apk/app-release.apk" --ime-apk "$RUNNER_TEMP/acceptance-ime/acceptance-ime.apk" --automation-apk "$RUNNER_TEMP/acceptance-ime/acceptance-automation.apk" --output "$RUNNER_TEMP/android-runtime"
+      - name: Upload original Android runtime evidence (not full IME acceptance)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: android-runtime-evidence-${{ matrix.width }}dp
+          path: ${{ runner.temp }}/android-runtime
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload the separate test keyboard APK
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: acceptance-ime-${{ matrix.width }}dp
+          path: |
+            ${{ runner.temp }}/acceptance-ime/acceptance-ime.apk
+            ${{ runner.temp }}/acceptance-ime/acceptance-automation.apk
+          if-no-files-found: warn
+          retention-days: 14
+
+  android-runtime-review:
+    name: Original Android runtime review transport (${{ matrix.width }}dp)
+    needs: android-runtime-evidence
+    if: ${{ always() && needs.android-runtime-evidence.result != 'skipped' && needs.android-runtime-evidence.result != 'cancelled' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        width: [320, 360]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: android-runtime-evidence-${{ matrix.width }}dp
+          path: ${{ runner.temp }}/android-runtime
+      - name: Publish original runtime evidence through the verified transport
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tool/evidence_review_transport.py publish --profile android --root "$RUNNER_TEMP/android-runtime" --index "$RUNNER_TEMP/android-index.json"
+      - name: Publish runtime references 1
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 0
+      - name: Publish runtime references 2
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 1
+      - name: Publish runtime references 3
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 2
+      - name: Publish runtime references 4
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 3
+
+      - name: Publish runtime references 5
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 4
+      - name: Publish runtime references 6
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 5
+
   # --------------------------------------------------------------------------
   # التحقق البصري الخارجي: يُصيّر Vector PDF وExact المستقل
   # بمحرّكات أخرى ويقارن كل صفحة بالمعاينة عبر RMSE فعلي (انظر
   # tool/verify_visual_parity.sh). فشل أي مسار هو فشل CI.
   # --------------------------------------------------------------------------
+  validation-log-review:
+    name: Full validation command log transport
+    needs: build
+    if: ${{ always() && github.event_name == 'push' && needs.build.result != 'cancelled' && contains(github.event.head_commit.message, '[review-evidence]') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out log transport
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Download complete command logs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: flutter-validation-diagnostics
+          path: ${{ runner.temp }}/command-logs
+      - name: Declare produced and unexecuted command logs
+        shell: bash
+        run: |
+          python3 - <<'PYLOG'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']) / 'command-logs'
+          names = ['production-first.log', 'native-editor-first.log', 'flutter-test.log',
+                   'flutter-test-canonical-gate.log', 'flutter-analyze.log', 'flutter-build.log']
+          (root / 'manifest.json').write_text(json.dumps({
+              'kind': 'Complete Flutter command output, not the GitHub setup/job archive',
+              'files': [n for n in names if (root / n).is_file()],
+              'notProduced': [n for n in names if not (root / n).is_file()],
+          }, indent=2))
+          PYLOG
+      - name: Publish complete hashed logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 tool/evidence_review_transport.py publish --profile validation --root "$RUNNER_TEMP/command-logs" --index "$RUNNER_TEMP/log-index.json"
+          python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/log-index.json" --group 0
+      # Six command logs, the manifest, APK audit and three negative controls
+      # total eleven originals. Keep a separate step's five-notice budget.
+      - name: Publish remaining hashed log references
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/log-index.json" --group 1
+
+  evidence-review:
+    name: Original evidence review transport
+    needs: build
+    # Failed acceptance must still publish its complete originals. Transport
+    # success is not repair acceptance; all build/native gates stay unchanged.
+    if: ${{ always() && github.event_name == 'push' && needs.build.result != 'cancelled' && contains(github.event.head_commit.message, '[review-evidence]') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      # Create unattached blobs only. No commit/tree/ref/branch is written.
+      contents: write
+    steps:
+      - name: Check out evidence transport tool
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Download this run's original evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: production-fragment-repro
+          path: ${{ runner.temp }}/review-originals
+      - name: Verify evidence transport completeness regressions
+        run: python3 -m unittest discover -s tool -p test_evidence_review_transport.py
+      # Pair references: <=40 annotations/job, below GitHub's 50-job cap.
+      - name: Publish original bytes as unattached GitHub blobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tool/evidence_review_transport.py publish --root "$RUNNER_TEMP/review-originals" --index "$RUNNER_TEMP/review-index.json"
+      - name: Publish evidence references 1
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 0
+      - name: Publish evidence references 2
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 1
+      - name: Publish evidence references 3
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 2
+      - name: Publish evidence references 4
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 3
+      - name: Publish evidence references 5
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 4
+      - name: Publish evidence references 6
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 5
+      - name: Publish evidence references 7
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 6
+      - name: Publish evidence references 8
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/review-index.json" --group 7
+
+  candidate-reorder-review:
+    name: Original candidate reorder review transport
+    needs: build
+    if: ${{ always() && github.event_name == 'push' && needs.build.result != 'cancelled' && contains(github.event.head_commit.message, '[review-evidence]') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: production-fragment-repro
+          path: ${{ runner.temp }}/candidate-originals
+      - name: Publish full separate candidate evidence inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tool/evidence_review_transport.py publish --profile candidate-reorder --root "$RUNNER_TEMP/candidate-originals" --index "$RUNNER_TEMP/candidate-index.json"
+      - name: Publish candidate references 1
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/candidate-index.json" --group 0
+      - name: Publish candidate references 2
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/candidate-index.json" --group 1
+
+  visual-evidence-review:
+    name: Original visual fixture review transport
+    needs: visual-parity
+    # A failed visual gate is exactly when reviewable originals are needed.
+    if: ${{ always() && github.event_name == 'push' && needs.visual-parity.result != 'skipped' && needs.visual-parity.result != 'cancelled' && contains(github.event.head_commit.message, '[review-evidence]') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out evidence transport tool
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Download this run's original visual fixture
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: visual-parity
+          path: ${{ runner.temp }}/visual-originals
+      - name: Include the complete C6 geometry report and its original preview input
+        run: |
+          cp "$RUNNER_TEMP/visual-originals/c6diag/geometry/geometry_gate.json" "$RUNNER_TEMP/visual-originals/geometry_gate.json"
+          cp "$RUNNER_TEMP/visual-originals/c6diag/text_positions/preview_positions.json" "$RUNNER_TEMP/visual-originals/preview_positions.json"
+      - name: Verify evidence transport regressions
+        run: python3 -m unittest discover -s tool -p test_evidence_review_transport.py
+      - name: Publish complete original PDF and preview page inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tool/evidence_review_transport.py publish --profile visual --root "$RUNNER_TEMP/visual-originals" --index "$RUNNER_TEMP/visual-index.json"
+      - name: Publish original fixture references
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/visual-index.json" --group 0
+      - name: Publish original fixture references 2
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/visual-index.json" --group 1
+      - name: Publish original fixture references 3
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/visual-index.json" --group 2
+      - name: Publish original fixture references 4
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/visual-index.json" --group 3
+
   visual-parity:
     name: Visual regression (Vector/Exact vs preview)
+    needs: build
     # Targeted runs skip the visual job unless the target is the fixture.
-    if: ${{ inputs.test_path == '' || startsWith(inputs.test_path, 'test/visual') }}
+    if: ${{ !cancelled() && needs.build.outputs.production_gate == 'success' && needs.build.outputs.native_editor_gate == 'success' && (inputs.test_path == '' || startsWith(inputs.test_path, 'test/visual')) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -574,16 +1096,39 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Build pinned OpenType emission runtime
+        run: bash tool/build_opentype_shaper.sh
+
       - name: Resolve dependencies
         run: flutter pub get
 
       # poppler لتصيير PDF، ImageMagick للمقارنة، وLibreOffice لتصيير Word
       # (ثم يُحوَّل ناتجه إلى PDF بالـpoppler نفسه).
       - name: Install rendering tools
+        shell: bash
+        timeout-minutes: 16
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            poppler-utils imagemagick libreoffice-writer
+          set -o pipefail
+          log="$RUNNER_TEMP/visual-render-tools.log"
+          setup_failed() {
+            local phase="$1" status="$2" excerpt
+            excerpt="$(tail -n 20 "$log" | tail -c 3500)"
+            excerpt="${excerpt//%/%25}"
+            excerpt="${excerpt//$'\r'/%0D}"
+            excerpt="${excerpt//$'\n'/%0A}"
+            echo "::error title=Visual rendering tools setup::$phase failed/timed out (exit $status): $excerpt"
+            exit "$status"
+          }
+          # Same bounded-network policy as C6 below. Never skip these tools or
+          # mark a timeout successful; preserve the failed mirror/package tail
+          # in Checks API when the signed job log cannot be downloaded.
+          timeout 150 sudo apt-get -o Acquire::http::Timeout=20 \
+            -o Acquire::https::Timeout=20 -o Acquire::Retries=2 update \
+            2>&1 | tee "$log" || setup_failed 'apt-get update' "$?"
+          timeout 600 sudo apt-get -o Acquire::http::Timeout=20 \
+            -o Acquire::https::Timeout=20 -o Acquire::Retries=2 \
+            install -y --no-install-recommends poppler-utils imagemagick libreoffice-writer \
+            2>&1 | tee -a "$log" || setup_failed 'apt-get install' "$?"
 
       # تنتج الركيزة اللقطات المرجعية وVector PDF وEditable/Exact DOCX/PDF؛
       # وفشلها يجب أن يظهر سببه لا رقم خروجه فقط.
@@ -598,7 +1143,7 @@ jobs:
       # [C6-POS] تشخيص غير ملزم: مواضع النص في المعاينة ثم في vector.pdf الذي
       # كتبه الاختبار أعلاه مباشرة (بلا تنزيل artifact). لا يغيّر البوابة
       # الرسمية أو عتبة RMSE أو نتيجة هذه الوظيفة؛ كل خطوة continue-on-error.
-      - name: Record Preview text positions (non-gating)
+      - name: Retain standalone reconstructed positions (not used as live Preview input)
         if: always()
         continue-on-error: true
         shell: bash
@@ -626,9 +1171,18 @@ jobs:
         shell: bash
         run: |
           python3 -m venv "$RUNNER_TEMP/c6geom-venv"
-          "$RUNNER_TEMP/c6geom-venv/bin/pip" install -q pymupdf
+          "$RUNNER_TEMP/c6geom-venv/bin/pip" install -q pymupdf numpy pillow fonttools uharfbuzz
           "$RUNNER_TEMP/c6geom-venv/bin/python" tool/c6_geometry_gate.py \
-            build/visual_parity --mode report
+            build/visual_parity --mode report --bind-rendered-source --require-rendered-source
+
+      - name: Audit all three historical Quran word findings against actual paint
+        if: always()
+        shell: bash
+        run: |
+          cp build/visual_parity/c6diag/text_positions/preview_positions.json build/visual_parity/preview_positions.json
+          cp build/visual_parity/c6diag/geometry/geometry_gate.json build/visual_parity/geometry_gate.json
+          C6_ARTIFACTS=build/visual_parity "$RUNNER_TEMP/c6geom-venv/bin/python" -m unittest discover -s tool -p test_audit_c6_quran_words.py -v
+          "$RUNNER_TEMP/c6geom-venv/bin/python" tool/audit_c6_quran_words.py --root build/visual_parity --output build/visual_parity
 
       # [C6-RASTER] تشخيص غير ملزم: هل تُقرّب المعاينة (Flutter) وPoppler موضع
       # خط الأساس بقاعدة واحدة عند كسور مختلفة من البكسل؟ لا يغيّر البوابة
@@ -790,6 +1344,24 @@ jobs:
           summary="${summary//$'\n'/%0A}"
           echo "::notice title=مقاييس التحقق البصري::$summary"
 
+      - name: Verify actual PDF Arabic header contextual outlines
+        if: always()
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/header-shape-venv"
+          "$RUNNER_TEMP/header-shape-venv/bin/pip" install -q pymupdf fonttools uharfbuzz
+          "$RUNNER_TEMP/header-shape-venv/bin/python" tool/audit_pdf_opentype.py \
+            --pdf build/visual_parity/vector.pdf --font assets/fonts/Amiri-Regular.ttf \
+            --output build/visual_parity/arabic-header-outline.json --check
+          python3 - <<'PYHEADER'
+          import json
+          r=json.load(open('build/visual_parity/arabic-header-outline.json'))
+          summary={'pdfSha256':r['pdfSha256'], 'fontSha256':r['fontSha256'],
+            'boundedOutlineCheckPassed':r['boundedOutlineCheckPassed'],
+            'words':[{'text':w['text'],'sameOutlineSequence':w['sameOutlineSequence']} for w in r['words']]}
+          print('::notice title=Original PDF OpenType header::'+json.dumps(summary,ensure_ascii=False))
+          PYHEADER
+
       - name: Upload visual parity artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -846,7 +1418,7 @@ jobs:
   c6-diagnostics:
     name: C6 diagnostics (non-gating)
     needs: visual-parity
-    if: ${{ always() && needs.visual-parity.result != 'skipped' }}
+    if: ${{ !cancelled() && needs.visual-parity.result != 'skipped' }}
     continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -922,6 +1494,9 @@ jobs:
           # أدناه حتى يبقى الفصل بين الدليلين ظاهراً في سجلات التشغيل.
           run_suite -m unittest discover -s tool -p 'test_diag_c6_underline_parity.py' -v
           run_suite -m unittest tool/test_c6_geometry_gate.py -v
+          run_suite -m unittest discover -s tool -p 'test_closure_c6_inventory.py' -v
+          run_suite -m unittest discover -s tool -p 'test_android_runtime_probe.py' -v
+          run_suite -m unittest discover -s tool -p 'test_android_ime_acceptance.py' -v
           run_suite -m unittest tool/test_c6_visual_calibration.py -v
 
       # [C6-GEOMETRY] الاختبارات السلبية على **المخرجات الحقيقية**: تُحقن
@@ -1010,7 +1585,7 @@ jobs:
         shell: bash
         run: |
           "$RUNNER_TEMP/diag-venv/bin/python" tool/c6_geometry_gate.py \
-            build/visual_parity --mode report
+            build/visual_parity --mode report --require-rendered-source
 
       - name: C6 diagnostics on the rendered artifacts
         shell: bash

@@ -38,6 +38,9 @@ abstract final class VisualMetrics {
   /// الفجوة بين تسمية الخيار («أ)») ونصه (المعاينة: `SizedBox(width: 6)`).
   static const double optionLabelGapPx = 6;
 
+  /// Existing native option-label top padding; shared with print layout.
+  static const double optionLabelTopInsetPx = 1;
+
   /// عرض صندوق الخيار الواحد: صفّ الخيارات يقسم السطر إلى صناديق ثابتة
   /// العرض (المعاينة وPDF وWord) فلا ينكسر الصف من راسم إلى آخر.
   static const double optionBoxWidthPx = 190;

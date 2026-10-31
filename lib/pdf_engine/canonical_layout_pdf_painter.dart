@@ -230,7 +230,7 @@ class CanonicalLayoutPdfPainter {
   }) {
     if (run.advance <= 0 || _isSpacerRun(run)) return const <pw.Widget>[];
     final raster =
-        run.isMath ? mathRasters.lookup(run.text, run.style.fontSizePt) : null;
+        run.isMath ? mathRasters.lookup(run.text, run.style.fontSizePt, isBlock: run.isBlockMath, bold: run.style.bold, colorArgb: run.style.colorArgb ?? 0xFF000000) : null;
     if (raster != null) {
       return <pw.Widget>[
         pw.Positioned(

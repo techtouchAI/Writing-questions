@@ -137,7 +137,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
   }
 
   @override
-  String get backendId => 'flutter-text-painter-pt-v5';
+  String get backendId => 'flutter-text-painter-pt-v6';
 
   @override
   FontRunMetrics measureText(
@@ -231,6 +231,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
   }) {
     final children = <InlineSpan>[];
     final placeholderDimensions = <PlaceholderDimensions>[];
+    final placeholderIndexBySpan = <int, int>{};
     final spanRanges = <({int start, int end, int spanIndex})>[];
     var offset = 0;
 
@@ -253,6 +254,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
               ? heightPt
               : box?.baselinePt ?? (box?.heightPt ?? span.style.fontSizePt),
         );
+        placeholderIndexBySpan[index] = placeholderDimensions.length;
         children.add(
           WidgetSpan(
             alignment: PlaceholderAlignment.baseline,
@@ -295,7 +297,11 @@ class FlutterTextMetrics implements FontMetricsProvider {
       ),
     );
     painter.setPlaceholderDimensions(placeholderDimensions);
-    painter.layout(maxWidth: LayoutUnits.ptToPx(width));
+    // Printed source paragraphs are stretched to their declared column.
+    // With minWidth=0 TextPainter shrinks its content width and translates
+    // centered/RTL placeholder paint offsets; a second realignment then only
+    // approximates the actual RenderParagraph positions.
+    painter.layout(minWidth: LayoutUnits.ptToPx(width), maxWidth: LayoutUnits.ptToPx(width));
     final plainText = painter.text!.toPlainText(includePlaceholders: true);
 
     try {
@@ -313,13 +319,15 @@ class FlutterTextMetrics implements FontMetricsProvider {
         final key = (spanIndex, runDirection);
         return baselineOffsets.putIfAbsent(key, () {
           final span = spans[spanIndex];
-          // PDF paints every canonical run as a one-line text widget. Measure
-          // that widget's natural baseline centrally, then align it to the
-          // paragraph baseline. Selection-box tops vary with glyph bounds and
-          // are not a stable per-run baseline (notably across Arabic words).
+          // Fragment height comes from the styled paragraph's selection box.
+          // Its top offset must use the SAME line-height factor, as the live
+          // preview painter does. Pairing a height=1 baseline with that taller
+          // box shifts hit bounds down into the following page margin.
+          // This is box metadata only: paragraph baselines/wrapping and both
+          // painters' independently baseline-aligned text stay unchanged.
           return measureText(
             span.text,
-            span.style.copyWith(lineHeightFactor: 1),
+            span.style,
             runDirection,
           ).baseline;
         });
@@ -454,11 +462,17 @@ class FlutterTextMetrics implements FontMetricsProvider {
             continue;
           }
 
-          final boxes = painter.getBoxesForSelection(
-            TextSelection(baseOffset: textRange.start, extentOffset: textRange.end),
-            boxHeightStyle: ui.BoxHeightStyle.strut,
-            boxWidthStyle: ui.BoxWidthStyle.tight,
-          );
+          // RenderParagraph positions WidgetSpan children from these exact
+          // placeholder boxes, not the selection API's independently rounded
+          // range boxes. Retain that actual paint origin in the shared plan.
+          final placeholderIndex = placeholderIndexBySpan[range.spanIndex];
+          final boxes = placeholderIndex != null && painter.inlinePlaceholderBoxes != null
+              ? <ui.TextBox>[painter.inlinePlaceholderBoxes![placeholderIndex]]
+              : painter.getBoxesForSelection(
+                  TextSelection(baseOffset: textRange.start, extentOffset: textRange.end),
+                  boxHeightStyle: ui.BoxHeightStyle.strut,
+                  boxWidthStyle: ui.BoxWidthStyle.tight,
+                );
           for (final box in boxes) {
             final lineIndex = _lineForBox(box, lineMetrics);
             final metric = lineMetrics[lineIndex];
@@ -486,6 +500,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
       }
 
       final lines = <MeasuredLine>[];
+      var flowTopPx = 0.0;
       for (var index = 0; index < lineMetrics.length; index++) {
         final metric = lineMetrics[index];
         final fragments = fragmentsByLine[index]
@@ -518,7 +533,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
                 extra,
               )
             : directionResolvedFragments;
-        final alignmentOffset = _alignmentOffsetPt(
+        final alignmentOffset = bidiDirection == direction ? 0.0 : _alignmentOffsetPt(
           alignment: alignment,
           direction: direction,
           paragraphWidthPt: width,
@@ -531,10 +546,35 @@ class FlutterTextMetrics implements FontMetricsProvider {
                 for (final fragment in measuredFragments)
                   _translateFragment(fragment, alignmentOffset),
               ];
+        // Skia allocates rounded line-height bands. baseline-ascent is not
+        // the top of that allocated band: rounding can put it above/below it.
+        // Using ascent+descent as flow height also overlaps successive bands
+        // when the source rounds DOWN. Keep glyph overhang separate from the
+        // actual allocated flow, and preserve painter.height below.
+        var glyphTop = metric.baseline - metric.ascent;
+        var glyphBottom = metric.baseline + metric.descent;
+        if (fragments.isNotEmpty) {
+          var start = plainText.length;
+          var end = 0;
+          for (final fragment in fragments) {
+            final range = spanRanges.firstWhere((range) => range.spanIndex == fragment.spanIndex);
+            final a = range.start + fragment.startOffset;
+            final b = range.start + fragment.endOffset;
+            if (a < start) start = a;
+            if (b > end) end = b;
+          }
+          final glyphBoxes = painter.getBoxesForSelection(TextSelection(baseOffset: start, extentOffset: end));
+          if (glyphBoxes.isNotEmpty) {
+            glyphTop = glyphBoxes.map((box) => box.top).reduce((a, b) => a < b ? a : b);
+            glyphBottom = glyphBoxes.map((box) => box.bottom).reduce((a, b) => a > b ? a : b);
+          }
+        }
         lines.add(
           MeasuredLine(
             index: index,
-            top: LayoutUnits.pxToPt(metric.baseline - metric.ascent),
+            top: LayoutUnits.pxToPt(flowTopPx),
+            glyphTop: LayoutUnits.pxToPt(glyphTop),
+            glyphBottom: LayoutUnits.pxToPt(glyphBottom),
             baseline: LayoutUnits.pxToPt(metric.baseline),
             ascent: LayoutUnits.pxToPt(metric.ascent),
             descent: LayoutUnits.pxToPt(metric.descent),
@@ -550,6 +590,7 @@ class FlutterTextMetrics implements FontMetricsProvider {
             fragments: List<MeasuredRunFragment>.unmodifiable(positionedFragments),
           ),
         );
+        flowTopPx += metric.height;
       }
       final height = LayoutUnits.pxToPt(painter.height);
       return MeasuredParagraph(
@@ -941,36 +982,28 @@ class FlutterTextMetrics implements FontMetricsProvider {
       final match = matches[index];
       final start = baseOffset + match.start;
       final end = baseOffset + match.end;
-      final caret = _caretBoundsDetailed(
-        painter,
-        start,
-        end,
-        fallbackLeft: fragmentLeftPx,
-        fallbackRight: fragmentRightPx,
-      );
-      var left = caret.left;
-      var right = caret.right;
-      if (caret.fellBack) {
-        // صندوق الكلمة نفسه (حدود الحبر) داخل المقطع، بشرط أن يقع داخل حدوده
-        // الأفقيّة وعلى السطر نفسه — وإلا بقي صندوق المقطع كما كان.
-        var boxLeft = double.infinity;
-        var boxRight = double.negativeInfinity;
-        for (final box in painter.getBoxesForSelection(
-          TextSelection(baseOffset: start, extentOffset: end),
-          boxHeightStyle: ui.BoxHeightStyle.strut,
-          boxWidthStyle: ui.BoxWidthStyle.tight,
-        )) {
-          if (box.right < fragmentLeftPx - 1 || box.left > fragmentRightPx + 1) {
-            continue;
-          }
-          if (box.left < boxLeft) boxLeft = box.left;
-          if (box.right > boxRight) boxRight = box.right;
-        }
-        if (boxRight - boxLeft > 0.5) {
-          left = boxLeft;
-          right = boxRight;
-        }
+      // At a BiDi edge, the downstream caret may belong to the NEXT visual
+      // run (e.g. Latin marks after an Arabic island). Use THIS word's native
+      // selection as the disambiguation reference, never the whole fragment.
+      var wordLeft = double.infinity;
+      var wordRight = double.negativeInfinity;
+      for (final box in painter.getBoxesForSelection(
+        TextSelection(baseOffset: start, extentOffset: end),
+        boxHeightStyle: ui.BoxHeightStyle.strut,
+        boxWidthStyle: ui.BoxWidthStyle.tight,
+      )) {
+        if (box.right < fragmentLeftPx - 1 || box.left > fragmentRightPx + 1) continue;
+        if (box.left < wordLeft) wordLeft = box.left;
+        if (box.right > wordRight) wordRight = box.right;
       }
+      final hasWordBox = wordRight > wordLeft;
+      final caret = _caretBoundsDetailed(
+        painter, start, end,
+        fallbackLeft: hasWordBox ? wordLeft : fragmentLeftPx,
+        fallbackRight: hasWordBox ? wordRight : fragmentRightPx,
+      );
+      final left = caret.left;
+      final right = caret.right;
       startsPx[index] = left;
       textPx[index] = right - left;
     }
@@ -1042,16 +1075,28 @@ class FlutterTextMetrics implements FontMetricsProvider {
     if (end <= start) {
       return (left: fallbackLeft, right: fallbackRight, fellBack: true);
     }
-    final startCaret = painter.getOffsetForCaret(
-      TextPosition(offset: start),
-      ui.Rect.zero,
-    );
-    final endCaret = painter.getOffsetForCaret(
-      TextPosition(offset: end),
-      ui.Rect.zero,
-    );
-    final left = startCaret.dx < endCaret.dx ? startCaret.dx : endCaret.dx;
-    final right = startCaret.dx > endCaret.dx ? startCaret.dx : endCaret.dx;
+    var left = fallbackLeft;
+    var right = fallbackRight;
+    var bestDistance = double.infinity;
+    // Both caret affinities are real native geometry. Pick the interval that
+    // matches this source selection, rather than borrowing a neighboring run's
+    // caret at a direction/line boundary. Interior-word behavior is unchanged.
+    final startCarets = [for (final affinity in ui.TextAffinity.values)
+      painter.getOffsetForCaret(TextPosition(offset: start, affinity: affinity), ui.Rect.zero)];
+    final endCarets = [for (final affinity in ui.TextAffinity.values)
+      painter.getOffsetForCaret(TextPosition(offset: end, affinity: affinity), ui.Rect.zero)];
+    for (final startCaret in startCarets) {
+      for (final endCaret in endCarets) {
+        final candidateLeft = startCaret.dx < endCaret.dx ? startCaret.dx : endCaret.dx;
+        final candidateRight = startCaret.dx > endCaret.dx ? startCaret.dx : endCaret.dx;
+        final distance = (candidateLeft - fallbackLeft).abs() + (candidateRight - fallbackRight).abs();
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          left = candidateLeft;
+          right = candidateRight;
+        }
+      }
+    }
     final advance = right - left;
     final selectionWidth = (fallbackRight - fallbackLeft).abs();
     // Neutral punctuation and bidi-boundary carets can straddle unrelated

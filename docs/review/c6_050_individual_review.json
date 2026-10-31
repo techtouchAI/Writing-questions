@@ -1,0 +1,2045 @@
+{
+  "schema": "closure-c6-individual-review-v1",
+  "artifactSourceSha": "050ea339399c7415b6f19ab67d185fe8ac973822",
+  "sourceProvenance": {
+    "kind": "rendered-canonical-preview-plan",
+    "artifactSha256": {
+      "preview_page_1.png": "d1efa40c3950c984a8c5e0ba230baa5ee40114d5fc432d65f881f38ab0a2ce68",
+      "preview_page_2.png": "538c00d4f11d958fb0808e6dac81ca71ae3e6eb438f998f2d77b4a19ab50f8dd",
+      "vector.pdf": "ab3173003c083816d62298691c0da9723ec10593b01be89f8dbe56f753eff8e2"
+    },
+    "binding": "CI post-fixture hashes; in-memory plan identity asserted by fixture"
+  },
+  "originalReportSha256": "c9f988d3d597c343005a20163f96449105d4cb061776717b47c6906c06263e68",
+  "engineeringDecision": {
+    "existingAcceptanceBounds": "unchanged",
+    "newSpacingBoundPt": 0.001,
+    "spacingMaxResidualPt": 3.0517578125e-05,
+    "spaces": "Not exempted: all 36 require independent PDF origin span; missing origins fail.",
+    "islands": "Only unclaimed, same clustered baseline, positive source-line extent overlap; all glyphs face ordinary checks; independent columns remain separate.",
+    "boundaries": "Half-open word ownership at a PDF serialized word start; 0.001 pt resolves observed <=0.0000306 pt serialization only, not shifted-word acceptance.",
+    "coverageAccounting": "684 visible words + 36 measured spacers = original 720 intervals; 2861 extracted chars now owned vs 2820 formerly counted; 7 math / 1 math-only / 0 skipped."
+  },
+  "localBeforeViolations": 70,
+  "localAfterViolations": 0,
+  "coverage": {
+    "pages": 2,
+    "lines": 77,
+    "words": 684,
+    "chars": 2861,
+    "rtl_lines": 71,
+    "bracket_lines": 26,
+    "math_runs": 7,
+    "underlines": 54,
+    "skipped_math_only": 0,
+    "math_only_lines": 1,
+    "spacers": 36,
+    "verified_spacers": 36
+  },
+  "distributions": {
+    "baseline": {
+      "n": 77,
+      "p50": 1.3342053875931015e-05,
+      "p95": 4.123702763081383e-05,
+      "p99": 4.123702763081383e-05,
+      "max": 4.123702763081383e-05
+    },
+    "word_left": {
+      "n": 684,
+      "p50": 1.4898345057190454e-05,
+      "p95": 1.6642307071235791,
+      "p99": 1.7435009573388243,
+      "max": 1.7435085867333555
+    },
+    "word_right": {
+      "n": 684,
+      "p50": 0.016157856137738236,
+      "p95": 2.806136724517046,
+      "p99": 2.9678790475439882,
+      "max": 14.158523920014261
+    },
+    "size": {
+      "n": 684,
+      "p50": 0.0,
+      "p95": 0.0,
+      "p99": 0.0,
+      "max": 0.0
+    },
+    "math_rect": {
+      "n": 7,
+      "p50": 0.0752410888671875,
+      "p95": 0.533626895480694,
+      "p99": 0.533626895480694,
+      "max": 0.533626895480694
+    },
+    "content": {
+      "n": 684,
+      "p50": 0.0,
+      "p95": 0.0,
+      "p99": 0.0,
+      "max": 0.3333333333333333
+    },
+    "line_edge": {
+      "n": 77,
+      "p50": 0.00965845303255719,
+      "p95": 2.8062015743705615,
+      "p99": 2.959845295102582,
+      "max": 2.959845295102582
+    },
+    "line_center": {
+      "n": 77,
+      "p50": 0.004827138945643128,
+      "p95": 0.5709911556693896,
+      "p99": 0.6748512448288579,
+      "max": 0.6748512448288579
+    },
+    "word_spacing": {
+      "n": 36,
+      "p50": 5.684341886080802e-14,
+      "p95": 3.0517578125e-05,
+      "p99": 3.0517578125e-05,
+      "max": 3.0517578125e-05
+    }
+  },
+  "stages": {
+    "afterIslands": 41,
+    "afterBoundaryOwnership": 36
+  },
+  "findings": [
+    {
+      "id": "050-C6-001",
+      "before": {
+        "page": 1,
+        "category": "WORD-CONTENT",
+        "detail": "box '١٠' holds '٠' (50% different)",
+        "magnitude": 0.5,
+        "source": "block",
+        "word": "١٠",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          161.55797,
+          "WORD-CONTENT",
+          "١٠"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-002",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside ':' at x=402.14..405.15 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": ":",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          161.55797,
+          "WORD-MISSING",
+          ":"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-003",
+      "before": {
+        "page": 1,
+        "category": "WORD-CONTENT",
+        "detail": "box 'هو' holds 'ه' (50% different)",
+        "magnitude": 0.5,
+        "source": "block",
+        "word": "هو",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          200.15621,
+          "WORD-CONTENT",
+          "هو"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-004",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '﴿' at x=453.05..460.55 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "﴿",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          200.15621,
+          "WORD-MISSING",
+          "﴿"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-005",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '\\xa0' at x=447.41..449.73 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": " ",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "unpainted-advance-and-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          282.85166,
+          "WORD-MISSING",
+          " "
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": true,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing (strict PDF advance, missing neighbour/origin and collapsed/expanded advance negatives)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-006",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '(' at x=454.45..458.08 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "(",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          282.85166,
+          "WORD-MISSING",
+          "("
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-007",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '\\xa0' at x=459.18..461.50 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": " ",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "unpainted-advance-and-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          314.90621,
+          "WORD-MISSING",
+          " "
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": true,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing (strict PDF advance, missing neighbour/origin and collapsed/expanded advance negatives)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-008",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '\\xa0' at x=469.85..472.17 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": " ",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "unpainted-advance-and-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          314.90621,
+          "WORD-MISSING",
+          " "
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": true,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing (strict PDF advance, missing neighbour/origin and collapsed/expanded advance negatives)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-009",
+      "before": {
+        "page": 1,
+        "category": "LINE-SHIFT",
+        "detail": "line centre moved 10.12pt",
+        "magnitude": 10.121658685639261,
+        "source": "block",
+        "word": ")درجة ١٥( .المعادلةفيقيم",
+        "cause": ""
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          712.97919,
+          "LINE-SHIFT",
+          ")درجة ١٥( .المعادلةفيقيم"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-010",
+      "before": {
+        "page": 1,
+        "category": "LINE-SHIFT",
+        "detail": "line edges moved left d=127.07pt right d=147.32pt",
+        "magnitude": 147.31636083407682,
+        "source": "block",
+        "word": ")درجة ١٥( .المعادلةفيقيم",
+        "cause": ""
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          712.97919,
+          "LINE-SHIFT",
+          ")درجة ١٥( .المعادلةفيقيم"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-011",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside ')' at x=157.85..161.27 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": ")",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          712.97919,
+          "WORD-MISSING",
+          ")"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-012",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside 'درجة' at x=161.27..183.17 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "درجة",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          712.97919,
+          "WORD-MISSING",
+          "درجة"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-013",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '\\xa0' at x=183.17..185.81 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": " ",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "unpainted-advance-and-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          712.97919,
+          "WORD-MISSING",
+          " "
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": true,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing (strict PDF advance, missing neighbour/origin and collapsed/expanded advance negatives)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-014",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '١٥' at x=185.81..193.80 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "١٥",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          712.97919,
+          "WORD-MISSING",
+          "١٥"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-015",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '(' at x=193.80..197.22 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "(",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          712.97919,
+          "WORD-MISSING",
+          "("
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-016",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '\\xa0' at x=197.22..199.85 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": " ",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "unpainted-advance-and-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          712.97919,
+          "WORD-MISSING",
+          " "
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": true,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing (strict PDF advance, missing neighbour/origin and collapsed/expanded advance negatives)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-017",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '.' at x=199.85..203.46 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": ".",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          712.97919,
+          "WORD-MISSING",
+          "."
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-018",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '/' at x=480.50..483.88 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "/",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          712.97919,
+          "WORD-MISSING",
+          "/"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-019",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside 'الثاني' at x=483.88..510.17 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "الثاني",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          712.97919,
+          "WORD-MISSING",
+          "الثاني"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-020",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside 'السؤال' at x=512.81..549.01 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "السؤال",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          712.97919,
+          "WORD-MISSING",
+          "السؤال"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-021",
+      "before": {
+        "page": 1,
+        "category": "BRACKET-COUNT",
+        "detail": "preview ')(' vs pdf ''",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "",
+        "cause": ""
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          767.32193,
+          "BRACKET-COUNT",
+          ""
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-022",
+      "before": {
+        "page": 1,
+        "category": "LINE-SHIFT",
+        "detail": "line centre moved 71.70pt",
+        "magnitude": 71.69689595980924,
+        "source": "block",
+        "word": ".ثم،وأنأنلاحظ",
+        "cause": ""
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          740.81968,
+          "LINE-SHIFT",
+          ".ثم،وأنأنلاحظ"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-023",
+      "before": {
+        "page": 1,
+        "category": "LINE-SHIFT",
+        "detail": "line edges moved left d=0.00pt right d=143.39pt",
+        "magnitude": 143.39378392977994,
+        "source": "block",
+        "word": ".ثم،وأنأنلاحظ",
+        "cause": ""
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          740.81968,
+          "LINE-SHIFT",
+          ".ثم،وأنأنلاحظ"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-024",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside 'وأن' at x=445.64..461.13 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "وأن",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          740.81968,
+          "WORD-MISSING",
+          "وأن"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-025",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside 'أن' at x=513.31..523.38 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "أن",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          740.81968,
+          "WORD-MISSING",
+          "أن"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-026",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside 'لاحظ' at x=526.02..549.01 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "لاحظ",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          740.81968,
+          "WORD-MISSING",
+          "لاحظ"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-027",
+      "before": {
+        "page": 1,
+        "category": "LINE-SHIFT",
+        "detail": "line centre moved 18.23pt",
+        "magnitude": 18.233218786284624,
+        "source": "block",
+        "word": ")درجة ٥( .المعادلةحل-١",
+        "cause": ""
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          767.32193,
+          "LINE-SHIFT",
+          ")درجة ٥( .المعادلةحل-١"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-028",
+      "before": {
+        "page": 1,
+        "category": "LINE-SHIFT",
+        "detail": "line edges moved left d=89.70pt right d=53.23pt",
+        "magnitude": 89.7000347347709,
+        "source": "block",
+        "word": ")درجة ٥( .المعادلةحل-١",
+        "cause": ""
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          767.32193,
+          "LINE-SHIFT",
+          ")درجة ٥( .المعادلةحل-١"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-029",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside ')' at x=354.21..358.08 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": ")",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          767.32193,
+          "WORD-MISSING",
+          ")"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-030",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside 'درجة' at x=358.08..377.63 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "درجة",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          767.32193,
+          "WORD-MISSING",
+          "درجة"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-031",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '\\xa0' at x=377.63..380.15 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": " ",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "unpainted-advance-and-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          767.32193,
+          "WORD-MISSING",
+          " "
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": true,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing (strict PDF advance, missing neighbour/origin and collapsed/expanded advance negatives)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-032",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '٥' at x=380.15..384.69 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "٥",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          767.32193,
+          "WORD-MISSING",
+          "٥"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-033",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '(' at x=384.69..388.56 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "(",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          767.32193,
+          "WORD-MISSING",
+          "("
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-034",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '\\xa0' at x=388.56..391.08 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": " ",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "unpainted-advance-and-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          767.32193,
+          "WORD-MISSING",
+          " "
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": true,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing (strict PDF advance, missing neighbour/origin and collapsed/expanded advance negatives)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-035",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '.' at x=391.08..393.85 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": ".",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          767.32193,
+          "WORD-MISSING",
+          "."
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-036",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '-' at x=543.31..546.21 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "-",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          767.32193,
+          "WORD-MISSING",
+          "-"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-037",
+      "before": {
+        "page": 1,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '١' at x=546.21..549.01 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "١",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          767.32193,
+          "WORD-MISSING",
+          "١"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-038",
+      "before": {
+        "page": 1,
+        "category": "BRACKET-COUNT",
+        "detail": "preview ')(' vs pdf ''",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "",
+        "cause": ""
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          1,
+          767.32193,
+          "BRACKET-COUNT",
+          ""
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": false,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-039",
+      "before": {
+        "page": 1,
+        "category": "LINE-EXTRA",
+        "detail": "PDF line with no Preview line at baseline 712.98: ')ةجرد١٥(.'",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "",
+        "cause": ""
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": null,
+        "sameCategoryAndWordAtSourceLineAfterIslands": null,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": null,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-040",
+      "before": {
+        "page": 1,
+        "category": "LINE-EXTRA",
+        "detail": "PDF line with no Preview line at baseline 712.98: '/يناثلالاؤسلا'",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "",
+        "cause": ""
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": null,
+        "sameCategoryAndWordAtSourceLineAfterIslands": null,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": null,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-041",
+      "before": {
+        "page": 1,
+        "category": "LINE-EXTRA",
+        "detail": "PDF line with no Preview line at baseline 740.82: 'نأو'",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "",
+        "cause": ""
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": null,
+        "sameCategoryAndWordAtSourceLineAfterIslands": null,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": null,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-042",
+      "before": {
+        "page": 1,
+        "category": "LINE-EXTRA",
+        "detail": "PDF line with no Preview line at baseline 740.82: 'نأظحال'",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "",
+        "cause": ""
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": null,
+        "sameCategoryAndWordAtSourceLineAfterIslands": null,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": null,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-043",
+      "before": {
+        "page": 1,
+        "category": "LINE-EXTRA",
+        "detail": "PDF line with no Preview line at baseline 767.32: ')ةجرد٥(.'",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "",
+        "cause": ""
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": null,
+        "sameCategoryAndWordAtSourceLineAfterIslands": null,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": null,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-044",
+      "before": {
+        "page": 1,
+        "category": "LINE-EXTRA",
+        "detail": "PDF line with no Preview line at baseline 767.32: '-١'",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "",
+        "cause": ""
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "island-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": null,
+        "sameCategoryAndWordAtSourceLineAfterIslands": null,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": null,
+        "finalSameArtifactsViolations": 0,
+        "regression": "DisjointLineIslands (same-baseline columns, missing/off-baseline/extra text negatives retained)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-045",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '\\xa0' at x=68.10..70.53 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": " ",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "unpainted-advance-and-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          72.30797,
+          "WORD-MISSING",
+          " "
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": true,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing (strict PDF advance, missing neighbour/origin and collapsed/expanded advance negatives)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-046",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '\\xa0' at x=85.65..88.08 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": " ",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "unpainted-advance-and-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          72.30797,
+          "WORD-MISSING",
+          " "
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": true,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing (strict PDF advance, missing neighbour/origin and collapsed/expanded advance negatives)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-047",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '.' at x=179.03..181.98 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": ".",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          92.55797,
+          "WORD-MISSING",
+          "."
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-048",
+      "before": {
+        "page": 2,
+        "category": "WORD-CONTENT",
+        "detail": "box '٤' holds '' (100% different)",
+        "magnitude": 1.0,
+        "source": "block",
+        "word": "٤",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          616.80797,
+          "WORD-CONTENT",
+          "٤"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-049",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '(' at x=371.23..375.63 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "(",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          153.30797,
+          "WORD-MISSING",
+          "("
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-050",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '\\xa0' at x=375.63..378.06 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": " ",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "unpainted-advance-and-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          153.30797,
+          "WORD-MISSING",
+          " "
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": true,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing (strict PDF advance, missing neighbour/origin and collapsed/expanded advance negatives)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-051",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "٢",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          730.40621,
+          "WORD-MISSING",
+          "٢"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-052",
+      "before": {
+        "page": 2,
+        "category": "WORD-CONTENT",
+        "detail": "box '٢' holds '' (100% different)",
+        "magnitude": 1.0,
+        "source": "block",
+        "word": "٢",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          746.15621,
+          "WORD-CONTENT",
+          "٢"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-053",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "(",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          746.15621,
+          "WORD-MISSING",
+          "("
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-054",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '٤' at x=354.59..359.95 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "٤",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          307.80797,
+          "WORD-MISSING",
+          "٤"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-055",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '5' at x=366.78..372.92 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "5",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          307.80797,
+          "WORD-MISSING",
+          "5"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-056",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "٢",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          730.40621,
+          "WORD-MISSING",
+          "٢"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-057",
+      "before": {
+        "page": 2,
+        "category": "WORD-CONTENT",
+        "detail": "box '٢' holds '' (100% different)",
+        "magnitude": 1.0,
+        "source": "block",
+        "word": "٢",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          746.15621,
+          "WORD-CONTENT",
+          "٢"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-058",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "(",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          746.15621,
+          "WORD-MISSING",
+          "("
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-059",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '\\xa0' at x=351.90..354.33 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": " ",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "unpainted-advance-and-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          462.30797,
+          "WORD-MISSING",
+          " "
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": true,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing (strict PDF advance, missing neighbour/origin and collapsed/expanded advance negatives)"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-060",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '(' at x=359.69..364.09 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "(",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          462.30797,
+          "WORD-MISSING",
+          "("
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-061",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '6' at x=366.52..372.66 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "6",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          462.30797,
+          "WORD-MISSING",
+          "6"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-062",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "٢",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          730.40621,
+          "WORD-MISSING",
+          "٢"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-063",
+      "before": {
+        "page": 2,
+        "category": "WORD-CONTENT",
+        "detail": "box '٢' holds '' (100% different)",
+        "magnitude": 1.0,
+        "source": "block",
+        "word": "٢",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          746.15621,
+          "WORD-CONTENT",
+          "٢"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-064",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "(",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          746.15621,
+          "WORD-MISSING",
+          "("
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-065",
+      "before": {
+        "page": 2,
+        "category": "WORD-CONTENT",
+        "detail": "box '٤' holds '' (100% different)",
+        "magnitude": 1.0,
+        "source": "block",
+        "word": "٤",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          616.80797,
+          "WORD-CONTENT",
+          "٤"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-066",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '(' at x=367.87..372.26 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "(",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          616.80797,
+          "WORD-MISSING",
+          "("
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-067",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '7' at x=374.69..380.84 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "7",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          616.80797,
+          "WORD-MISSING",
+          "7"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-068",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '٢' at x=502.30..507.01 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "٢",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          730.40621,
+          "WORD-MISSING",
+          "٢"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-069",
+      "before": {
+        "page": 2,
+        "category": "WORD-CONTENT",
+        "detail": "box '٢' holds '' (100% different)",
+        "magnitude": 1.0,
+        "source": "block",
+        "word": "٢",
+        "cause": "letters-absent-from-extract"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          746.15621,
+          "WORD-CONTENT",
+          "٢"
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    },
+    {
+      "id": "050-C6-070",
+      "before": {
+        "page": 2,
+        "category": "WORD-MISSING",
+        "detail": "no glyphs inside '(' at x=508.26..511.89 (deleted, moved away or reordered)",
+        "magnitude": 0.0,
+        "source": "block",
+        "word": "(",
+        "cause": "unresolved"
+      },
+      "classification": "confirmed diagnostic defect",
+      "rootCause": "shared-origin-ownership",
+      "evidence": {
+        "beforeSignatureReproduced": true,
+        "sourceLineIdentity": [
+          2,
+          746.15621,
+          "WORD-MISSING",
+          "("
+        ],
+        "sameCategoryAndWordAtSourceLineAfterIslands": true,
+        "sameCategoryAndWordAtSourceLineAfterBoundaryOwnership": false,
+        "finalSameArtifactsViolations": 0,
+        "regression": "OriginOwnershipAndSpacing.test_shared_endpoint_belongs_to_start_not_narrow_previous_mark"
+      },
+      "result": "repaired locally against unchanged hashed 050ea artifacts; new-SHA CI pending"
+    }
+  ],
+  "limitations": [
+    "Not new-SHA or Android proof.",
+    "Geometry contract is not universal visual/BiDi/ink parity; existing content multiset allowance remains 0.4.",
+    "New final-source full CI and actual image/PDF review remain required."
+  ]
+}

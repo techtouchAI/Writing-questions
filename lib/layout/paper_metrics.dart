@@ -1,4 +1,4 @@
-import 'package:pdf/pdf.dart' show PdfPageFormat;
+import 'canonical/layout_units.dart';
 
 import '../models/exam_canvas_geometry.dart';
 
@@ -8,12 +8,15 @@ import '../models/exam_canvas_geometry.dart';
 /// صندوق المحتوى في كل الصفحات يُشتق من هامش واحد هو `PaperSettings.marginMm`
 /// (انظر [pageContentHeightFor]/[contentWidthFor])، وهو نفسه حشوة الإطار.
 abstract final class PaperMetrics {
-  /// نقطة PDF لكل بكسل منطقي على اللوحة (A4: 595.28pt ↔ 794px).
-  static double get pointsPerPixel => PdfPageFormat.a4.width / ExamCanvasGeometry.width;
+  /// نقطة PDF لكل بكسل منطقي على اللوحة (A4: 595.2756pt ↔ 793.7008px).
+  // A rounded 794px A4 width is not a physical-unit conversion. It made
+  // 10.5pt become 14.005277px while canonical measurement used 14px.
+  static double get pointsPerPixel =>
+      LayoutUnits.pointsPerInch / LayoutUnits.logicalPixelsPerInch;
 
-  static double px(double points) => points / pointsPerPixel;
+  static double px(double points) => LayoutUnits.ptToPx(points);
 
-  static double pt(double pixels) => pixels * pointsPerPixel;
+  static double pt(double pixels) => LayoutUnits.pxToPt(pixels);
 
   /// توينب Word للبكسل المنطقي (1pt = 20 تويب): المصدر الوحيد لتحويل أي
   /// مسافة في نموذج الورقة إلى `w:spacing` في ملف Word — فلا تُكتب أرقام
@@ -38,16 +41,16 @@ abstract final class PaperMetrics {
   static const double branchGapPx = 1;
 
   /// عرض المحتوى على لوحة بالهامش الافتراضي.
-  static double get contentWidthPx => ExamCanvasGeometry.contentWidth;
+  static double get contentWidthPx => px(LayoutUnits.a4.width) - 2 * ExamCanvasGeometry.margin;
 
   /// الارتفاع المتاح للكتل داخل صفحة واحدة لهامش طباعة [marginMm] بالمليمتر
   /// (الصندوق كاملاً؛ التذييل يُحجز من آخر كتلة فقط عبر `lastPageReserve`).
   static double pageContentHeightFor(double marginMm) =>
-      ExamCanvasGeometry.contentHeightFor(marginMm);
+      px(LayoutUnits.a4.height) - 2 * ExamCanvasGeometry.marginFor(marginMm);
 
   /// عرض المحتوى لهامش طباعة [marginMm] بالمليمتر.
   static double contentWidthFor(double marginMm) =>
-      ExamCanvasGeometry.contentWidthFor(marginMm);
+      px(LayoutUnits.a4.width) - 2 * ExamCanvasGeometry.marginFor(marginMm);
 
   /// معرّف كتلة الترويسة في محرك التقسيم.
   static const String headerBlockId = '__header__';

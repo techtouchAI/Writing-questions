@@ -48,6 +48,8 @@ import '../widgets/smart_exam_toolbar.dart';
 import '../widgets/tex_text.dart';
 import '../widgets/visual_equation_editor.dart';
 import 'canonical_preview_plan_controller.dart';
+import 'canonical_editing_layer.dart';
+import 'canonical_reorder_panel.dart';
 import 'header_footer_forms.dart';
 import 'paper_header_footer_view.dart';
 import 'paper_styles.dart';
@@ -79,13 +81,17 @@ class _CanonicalFieldBinding {
     required this.fieldKey,
     required this.sourceText,
     required this.content,
+    required this.style,
     required this.onEdit,
     required this.onLongPress,
+    this.hint,
   });
 
+  final String? hint;
   final String fieldKey;
   final String sourceText;
   final InlineContent content;
+  final TextStyle style;
   final ValueChanged<String> onEdit;
   final VoidCallback onLongPress;
 }
@@ -309,6 +315,12 @@ class _TextInputDialogState extends State<_TextInputDialog> {
   }
 }
 
+/// Optional asynchronous export boundary for integration tests/embedders. The
+/// default remains the real PDF service; no alternate layout or document model.
+typedef PreviewPdfBuilder = Future<Uint8List> Function({
+  required ExamDocument document, LayoutDocument? layoutDocument,
+});
+
 typedef CanonicalPreviewLayoutResolver = Future<LayoutDocument> Function({
   required ExamDocument document,
   required DocumentIR sourceIr,
@@ -323,13 +335,15 @@ typedef CanonicalPreviewAssetLoader =
 /// الخطوة 3: معاينة A4 تفاعلية بسطحين — يُختار أحدهما بحقن الوصلات.
 ///
 /// - **سطح الورقة التفاعلي (الافتراضي)**: بلا وصلات محقونة تُبنى الورقة
-///   كودجات قابلة للتحرير ([_buildPage]) فوق ترقيم المتحكم المقاس
-///   ([ExamWizardController.pagination])؛ المعادلات تُرسم في مكانها، والنقر
+///   كودجات قابلة للتحرير ([_buildPage]) فوق خطة LayoutEngine المشتركة؛
+///   المعادلات تُرسم في مكانها، والنقر
 ///   يفتح محرر المحتوى المختلط. هذا سطح الإنتاج.
 /// - **سطح canonical (محقون)**: مع [canonicalLayoutResolver] و
 ///   [canonicalPreviewAssetLoader] تُرسم هندسة [LayoutDocument] مباشرةً
 ///   ([CanonicalLayoutPreviewPage]) بلا إعادة التفاف أو تقسيم، والنقرات
-///   تتحول إلى source offset عبر حقل IME مخفي. للاختبارات والمراجعة.
+///   تتحول إلى source offset. افتراضي الحقن يبقي مسار IME التشخيصي القديم؛
+///   [enableSeparateEditorCandidate] يختار محررًا أصليًا خارج الورقة، اختياريًا
+///   فقط حتى اكتمال جدول التغطية، ولا يفعّل هذا المسار في الإنتاج.
 /// - **التصدير**: PDF المتجهي يحسم هندسته عند الطلب دون اعتماد على
 ///   حالة المعاينة الحية؛ وهو المسار الوحيد للتصدير.
 /// - **التحديد والتنسيق**: تحديد سؤال/فرع/ترويسة/مربع نص (منفرد أو متعدد)
@@ -347,11 +361,18 @@ class ExamPreviewScreen extends StatefulWidget {
     required this.onBackToQuestions,
     this.canonicalLayoutResolver,
     this.canonicalPreviewAssetLoader,
+    this.enableSeparateEditorCandidate = false,
+    this.pdfDocumentBuilder,
   });
 
   final VoidCallback onBackToQuestions;
   final CanonicalPreviewLayoutResolver? canonicalLayoutResolver;
   final CanonicalPreviewAssetLoader? canonicalPreviewAssetLoader;
+
+  /// Integration candidate only. Requires BOTH injected canonical adapters;
+  /// production remains on its repaired surface until the coverage gate passes.
+  final bool enableSeparateEditorCandidate;
+  final PreviewPdfBuilder? pdfDocumentBuilder;
 
   @override
   State<ExamPreviewScreen> createState() => _ExamPreviewScreenState();
@@ -363,6 +384,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   final ScrollController _vScroll = ScrollController();
   final ScrollController _hScroll = ScrollController();
   final Map<int, GlobalKey> _pageCanvasKeys = <int, GlobalKey>{};
+  final GlobalKey _canonicalEditorViewport = GlobalKey(debugLabel: 'canonical-editor-viewport');
+  late final Listenable _canonicalEditorScroll = Listenable.merge(<Listenable>[_vScroll, _hScroll]);
+  bool _canonicalEditorOpen = false;
+  int? _canonicalEditorPageHint;
 
   /// جذور اللقط (RepaintBoundary) لكل صفحة في المعاينة الحية.
   final Map<int, GlobalKey> _pageSnapshotKeys = <int, GlobalKey>{};
@@ -403,6 +428,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// هل تحرّك الإصبع فعليًّا في السحب الجاري؟ (للتفريق بين السحب والنقر).
   bool _dragMoved = false;
 
+  // Resize grips, like the body drag, must win before the enclosing page's
+  // scroll recognizer. Keep pointer state across document-triggered rebuilds.
+  int? _handlePointer;
+  Key? _handleKey;
+  Offset? _handleStart;
+  Offset? _handleLast;
+  bool _handleMoved = false;
+
   /// آخر نقر على أي عنصر عائم (معرّفه ووقته) — لكشف النقر المزدوج على
   /// مربع النص يدويًّا: الفوز الفوري بساحة الإيماءات في مسار السحب يمنع
   /// وصول النقرة إلى [GestureDetector].
@@ -431,7 +464,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// تلميح «أنت الآن في وضع التحديد» يُعرض مرة واحدة في الجلسة عند الدخول
   /// بالضغط المطوّل (لا مع كل ضغطة فيزعج المستخدم).
   bool _selectionHintShown = false;
-  bool _showFormulas = true;
+  bool _showFormulas = false;
+  bool _showReorderPanel = false;
 
   double _zoom = 1.0;
   double _viewportWidth = 0;
@@ -499,6 +533,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       final field = PaperRangeTextEditingController(text: initial);
       var previousText = initial;
       var previousState = const TextFormatState();
+      var previousSelection = field.selection;
       field.addListener(() {
         final text = field.text;
         if (text != previousText) {
@@ -510,8 +545,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         // تُعاد قراءة النطاق، ويحدث البناء فقط إذا تغيّرت الحالة فعلًا
         // (تنقّل المؤشر داخل الكلمة نفسها لا يهزّ الشاشة).
         if (_activeFieldKey != key || _multiSelect) return;
+        final selectionChanged = field.selection != previousSelection;
+        previousSelection = field.selection;
         final state = _selectionFormatState() ?? const TextFormatState();
-        if (state == previousState) return;
+        if (state == previousState && !(_separateEditorCandidate && selectionChanged)) return;
         previousState = state;
         _refreshSelectionFormatState();
       });
@@ -550,7 +587,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         for (final point in points) {
           sync(_itemKey(point.id), point.text);
           for (var index = 0; index < point.options.length; index++) {
-            sync(_optionKey(point.id, index), point.options[index].text);
+            sync(_sourceOptionKey(point, index), point.options[index].text);
           }
         }
       }
@@ -581,6 +618,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   bool get _useCanonicalSurface =>
       widget.canonicalLayoutResolver != null &&
       widget.canonicalPreviewAssetLoader != null;
+
+  bool get _separateEditorCandidate =>
+      _useCanonicalSurface && widget.enableSeparateEditorCandidate;
 
   /// الخطة الحالية إن كانت تخصّ المستند الحالي بالذات (وإلا فلا هندسة).
   CanonicalPagePlan? get _pagePlan {
@@ -646,7 +686,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 document: document,
               )
             : await loader(layout: planLayout, document: document);
-        if (!mounted) {
+        if (!mounted || !identical(_canonicalPreviewAssetsLayout, planLayout)) {
           assets.dispose();
           return;
         }
@@ -659,7 +699,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           error,
           stackTrace,
         );
-        if (!mounted) return;
+        if (!mounted || !identical(_canonicalPreviewAssetsLayout, planLayout)) return;
         setState(() {
           _canonicalPreviewAssets = null;
           _canonicalPreviewAssetsFailedLayout = planLayout;
@@ -691,7 +731,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       for (final point in points) {
         live.add(_itemKey(point.id));
         for (var index = 0; index < point.options.length; index++) {
-          live.add(_optionKey(point.id, index));
+          live.add(_sourceOptionKey(point, index));
         }
       }
     }
@@ -1322,10 +1362,78 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       fieldKey.startsWith('body-') ||
       fieldKey.startsWith('category-') ||
       fieldKey.startsWith('branch-') ||
-      fieldKey.startsWith('option-') ||
+      _isOptionFieldKey(fieldKey) ||
       fieldKey.startsWith('item-');
 
   static final RegExp _optionKeyPattern = RegExp(r'^option-(.+)-(\d+)$');
+
+  bool _isOptionFieldKey(String key) => key.startsWith('option-') || key.startsWith('option:');
+
+  String _sourceOptionKey(BranchItem point, int index) => _separateEditorCandidate
+      ? 'option:${Uri.encodeComponent(point.id)}:${Uri.encodeComponent(point.options[index].id)}'
+      : _optionKey(point.id, index);
+
+  /// Candidate option keys encode MODEL IDs, not mutable list positions.
+  /// Legacy print controls keep their existing index keys until replacement.
+  ({String pointId, int index})? _optionSourceTarget(String key) {
+    if (key.startsWith('option:')) {
+      final parts = key.split(':');
+      if (parts.length != 3) return null;
+      try {
+        final pointId = Uri.decodeComponent(parts[1]);
+        final optionId = Uri.decodeComponent(parts[2]);
+        final point = _findItem(pointId);
+        final index = point?.options.indexWhere((option) => option.id == optionId) ?? -1;
+        return index < 0 ? null : (pointId: pointId, index: index);
+      } on FormatException {
+        return null;
+      }
+    }
+    final match = _optionKeyPattern.firstMatch(key);
+    if (match == null) return null;
+    final pointId = match.group(1)!;
+    final index = int.parse(match.group(2)!);
+    final point = _findItem(pointId);
+    return point == null || index >= point.options.length ? null : (pointId: pointId, index: index);
+  }
+
+  /// Resolve IDs at INPUT TIME, including the same-frame interval before a
+  /// provider notification has rebuilt the view/callbacks. No copied model or
+  /// alternate edit path: dispatch to the existing update methods only.
+  void _writeCanonicalSource(String key, String value) {
+    final controller = _controller;
+    if (controller == null) return;
+    final document = controller.document;
+    final option = _optionSourceTarget(key);
+    if (option != null) {
+      final owner = _ownerOfPoint(document, option.pointId);
+      if (owner != null) controller.updatePointOptionText(owner, option.pointId, option.index, value);
+      return;
+    }
+    if (key.startsWith('item-')) {
+      final id = key.substring('item-'.length);
+      final owner = _ownerOfPoint(document, id);
+      if (owner != null) controller.updatePointText(owner, id, value);
+      return;
+    }
+    for (final prefix in <String>['branch-statement-', 'branch-body-']) {
+      if (!key.startsWith(prefix)) continue;
+      final ref = _findBranchRef(document, key.substring(prefix.length));
+      if (ref == null) return;
+      if (prefix == 'branch-statement-') { controller.updateBranchStatement(ref, value); }
+      else { controller.updateBranchBody(ref, value); }
+      return;
+    }
+    for (final prefix in <String>['statement-', 'body-', 'category-']) {
+      if (!key.startsWith(prefix)) continue;
+      final index = document.indexOfQuestion(key.substring(prefix.length));
+      if (index < 0) return;
+      if (prefix == 'statement-') { controller.updateQuestionStatement(index, value); }
+      else if (prefix == 'body-') { controller.updateQuestionBody(index, value); }
+      else { controller.updateQuestionCategory(index, value); }
+      return;
+    }
+  }
 
   /// المحاذاة المحفوظة في الموديل لمفتاح حقل (null = غير محددة).
   PaperAlign? _modelAlignFor(String fieldKey) {
@@ -1359,16 +1467,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             : branch.bodyAlign ?? branch.style.align;
       }
     }
-    if (fieldKey.startsWith('option-')) {
-      final match = _optionKeyPattern.firstMatch(fieldKey);
-      if (match == null) {
-        return null;
-      }
-      final options = _findItem(match.group(1)!)?.options;
-      final optionIndex = int.parse(match.group(2)!);
-      return options != null && optionIndex >= 0 && optionIndex < options.length
-          ? options[optionIndex].align
-          : null;
+    if (_isOptionFieldKey(fieldKey)) {
+      final option = _optionSourceTarget(fieldKey);
+      return option == null ? null : _findItem(option.pointId)?.options[option.index].align;
     }
     if (fieldKey.startsWith('item-')) {
       return _findItem(fieldKey.substring('item-'.length))?.align;
@@ -1441,18 +1542,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
 
     // 2. خيار «اختيار من متعدد» محدد: محاذاته وحده.
-    final optionMatch = _optionKeyPattern.firstMatch(key);
-    if (optionMatch != null) {
-      final pointId = optionMatch.group(1)!;
-      final owner = _ownerOfPoint(document, pointId);
-      if (owner != null) {
-        controller.updatePointOptionAlign(
-          owner,
-          pointId,
-          int.parse(optionMatch.group(2)!),
-          align,
-        );
-      }
+    final option = _optionSourceTarget(key);
+    if (option != null) {
+      final owner = _ownerOfPoint(document, option.pointId);
+      if (owner != null) controller.updatePointOptionAlign(owner, option.pointId, option.index, align);
       return;
     }
 
@@ -1540,15 +1633,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       return null;
     }
     // نقاط السؤال وفرعه وخياراتها: نفس نموذج النطاقات، لا مسار تنسيق ثانٍ.
-    if (key.startsWith('item-') || key.startsWith('option-')) {
-      final isOption = key.startsWith('option-');
+    if (key.startsWith('item-') || _isOptionFieldKey(key)) {
+      final isOption = _isOptionFieldKey(key);
       final String pointId;
       int? optionIndex;
       if (isOption) {
-        final match = _optionKeyPattern.firstMatch(key);
-        if (match == null) return null;
-        pointId = match.group(1)!;
-        optionIndex = int.parse(match.group(2)!);
+        final option = _optionSourceTarget(key);
+        if (option == null) return null;
+        pointId = option.pointId;
+        optionIndex = option.index;
       } else {
         pointId = key.substring('item-'.length);
       }
@@ -2480,7 +2573,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           'تغيّر المستند بعد حساب صفحات المراجعة. افتح المراجعة مجدداً.',
         );
       }
-      final bytes = await PdfExportService.buildDocumentPdfBytes(
+      final bytes = await (widget.pdfDocumentBuilder ?? PdfExportService.buildDocumentPdfBytes)(
               document: document,
               // التخطيط المعروض نفسه يُرسم، فلا يُعاد حساب هندسة في PDF.
               layoutDocument: layoutDocument ?? _pagePlan?.layout,
@@ -2488,9 +2581,18 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       if (!mounted) {
         return;
       }
+      // Font/frame/image encoding and library writes are asynchronous. A
+      // keyboard/media/external update can finish while the export is pending.
+      // Never publish bytes from a superseded document under the new version.
+      if (!identical(_controller, controller) || !identical(controller.document, document)) {
+        throw const ExportException('تغيّر المستند أثناء التصدير. أعد التصدير للنسخة الحالية.');
+      }
       await _saveToLibrary();
       if (!mounted) {
         return;
+      }
+      if (!identical(_controller, controller) || !identical(controller.document, document)) {
+        throw const ExportException('تغيّر المستند أثناء التصدير. أعد التصدير للنسخة الحالية.');
       }
       await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
@@ -2681,7 +2783,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (saved == null) {
       return;
     }
-    controller.updatePointLabel(owner, pointId, saved);
+    final targetOwner = _separateEditorCandidate ? _ownerOfPoint(controller.document, pointId) : owner;
+    if (targetOwner != null) controller.updatePointLabel(targetOwner, pointId, saved);
   }
 
   /// درجة النقطة: الرقم الخام فقط («2») فيطبعه النظام «(٢ درجة)».
@@ -2713,7 +2816,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       return;
     }
     if (saved.trim().isEmpty) {
-      controller.updatePointMarks(owner, pointId, 0);
+      final targetOwner = _separateEditorCandidate ? _ownerOfPoint(controller.document, pointId) : owner;
+      if (targetOwner != null) controller.updatePointMarks(targetOwner, pointId, 0);
       return;
     }
     final marks = _parseMarks(saved);
@@ -2721,7 +2825,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       _showMessage('أدخل الدرجة رقماً صحيحاً فقط (مثال: 2).', isError: true);
       return;
     }
-    controller.updatePointMarks(owner, pointId, marks);
+    final targetOwner = _separateEditorCandidate ? _ownerOfPoint(controller.document, pointId) : owner;
+    if (targetOwner != null) controller.updatePointMarks(targetOwner, pointId, marks);
   }
 
   /// تسمية الخيار: مخصصة حرفياً، فارغ = تلقائي، `-` = إخفاء.
@@ -2738,6 +2843,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (index < 0 || index >= options.length) {
       return;
     }
+    final optionId = options[index].id;
     final saved = await _showTextInputDialog(
       title: 'تسمية الخيار',
       initialText: options[index].labelOverride ?? '',
@@ -2747,7 +2853,13 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (saved == null) {
       return;
     }
-    controller.updatePointOptionLabel(owner, pointId, index, saved);
+    if (_separateEditorCandidate) {
+      final targetOwner = _ownerOfPoint(controller.document, pointId);
+      final targetIndex = _findItem(pointId)?.options.indexWhere((option) => option.id == optionId) ?? -1;
+      if (targetOwner != null && targetIndex >= 0) controller.updatePointOptionLabel(targetOwner, pointId, targetIndex, saved);
+    } else {
+      controller.updatePointOptionLabel(owner, pointId, index, saved);
+    }
   }
 
   /// يفتح محرر المعادلات المرئي للحقل النشط (مسار شريط الصيغ).
@@ -3051,6 +3163,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   ),
                 ),
                 DropdownButtonFormField<PaperNumerals>(
+                  isExpanded: true,
+                  isDense: false,
+                  itemHeight: null,
                   value: settings.numerals,
                   decoration: const InputDecoration(
                     labelText: 'نسق الأرقام',
@@ -3073,6 +3188,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<QuestionLabelStyle>(
+                  isExpanded: true,
+                  isDense: false,
+                  itemHeight: null,
                   value: settings.questionLabelStyle,
                   decoration: const InputDecoration(
                     labelText: 'نمط تسمية الأسئلة',
@@ -3100,6 +3218,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<PaperFont>(
+                  isExpanded: true,
+                  isDense: false,
+                  itemHeight: null,
                   value: settings.defaultFont,
                   decoration: const InputDecoration(
                     labelText: 'الخط الافتراضي للورقة',
@@ -3357,17 +3478,20 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         // يظهر في حوار المراجعة قبل التصدير.
         title: const Text('الخطوة 3: معاينة A4'),
         leading: IconButton(
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           icon: const Icon(Icons.arrow_forward),
           tooltip: 'العودة للأسئلة',
           onPressed: widget.onBackToQuestions,
         ),
         actions: <Widget>[
           IconButton(
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'إعدادات الورقة',
             onPressed: _isBusy ? null : _showSettings,
           ),
           IconButton(
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
             icon: const Icon(Icons.save_outlined),
             tooltip: 'حفظ الورقة',
             onPressed: _isBusy ? null : _save,
@@ -3380,6 +3504,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           // مقاساتها (§19.15). مساحة اللمس 48dp كاملة، ويُعطَّل حين لا يكون
           // سؤال واحد محدَّداً حتى لا يعمل على السؤال الخطأ.
           _buildQuestionActionsBar(controller),
+          if (_separateEditorCandidate && _showReorderPanel)
+            CanonicalReorderPanel(controller: controller, locked: _locked || _isBusy,
+              onClose: () => setState(() => _showReorderPanel = false),
+              onChanged: () => setState(_clearSelection)),
           PreviewToolbar(
             selectionLabel: _selectionLabel(document),
             canUndo: controller.canUndo,
@@ -3470,10 +3598,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             },
             hasFrame: _activeFrame(),
             onToggleFrame: _toggleFrame,
-            onAddImage: _pickImageToSelection,
-            onAddShape: _addShapeToSelection,
-            onAddTextBox: _addTextBox,
-            onAddDivider: _addDividerToSelection,
             showFormulas: _showFormulas,
             onToggleFormulas: () => setState(() => _showFormulas = !_showFormulas),
             onSave: _save,
@@ -3485,6 +3609,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               inserter: _inserter,
               onInsertText: _insertText,
               onAddImage: _addImageToSelection,
+              onPickImage: _pickImageToSelection,
               onAddShape: _addShapeToSelection,
               onAddQuestion: controller.addQuestion,
               onAddBranch: _addBranchToSelected,
@@ -3515,6 +3640,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   pageCanvasWidth * _zoom + 24,
                 );
                 return Stack(
+                  key: _canonicalEditorViewport,
                   children: <Widget>[
                     SingleChildScrollView(
                       key: const ValueKey<String>('paper-v-scroll'),
@@ -3587,6 +3713,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                         ),
                       ),
                     ),
+                    if (_separateEditorCandidate && pagePlan != null && _canonicalEditorOpen && !_locked)
+                      Positioned.fill(child: _buildSeparateCanonicalEditor(controller, pagePlan.layout)),
                       if (_isBusy)
                         const Positioned.fill(
                           child: AbsorbPointer(
@@ -3613,10 +3741,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     DocumentIR source,
   ) {
     final result = <InlineNode, _CanonicalFieldBinding>{};
+    TextStyle fieldStyle(TextStyle role, PaperTextStyle override) => PaperStyles.resolve(
+      role, override, defaultFont: controller.document.settings.defaultFont,
+      fontScale: _fontScale, heightScale: _heightScale,
+    );
     void bind(
       InlineContent content, {
       required String fieldKey,
       required String sourceText,
+      required TextStyle style,
       required ValueChanged<String> onEdit,
       required VoidCallback onLongPress,
     }) {
@@ -3624,7 +3757,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         fieldKey: fieldKey,
         sourceText: sourceText,
         content: content,
-        onEdit: onEdit,
+        style: style,
+        onEdit: _separateEditorCandidate ? (value) => _writeCanonicalSource(fieldKey, value) : onEdit,
         onLongPress: onLongPress,
       );
       void addNodes(Iterable<InlineNode> nodes) {
@@ -3638,14 +3772,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
 
     for (final question in source.questions) {
-      if (question.index < 0 || question.index >= controller.questions.length) continue;
-      final model = controller.questions[question.index];
-      final questionIndex = question.index;
+      final questionIndex = controller.questions.indexWhere((model) => model.id == question.id);
+      if (questionIndex < 0) continue;
+      final model = controller.questions[questionIndex];
       void questionLongPress() => _longPressQuestion(questionIndex);
       bind(
         question.content,
         fieldKey: _statementKey(model.id),
         sourceText: model.statement,
+        style: fieldStyle(PaperStyles.question, model.style.copyWith(color: () => model.effectiveTitleColor)),
         onEdit: (value) => controller.updateQuestionStatement(questionIndex, value),
         onLongPress: questionLongPress,
       );
@@ -3655,6 +3790,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           body.content,
           fieldKey: _bodyKey(model.id),
           sourceText: model.body,
+          style: fieldStyle(PaperStyles.prompt, model.style.copyWith(color: () => null)),
           onEdit: (value) => controller.updateQuestionBody(questionIndex, value),
           onLongPress: questionLongPress,
         );
@@ -3665,6 +3801,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           category.content,
           fieldKey: _categoryKey(model.id),
           sourceText: model.category,
+          style: _scaled(PaperStyles.category),
           onEdit: (value) => controller.updateQuestionCategory(questionIndex, value),
           onLongPress: questionLongPress,
         );
@@ -3678,20 +3815,23 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           point.content,
           fieldKey: _itemKey(item.id),
           sourceText: item.text,
+          style: fieldStyle(PaperStyles.item, model.style.copyWith(color: () => null)),
           onEdit: (value) => controller.updatePointText(questionOwner, item.id, value),
           onLongPress: questionLongPress,
         );
         final options = point.options?.options ?? const <OptionNode>[];
         for (final option in options) {
-          if (option.index < 0 || option.index >= item.options.length) continue;
+          final optionIndex = item.options.indexWhere((model) => model.id == option.id);
+          if (optionIndex < 0) continue;
           bind(
             option.content,
-            fieldKey: _optionKey(item.id, option.index),
-            sourceText: item.options[option.index].text,
+            fieldKey: _sourceOptionKey(item, optionIndex),
+            sourceText: item.options[optionIndex].text,
+            style: fieldStyle(PaperStyles.option, model.style.copyWith(color: () => null)),
             onEdit: (value) => controller.updatePointOptionText(
               questionOwner,
               item.id,
-              option.index,
+              optionIndex,
               value,
             ),
             onLongPress: questionLongPress,
@@ -3700,17 +3840,19 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       }
 
       for (final branch in question.branches) {
-        if (branch.index < 0 || branch.index >= model.branches.length) continue;
-        final branchModel = model.branches[branch.index];
+        final branchIndex = model.branches.indexWhere((model) => model.id == branch.id);
+        if (branchIndex < 0) continue;
+        final branchModel = model.branches[branchIndex];
         final branchRef = BranchRef(
           questionIndex: questionIndex,
-          branchIndex: branch.index,
+          branchIndex: branchIndex,
         );
         void branchLongPress() => _longPressBranch(branchRef);
         bind(
           branch.content,
           fieldKey: _branchStatementKey(branch.id),
           sourceText: branchModel.content.statement,
+          style: fieldStyle(PaperStyles.body(controller.document.layout), branchModel.style),
           onEdit: (value) => controller.updateBranchStatement(branchRef, value),
           onLongPress: branchLongPress,
         );
@@ -3720,6 +3862,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             branchBody.content,
             fieldKey: _branchBodyKey(branch.id),
             sourceText: branchModel.content.body,
+            style: fieldStyle(PaperStyles.body(controller.document.layout), branchModel.style),
             onEdit: (value) => controller.updateBranchBody(branchRef, value),
             onLongPress: branchLongPress,
           );
@@ -3734,19 +3877,22 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             point.content,
             fieldKey: _itemKey(item.id),
             sourceText: item.text,
+            style: fieldStyle(PaperStyles.item, branchModel.style),
             onEdit: (value) => controller.updatePointText(branchOwner, item.id, value),
             onLongPress: branchLongPress,
           );
           for (final option in point.options?.options ?? const <OptionNode>[]) {
-            if (option.index < 0 || option.index >= item.options.length) continue;
+            final optionIndex = item.options.indexWhere((model) => model.id == option.id);
+            if (optionIndex < 0) continue;
             bind(
               option.content,
-              fieldKey: _optionKey(item.id, option.index),
-              sourceText: item.options[option.index].text,
+              fieldKey: _sourceOptionKey(item, optionIndex),
+              sourceText: item.options[optionIndex].text,
+              style: fieldStyle(PaperStyles.option, branchModel.style),
               onEdit: (value) => controller.updatePointOptionText(
                 branchOwner,
                 item.id,
-                option.index,
+                optionIndex,
                 value,
               ),
               onLongPress: branchLongPress,
@@ -3777,6 +3923,56 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return null;
   }
 
+  /// Route printed metadata to the SAME dialogs as the legacy title widgets.
+  /// Resolve current model IDs, never use a stale layout's positional index.
+  bool _handleCandidateMetadataTap(ExamWizardController controller, DocumentIR source, CanonicalHitTestResult hit) {
+    if (!_separateEditorCandidate) return false;
+    final id = hit.semanticNodeId;
+    bool label(String owner) => id.startsWith('$owner/title/label');
+    bool marks(String owner) => id.startsWith('$owner/title/marks');
+    for (final question in source.questions) {
+      final q = controller.questions.indexWhere((model) => model.id == question.id);
+      if (q < 0) continue;
+      final pointPaths = <({PointBlock point, String path})>[
+        for (final point in question.points) (point: point, path: '${question.id}/point/${point.id}'),
+        for (final branch in question.branches)
+          for (final point in branch.points) (point: point, path: '${question.id}/branch/${branch.id}/point/${point.id}'),
+      ];
+      for (final entry in pointPaths) {
+        final owner = _ownerOfPoint(controller.document, entry.point.id);
+        final point = _findItem(entry.point.id);
+        if (owner == null || point == null) continue;
+        if (id.startsWith('${entry.path}/label') || id.startsWith('${entry.path}/marks')) {
+          if (id.startsWith('${entry.path}/label')) { unawaited(_editPointLabel(owner, point.id)); }
+          else { unawaited(_editPointMarks(owner, point.id)); }
+          return true;
+        }
+        for (final option in entry.point.options?.options ?? const <OptionNode>[]) {
+          if (!id.startsWith('${entry.path}/options/${option.id}/label')) continue;
+          final index = point.options.indexWhere((model) => model.id == option.id);
+          if (index >= 0) unawaited(_editOptionLabel(owner, point.id, index));
+          return index >= 0;
+        }
+      }
+      for (final branch in question.branches) {
+        final owner = '${question.id}/branch/${branch.id}';
+        if (!label(owner) && !marks(owner)) continue;
+        final b = controller.questions[q].branches.indexWhere((model) => model.id == branch.id);
+        if (b < 0) return false;
+        final ref = BranchRef(questionIndex: q, branchIndex: b);
+        _tapBranch(ref);
+        unawaited(label(owner) ? _editBranchLabel(ref) : _editBranchMarks(ref));
+        return true;
+      }
+      if (label(question.id) || marks(question.id)) {
+        _tapQuestion(q);
+        unawaited(label(question.id) ? _editQuestionLabel(q) : _editQuestionMarks(q));
+        return true;
+      }
+    }
+    return false;
+  }
+
   void _handleCanonicalPageTap(
     ExamWizardController controller,
     LayoutDocument layout,
@@ -3790,9 +3986,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     }
     final hit = event.hit;
     if (hit == null || hit.isFloatingElement) return;
+    if (_separateEditorCandidate) _canonicalEditorPageHint = page.index;
+    if (_handleCandidateMetadataTap(controller, layout.source, hit)) return;
     final run = _canonicalRunById(page, hit.runId);
     final binding = run?.semanticNode == null ? null : bindings[run!.semanticNode];
     if (binding != null && run != null) {
+      if (_separateEditorCandidate) {
+        _canonicalEditorOpen = true;
+        _canonicalEditorPageHint = page.index;
+      }
       final field = _field(binding.fieldKey, binding.sourceText, binding.onEdit);
       final offset = (hit.sourceOffset ?? 0).clamp(0, field.text.length).toInt();
       field.selection = TextSelection.collapsed(offset: offset);
@@ -3933,6 +4135,179 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return null;
   }
 
+  ({_CanonicalFieldBinding binding, String ownerId, String questionId})? _candidateOptionalBinding(ExamWizardController controller, {String? fieldKey}) {
+    final document = controller.document;
+    final key = fieldKey ?? _activeFieldKey;
+    TextStyle style(TextStyle role, PaperTextStyle override) => PaperStyles.resolve(
+      role, override, defaultFont: document.settings.defaultFont,
+      fontScale: _fontScale, heightScale: _heightScale,
+    );
+    final option = key == null ? null : _optionSourceTarget(key);
+    final pointId = option?.pointId ?? (key != null && key.startsWith('item-') ? key.substring('item-'.length) : null);
+    if (key != null && pointId != null) {
+      final owner = _ownerOfPoint(document, pointId);
+      final point = _findItem(pointId);
+      if (owner == null || point == null) return null;
+      final question = document.questions[owner.questionIndex];
+      final questionIr = controller.documentIr.questionById(question.id);
+      final branch = owner.branchIndex == null ? null : question.branches[owner.branchIndex!];
+      final pointsIr = branch == null ? questionIr?.points
+          : questionIr?.branches.where((value) => value.id == branch.id).firstOrNull?.points;
+      final pointIr = pointsIr?.where((value) => value.id == pointId).firstOrNull;
+      final modelOption = option == null ? null : point.options[option.index];
+      final text = modelOption?.text ?? point.text;
+      final content = option == null ? pointIr?.content
+          : pointIr?.options?.options.where((value) => value.id == modelOption!.id).firstOrNull?.content;
+      return (ownerId: pointId, questionId: question.id, binding: _CanonicalFieldBinding(
+        fieldKey: key, sourceText: text, content: content ?? InlineContent.fromSource(text),
+        style: style(option == null ? PaperStyles.item : PaperStyles.option,
+          branch?.style ?? question.style.copyWith(color: () => null)),
+        hint: option == null ? point.kind.textHint : 'اكتب الخيار هنا...',
+        onEdit: (value) => _writeCanonicalSource(key, value),
+        onLongPress: _pointsOwnerLongPress(owner),
+      ));
+    }
+    for (var q = 0; q < document.questions.length; q++) {
+      final question = document.questions[q];
+      final ir = controller.documentIr.questionById(question.id);
+      final statement = key == _statementKey(question.id);
+      if (statement || key == _bodyKey(question.id)) {
+        final text = statement ? question.statement : question.body;
+        return (ownerId: question.id, questionId: question.id, binding: _CanonicalFieldBinding(
+          fieldKey: statement ? _statementKey(question.id) : _bodyKey(question.id), sourceText: text,
+          content: (statement ? ir?.content : ir?.body?.content) ?? InlineContent.fromSource(text),
+          style: statement
+              ? style(PaperStyles.question, question.style.copyWith(color: () => question.effectiveTitleColor))
+              : style(PaperStyles.prompt, question.style.copyWith(color: () => null)),
+          hint: statement ? 'منطوق السؤال' : 'نص السؤال (اختياري)',
+          onEdit: (value) => _writeCanonicalSource(statement ? _statementKey(question.id) : _bodyKey(question.id), value),
+          onLongPress: () => _longPressQuestion(q),
+        ));
+      }
+      for (var b = 0; b < question.branches.length; b++) {
+        final branch = question.branches[b];
+        final statement = key == _branchStatementKey(branch.id);
+        if (!statement && key != _branchBodyKey(branch.id)) continue;
+        final ref = BranchRef(questionIndex: q, branchIndex: b);
+        final branchIr = ir?.branches.where((candidate) => candidate.id == branch.id).firstOrNull;
+        return (ownerId: branch.id, questionId: question.id, binding: _CanonicalFieldBinding(
+          fieldKey: statement ? _branchStatementKey(branch.id) : _branchBodyKey(branch.id),
+          sourceText: statement ? branch.content.statement : branch.content.body,
+          content: (statement ? branchIr?.content : branchIr?.body?.content) ??
+            InlineContent.fromSource(statement ? branch.content.statement : branch.content.body),
+          style: style(PaperStyles.body(document.layout), branch.style),
+          hint: statement ? 'منطوق الفرع' : 'نص الفرع (اختياري)',
+          onEdit: (value) => _writeCanonicalSource(statement ? _branchStatementKey(branch.id) : _branchBodyKey(branch.id), value),
+          onLongPress: () => _longPressBranch(ref),
+        ));
+      }
+    }
+    return null;
+  }
+
+  Iterable<LayoutBlock> _canonicalDescendants(Iterable<LayoutBlock> blocks) sync* {
+    for (final block in blocks) {
+      yield block;
+      yield* _canonicalDescendants(block.children);
+    }
+  }
+
+  Widget _buildSeparateCanonicalEditor(ExamWizardController controller, LayoutDocument layout) {
+    final bindings = _canonicalFieldBindings(controller, layout.source);
+    ({LayoutPage page, LayoutRect anchor, _CanonicalFieldBinding binding})? target;
+    var bestDistance = double.infinity;
+    final source = _activeFieldKey == null ? null : _fields[_activeFieldKey];
+    final selection = source?.selection;
+    final offset = selection != null && selection.isValid ? selection.extentOffset : 0;
+    for (final page in layout.pages) {
+      for (final block in page.blocks) {
+        for (final line in block.allLines) {
+          for (final run in line.runs) {
+            final binding = bindings[run.semanticNode];
+            if (binding == null || binding.fieldKey != _activeFieldKey) continue;
+            final end = run.sourceEndOffset;
+            final distance = offset < run.sourceStartOffset ? (run.sourceStartOffset - offset).toDouble()
+                : offset > end ? (offset - end).toDouble() : 0.0;
+            if (distance > bestDistance) continue;
+            if (distance == bestDistance &&
+                (target?.page.index == _canonicalEditorPageHint || page.index != _canonicalEditorPageHint)) continue;
+            bestDistance = distance;
+            target = (page: page, anchor: line.rect, binding: binding);
+          }
+        }
+      }
+    }
+    if (target == null) {
+      final body = _candidateOptionalBinding(controller);
+      if (body != null) {
+        // No invented printed box: use the actual owner/title on this page.
+        // An entirely unprinted owner uses the shared plan's unplanned anchor.
+        for (final ownerId in <String>{body.ownerId, body.questionId}) {
+          for (final page in layout.pages) {
+            for (final block in _canonicalDescendants(page.blocks)) {
+              if (block.semanticNodeId != ownerId) continue;
+              if (target != null && page.index != _canonicalEditorPageHint) continue;
+              final lines = block.allLines;
+              target = (page: page, anchor: lines.isEmpty ? block.rect : lines.first.rect, binding: body.binding);
+            }
+          }
+          if (target != null) break;
+        }
+        if (target == null) {
+          final plan = CanonicalPagePlan.fromLayout(layout);
+          for (final page in plan.pages) {
+            if (!page.unplannedQuestionIds.contains(body.questionId)) continue;
+            target = (page: layout.pages[page.index],
+              anchor: LayoutRect.fromLTWH(page.bodyBounds.left, page.bodyBounds.top, page.bodyBounds.width, 0),
+              binding: body.binding);
+            break;
+          }
+        }
+      }
+    }
+    if (target == null) return const SizedBox.shrink();
+    final binding = target.binding;
+    final pageKey = _pageCanvasKeys.putIfAbsent(target.page.index, () => GlobalKey());
+    return CanonicalEditingLayer(
+      key: const ValueKey<String>('canonical-native-editing-layer'),
+      viewportKey: _canonicalEditorViewport,
+      pageKey: pageKey,
+      anchorPt: target.anchor,
+      scrollChanges: _canonicalEditorScroll,
+      child: Material(
+        elevation: 6,
+        borderRadius: BorderRadius.circular(8),
+        clipBehavior: Clip.antiAlias,
+        child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+          Row(children: <Widget>[
+            const Expanded(child: Padding(padding: EdgeInsetsDirectional.only(start: 12), child: Text('تحرير المحتوى'))),
+            IconButton(
+              tooltip: 'إغلاق محرر المحتوى',
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              onPressed: () { FocusManager.instance.primaryFocus?.unfocus(); setState(() => _canonicalEditorOpen = false); },
+              icon: const Icon(Icons.close),
+            ),
+          ]),
+          Flexible(child: SingleChildScrollView(
+            key: const ValueKey<String>('canonical-native-editor-scroll'),
+            padding: const EdgeInsets.all(12),
+            child: _paperField(
+              fieldKey: binding.fieldKey,
+              controller: _field(binding.fieldKey, binding.sourceText, binding.onEdit),
+              style: binding.style,
+              semanticContent: binding.content,
+              autofocus: true,
+              minimumInteractiveHeight: 48,
+              hint: binding.hint,
+              matchPrintedTextWidth: false,
+              onLongPress: binding.onLongPress,
+            ),
+          )),
+        ]),
+      ),
+    );
+  }
+
   Widget _buildCanonicalPage(
     ExamWizardController controller,
     LayoutDocument layout,
@@ -4055,6 +4430,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               placement,
             ),
       if (interactive &&
+          !_separateEditorCandidate &&
           currentBinding != null &&
           pageHasActiveNode &&
           page.index == activePageIndex)
@@ -4425,16 +4801,19 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     int pageCount,
     CanonicalPagePlan plan,
   ) {
+    final size = plan.layout.pages[page.index].pageSize;
+    final width = LayoutUnits.ptToPx(size.width);
+    final height = LayoutUnits.ptToPx(size.height);
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       child: SizedBox(
-        width: ExamCanvasGeometry.width * _zoom,
-        height: ExamCanvasGeometry.height * _zoom,
+        width: width * _zoom,
+        height: height * _zoom,
         child: FittedBox(
           fit: BoxFit.fill,
           child: SizedBox(
-            width: ExamCanvasGeometry.width,
-            height: ExamCanvasGeometry.height,
+            width: width,
+            height: height,
             child: _buildPage(
               controller,
               layout,
@@ -4488,8 +4867,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  // سطح الورقة التفاعلي: تُبنى الصفحة كودجات قابلة للتحرير فوق ترقيم
-  // المتحكم المقاس (انظر [_buildPaperZoomedPage]).
+  // سطح الورقة التفاعلي: ودجات قابلة للتحرير فوق خطة المحرك المشتركة
+  // (انظر [_buildPaperZoomedPage])؛ لا محرك ترقيم منافس.
   /// صفحة واحدة من **خطة المحرك**: مقاطع الكتل كما قرّرها `LayoutEngine`، لا
   /// كما قاسها هذا الودجت.
   ///
@@ -4513,6 +4892,11 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     // تُرشَّح المعرّفات المحذوفة أثناء حسم تعديل كي لا يبقى فراغ كتلة.
     if (page.hasHeader && page.index == 0) {
       blocks.add(_buildHeaderBlock(controller));
+      if (page.fragments.isNotEmpty) {
+        final header = plan.layout.headerBlock!;
+        final gap = page.fragments.first.topPt - header.rect.bottom;
+        if (gap > 0) blocks.add(SizedBox(height: LayoutUnits.ptToPx(gap)));
+      }
     }
 
     // (2) محتوى الصفحة = **مقاطع** الخطة بترتيبها (بدايات وتكملات)، ثم
@@ -4725,8 +5109,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           debugLabel: 'a4-page-canvas-${page.index}',
         ),
       ),
-      width: ExamCanvasGeometry.width,
-      height: ExamCanvasGeometry.height,
+      width: LayoutUnits.ptToPx(plan.layout.pages[page.index].pageSize.width),
+      height: LayoutUnits.ptToPx(plan.layout.pages[page.index].pageSize.height),
       clipBehavior: Clip.antiAlias,
       // إطار الشاشة (الظل والحدّ الرقيق) زينة عرض لا جزء من الورقة: الحدّ كان
       // داخل `decoration`، و`Container` يحسب `decoration.padding` (سماكة
@@ -5005,8 +5389,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       behavior: HitTestBehavior.translucent,
       onTap: _tapHeader,
       child: Container(
-        padding: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
+        foregroundDecoration: BoxDecoration(
           border: Border.all(
             color: _headerSelected
                 ? PaperStyles.primary.withOpacity(0.45)
@@ -5112,6 +5495,129 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   /// كل مجموعة تعمل على هدفها وحده: أدوات السؤال على السؤال المستهدف، وأدوات
   /// الفرع على فرع واحد محدَّد/نشط (أو الفرع الوحيد في السؤال) — وإلا تُعطَّل
   /// بدل أن تعمل على عنصر لم يقصده المستخدم.
+  /// Equivalent access to existing optional source fields when the print
+  /// contract deliberately gives their owner no ink or hit box. No placeholder
+  /// is inserted into the page; persistent IDs survive popup/model changes.
+  Widget _buildCandidateEmptyFields(ExamWizardController controller) {
+    final document = controller.document;
+    final entries = <({String key, String label})>[];
+    void addPoints(List<BranchItem> points, String ownerName) {
+      for (var p = 0; p < points.length; p++) {
+        final point = points[p];
+        final name = '$ownerName — النقطة ${document.formatNumber(p + 1)}';
+        if (point.text.trim().isEmpty) {
+          entries.add((key: _itemKey(point.id), label: '$name — النص'));
+        }
+        if (point.kind != PointKind.multipleChoice) continue;
+        for (var o = 0; o < point.options.length; o++) {
+          if (point.options[o].text.trim().isEmpty) {
+            entries.add((key: _sourceOptionKey(point, o),
+              label: '$name — الخيار ${document.formatNumber(o + 1)}'));
+          }
+        }
+      }
+    }
+    for (var q = 0; q < document.questions.length; q++) {
+      final question = document.questions[q];
+      final name = 'السؤال ${document.formatNumber(q + 1)}';
+      if (question.statement.trim().isEmpty) entries.add((key: _statementKey(question.id), label: '$name — المنطوق'));
+      if (question.body.trim().isEmpty) entries.add((key: _bodyKey(question.id), label: '$name — النص الاختياري'));
+      addPoints(question.items, name);
+      for (var b = 0; b < question.branches.length; b++) {
+        final branch = question.branches[b];
+        final name = 'السؤال ${document.formatNumber(q + 1)} — الفرع ${document.formatNumber(b + 1)}';
+        if (branch.content.statement.trim().isEmpty) entries.add((key: _branchStatementKey(branch.id), label: '$name — المنطوق'));
+        if (branch.content.body.trim().isEmpty) entries.add((key: _branchBodyKey(branch.id), label: '$name — النص الاختياري'));
+        addPoints(branch.content.items, name);
+      }
+    }
+    return SizedBox(width: 48, height: 48, child: PopupMenuButton<String>(
+      key: const ValueKey<String>('canonical-empty-fields'),
+      tooltip: 'تحرير حقل غير مطبوع', icon: const Icon(Icons.edit_note),
+      enabled: !_locked && !_isBusy && !_multiSelect && entries.isNotEmpty,
+      itemBuilder: (_) => <PopupMenuEntry<String>>[
+        for (final entry in entries) PopupMenuItem<String>(
+          key: ValueKey<String>('canonical-empty-${entry.key}'), value: entry.key,
+          height: 48, child: Text(entry.label, maxLines: 2, overflow: TextOverflow.ellipsis)),
+      ],
+      onSelected: (key) {
+        final owner = _candidateOptionalBinding(controller, fieldKey: key);
+        if (owner == null) return;
+        final binding = owner.binding;
+        _canonicalEditorOpen = true;
+        _canonicalEditorPageHint = null;
+        _activateField(key, _field(key, binding.sourceText, binding.onEdit));
+      },
+    ));
+  }
+
+  List<Widget> _buildCandidatePointTools(ExamWizardController controller) {
+    final key = _activeFieldKey;
+    if (key == null) return const <Widget>[];
+    final option = _optionSourceTarget(key);
+    final id = option?.pointId ?? (key.startsWith('item-') ? key.substring('item-'.length) : null);
+    final point = id == null ? null : _findItem(id);
+    if (point == null) return const <Widget>[];
+    final enabled = !_locked && !_isBusy && !_multiSelect;
+    void current(void Function(PointsOwner owner, BranchItem point) action) {
+      final owner = _ownerOfPoint(controller.document, point.id);
+      final model = _findItem(point.id);
+      if (owner != null && model != null) action(owner, model);
+    }
+    void closeDeletedField() {
+      FocusManager.instance.primaryFocus?.unfocus();
+      setState(() {
+        _canonicalEditorOpen = false;
+        _activeFieldKey = null;
+        _activeItemFieldKey = null;
+        _activeCanonicalSemanticNodeId = null;
+      });
+    }
+    Widget button(String key, String tooltip, IconData icon, VoidCallback action) => IconButton(
+      key: ValueKey<String>(key), tooltip: tooltip, icon: Icon(icon, size: 20),
+      constraints: const BoxConstraints(minWidth: 48, minHeight: 48), padding: const EdgeInsets.all(8),
+      onPressed: enabled ? action : null,
+    );
+    return <Widget>[
+      SizedBox(width: 48, height: 48, child: PopupMenuButton<PointKind>(
+        key: const ValueKey<String>('point-action-kind'), tooltip: 'نوع النقطة',
+        enabled: enabled, icon: const Icon(Icons.swap_horiz),
+        itemBuilder: (_) => <PopupMenuEntry<PointKind>>[
+          for (final kind in PointKind.values) PopupMenuItem<PointKind>(
+            key: ValueKey<String>('point-kind-${kind.name}'), height: 48, value: kind, child: Text(kind.arabicLabel)),
+        ],
+        onSelected: (kind) => current((owner, model) {
+          controller.updatePointKind(owner, model.id, kind);
+          if (option != null && kind != PointKind.multipleChoice) {
+            final binding = _candidateOptionalBinding(controller, fieldKey: _itemKey(model.id))?.binding;
+            if (binding != null) _activateField(binding.fieldKey, _field(binding.fieldKey, binding.sourceText, binding.onEdit));
+          }
+        }),
+      )),
+      button('point-action-label', 'ترقيم النقطة', Icons.numbers,
+        () => current((owner, model) => _editPointLabel(owner, model.id))),
+      button('point-action-marks', 'درجة النقطة', Icons.grade_outlined,
+        () => current((owner, model) => _editPointMarks(owner, model.id))),
+      button('point-action-delete', 'حذف النقطة', Icons.delete_outline,
+        () => current((owner, model) { controller.removePoint(owner, model.id); closeDeletedField(); })),
+      if (point.kind == PointKind.multipleChoice)
+        button('point-action-add-option', 'إضافة خيار', Icons.add,
+          () => current((owner, model) => controller.addPointOption(owner, model.id))),
+      if (option != null) ...<Widget>[
+        button('option-action-label', 'تسمية الخيار', Icons.label_outline,
+          () => current((owner, model) {
+            final target = _optionSourceTarget(key);
+            if (target != null) unawaited(_editOptionLabel(owner, model.id, target.index));
+          })),
+        button('option-action-delete', 'حذف الخيار', Icons.close,
+          () => current((owner, model) {
+            final target = _optionSourceTarget(key);
+            if (target != null) { controller.removePointOption(owner, model.id, target.index); closeDeletedField(); }
+          })),
+      ],
+    ];
+  }
+
   Widget _buildQuestionActionsBar(ExamWizardController controller) {
     final index = _actionQuestionIndex();
     final branchRef = _actionBranchRef();
@@ -5138,6 +5644,12 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         onPressed: enabled ? onPressed : null,
       );
     }
+
+    final PointsOwner? editOwner = _multiSelect ? null
+        : _selectedBranches.length == 1
+            ? PointsOwner.branch(_selectedBranches.single)
+            : _selectedQuestions.length == 1 && index != null
+                ? PointsOwner.question(index) : null;
 
     Widget divider() => const Padding(
           padding: EdgeInsets.symmetric(horizontal: 4),
@@ -5175,6 +5687,26 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: <Widget>[
+                    if (_separateEditorCandidate) ...<Widget>[
+                      button(key: 'canonical-action-reorder', icon: Icons.reorder,
+                        tooltip: 'ترتيب الأسئلة والفروع بالسحب', enabled: !_isBusy,
+                        onPressed: () => setState(() => _showReorderPanel = !_showReorderPanel)),
+                      _buildCandidateEmptyFields(controller),
+                    ],
+                    button(
+                      key: 'question-action-edit-body',
+                      icon: Icons.edit_note,
+                      tooltip: 'تحرير نص السؤال أو الفرع',
+                      enabled: editOwner != null && !_locked && !_isBusy,
+                      onPressed: () => _editOwnerBody(editOwner!),
+                    ),
+                    button(
+                      key: 'question-action-add-point',
+                      icon: Icons.add,
+                      tooltip: 'إضافة نقطة',
+                      enabled: editOwner != null && !_locked && !_isBusy,
+                      onPressed: () => controller.addPoint(editOwner!),
+                    ),
                     button(
                       key: 'question-action-add-branch',
                       icon: Icons.add,
@@ -5197,7 +5729,23 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                         enabled: questionEnabled,
                         onPressed: () => _confirmDeleteQuestion(index!),
                       ),
+                    if (_separateEditorCandidate) ...<Widget>[
+                      button(key: 'question-action-label', icon: Icons.numbers,
+                        tooltip: 'رقم السؤال', enabled: questionEnabled,
+                        onPressed: () => _editQuestionLabel(index!)),
+                      button(key: 'question-action-marks', icon: Icons.grade_outlined,
+                        tooltip: 'درجة السؤال', enabled: questionEnabled,
+                        onPressed: () => _editQuestionMarks(index!)),
+                    ],
                     divider(),
+                    if (_separateEditorCandidate) ...<Widget>[
+                      button(key: 'branch-action-label', icon: Icons.numbers,
+                        tooltip: 'رقم الفرع', enabled: branchEnabled,
+                        onPressed: () => _editBranchLabel(branchRef!)),
+                      button(key: 'branch-action-marks', icon: Icons.grade_outlined,
+                        tooltip: 'درجة الفرع', enabled: branchEnabled,
+                        onPressed: () => _editBranchMarks(branchRef!)),
+                    ],
                     button(
                       key: 'branch-action-duplicate',
                       icon: Icons.copy_all_outlined,
@@ -5223,9 +5771,90 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                       enabled: branchEnabled,
                       onPressed: () => controller.removeBranch(branchRef!),
                     ),
+                    if (_separateEditorCandidate) ..._buildCandidatePointTools(controller),
                   ],
                 ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Existing optional body field, edited with the SAME source controller.
+  /// Its empty placeholder and add-point action must never enter printed flow.
+  Future<void> _editOwnerBody(PointsOwner owner) async {
+    final controller = _controller!;
+    final branchRef = owner.isBranch ? BranchRef(
+      questionIndex: owner.questionIndex, branchIndex: owner.branchIndex!) : null;
+    final questionId = controller.questions[owner.questionIndex].id;
+    final branchId = branchRef == null ? null : controller.document.branchAt(branchRef).id;
+    final fieldKey = branchId == null ? _bodyKey(questionId) : _branchBodyKey(branchId);
+    final initial = branchRef == null ? controller.questions[owner.questionIndex].body
+        : controller.document.branchAt(branchRef).content.body;
+    final field = _field(fieldKey, initial, (value) {
+      if (_separateEditorCandidate) {
+        _writeCanonicalSource(fieldKey, value);
+      } else if (branchRef == null) {
+        controller.updateQuestionBody(owner.questionIndex, value);
+      } else {
+        controller.updateBranchBody(branchRef, value);
+      }
+    });
+    if (_separateEditorCandidate) {
+      _canonicalEditorOpen = true;
+      _activateField(fieldKey, field);
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => ChangeNotifierProvider<ExamWizardController>.value(
+        // Dialog routes are above this screen's provider in Navigator. Reuse
+        // its existing owner; .value must NOT dispose the shared controller.
+        value: controller,
+        child: AlertDialog(
+          title: Text(branchRef == null ? 'نص السؤال' : 'نص الفرع'),
+          content: SizedBox(
+            width: 520,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.55,
+              ),
+              child: SingleChildScrollView(
+                child: Consumer<ExamWizardController>(
+                  builder: (context, current, _) {
+                    final question = current.documentIr.questionById(questionId);
+                    final content = branchId == null
+                        ? question?.body?.content
+                        : question?.branches.where((b) => b.id == branchId).firstOrNull?.body?.content;
+                    final model = current.questions[owner.questionIndex];
+                    final style = branchRef == null
+                        ? model.style : current.document.branchAt(branchRef).style;
+                    return _paperField(
+                      fieldKey: fieldKey,
+                      controller: field,
+                      matchPrintedTextWidth: false,
+                      minimumInteractiveHeight: 48,
+                      style: PaperStyles.resolve(
+                        branchRef == null ? PaperStyles.prompt : PaperStyles.body(current.document.layout),
+                        style.copyWith(color: () => null),
+                        defaultFont: current.document.settings.defaultFont,
+                        fontScale: _fontScale,
+                        heightScale: _heightScale,
+                      ),
+                      semanticContent: content,
+                      hint: branchRef == null ? 'نص السؤال (اختياري)' : 'نص الفرع (اختياري)',
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('إغلاق'),
             ),
           ],
         ),
@@ -5377,9 +6006,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final question = document.questions[data.index];
     final questionIndex = data.index;
     final selected = _isQuestionSelected(questionIndex);
-    // الحقول الاختيارية (نص السؤال) تظهر للتحرير عند تحديد السؤال نفسه،
-    // وتُحذف كلياً من الواجهة والطباعة عند فراغها.
-    final directlySelected = _selectedQuestions.contains(question.id);
     final defaultFont = document.settings.defaultFont;
     final bodyStyle = question.style.copyWith(color: () => null);
     final titleStyle = PaperStyles.resolve(
@@ -5511,8 +6137,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
           ),
         ),
-        // نص السؤال: يُحذف كلياً عند فراغه (يظهر للتحرير عند تحديد السؤال).
-        if (data.body != null || directlySelected) ...<Widget>[
+        // نص السؤال الفارغ يحرّر من الشريط، ولا يحجز مساحة مطبوعة.
+        if (data.body != null) ...<Widget>[
           if (blockSpacing > 0) SizedBox(height: blockSpacing),
           _paperField(
             fieldKey: bodyKey,
@@ -5547,7 +6173,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             PaperStyles.toTextAlign(question.style.align),
           ),
         ],
-        if (directlySelected) _addPointButton(controller, owner),
         // السؤال الجديد يبدأ بلا فروع؛ تُنشأ فقط بطلب صريح (زر +).
         if (question.branches.isEmpty)
           Padding(
@@ -5591,7 +6216,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       padding: EdgeInsets.all(
         question.showFrame ? VisualMetrics.questionFramePaddingPx : 0,
       ),
-      decoration: BoxDecoration(
+      foregroundDecoration: BoxDecoration(
         border: Border.all(
           color: question.showFrame ? PaperStyles.ink : Colors.transparent,
           width: question.showFrame ? 1 : 0,
@@ -5697,30 +6322,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     );
   }
 
-  /// زر «إضافة نقطة» (أداة تحرير تظهر عند تحديد صاحب النقاط فقط).
-  Widget _addPointButton(ExamWizardController controller, PointsOwner owner) {
-    return Padding(
-      padding: const EdgeInsetsDirectional.only(
-        start: VisualMetrics.pointIndentPx,
-      ),
-      child: Align(
-        alignment: AlignmentDirectional.centerStart,
-        child: Tooltip(
-          message: 'إضافة نقطة',
-          child: TextButton.icon(
-            style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-            ),
-            onPressed: () => controller.addPoint(owner),
-            icon: const Icon(Icons.add, size: 14),
-            label: const Text('إضافة نقطة', style: TextStyle(fontSize: 11)),
-          ),
-        ),
-      ),
-    );
-  }
-
   List<FloatingElement> _attachmentModels(
     ExamDocument document,
     AttachmentBlock? attachments, {
@@ -5796,16 +6397,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     BranchBlock data,
     CanonicalPagePlan? plan,
   ) {
-    final ref = BranchRef(
-      questionIndex: data.questionIndex,
-      branchIndex: data.index,
-    );
-    final branch = controller.document.branchAt(ref);
-    final selected = _isBranchSelected(ref);
-
     // مقبض السحب وحده يبدأ السحب (حتى لا يتعارض مع تحديد النص في الحقول)؛
     // الهدف هو كتلة الفرع كاملة.
-    final dragHandle = _locked
+    Widget buildDragHandle(BranchRef ref) => _locked
             ? Icon(
                 Icons.drag_indicator,
                 size: 16,
@@ -5851,9 +6445,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               );
 
     return DragTarget<BranchRef>(
-      key: ValueKey<String>('branch-target-${branch.id}'),
-      onWillAcceptWithDetails: (details) => !_locked && details.data != ref,
+      key: ValueKey<String>('branch-target-${data.id}'),
+      onWillAcceptWithDetails: (details) {
+        final target = _findBranchRef(controller.document, data.id);
+        return !_locked && target != null && details.data != target;
+      },
       onAcceptWithDetails: (details) {
+        final ref = _findBranchRef(controller.document, data.id);
+        if (ref == null || !controller.document.containsRef(details.data)) return;
         final from = details.data;
         if (from.questionIndex == ref.questionIndex) {
           // داخل السؤال نفسه: نقل وإعادة ترميز (المحتوى كما هو).
@@ -5864,24 +6463,28 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         }
       },
       builder: (context, candidates, _) {
+        // DragTarget can rebuild independently after drop/leave, before the
+        // provider rebuilds its parent. Question reorder changes branch owner
+        // indices immediately; a captured old ref can now address another
+        // question (or an out-of-range branch). Resolve the stable branch ID
+        // against the current model in EVERY builder/event, not only above it.
+        final ref = _findBranchRef(controller.document, data.id);
+        if (ref == null) return const SizedBox.shrink(); // Actually deleted owner.
+        final branch = controller.document.branchAt(ref);
+        final selected = _isBranchSelected(ref);
+        final dragHandle = buildDragHandle(ref);
         final highlighted = candidates.isNotEmpty;
         Widget body = GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () => _tapBranch(ref),
           onLongPress: () => _longPressBranch(ref),
           child: Container(
-            margin: const EdgeInsets.only(top: 2),
             // إزاحة الفرع عن بداية السؤال من العقد البصري (26px): تُطبَّق
             // مرة واحدة هنا فيحاذي عنوان الفرع ونصه ونقاطه ما يطبعه PDF
             // وWord بنفس الرقم — لا 4px حشوةً تُضاف فوقها.
-            padding: const EdgeInsetsDirectional.only(
-              start: VisualMetrics.branchIndentPx,
-              end: 4,
-              top: 2,
-              bottom: 2,
-            ),
-            decoration: BoxDecoration(
-              color: highlighted ? const Color(0x1A2563EB) : null,
+            padding: EdgeInsets.zero,
+            color: highlighted ? const Color(0x1A2563EB) : null,
+            foregroundDecoration: BoxDecoration(
               border: Border.all(
                 color: highlighted
                     ? PaperStyles.accent
@@ -5904,11 +6507,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
         );
         body = Container(
-          margin: EdgeInsets.only(top: branch.showFrame ? 2 : 0),
           padding: EdgeInsets.all(
             branch.showFrame ? VisualMetrics.branchFramePaddingPx : 0,
           ),
-          decoration: BoxDecoration(
+          foregroundDecoration: BoxDecoration(
             border: Border.all(
               color: branch.showFrame ? PaperStyles.ink : Colors.transparent,
               width: branch.showFrame ? 0.8 : 0,
@@ -5917,7 +6519,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
           child: body,
         );
-        return body;
+        return Padding(
+          padding: const EdgeInsetsDirectional.only(start: VisualMetrics.branchIndentPx),
+          child: body,
+        );
       },
     );
   }
@@ -5994,8 +6599,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
           ),
         ),
         ),
-        // نص الفرع: يُحذف كلياً عند فراغه (يظهر للتحرير عند تحديد الفرع).
-        if (data.body != null || isSelected)
+        // نص الفرع الفارغ يحرّر من الشريط، ولا يحجز مساحة مطبوعة.
+        if (data.body != null)
           Padding(
             // لا إزاحة إضافية: كتلة الفرع نفسها مُزاحة عن السؤال بمقدار
             // `branchIndentPx`، ونص الفرع يأخذ الإزاحة نفسها في PDF وWord.
@@ -6021,7 +6626,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             SizedBox(height: index == 0 ? firstItemSpacing : itemSpacing),
           _pointRow(controller, owner, data.points[index], bodyStyle, branchAlign),
         ],
-        if (isSelected) _addPointButton(controller, owner),
         if (branch.dividerAfter != null)
           _buildDividerWidget(
             key: 'b:${branch.id}',
@@ -6215,7 +6819,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                     child: GestureDetector(
                       onTap: () => _editOptionLabel(owner, item.id, index),
                       child: Padding(
-                        padding: const EdgeInsets.only(top: 1),
+                        padding: const EdgeInsets.only(top: VisualMetrics.optionLabelTopInsetPx),
                         child: options[index].labelContent.isEmpty
                                 ? const Icon(Icons.tag, size: 12, color: Colors.grey)
                                 : _semanticInline(options[index].labelContent, bodyStyle),
@@ -6687,26 +7291,77 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     required VoidCallback onTap,
     ValueChanged<DragUpdateDetails>? onPanUpdate,
   }) {
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        key: key,
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        onPanUpdate: onPanUpdate,
-        child: SizedBox(
-          width: 40,
-          height: 40,
-          child: Center(
-            child: CircleAvatar(
-              radius: 10,
-              backgroundColor: color,
-              child: Icon(icon, size: 12, color: Colors.white),
-            ),
-          ),
+    final content = SizedBox(
+      width: 40,
+      height: 40,
+      child: Center(
+        child: CircleAvatar(
+          radius: 10,
+          backgroundColor: color,
+          child: Icon(icon, size: 12, color: Colors.white),
         ),
       ),
     );
+    return Tooltip(
+      message: tooltip,
+      child: onPanUpdate == null
+          ? GestureDetector(
+              key: key,
+              behavior: HitTestBehavior.opaque,
+              onTap: onTap,
+              child: content,
+            )
+          : RawGestureDetector(
+              key: key,
+              behavior: HitTestBehavior.opaque,
+              gestures: <Type, GestureRecognizerFactory>{
+                EagerGestureRecognizer: GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
+                  () => EagerGestureRecognizer(),
+                  (EagerGestureRecognizer instance) {},
+                ),
+              },
+              child: Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: (event) {
+                  if (_handlePointer != null) return;
+                  _handlePointer = event.pointer;
+                  _handleKey = key;
+                  _handleStart = event.position;
+                  _handleLast = event.position;
+                  _handleMoved = false;
+                },
+                onPointerMove: (event) {
+                  if (_handlePointer != event.pointer || _handleKey != key) return;
+                  if (!_handleMoved && (event.position - _handleStart!).distance <= kTouchSlop) return;
+                  _handleMoved = true;
+                  // position is global screen space. GestureDetector.delta is
+                  // already local to the scaled paper and would be divided by
+                  // zoom a second time in _resizeAttachmentByDrag.
+                  final delta = event.position - _handleLast!;
+                  _handleLast = event.position;
+                  onPanUpdate(DragUpdateDetails(delta: delta, globalPosition: event.position));
+                },
+                onPointerUp: (event) {
+                  if (_handlePointer != event.pointer || _handleKey != key) return;
+                  final tapped = !_handleMoved;
+                  _clearHandlePointer();
+                  if (tapped) onTap();
+                },
+                onPointerCancel: (event) {
+                  if (_handlePointer == event.pointer && _handleKey == key) _clearHandlePointer();
+                },
+                child: content,
+              ),
+            ),
+    );
+  }
+
+  void _clearHandlePointer() {
+    _handlePointer = null;
+    _handleKey = null;
+    _handleStart = null;
+    _handleLast = null;
+    _handleMoved = false;
   }
 
   void _scaleAttachment(
@@ -7151,8 +7806,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final controller = _controller!;
     final document = controller.document;
     // هل المفتاح لنقطة من [points] (نصها أو أحد خياراتها)؟
+    final option = _optionSourceTarget(key);
     bool belongsToPoints(List<BranchItem> points) => points.any(
-          (point) => key == _itemKey(point.id) || key.startsWith('option-${point.id}-'),
+          (point) => key == _itemKey(point.id) || option?.pointId == point.id,
         );
     setState(() {
       if (!_multiSelect) {
@@ -7201,6 +7857,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     TextAlign textAlign = TextAlign.start,
     String? hint,
     bool mushafStyle = false,
+    bool matchPrintedTextWidth = true,
+    bool autofocus = false,
+    double minimumInteractiveHeight = 0,
     InlineContent? semanticContent,
     VoidCallback? onLongPress,
   }) {
@@ -7210,11 +7869,20 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     return PaperField(
       key: ValueKey<String>('$fieldKey$_sliceKeySuffix'),
       controller: controller,
+      autofocus: autofocus,
+      minimumInteractiveHeight: minimumInteractiveHeight,
       style: style,
+      matchPrintedTextWidth: matchPrintedTextWidth,
       semanticContent: semanticContent,
       textAlign: textAlign,
       hint: hint,
-      onActivate: () => _activateField(fieldKey, controller),
+      onActivate: () {
+        // A popup/dialog can restore focus to the previous field while an
+        // explicit source switch is rebuilding. That retired native field
+        // must not steal the newly selected source back before it mounts.
+        if (_separateEditorCandidate && _activeFieldKey != fieldKey) return;
+        _activateField(fieldKey, controller);
+      },
       onEditFormula: () => _editEquationInField(fieldKey),
       // في وضع التحديد المتعدد لا يبتلع الحقل الضغط المطوّل: يمرّ إلى كتلة
       // السؤال/الفرع فتُحدَّد من أي موضع (والنص غير قابل للتأشير وقتها).

@@ -108,6 +108,8 @@ Future<void> _pumpRtlApp(WidgetTester tester, Widget home) async {
 }
 
 void main() {
+  setUpAll(() => WidgetController.hitTestWarningShouldBeFatal = true);
+  tearDownAll(() => WidgetController.hitTestWarningShouldBeFatal = false);
   group('Issue 2 — Compound Equation Structured AST & Parser Invariants', () {
     test(
         'Scenario 1, 3, 7: compound exponents ("5^{2} + 6^{2} =") and roots ("\\sqrt{5} + \\sqrt{8} =") parse & round-trip without swallowing operators',
@@ -331,8 +333,7 @@ void main() {
         (w) => w is TextField && w.controller?.text == '5',
       );
       // Both `\sqrt{5}` and `5^{2}` contain `'5'`; pick the second one (`5^{2}` base).
-      await tester.tap(fiveFieldFinder.at(1));
-      await tester.pumpAndSettle();
+      await _tapVisible(tester, fiveFieldFinder.at(1));
       await tester.enterText(fiveFieldFinder.at(1), '7');
       await tester.pumpAndSettle();
       expect(
@@ -351,8 +352,10 @@ void main() {
       final fenceBody = find.byWidgetPredicate(
         (w) => w is TextField && w.controller?.text == 'x+1',
       );
-      await tester.tap(fenceBody);
-      await tester.pumpAndSettle();
+      // The equation can be wider than the editor viewport. Reach the real
+      // middle field through its horizontal scrollable before tapping; an
+      // off-dialog coordinate would tap the dismissible modal barrier.
+      await _tapVisible(tester, fenceBody);
       await _tapVisible(tester, find.byKey(const Key('eq_delete_active')));
       expect(tester.takeException(), isNull);
       expect(

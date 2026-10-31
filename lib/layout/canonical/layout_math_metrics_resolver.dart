@@ -19,12 +19,14 @@ abstract final class LayoutMathMetricsResolver {
 
     final snapshots = <String, Future<MathSnapshot?>>{};
     for (final run in mathRuns.values) {
-      final key = '${run.text}\u0000${run.style.fontSizePt.toStringAsFixed(3)}';
+      final key = '${run.text}\u0000${run.style.fontSizePt.toStringAsFixed(3)}\u0000${run.isBlockMath}\u0000${run.style.bold}';
       snapshots.putIfAbsent(
         key,
         () => MathSnapshotRenderer.render(
           run.text,
           fontSizePt: run.style.fontSizePt,
+          isBlock: run.isBlockMath,
+          bold: run.style.bold,
         ),
       );
     }
@@ -40,7 +42,7 @@ abstract final class LayoutMathMetricsResolver {
     final boxes = <String, LayoutMathBox>{};
     for (final entry in mathRuns.entries) {
       final run = entry.value;
-      final key = '${run.text}\u0000${run.style.fontSizePt.toStringAsFixed(3)}';
+      final key = '${run.text}\u0000${run.style.fontSizePt.toStringAsFixed(3)}\u0000${run.isBlockMath}\u0000${run.style.bold}';
       final snapshot = resolved[key];
       if (snapshot == null) continue;
       boxes[entry.key] = LayoutMathBox(

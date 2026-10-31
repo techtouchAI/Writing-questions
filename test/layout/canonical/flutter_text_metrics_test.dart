@@ -1,13 +1,152 @@
+import 'dart:ui' as ui;
+
+import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:writing_questions_app/layout/canonical/flutter_text_metrics.dart';
 import 'package:writing_questions_app/layout/canonical/font_metrics.dart';
 import 'package:writing_questions_app/layout/canonical/layout_document.dart';
+import 'package:writing_questions_app/layout/canonical/layout_units.dart';
 import 'package:writing_questions_app/layout/document_direction.dart';
 import 'package:writing_questions_app/models/paper_font.dart';
 import 'package:writing_questions_app/models/paper_text_style.dart';
 
 void main() {
+  testWidgets('LTR title Arabic island words keep their native intervals before Latin marks', (_) async {
+    await FlutterTextMetrics.ensureFontsLoaded();
+    const source = 'QALPHA نص مختلط (5 marks)';
+    for (final width in [220.0, 250.0]) {
+      const style = LayoutTextStyle(font: PaperFont.naskh, fontSizePt: 12,
+        lineHeightFactor: 1.2, bold: true);
+      final paragraph = const FlutterTextMetrics().layoutParagraph(spans: const [
+        MetricSpan(semanticNodeId: 'reorder-title', semanticNode: null, text: source,
+          contentKind: LayoutContentKind.text, semanticRole: LayoutSemanticRole.text,
+          style: style, direction: DocumentDirection.ltr, logicalIndex: 0),
+      ], width: width, direction: DocumentDirection.ltr, alignment: null, resolveJustification: false);
+      final native = TextPainter(text: TextSpan(text: source, style: TextStyle(
+        fontFamily: PaperFont.naskh.family, fontWeight: FontWeight.bold,
+        fontSize: LayoutUnits.ptToPx(12), height: 1.2)), textDirection: TextDirection.ltr,
+        textScaler: TextScaler.noScaling)..layout(minWidth: LayoutUnits.ptToPx(width), maxWidth: LayoutUnits.ptToPx(width));
+      try {
+        final words = paragraph.lines.expand((line) => line.fragments)
+          .expand((fragment) => fragment.words).toList();
+        final intervals = <({double x, double right})>[];
+        for (final text in ['نص', 'مختلط']) {
+          final start = source.indexOf(text);
+          final reference = native.getBoxesForSelection(TextSelection(baseOffset: start, extentOffset: start + text.length),
+            boxHeightStyle: ui.BoxHeightStyle.strut, boxWidthStyle: ui.BoxWidthStyle.tight).single;
+          final actual = words.singleWhere((word) => word.text == text);
+          expect(actual.x, closeTo(LayoutUnits.pxToPt(reference.left), 1e-6), reason: text);
+          expect(actual.textAdvance, closeTo(LayoutUnits.pxToPt(reference.right - reference.left), 1e-6), reason: text);
+          intervals.add((x: actual.x, right: actual.x + actual.textAdvance));
+        }
+        intervals.sort((a, b) => a.x.compareTo(b.x));
+        expect(intervals.first.right, lessThan(intervals.last.x));
+      } finally { native.dispose(); }
+    }
+  });
+
+  testWidgets('rounded-up and rounded-down native flow bands neither overlap nor grow the paragraph', (_) async {
+    await FlutterTextMetrics.ensureFontsLoaded();
+    const metrics = FlutterTextMetrics();
+    final text = List.filled(12, 'هذا نص عربي مع English لفحص تدفق السطر').join(' ');
+    for (final factor in <double>[1.3, 1.35, 1.7]) {
+      final style = LayoutTextStyle(font: PaperFont.naskh, fontSizePt: 14, lineHeightFactor: factor);
+      final paragraph = metrics.layoutParagraph(spans: <MetricSpan>[
+        MetricSpan(semanticNodeId: 'body', semanticNode: null, text: text,
+          contentKind: LayoutContentKind.text, semanticRole: LayoutSemanticRole.text,
+          style: style, direction: DocumentDirection.rtl, logicalIndex: 0),
+      ], width: 300, direction: DocumentDirection.rtl, alignment: null,
+        resolveJustification: false);
+      final painter = TextPainter(text: TextSpan(text: text, style: TextStyle(
+        fontFamily: PaperFont.naskh.family, fontSize: LayoutUnits.ptToPx(14), height: factor)),
+        textDirection: TextDirection.rtl, textScaler: TextScaler.noScaling)
+        ..layout(minWidth: LayoutUnits.ptToPx(300), maxWidth: LayoutUnits.ptToPx(300));
+      try {
+        final native = painter.computeLineMetrics();
+        expect(native.length, greaterThan(1));
+        expect(paragraph.lines.length, native.length);
+        var nativeFlowTop = 0.0;
+        for (var i = 0; i < native.length; i++) {
+          final line = paragraph.lines[i];
+          expect(line.top, closeTo(LayoutUnits.pxToPt(nativeFlowTop), 1e-6));
+          expect(line.height, closeTo(LayoutUnits.pxToPt(native[i].height), 1e-6));
+          expect(line.baseline, closeTo(LayoutUnits.pxToPt(native[i].baseline), 1e-6));
+          nativeFlowTop += native[i].height;
+        }
+        expect(nativeFlowTop, closeTo(painter.height, 1e-6));
+        expect(paragraph.lines.last.top + paragraph.lines.last.height,
+          closeTo(paragraph.height, 1e-6));
+      } finally {
+        painter.dispose();
+      }
+    }
+  });
+
+  testWidgets('glyph overhang is recorded without inflating native paragraph flow', (_) async {
+    await FlutterTextMetrics.ensureFontsLoaded();
+    const metrics = FlutterTextMetrics();
+    for (final font in <PaperFont>[PaperFont.amiri, PaperFont.naskh]) {
+      const text = 'بسم الله الرحمن الرحيم';
+      final style = LayoutTextStyle(font: font, fontSizePt: 17, lineHeightFactor: 1);
+      final paragraph = metrics.layoutParagraph(spans: <MetricSpan>[
+        MetricSpan(semanticNodeId: 'header', semanticNode: null, text: text,
+          contentKind: LayoutContentKind.text, semanticRole: LayoutSemanticRole.text,
+          style: style, direction: DocumentDirection.rtl, logicalIndex: 0),
+      ], width: 300, direction: DocumentDirection.rtl, alignment: PaperAlign.center,
+        resolveJustification: false);
+      final painter = TextPainter(text: TextSpan(text: text, style: TextStyle(
+        fontFamily: font.family, fontSize: LayoutUnits.ptToPx(17), height: 1)),
+        textDirection: TextDirection.rtl, textAlign: TextAlign.center,
+        textScaler: TextScaler.noScaling)
+        ..layout(minWidth: LayoutUnits.ptToPx(300), maxWidth: LayoutUnits.ptToPx(300));
+      try {
+        final boxes = painter.getBoxesForSelection(const TextSelection(baseOffset: 0, extentOffset: text.length));
+        final line = paragraph.lines.single;
+        expect(paragraph.height, closeTo(LayoutUnits.pxToPt(painter.height), 1e-6));
+        expect(line.top + line.height, lessThanOrEqualTo(paragraph.height + 1e-6));
+        expect(line.glyphTop, closeTo(LayoutUnits.pxToPt(boxes.map((b) => b.top).reduce((a, b) => a < b ? a : b)), 1e-6));
+        expect(line.glyphBottom, closeTo(LayoutUnits.pxToPt(boxes.map((b) => b.bottom).reduce((a, b) => a > b ? a : b)), 1e-6));
+      } finally {
+        painter.dispose();
+      }
+    }
+  });
+
+  testWidgets('styled run hit bounds use the actual preview paint baseline and box height', (_) async {
+    await FlutterTextMetrics.ensureFontsLoaded();
+    const metrics = FlutterTextMetrics();
+    const text = 'اختيار';
+    for (final factor in <double>[1, 1.2, 1.45, 1.7]) {
+      final style = LayoutTextStyle(font: PaperFont.naskh, fontSizePt: 14, lineHeightFactor: factor);
+      final paragraph = metrics.layoutParagraph(spans: <MetricSpan>[
+        MetricSpan(semanticNodeId: 'point/content', semanticNode: null, text: text,
+          contentKind: LayoutContentKind.text, semanticRole: LayoutSemanticRole.text,
+          style: style, direction: DocumentDirection.rtl, logicalIndex: 0),
+      ], width: 300, direction: DocumentDirection.rtl, alignment: null, resolveJustification: false);
+      final fragment = paragraph.lines.single.fragments.single;
+      // Independent one-line painter with the exact style used by preview,
+      // not a height=1 baseline borrowed from a differently styled box.
+      final painter = TextPainter(text: TextSpan(text: text, style: TextStyle(
+        fontFamily: PaperFont.naskh.family, fontSize: LayoutUnits.ptToPx(14), height: factor)),
+        textDirection: TextDirection.rtl, textScaler: TextScaler.noScaling, maxLines: 1)
+        ..layout(maxWidth: double.infinity);
+      try {
+        final baseline = LayoutUnits.pxToPt(painter.computeLineMetrics().single.baseline);
+        final boxes = painter.getBoxesForSelection(const TextSelection(baseOffset: 0, extentOffset: text.length),
+          boxHeightStyle: ui.BoxHeightStyle.strut);
+        expect(boxes, hasLength(1));
+        expect(fragment.baselineOffset, closeTo(baseline, 1e-6), reason: 'style height $factor');
+        expect(fragment.height, closeTo(LayoutUnits.pxToPt(boxes.single.bottom - boxes.single.top), 1e-6));
+        final actualTop = paragraph.lines.single.baseline - baseline;
+        final plannedTop = paragraph.lines.single.baseline - fragment.baselineOffset;
+        expect(plannedTop, closeTo(actualTop, 1e-6));
+      } finally {
+        painter.dispose();
+      }
+    }
+  });
+
   testWidgets('directional runs preserve mixed bidi source text losslessly', (_) async {
     const source = '، قبل (MIX 123) بعد\u00a0؛';
     for (final fallback in <DocumentDirection>[

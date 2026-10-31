@@ -41,6 +41,9 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Build pinned OpenType emission runtime
+        run: bash tool/build_opentype_shaper.sh
+
       - name: Resolve dependencies
         run: flutter pub get
 

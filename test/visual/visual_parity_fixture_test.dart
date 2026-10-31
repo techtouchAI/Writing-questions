@@ -27,6 +27,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import '../support/production_evidence_fonts.dart';
+import '../support/c6_preview_positions.dart';
 
 import 'package:writing_questions_app/models/branch_item.dart';
 import 'package:writing_questions_app/models/branch_model.dart';
@@ -69,7 +71,7 @@ PdfMathRasters _sharedMathRasters(
     for (final run in line.runs) {
       final raster = assets.mathRasters[run.id];
       if (raster == null) continue;
-      cache[PdfMathRasters.key(run.text, run.style.fontSizePt)] = raster;
+      cache[PdfMathRasters.key(run.text, run.style.fontSizePt, isBlock: run.isBlockMath, bold: run.style.bold, colorArgb: run.style.colorArgb ?? 0xFF000000)] = raster;
     }
   }
   debugPrint('[fixture] shared math rasters=${cache.length}');
@@ -101,6 +103,8 @@ Future<void> loadAppFonts() async {
   ]);
   await load('Amiri', <String>[ExamFont.quranicAsset]);
   await load('Tajawal', <String>['assets/fonts/Tajawal-Regular.ttf']);
+  // Widget tests do not automatically load package KaTeX fonts.
+  await loadProductionEvidenceFonts();
 }
 
 ExamDocument fixtureDocument() {
@@ -516,6 +520,7 @@ void main() {
       'pageCount': snapshots.length,
       'widthPx': snapshots.first['widthPx'],
       'heightPx': snapshots.first['heightPx'],
+      'fontInventory': jsonDecode(File('build/production_fragment_repro/production-font-assets.json').readAsStringSync()),
       'files': <String>[
         'vector.pdf',
         for (var index = 0; index < snapshots.length; index++)
@@ -532,6 +537,29 @@ void main() {
           .writeAsBytesSync(snapshots[index]['pngBytes'] as Uint8List);
     }
     File('$_artifactDir/vector.pdf').writeAsBytesSync(vectorPdfBytes);
+    // C6 MUST observe the object used above for BOTH PNG and PDF. Resolving
+    // again outside MathSnapshotHost produces different math metrics/flow.
+    final positions = c6PreviewPositions(canonicalLayout,
+      sourceKind: 'rendered-canonical-preview-plan');
+    for (final pageRecord in positions['pages']! as List<Map<String, Object?>>) {
+      for (final lineRecord in pageRecord['lines']! as List<Map<String, Object?>>) {
+        for (final runRecord in lineRecord['runs']! as List<Map<String, Object?>>) {
+          if (runRecord['isMath'] == true) {
+            runRecord['renderMode'] = firstPreview.assets.mathImages.containsKey(runRecord['id'])
+                ? 'image' : 'text-fallback';
+          }
+        }
+      }
+    }
+    positions['artifactByteLengths'] = <String, int>{
+      'vector.pdf': vectorPdfBytes.length,
+      for (var index = 0; index < snapshots.length; index++)
+        'preview_page_${index + 1}.png': (snapshots[index]['pngBytes'] as Uint8List).length,
+    };
+    Directory('$_artifactDir/c6diag/text_positions').createSync(recursive: true);
+    File('$_artifactDir/c6diag/text_positions/preview_positions.json')
+      .writeAsStringSync(jsonEncode(positions));
+
     File('$_artifactDir/manifest.json')
         .writeAsStringSync(const JsonEncoder.withIndent('  ').convert(manifest));
 

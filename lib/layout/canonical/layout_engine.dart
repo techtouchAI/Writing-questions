@@ -92,6 +92,7 @@ class _LayoutBuilder {
     LayoutBlock? placedHeader;
     LayoutBlock? placedFooter;
     final pageOfSemanticNode = <String, ({int page, double top})>{};
+    final questionOccurrences = <String, List<({int page, LayoutBlock block})>>{};
 
     for (final pageState in pagination.pages) {
       final first = pageState.index == 0;
@@ -121,6 +122,9 @@ class _LayoutBuilder {
           breakReason: item.breakReason,
         );
         blocks.add(placed);
+        (questionOccurrences[placed.semanticNodeId] ??= []).add(
+          (page: pageState.index, block: placed),
+        );
         pageOfSemanticNode.putIfAbsent(
           placed.semanticNodeId,
           () => (page: pageState.index, top: placed.rect.top),
@@ -150,6 +154,7 @@ class _LayoutBuilder {
     final floatPlacements = _placeFloatingElements(
       pageOfSemanticNode,
       pagination.pages.length,
+      questionOccurrences,
     );
     final pages = <LayoutPage>[];
     for (final placed in placedPages) {
@@ -806,33 +811,47 @@ class _LayoutBuilder {
             labelStyle, direction, LayoutSemanticRole.separator,
           ));
         }
-        if (option.labelContent.isNotEmpty && option.content.isNotEmpty) {
-          spans.add(_fixedSpacer(
-            '$id/${option.id}/labelGap',
-            optionStyle,
-            direction,
-            LayoutUnits.pxToPt(VisualMetrics.optionLabelGapPx),
-            option.labelTextSeparator,
+        // Match the native Row: intrinsic label + declared gap + Expanded
+        // content. A combined bidi paragraph makes the label move whenever
+        // the content's width changes (e.g. OptA versus OptB).
+        final labelMeasurement = fontMetrics.layoutParagraph(
+          spans: spans, width: boxWidth, direction: direction,
+          alignment: PaperAlign.start, resolveJustification: false,
+        );
+        final labelWidth = labelMeasurement.lines.fold<double>(0,
+          (value, line) => line.naturalWidth > value ? line.naturalWidth : value)
+            .clamp(0.0, boxWidth).toDouble();
+        final gap = option.labelContent.isNotEmpty && option.content.isNotEmpty
+            ? LayoutUnits.pxToPt(VisualMetrics.optionLabelGapPx) : 0.0;
+        final contentWidth = (boxWidth - labelWidth - gap).clamp(0.0, boxWidth).toDouble();
+        final cellChildren = <LayoutBlock>[];
+        if (labelWidth > 0) {
+          cellChildren.add(_moveBlock(_paragraphBlock(
+            id: '$id/${option.id}/label-block', kind: LayoutBlockKind.option,
+            semanticNode: option.label, spans: spans, style: labelStyle,
+            alignment: PaperAlign.start, direction: direction,
+            width: labelWidth,
+            x: direction == DocumentDirection.rtl ? cellX + boxWidth - labelWidth : cellX,
+          ), 0, LayoutUnits.pxToPt(VisualMetrics.optionLabelTopInsetPx)));
+        }
+        if (contentWidth > 0 && option.content.isNotEmpty) {
+          cellChildren.add(_contentBlock(
+            id: '$id/${option.id}/content-block', contentId: '$id/${option.id}/content', kind: LayoutBlockKind.option,
+            semanticNode: option.content, content: option.content,
+            style: optionStyle, alignment: option.alignment ?? ownerStyle?.align,
+            direction: option.direction == DocumentDirection.inherit ? direction : option.direction,
+            width: contentWidth,
+            x: direction == DocumentDirection.rtl ? cellX : cellX + labelWidth + gap,
           ));
         }
-        spans.addAll(_contentSpans(
-          option.content, '$id/${option.id}/content', optionStyle, direction,
+        final cellHeight = cellChildren.fold<double>(0,
+          (height, child) => child.rect.bottom > height ? child.rect.bottom : height);
+        rowBlocks.add(LayoutBlock(
+          id: '$id/${option.id}', semanticNodeId: '$id/${option.id}',
+          semanticNode: option, kind: LayoutBlockKind.option,
+          rect: LayoutRect.fromLTWH(cellX, 0, boxWidth, cellHeight),
+          lines: const <LayoutLine>[], children: List<LayoutBlock>.unmodifiable(cellChildren),
         ));
-        rowBlocks.add(
-          _paragraphBlock(
-            id: '$id/${option.id}',
-            kind: LayoutBlockKind.option,
-            semanticNode: option,
-            spans: spans,
-            style: optionStyle,
-            alignment: option.alignment ?? ownerStyle?.align,
-            direction: option.direction == DocumentDirection.inherit
-                ? direction
-                : option.direction,
-            width: boxWidth,
-            x: cellX,
-          ),
-        );
         if (rowBlocks.last.rect.height > rowHeight) rowHeight = rowBlocks.last.rect.height;
       }
       children.addAll(rowBlocks.map((block) => _moveBlock(block, 0, cursorY)));
@@ -910,6 +929,7 @@ class _LayoutBuilder {
 
   LayoutBlock _contentBlock({
     required String id,
+    String? contentId,
     required LayoutBlockKind kind,
     required Object semanticNode,
     required InlineContent content,
@@ -919,7 +939,7 @@ class _LayoutBuilder {
     required double x,
     required double width,
   }) {
-    final spans = _contentSpans(content, '$id/content', style, direction);
+    final spans = _contentSpans(content, contentId ?? '$id/content', style, direction);
     final segments = <List<MetricSpan>>[];
     var current = <MetricSpan>[];
     for (final span in spans) {
@@ -1071,9 +1091,9 @@ class _LayoutBuilder {
           text: fragment.text,
           x: x + fragment.x,
           advance: fragment.width,
-          width: fragment.width,
+          width: item.span.mathBox?.widthPt ?? fragment.width,
           height: item.span.mathBox?.heightPt ?? fragment.height,
-          baselineOffset: item.span.mathBox?.baselinePt ?? fragment.baselineOffset,
+          baselineOffset: fragment.baselineOffset,
           direction: fragment.direction == DocumentDirection.inherit
               ? direction
               : fragment.direction,
@@ -1110,6 +1130,8 @@ class _LayoutBuilder {
           lineIndex: measured.index,
           rect: LayoutRect.fromLTWH(x, measured.top, width, measured.height),
           baseline: measured.baseline,
+          glyphTop: measured.glyphTop,
+          glyphBottom: measured.glyphBottom,
           ascent: measured.ascent,
           descent: measured.descent,
           leading: measured.leading,
@@ -1132,7 +1154,15 @@ class _LayoutBuilder {
       semanticNodeId: id,
       semanticNode: semanticNode,
       kind: kind,
-      rect: LayoutRect.fromLTWH(x, 0, width, paragraph.height),
+      // Preserve the source paragraph height and its allocated logical line bands.
+      // Glyph overhang is recorded separately, not inserted into flow.
+      // A paragraph must contain BOTH measurements: otherwise the terminal
+      // line falls outside the source interval before pagination even starts.
+      // This changes no baseline, run position, font or wrapping decision.
+      rect: LayoutRect.fromLTWH(x, 0, width, lines.fold<double>(
+        paragraph.height,
+        (bottom, line) => line.rect.bottom > bottom ? line.rect.bottom : bottom,
+      )),
       lines: List<LayoutLine>.unmodifiable(lines),
     );
   }
@@ -1695,70 +1725,91 @@ class _LayoutBuilder {
     required double headerReserve,
     required double footerReserve,
   }) {
+    // Partition the WHOLE source block, not only its ink lines. Source windows
+    // are contiguous and include frame padding, paragraph gaps, attachment
+    // reserves and final dividers. Both painters consume these same windows.
     final allLines = _flattenLines(<LayoutBlock>[question.block])..sort(_compareLines);
-    if (allLines.isEmpty) {
-      final capacity = (_contentHeight -
-              (firstPage.index == 0 ? headerReserve : 0) -
-              (isFinalQuestion ? footerReserve : 0))
-          .clamp(0.0, _contentHeight)
-          .toDouble();
-      final scale = configuration.scaleOversizedBlocks && question.height > capacity && question.height > 0
+    final atoms = <({double top, double bottom})>[
+      for (final line in allLines)
+        (top: line.rect.top, bottom: line.rect.bottom),
+      for (final child in question.block.descendants)
+        if (child.kind == LayoutBlockKind.divider)
+          (top: child.rect.top, bottom: child.rect.bottom),
+      for (final input in configuration.floatingElements.values)
+        if (input.ownerQuestionId == question.block.semanticNodeId &&
+            input.flowReserveHeightPx > 0)
+          (top: LayoutUnits.pxToPt(input.dyPx),
+           bottom: LayoutUnits.pxToPt(input.dyPx + input.heightPx)),
+    ]..sort((a, b) => a.top.compareTo(b.top));
+    if (allLines.isEmpty && atoms.isEmpty) {
+      // Preserve the pre-existing policy for an oversized, geometry-only
+      // legacy block. Text, rules and owned media use the shared windows.
+      final capacity = _contentHeight -
+          (firstPage.index == 0 ? headerReserve : 0) -
+          (isFinalQuestion ? footerReserve : 0);
+      final scale = configuration.scaleOversizedBlocks && question.height > 0
           ? (capacity / question.height).clamp(0.01, 1.0).toDouble()
           : 1.0;
-      final scaledBlock = scale == 1 ? question.block : _scaleBlock(question.block, scale);
-      final scaledFlow = question.copyWithBlock(scaledBlock);
-      firstPage.add(scaledFlow, 0, reason: PageBreakReason.forcedSplit);
+      firstPage.add(question.copyWithBlock(_scaleBlock(question.block, scale)), 0);
       firstPage.scaleFactor = scale;
       return;
     }
-    final groups = <List<LayoutLine>>[];
-    var lineStart = 0;
-    var currentPageIndex = firstPage.index;
-    while (lineStart < allLines.length) {
-      final pageHasHeader = currentPageIndex == 0;
-      final normalCapacity = (_contentHeight - (pageHasHeader ? headerReserve : 0))
-          .clamp(0.0, _contentHeight)
-          .toDouble();
-      final lastCapacity = (_contentHeight -
-              (pageHasHeader ? headerReserve : 0) -
-              (isFinalQuestion ? footerReserve : 0))
-          .clamp(0.0, _contentHeight)
-          .toDouble();
-      final firstTop = allLines[lineStart].rect.top;
-      final remainingBottom = allLines.last.rect.bottom;
-      final remainingHeight = remainingBottom - firstTop;
-      final isFinalChunk = remainingHeight <= lastCapacity + _epsilon;
-      final capacity = isFinalChunk ? lastCapacity : normalCapacity;
-      var end = lineStart;
-      while (end < allLines.length &&
-          allLines[end].rect.bottom - firstTop <= capacity + _epsilon) {
-        end++;
+    final windows = <({double top, double bottom})>[];
+    var sourceTop = 0.0;
+    while (sourceTop < question.height - _epsilon) {
+      final pageIndex = firstPage.index + windows.length;
+      final normalCapacity = _contentHeight - (pageIndex == 0 ? headerReserve : 0);
+      final finalCapacity = normalCapacity - (isFinalQuestion ? footerReserve : 0);
+      var end = question.height;
+      if (question.height - sourceTop > finalCapacity + _epsilon) {
+        end = (sourceTop + normalCapacity).clamp(sourceTop, question.height).toDouble();
+        // Do not consume the last ink/non-text atom and leave a footer-only
+        // sliver merely because the footer makes the final capacity smaller.
+        if (end >= question.height - _epsilon) {
+          final remaining = atoms.where((atom) => atom.top > sourceTop + _epsilon);
+          end = remaining.isEmpty
+              ? sourceTop + finalCapacity
+              : remaining.last.top;
+        }
+        // Move the cut backwards until it crosses no indivisible content.
+        // Overlapping lines (e.g. option columns) must stay in the same slice.
+        var changed = true;
+        while (changed) {
+          changed = false;
+          for (final atom in atoms) {
+            if (atom.top < end - _epsilon && atom.bottom > end + _epsilon &&
+                atom.top > sourceTop + _epsilon) {
+              end = atom.top;
+              changed = true;
+            }
+          }
+        }
+        if (end <= sourceTop + _epsilon) {
+          // Preserve the existing oversized-atom policy: never loop or drop
+          // the atom. Ordinary lines/dividers/floats are kept whole above.
+          final remaining = atoms.where((atom) => atom.bottom > sourceTop + _epsilon);
+          // Geometry-only trailing padding is still owned source, even when
+          // an artificially tiny page has no positive footer capacity. There
+          // is no next atom to dereference and no content may be discarded.
+          end = remaining.isEmpty ? question.height : remaining.first.bottom;
+        }
       }
-      if (end == lineStart) end++;
-      groups.add(allLines.sublist(lineStart, end));
-      lineStart = end;
-      if (lineStart < allLines.length) currentPageIndex++;
+      windows.add((top: sourceTop, bottom: end));
+      sourceTop = end;
     }
 
     var page = firstPage;
-    for (var fragmentIndex = 0; fragmentIndex < groups.length; fragmentIndex++) {
-      if (fragmentIndex > 0) {
-        page = _newPage(pages, PageBreakReason.forcedSplit);
-      }
-      final fragment = _sliceQuestion(
-        question,
-        groups[fragmentIndex],
-        fragmentIndex,
-        groups.length,
-        // أصل إزاحة المقاطع: أول سطر في السؤال. المقطع الأول يُرسى على أعلى
-        // المتن، فإزاحته صفر، وما بعده يُقاس من النقطة نفسها (وإلا انزاحت
-        // المقاطع بمقدار ارتفاع السطر الأول).
-        questionTopPt: allLines.first.rect.top,
-      );
+    for (var index = 0; index < windows.length; index++) {
+      if (index > 0) page = _newPage(pages, PageBreakReason.forcedSplit);
+      final window = windows[index];
+      final lines = allLines.where((line) =>
+          line.rect.top >= window.top - _epsilon &&
+          line.rect.bottom <= window.bottom + _epsilon).toList();
       page.add(
-        fragment,
+        _sliceQuestion(question, lines, index, windows.length,
+            sourceTop: window.top, sourceBottom: window.bottom),
         0,
-        reason: fragmentIndex == 0 ? null : PageBreakReason.forcedSplit,
+        reason: index == 0 ? null : PageBreakReason.forcedSplit,
       );
     }
   }
@@ -1768,26 +1819,17 @@ class _LayoutBuilder {
     List<LayoutLine> lines,
     int fragmentIndex,
     int fragmentCount, {
-    required double questionTopPt,
+    required double sourceTop,
+    required double sourceBottom,
   }) {
-    final firstTop = lines.first.rect.top;
-    final lastBottom = lines.last.rect.bottom;
     final selectedIds = lines.map((line) => line.id).toSet();
-    final children = <LayoutBlock>[];
-    for (final child in question.block.children) {
-      final slice = _sliceBlock(
-        child,
-        selectedIds,
-        -firstTop,
-        firstTop,
-        lastBottom,
-      );
-      if (slice != null && (slice.lines.isNotEmpty || slice.rect.height > 0)) {
-        children.add(slice);
-      }
-    }
-    final fragmentHeight = (lastBottom - firstTop).clamp(0.0, double.infinity).toDouble();
-    final rect = LayoutRect.fromLTWH(_left, 0, _width, fragmentHeight);
+    final children = <LayoutBlock>[
+      for (final child in question.block.children)
+        if (_sliceBlock(child, selectedIds, sourceTop, sourceBottom) case final slice?)
+          slice,
+    ];
+    final height = sourceBottom - sourceTop;
+    final rect = LayoutRect.fromLTWH(_left, 0, _width, height);
     return question.copyWithBlock(
       LayoutBlock(
         id: '${question.block.semanticNodeId}/fragment/$fragmentIndex',
@@ -1797,34 +1839,27 @@ class _LayoutBuilder {
         rect: rect,
         lines: const <LayoutLine>[],
         children: List<LayoutBlock>.unmodifiable(children),
-        decorations: question.block.decorations
-            .map((decoration) => LayoutDecoration(
-                  id: decoration.id,
-                  semanticNodeId: decoration.semanticNodeId,
-                  kind: decoration.kind,
-                  rect: LayoutRect.fromLTWH(
-                    decoration.rect.left,
-                    0,
-                    decoration.rect.width,
-                    fragmentHeight,
-                  ),
-                  strokeWidthPt: decoration.strokeWidthPt,
-                  colorArgb: decoration.colorArgb,
-                  radiusPt: decoration.radiusPt,
-                ))
-            .toList(growable: false),
+        decorations: <LayoutDecoration>[
+          for (final decoration in question.block.decorations)
+            LayoutDecoration(
+              id: decoration.id,
+              semanticNodeId: decoration.semanticNodeId,
+              kind: decoration.kind,
+              rect: LayoutRect.fromLTWH(decoration.rect.left, 0,
+                  decoration.rect.width, height),
+              strokeWidthPt: decoration.strokeWidthPt,
+              colorArgb: decoration.colorArgb,
+              radiusPt: decoration.radiusPt,
+            ),
+        ],
         split: LayoutSplitMetadata(
           fragmentIndex: fragmentIndex,
           fragmentCount: fragmentCount,
-          firstLineIndex: lines.first.lineIndex,
-          lastLineIndexExclusive: lines.last.lineIndex + 1,
+          firstLineIndex: lines.isEmpty ? 0 : lines.first.lineIndex,
+          lastLineIndexExclusive: lines.isEmpty ? 0 : lines.last.lineIndex + 1,
           continuesFromPrevious: fragmentIndex > 0,
           continuesOnNext: fragmentIndex + 1 < fragmentCount,
-          // إزاحة المقطع داخل الكتلة الكاملة، نسبةً إلى أول سطر في السؤال
-          // (أي إلى النافذة التي يرسمها المقطع الأول). لا يُقاس هنا شيء جديد —
-          // القيمة مشتقّة من أسطر المحرك نفسها، وتتساوى مع مجموع ارتفاعات
-          // المقاطع السابقة لأن المقاطع تتجاور بلا فجوة.
-          sourceTopPt: firstTop - questionTopPt,
+          sourceTopPt: sourceTop,
         ),
         keepTogether: true,
         continuation: fragmentIndex > 0,
@@ -1836,53 +1871,43 @@ class _LayoutBuilder {
   LayoutBlock? _sliceBlock(
     LayoutBlock source,
     Set<String> selectedIds,
-    double dy,
     double sliceTop,
     double sliceBottom,
   ) {
-    if (source.lines.isEmpty && source.children.isEmpty) {
-      if (source.rect.height <= 0) return null;
-      final center = source.rect.top + source.rect.height / 2;
-      if (center < sliceTop || center >= sliceBottom) return null;
-      return _moveBlock(source, 0, dy);
-    }
-    final ownLines = source.lines.where((line) => selectedIds.contains(line.id)).toList();
-    final children = <LayoutBlock>[];
-    for (final child in source.children) {
-      final slice = _sliceBlock(child, selectedIds, dy, sliceTop, sliceBottom);
-      if (slice != null && (slice.lines.isNotEmpty || slice.children.isNotEmpty)) {
-        children.add(slice);
-      }
-    }
-    if (ownLines.isEmpty && children.isEmpty) return null;
-    final movedOwnLines = <LayoutLine>[for (final line in ownLines) _moveLine(line, 0, dy)];
-    final allLines = <LayoutLine>[...movedOwnLines, ..._flattenLines(children)]
-      ..sort(_compareLines);
-    final top = allLines.isEmpty ? source.rect.top + dy : allLines.first.rect.top;
-    final bottom = allLines.isEmpty ? top : allLines.last.rect.bottom;
-    final rect = LayoutRect.fromLTWH(source.rect.left, top, source.rect.width, bottom - top);
-    final decorations = source.kind == LayoutBlockKind.branch && source.decorations.isNotEmpty
-        ? source.decorations
-            .map((decoration) => LayoutDecoration(
-                  id: decoration.id,
-                  semanticNodeId: decoration.semanticNodeId,
-                  kind: decoration.kind,
-                  rect: rect,
-                  strokeWidthPt: decoration.strokeWidthPt,
-                  colorArgb: decoration.colorArgb,
-                  radiusPt: decoration.radiusPt,
-                ))
-            .toList(growable: false)
-        : source.decorations;
+    final top = source.rect.top < sliceTop ? sliceTop : source.rect.top;
+    final bottom = source.rect.bottom > sliceBottom ? sliceBottom : source.rect.bottom;
+    if (bottom <= top) return null;
+    final ownLines = <LayoutLine>[
+      for (final line in source.lines)
+        if (selectedIds.contains(line.id)) _moveLine(line, 0, -sliceTop),
+    ];
+    final children = <LayoutBlock>[
+      for (final child in source.children)
+        if (_sliceBlock(child, selectedIds, sliceTop, sliceBottom) case final slice?)
+          slice,
+    ];
+    final rect = LayoutRect.fromLTWH(source.rect.left, top - sliceTop,
+        source.rect.width, bottom - top);
+    final moved = _moveBlock(source, 0, -sliceTop);
     return LayoutBlock(
       id: source.id,
       semanticNodeId: source.semanticNodeId,
       semanticNode: source.semanticNode,
       kind: source.kind,
       rect: rect,
-      lines: List<LayoutLine>.unmodifiable(movedOwnLines),
+      lines: List<LayoutLine>.unmodifiable(ownLines),
       children: List<LayoutBlock>.unmodifiable(children),
-      decorations: decorations,
+      decorations: <LayoutDecoration>[
+        for (final decoration in moved.decorations)
+          if (decoration.kind == LayoutDecorationKind.border)
+            LayoutDecoration(
+              id: decoration.id, semanticNodeId: decoration.semanticNodeId,
+              kind: decoration.kind, rect: rect,
+              strokeWidthPt: decoration.strokeWidthPt,
+              colorArgb: decoration.colorArgb, radiusPt: decoration.radiusPt,
+            )
+          else decoration,
+      ],
       split: source.split,
       breakReason: source.breakReason,
       scaleFactor: source.scaleFactor,
@@ -1894,6 +1919,7 @@ class _LayoutBuilder {
   List<LayoutFloatPlacement> _placeFloatingElements(
     Map<String, ({int page, double top})> pageOfSemanticNode,
     int pageCount,
+    Map<String, List<({int page, LayoutBlock block})>> questionOccurrences,
   ) {
     final refs = <FloatingElementReference>[
       ...document.floatingElements?.elements ?? const <FloatingElementReference>[],
@@ -1940,7 +1966,21 @@ class _LayoutBuilder {
         );
         continue;
       }
-      final pageIndex = owner?.page ??
+      var ownerPage = owner?.page;
+      var ownerTop = owner?.top;
+      final sourceDy = LayoutUnits.pxToPt(input.dyPx);
+      for (final occurrence in questionOccurrences[ownerId] ??
+          const <({int page, LayoutBlock block})>[]) {
+        final block = occurrence.block;
+        final start = block.split.sourceTopPt;
+        if (sourceDy >= start - _epsilon &&
+            sourceDy < start + block.rect.height - _epsilon) {
+          ownerPage = occurrence.page;
+          ownerTop = block.rect.top - start;
+          break;
+        }
+      }
+      final pageIndex = ownerPage ??
           input.pageIndex.clamp(0, (pageCount - 1).clamp(0, 100000)).toInt();
       final width = LayoutUnits.pxToPt(input.widthPx);
       final height = LayoutUnits.pxToPt(input.heightPx);
@@ -1950,7 +1990,7 @@ class _LayoutBuilder {
       final physicalLeft = _direction == DocumentDirection.rtl
           ? _pageWidth - edge - width
           : edge;
-      final top = owner == null ? dy : owner.top + dy;
+      final top = ownerTop == null ? dy : ownerTop + dy;
       final lines = _layoutFloatLabel(reference, input, physicalLeft, top, width);
       result.add(
         LayoutFloatPlacement(
@@ -1984,7 +2024,7 @@ class _LayoutBuilder {
             reference.kind != FloatingReferenceKind.formula)) {
       return const <LayoutLine>[];
     }
-    final padding = LayoutUnits.pxToPt(4);
+    final padding = LayoutUnits.pxToPt(reference.kind == FloatingReferenceKind.formula ? 2 : 4);
     final style = reference.kind == FloatingReferenceKind.formula
         ? LayoutTextStyle(
             font: configuration.defaultFont,
@@ -2004,6 +2044,48 @@ class _LayoutBuilder {
       width: (width - 2 * padding).clamp(1.0, width).toDouble(),
       x: left + padding,
     );
+    if (reference.kind == FloatingReferenceKind.formula && block.lines.isNotEmpty) {
+      final line = block.lines.first;
+      final run = line.runs.firstWhere((run) => run.isMath);
+      final naturalWidth = run.mathBox?.widthPt ?? run.width;
+      final naturalHeight = run.mathBox?.heightPt ?? run.height;
+      if (naturalWidth > 0 && naturalHeight > 0) {
+        // Exactly the native FloatingElementView's 2px padding + centered
+        // BoxFit.contain, including upscaling. Keep the ORIGINAL font size
+        // and raster; fitting is a transform, never a different font shape.
+        final availableWidth = (width - 2 * padding).clamp(0.0, width).toDouble();
+        final height = LayoutUnits.pxToPt(input.heightPx);
+        final availableHeight = (height - 2 * padding).clamp(0.0, height).toDouble();
+        final scaleX = availableWidth / naturalWidth;
+        final scaleY = availableHeight / naturalHeight;
+        final scale = scaleX < scaleY ? scaleX : scaleY;
+        final fittedWidth = naturalWidth * scale;
+        final fittedHeight = naturalHeight * scale;
+        final fittedLeft = left + (width - fittedWidth) / 2;
+        final fittedTop = top + (height - fittedHeight) / 2;
+        final baseline = (run.mathBox?.baselinePt ?? naturalHeight) * scale;
+        final fittedRun = LayoutRun(
+          id: run.id, semanticNodeId: run.semanticNodeId, semanticNode: run.semanticNode,
+          contentKind: run.contentKind, semanticRole: run.semanticRole, text: run.text,
+          x: fittedLeft, advance: fittedWidth, width: fittedWidth, height: fittedHeight,
+          baselineOffset: baseline, direction: run.direction, style: run.style,
+          logicalIndex: run.logicalIndex, visualIndex: run.visualIndex,
+          words: const <LayoutWord>[], sourceStartOffset: run.sourceStartOffset,
+          sourceEndOffset: run.sourceEndOffset, sourceOffsetMap: run.sourceOffsetMap,
+          mathBox: run.mathBox, measurementSource: run.measurementSource,
+        );
+        return <LayoutLine>[LayoutLine(
+          id: line.id, semanticNodeId: line.semanticNodeId, semanticNode: line.semanticNode,
+          paragraphIndex: line.paragraphIndex, lineIndex: line.lineIndex,
+          rect: LayoutRect.fromLTWH(fittedLeft, fittedTop, fittedWidth, fittedHeight),
+          baseline: fittedTop + baseline, ascent: baseline, descent: fittedHeight - baseline,
+          leading: 0, direction: line.direction, alignment: PaperAlign.center,
+          runs: <LayoutRun>[fittedRun], logicalRunIds: <String>[run.id], visualRunIds: <String>[run.id],
+          naturalWidth: fittedWidth, resolvedWidth: fittedWidth, isJustified: false,
+          justificationOpportunityCount: 0, extraSpacePerOpportunity: 0,
+        )];
+      }
+    }
     return <LayoutLine>[
       for (final line in block.lines) _moveLine(line, 0, top + padding),
     ];
@@ -2255,6 +2337,8 @@ LayoutBlock _scaleBlock(
         paragraphIndex: line.paragraphIndex,
         lineIndex: line.lineIndex,
         rect: scaleRect(line.rect),
+        glyphTop: line.glyphTop == null ? null : scaleOriginY + (line.glyphTop! - scaleOriginY) * factor,
+        glyphBottom: line.glyphBottom == null ? null : scaleOriginY + (line.glyphBottom! - scaleOriginY) * factor,
         baseline: scaleOriginY + (line.baseline - scaleOriginY) * factor,
         ascent: line.ascent * factor,
         descent: line.descent * factor,
@@ -2311,6 +2395,8 @@ LayoutLine _moveLine(LayoutLine line, double dx, double dy) =>
       paragraphIndex: line.paragraphIndex,
       lineIndex: line.lineIndex,
       rect: line.rect.translate(dx, dy),
+      glyphTop: line.glyphTop == null ? null : line.glyphTop! + dy,
+      glyphBottom: line.glyphBottom == null ? null : line.glyphBottom! + dy,
       baseline: line.baseline + dy,
       ascent: line.ascent,
       descent: line.descent,

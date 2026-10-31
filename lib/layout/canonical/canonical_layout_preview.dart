@@ -22,9 +22,13 @@ final class CanonicalLayoutPreviewAssets {
     Map<String, ui.Image> floatingImages = const <String, ui.Image>{},
     Map<String, ui.Image> mathImages = const <String, ui.Image>{},
     Map<String, MathRaster> mathRasters = const <String, MathRaster>{},
+    Map<String, ui.Image> mathSamplingImages = const <String, ui.Image>{},
+    Map<String, Rect> mathSamplingSources = const <String, Rect>{},
   })  : floatingImages = Map<String, ui.Image>.unmodifiable(floatingImages),
         mathImages = Map<String, ui.Image>.unmodifiable(mathImages),
-        mathRasters = Map<String, MathRaster>.unmodifiable(mathRasters);
+        mathRasters = Map<String, MathRaster>.unmodifiable(mathRasters),
+        mathSamplingImages = Map<String, ui.Image>.unmodifiable(mathSamplingImages),
+        mathSamplingSources = Map<String, Rect>.unmodifiable(mathSamplingSources);
 
   final ui.Image? pageFrame;
   final Map<String, ui.Image> floatingImages;
@@ -34,6 +38,11 @@ final class CanonicalLayoutPreviewAssets {
   /// same bytes so the printed formula is the snapshot the preview drew,
   /// not a second capture and not the readable-text fallback.
   final Map<String, MathRaster> mathRasters;
+  // Sampling-only transparent guard. Original PNGs, physical content size,
+  // layout and PDF bytes remain unchanged. Power-of-two backing dimensions
+  // avoid odd-size mip-level boundary loss for strokes touching raster edges.
+  final Map<String, ui.Image> mathSamplingImages;
+  final Map<String, Rect> mathSamplingSources;
   bool _disposed = false;
 
   static Future<CanonicalLayoutPreviewAssets> load({
@@ -43,6 +52,8 @@ final class CanonicalLayoutPreviewAssets {
     final floating = <String, ui.Image>{};
     final math = <String, ui.Image>{};
     final mathRasters = <String, MathRaster>{};
+    final sampling = <String, ui.Image>{};
+    final samplingSources = <String, Rect>{};
     ui.Image? frame;
     try {
       final framePath = layout.pageFrameImagePath;
@@ -84,12 +95,34 @@ final class CanonicalLayoutPreviewAssets {
           final snapshot = await MathSnapshotRenderer.render(
             run.text,
             fontSizePt: run.style.fontSizePt,
+            isBlock: run.isBlockMath,
+            bold: run.style.bold,
+            colorArgb: run.style.colorArgb ?? 0xFF000000,
           );
           if (snapshot == null) continue;
           try {
             final raster = await snapshot.toPngRaster();
-            math[run.id] = await _decode(raster.pngBytes);
+            final original = await _decode(raster.pngBytes);
+            math[run.id] = original;
             mathRasters[run.id] = raster;
+            const guard = 8;
+            final recorder = ui.PictureRecorder();
+            final canvas = Canvas(recorder);
+            canvas.drawImage(original, const Offset(8, 8),
+                Paint()..filterQuality = FilterQuality.none);
+            final picture = recorder.endRecording();
+            int backingSize(int contentSize) {
+              var result = 1;
+              while (result < contentSize + guard * 2) { result *= 2; }
+              return result;
+            }
+            try {
+              sampling[run.id] = await picture.toImage(backingSize(original.width), backingSize(original.height));
+              samplingSources[run.id] = Rect.fromLTWH(guard.toDouble(), guard.toDouble(),
+                  original.width.toDouble(), original.height.toDouble());
+            } finally {
+              picture.dispose();
+            }
           } finally {
             snapshot.dispose();
           }
@@ -103,6 +136,8 @@ final class CanonicalLayoutPreviewAssets {
       floatingImages: floating,
       mathImages: math,
       mathRasters: mathRasters,
+      mathSamplingImages: sampling,
+      mathSamplingSources: samplingSources,
     );
   }
 
@@ -124,6 +159,9 @@ final class CanonicalLayoutPreviewAssets {
       image.dispose();
     }
     for (final image in mathImages.values) {
+      image.dispose();
+    }
+    for (final image in mathSamplingImages.values) {
       image.dispose();
     }
   }
@@ -309,9 +347,14 @@ class _CanonicalLayoutPreviewPainter extends CustomPainter {
     final top = line.baseline - run.baselineOffset;
     final destination = Rect.fromLTWH(run.x, top, run.width, run.height);
     if (run.isMath) {
-      final image = assets.mathImages[run.id];
+      final image = assets.mathSamplingImages[run.id] ?? assets.mathImages[run.id];
       if (image != null) {
-        _drawImage(image, canvas, destination, contain: true);
+        // These snapshots are normally minified about 6x at 96dpi. Cubic
+        // `high` samples can miss thin +/fraction strokes; `medium` uses
+        // mipmaps/area prefiltering. Keep the exact glyph bytes/geometry.
+        _drawImage(image, canvas, destination, contain: true,
+            filterQuality: FilterQuality.medium,
+            sourceRect: assets.mathSamplingSources[run.id]);
       } else {
         _paintText(canvas, line, run, EquationModel.readableText(run.text));
       }
@@ -469,8 +512,10 @@ class _CanonicalLayoutPreviewPainter extends CustomPainter {
     Canvas canvas,
     Rect destination, {
     required bool contain,
+    FilterQuality filterQuality = FilterQuality.high,
+    Rect? sourceRect,
   }) {
-    final source = Rect.fromLTWH(
+    final source = sourceRect ?? Rect.fromLTWH(
       0,
       0,
       image.width.toDouble(),
@@ -479,11 +524,11 @@ class _CanonicalLayoutPreviewPainter extends CustomPainter {
     var target = destination;
     if (contain && image.width > 0 && image.height > 0) {
       final scale = math.min(
-        destination.width / image.width,
-        destination.height / image.height,
+        destination.width / source.width,
+        destination.height / source.height,
       );
-      final width = image.width * scale;
-      final height = image.height * scale;
+      final width = source.width * scale;
+      final height = source.height * scale;
       target = Rect.fromLTWH(
         destination.center.dx - width / 2,
         destination.center.dy - height / 2,
@@ -495,7 +540,7 @@ class _CanonicalLayoutPreviewPainter extends CustomPainter {
       image,
       source,
       target,
-      Paint()..filterQuality = FilterQuality.high,
+      Paint()..filterQuality = filterQuality,
     );
   }
 

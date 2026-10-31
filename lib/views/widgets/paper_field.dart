@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../../layout/semantic/inline_nodes.dart';
 import '../../models/quran_text.dart';
@@ -34,6 +37,8 @@ class PaperField extends StatefulWidget {
     this.onLongPress,
     this.canonicalInteractionOnly = false,
     this.autofocus = false,
+    this.matchPrintedTextWidth = false,
+    this.minimumInteractiveHeight = 0,
   });
 
   /// متحكم النص (نفسه في وضعَي العرض والتحرير).
@@ -84,6 +89,14 @@ class PaperField extends StatefulWidget {
 
   /// تركيز تلقائي لحقل الإدخال المخفي عند اختياره من هندسة الصفحة القانونية.
   final bool autofocus;
+
+  /// Give the printed paragraph its entire ink width, excluding the native
+  /// editor's caret-only gutter. Does not alter the parent's width or clip.
+  /// Separate/contextual editors use the normal TextField width by default.
+  final bool matchPrintedTextWidth;
+
+  /// Native/contextual touch height only; print fields leave this at zero.
+  final double minimumInteractiveHeight;
 
   @override
   State<PaperField> createState() => _PaperFieldState();
@@ -311,30 +324,40 @@ class _PaperFieldState extends State<PaperField> {
             child: InkWell(
               onTap: _handleRenderedTap,
               onLongPress: widget.onLongPress,
-              child: SizedBox(
-                width: double.infinity,
-                child: widget.renderBuilder(widget.controller.text),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: widget.minimumInteractiveHeight),
+                child: SizedBox(width: double.infinity,
+                  child: widget.renderBuilder(widget.controller.text)),
               ),
             ),
           );
         }
+        final field = TextField(
+          controller: widget.controller,
+          focusNode: _focusNode,
+          autofocus: widget.autofocus,
+          maxLines: null,
+          // Flutter 3.22.3 RenderEditable._adjustConstraints subtracts
+          // _kCaretGap (1px) + cursorWidth. Keep a visible, normal 2px caret;
+          // compensate its NON-INK gutter, never the source/page clip.
+          cursorWidth: _printedCursorWidth,
+          textAlign: widget.textAlign,
+          style: effectiveStyle,
+          decoration: InputDecoration.collapsed(
+            hintText: widget.hint,
+            hintStyle: effectiveStyle.copyWith(color: Colors.grey),
+          ),
+          onTap: () {
+            setState(() => _editing = true);
+            widget.onActivate?.call();
+          },
+        );
         return SizedBox(
           width: double.infinity,
           child: _buildLongPressLayer(
-            TextField(
-            controller: widget.controller,
-            focusNode: _focusNode,
-            maxLines: null,
-            textAlign: widget.textAlign,
-            style: effectiveStyle,
-            decoration: InputDecoration.collapsed(
-              hintText: widget.hint,
-              hintStyle: effectiveStyle.copyWith(color: Colors.grey),
-            ),
-              onTap: () {
-                setState(() => _editing = true);
-                widget.onActivate?.call();
-              },
+            ConstrainedBox(
+              constraints: BoxConstraints(minHeight: widget.minimumInteractiveHeight),
+              child: widget.matchPrintedTextWidth ? _CaretGutter(child: field) : field,
             ),
           ),
         );
@@ -376,4 +399,66 @@ class _PaperFieldState extends State<PaperField> {
       ],
     );
   }
+}
+
+
+// Pinned Flutter 3.22.3: rendering/editable.dart _kCaretGap=1 and
+// _adjustConstraints(maxWidth) = maxWidth - (_kCaretGap + cursorWidth).
+const double _printedCursorWidth = 2;
+const double _nativeCaretGutter = 1 + _printedCursorWidth;
+
+/// Native input chrome has no place in the printed paragraph's wrapping
+/// constraints. Measure the editor with its caret gutter outside the ink box,
+/// but report ONLY the original width and actual child height to the source.
+/// No text measurement, clipping, page-size change, or alternate pagination.
+class _CaretGutter extends SingleChildRenderObjectWidget {
+  const _CaretGutter({required super.child});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderCaretGutter();
+}
+
+class _RenderCaretGutter extends RenderShiftedBox {
+  _RenderCaretGutter() : super(null);
+
+  BoxConstraints _editorConstraints(BoxConstraints constraints) =>
+      constraints.hasBoundedWidth
+          ? constraints.copyWith(
+              minWidth: constraints.maxWidth + _nativeCaretGutter,
+              maxWidth: constraints.maxWidth + _nativeCaretGutter,
+            )
+          : constraints;
+
+  Size _inkSize(BoxConstraints constraints, Size editorSize) =>
+      constraints.constrain(Size(
+        constraints.hasBoundedWidth ? constraints.maxWidth : editorSize.width,
+        editorSize.height,
+      ));
+
+  @override
+  void performLayout() {
+    child!.layout(_editorConstraints(constraints), parentUsesSize: true);
+    size = _inkSize(constraints, child!.size);
+    (child!.parentData! as BoxParentData).offset = Offset.zero;
+  }
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) =>
+      _inkSize(constraints, child!.getDryLayout(_editorConstraints(constraints)));
+
+  @override
+  double computeMinIntrinsicWidth(double height) =>
+      math.max(0.0, child!.getMinIntrinsicWidth(height) - _nativeCaretGutter);
+
+  @override
+  double computeMaxIntrinsicWidth(double height) =>
+      math.max(0.0, child!.getMaxIntrinsicWidth(height) - _nativeCaretGutter);
+
+  @override
+  double computeMinIntrinsicHeight(double width) =>
+      child!.getMinIntrinsicHeight(width + _nativeCaretGutter);
+
+  @override
+  double computeMaxIntrinsicHeight(double width) =>
+      child!.getMaxIntrinsicHeight(width + _nativeCaretGutter);
 }

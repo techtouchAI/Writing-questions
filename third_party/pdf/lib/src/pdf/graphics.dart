@@ -35,6 +35,15 @@ import 'obj/pattern.dart';
 import 'obj/shading.dart';
 import 'rect.dart';
 
+/// Intra-word OpenType placement. TJ values are thousandths of an em;
+/// rise is in PDF user units. Does not change a word's canonical origin.
+class PdfGlyphPlacement {
+  const PdfGlyphPlacement({required this.beforeTj, required this.afterTj, required this.rise});
+  final double beforeTj;
+  final double afterTj;
+  final double rise;
+}
+
 /// Shape to be used at the corners of paths that are stroked
 enum PdfLineJoin {
   /// The outer edges of the strokes for the two segments shall be extended until they meet at an angle, as in a picture frame. If the segments meet at too sharp an angle (as defined by the miter limit parameter, a bevel join shall be used instead.
@@ -517,6 +526,8 @@ class PdfGraphics {
     double? rise,
     double? trailingTj,
     List<String>? toUnicodeChars,
+    List<PdfGlyphPlacement>? glyphPlacements,
+    String? actualText,
   }) {
     assert(() {
       if (_page.settings.verbose) {
@@ -525,6 +536,13 @@ class PdfGraphics {
       return true;
     }());
 
+    // OpenType clusters can contain several glyph components for one source
+    // character. ActualText is the PDF-standard logical extraction contract;
+    // it does not change any glyph, position, clipping, or drawing operator.
+    if (actualText != null) {
+      final hex = actualText.codeUnits.map((unit) => unit.toRadixString(16).padLeft(4, '0')).join();
+      _buf.putString('/Span<</ActualText<FEFF$hex>>>BDC ');
+    }
     _buf.putString('BT ');
 
     assert(() {
@@ -568,14 +586,42 @@ class PdfGraphics {
     _buf.putString('[');
     // قناة الاستخراج تُمرَّر فقط حين تختلف عن المحارف المرسومة فعلًا (تشكيل
     // عربي أو قلب قوس)؛ وإلا بقي المسار القديم بايتاً ببايت.
-    final logicalText = toUnicodeChars?.join();
-    if (toUnicodeChars != null &&
-        logicalText != null &&
-        logicalText != s &&
-        toUnicodeChars.length == s.runes.length) {
-      font.putMirroredText(_buf, s, toUnicodeChars);
+    if (glyphPlacements != null) {
+      final runes = s.runes.toList();
+      if (glyphPlacements.length != runes.length || toUnicodeChars?.length != runes.length) {
+        throw ArgumentError('OpenType glyph/placement/Unicode count mismatch');
+      }
+      var currentRise = 0.0;
+      for (var i = 0; i < runes.length; i++) {
+        final placement = glyphPlacements[i];
+        if (placement.rise != currentRise) {
+          _buf.putString(']TJ ');
+          PdfNum(placement.rise).output(_page, _buf);
+          _buf.putString(' Ts [');
+          currentRise = placement.rise;
+        }
+        if (placement.beforeTj != 0) {
+          PdfNum(placement.beforeTj).output(_page, _buf);
+          _buf.putString(' ');
+        }
+        font.putMirroredText(_buf, String.fromCharCode(runes[i]), [toUnicodeChars![i]]);
+        if (placement.afterTj != 0) {
+          _buf.putString(' ');
+          PdfNum(placement.afterTj).output(_page, _buf);
+        }
+        _buf.putString(' ');
+      }
+      if (currentRise != 0) _buf.putString(']TJ 0 Ts [');
     } else {
-      font.putText(_buf, s);
+      final logicalText = toUnicodeChars?.join();
+      if (toUnicodeChars != null &&
+          logicalText != null &&
+          logicalText != s &&
+          toUnicodeChars.length == s.runes.length) {
+        font.putMirroredText(_buf, s, toUnicodeChars);
+      } else {
+        font.putText(_buf, s);
+      }
     }
     if (trailingTj != null && trailingTj != 0) {
       // pdf-trailing-tj-patch: viewer-executed advance correction.
@@ -596,6 +642,7 @@ class PdfGraphics {
     }());
 
     _buf.putString('ET ');
+    if (actualText != null) _buf.putString('EMC ');
 
     assert(() {
       if (_page.settings.verbose) {

@@ -40,6 +40,7 @@ class PdfPreviewScreen extends StatefulWidget {
 
 class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
   final TransformationController _zoomController = TransformationController();
+  late final Future<PrintingInfo> _printingInfo = Printing.info();
 
   /// نسبة العرض الحالية (تُحدَّث من الأزرار ومن القرص بإصبعين).
   final ValueNotifier<double> _zoom = ValueNotifier<double>(1.0);
@@ -114,23 +115,47 @@ class _PdfPreviewScreenState extends State<PdfPreviewScreen> {
           ),
         ],
       ),
-      body: PdfPreview.builder(
-        build: (pageFormat) async => widget.pdfBytes,
-        // raster عالي الدقة للمعاينة: القيمة الافتراضية تُحسب على عرض
-        // الشاشة فتبدو الصفحات مشوّشة عند التكبير؛ ‏150dpi توازن بين
-        // الحدّة (A4 = 1240×1754 بكسل) والذاكرة على أجهزة Android.
-        dpi: _pdfPreviewDpi,
-        initialPageFormat: PdfPageFormat.a4,
-        allowPrinting: true,
-        allowSharing: true,
-        canChangePageFormat: false,
-        canChangeOrientation: false,
-        canDebug: false,
-        pdfFileName: widget.fileName,
-        loadingWidget: const Center(child: CircularProgressIndicator()),
-        pagesBuilder: (context, pages) => _ZoomablePages(
-          pages: pages,
-          controller: _zoomController,
+      body: FutureBuilder<PrintingInfo>(
+        future: _printingInfo,
+        builder: (context, capabilities) => IconButtonTheme(
+          data: IconButtonThemeData(style: IconButton.styleFrom(
+            minimumSize: const Size(48, 48),
+            visualDensity: VisualDensity.standard,
+          )),
+          child: PdfPreview.builder(
+            build: (pageFormat) async => widget.pdfBytes,
+            // raster عالي الدقة للمعاينة: القيمة الافتراضية تُحسب على عرض
+            // الشاشة فتبدو الصفحات مشوّشة عند التكبير؛ ‏150dpi توازن بين
+            // الحدّة (A4 = 1240×1754 بكسل) والذاكرة على أجهزة Android.
+            dpi: _pdfPreviewDpi,
+            initialPageFormat: PdfPageFormat.a4,
+            // Keep printing5.13.4's real actions and capability conditions, but
+            // supply named icons: its defaults have neither tooltip nor semantic
+            // label, making both native Android buttons anonymous.
+            allowPrinting: false,
+            allowSharing: false,
+            actions: <Widget>[
+              if (capabilities.data?.canPrint == true)
+                Tooltip(message: 'طباعة PDF', child: PdfPrintAction(
+                  jobName: widget.fileName,
+                  icon: const Icon(Icons.print, semanticLabel: 'طباعة PDF'),
+                )),
+              if (capabilities.data?.canShare == true)
+                Tooltip(message: 'مشاركة PDF', child: PdfShareAction(
+                  filename: widget.fileName,
+                  icon: const Icon(Icons.share, semanticLabel: 'مشاركة PDF'),
+                )),
+            ],
+            canChangePageFormat: false,
+            canChangeOrientation: false,
+            canDebug: false,
+            pdfFileName: widget.fileName,
+            loadingWidget: const Center(child: CircularProgressIndicator()),
+            pagesBuilder: (context, pages) => _ZoomablePages(
+              pages: pages,
+              controller: _zoomController,
+            ),
+          ),
         ),
       ),
     );

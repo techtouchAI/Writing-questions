@@ -35,6 +35,7 @@ class TexText extends StatelessWidget {
     this.mathTextStyle,
     this.quranStyle,
     this.textAlign = TextAlign.start,
+    this.textDirection,
     this.expandToWidth = true,
   }) : richContent = null;
 
@@ -45,6 +46,7 @@ class TexText extends StatelessWidget {
     this.mathTextStyle,
     this.quranStyle,
     this.textAlign = TextAlign.start,
+    this.textDirection,
     this.expandToWidth = true,
   })  : richContent = content,
         text = _measurementText(content);
@@ -58,6 +60,10 @@ class TexText extends StatelessWidget {
   /// Quran style; when absent it follows the font intent on each VisualRun.
   final TextStyle? quranStyle;
   final TextAlign textAlign;
+
+  /// Paragraph direction from DocumentIR, independent of the app/UI locale.
+  /// Null preserves inherited direction for legacy/edit-only callers.
+  final TextDirection? textDirection;
   final bool expandToWidth;
 
   TextStyle? _resolvedQuranStyle(VisualRun run) {
@@ -72,7 +78,7 @@ class TexText extends StatelessWidget {
   Widget build(BuildContext context) {
     final content = richContent ?? RichContent.parse(text);
     if (content.isEmpty) {
-      return Text('', style: style, textAlign: textAlign);
+      return Text('', style: style, textAlign: textAlign, textDirection: textDirection);
     }
 
     return LayoutBuilder(
@@ -93,6 +99,7 @@ class TexText extends StatelessWidget {
             Text.rich(
               TextSpan(children: List<InlineSpan>.of(inlineSpans)),
               textAlign: textAlign,
+              textDirection: textDirection,
               style: effectiveStyle,
             ),
           );
@@ -105,19 +112,34 @@ class TexText extends StatelessWidget {
             blocks.add(
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Center(
-                  child: SafeMathTex(
-                    run.text,
-                    mathStyle: MathStyle.display,
-                    textStyle: mathTextStyle ?? style,
-                  ),
+                // The canonical engine measures display math as a centered
+                // baseline placeholder paragraph, not a bare centered box.
+                // Use that same paragraph/strut contract in the source flow.
+                child: Text.rich(
+                  TextSpan(children: <InlineSpan>[
+                    WidgetSpan(
+                      alignment: PlaceholderAlignment.baseline,
+                      baseline: TextBaseline.alphabetic,
+                      style: effectiveStyle,
+                      child: SafeMathTex(
+                        run.text,
+                        mathStyle: MathStyle.display,
+                        textStyle: mathTextStyle ?? style,
+                      ),
+                    ),
+                  ]),
+                  style: effectiveStyle,
+                  textAlign: TextAlign.center,
+                  textDirection: textDirection,
                 ),
               ),
             );
           } else if (run.isMath) {
             inlineSpans.add(
               WidgetSpan(
-                alignment: PlaceholderAlignment.middle,
+                alignment: PlaceholderAlignment.baseline,
+                baseline: TextBaseline.alphabetic,
+                style: effectiveStyle,
                 child: SafeMathTex(
                   run.text,
                   mathStyle: MathStyle.text,

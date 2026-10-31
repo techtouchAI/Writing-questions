@@ -174,6 +174,8 @@ List<_FieldLine> _fieldLines(WidgetTester tester, Finder field) {
   // نقاط الالتفاف نفسها لا استنتاجاً من العرض.
   final lineTexts = <StringBuffer>[];
   final lineTops = <double>[];
+  final inkStarts = <int>[];
+  final inkEnds = <int>[];
   for (var index = 0; index < text.length; index++) {
     final charBoxes = editable.getBoxesForSelection(
       TextSelection(baseOffset: index, extentOffset: index + 1),
@@ -189,21 +191,41 @@ List<_FieldLine> _fieldLines(WidgetTester tester, Finder field) {
     }
     while (lineTexts.length <= lineIndex) {
       lineTexts.add(StringBuffer());
+      inkStarts.add(-1);
+      inkEnds.add(-1);
     }
     lineTexts[lineIndex].write(text[index]);
+    if (text[index].trim().isNotEmpty) {
+      if (inkStarts[lineIndex] < 0) inkStarts[lineIndex] = index;
+      inkEnds[lineIndex] = index + 1;
+    }
   }
   expect(lineTexts.length, boxesPerLine.length,
       reason: 'عدد حدود الأسطر النصية (${lineTexts.length}) لا يساوي عدد '
           'صناديق الأسطر المرسومة (${boxesPerLine.length}): القياس غير موثوق.');
 
+  // Skia selection boxes include a wrapped line's trailing space OUTSIDE
+  // the justified ink column. That invisible advance is not printed ink, and
+  // happened to cancel the old TextField caret deduction (~3px). Measure the
+  // SAME actual RenderEditable, selecting only each line's non-edge-space
+  // source range; wrapping, source text, and all tolerances stay unchanged.
+  final inkBounds = <ui.Rect>[];
+  for (var index = 0; index < lineTexts.length; index++) {
+    expect(inkStarts[index], greaterThanOrEqualTo(0));
+    final inkBoxes = editable.getBoxesForSelection(TextSelection(
+      baseOffset: inkStarts[index], extentOffset: inkEnds[index],
+    ));
+    expect(inkBoxes, isNotEmpty);
+    inkBounds.add(inkBoxes.map((box) => box.toRect()).reduce((a, b) => a.expandToInclude(b)));
+  }
   return <_FieldLine>[
-    for (var index = 0; index < boxesPerLine.length; index++)
+    for (var index = 0; index < inkBounds.length; index++)
       (
         text: lineTexts[index].toString(),
-        left: LayoutUnits.pxToPt(boxesPerLine[index].left),
-        right: LayoutUnits.pxToPt(boxesPerLine[index].right),
-        top: LayoutUnits.pxToPt(boxesPerLine[index].top),
-        bottom: LayoutUnits.pxToPt(boxesPerLine[index].bottom),
+        left: LayoutUnits.pxToPt(inkBounds[index].left),
+        right: LayoutUnits.pxToPt(inkBounds[index].right),
+        top: LayoutUnits.pxToPt(inkBounds[index].top),
+        bottom: LayoutUnits.pxToPt(inkBounds[index].bottom),
       ),
   ];
 }
@@ -338,14 +360,19 @@ void main() {
         reason: 'لا أسطر قانونية لـ$node: القياس بلا مرجع.');
     diagnose(key, tester, field, _arabicBody, fieldLines, canonicalLines);
 
-    // (0) العمود نفسه: عرض حقل التحرير = عرض عمود النصّ القانوني. الفرق هنا
-    // يعني أن ما يُرسم على الشاشة يُلفّ في عمود غير العمود المطبوع (كان
-    // `padding: 1` لمؤشّر التحديد يضيّقه 2px ما دام السؤال محدَّداً).
+    // (0) The ink column, NOT native input chrome. RenderEditable reserves
+    // 1px + cursorWidth; the source wrapper compensates exactly that amount.
+    final editable = _editable(tester, field);
+    final inkWidth = editable.size.width - 1 - editable.cursorWidth;
+    final sourceWidth = tester.getSize(find.byKey(const ValueKey<String>(key))).width;
+    expect(editable.cursorWidth, 2, reason: 'The caret must remain visible.');
+    expect(inkWidth, closeTo(sourceWidth, 1e-6),
+        reason: 'Native caret chrome must neither narrow nor widen the ink column.');
     expect(
-      LayoutUnits.pxToPt(tester.getSize(field).width),
+      LayoutUnits.pxToPt(inkWidth),
       closeTo(canonical.pages.first.bodyBounds.width, kGeometryTolerancePt),
       reason: '$key: عمود الحقل '
-          '${LayoutUnits.pxToPt(tester.getSize(field).width).toStringAsFixed(2)}pt '
+          '${LayoutUnits.pxToPt(inkWidth).toStringAsFixed(2)}pt '
           'مقابل عمود التخطيط '
           '${canonical.pages.first.bodyBounds.width.toStringAsFixed(2)}pt.',
     );

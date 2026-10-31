@@ -236,6 +236,7 @@ class PdfContentProbe {
     r'(?<d>-?[\d.]+)\s+(?<e>-?[\d.]+)\s+(?<f>-?[\d.]+)\s+cm'
     r'|(?<![A-Za-z0-9/])(?<save>[qQ])(?![A-Za-z0-9])'
     r'|(?<imageResource>/[A-Za-z0-9_.]+)\s+Do'
+    r'|(?<![A-Za-z0-9/])(?<textBoundary>BT|ET)(?![A-Za-z0-9])'
     // A word is a full TJ array (hex strings plus viewer-executed
     // adjustment numbers, e.g. the canonical trailing correction) or a
     // bare hex string shown with Tj (no numbers possible there).
@@ -277,12 +278,24 @@ class PdfContentProbe {
     _FontData? font;
     double? pendingX;
     double? pendingY;
+    ProbedWord? pendingWord;
+    void flushWord() {
+      final word = pendingWord;
+      if (word != null) words.add(word);
+      pendingWord = null;
+    }
 
     // مصفوفة التحويل الحالية ومكدّس حالات الرسم (q يدفع، Q يسحب).
     var ctm = _identity;
     final stack = <List<double>>[];
 
     for (final match in _tokenPattern.allMatches(content)) {
+      if (match.namedGroup('textBoundary') != null) {
+        flushWord();
+        pendingX = null;
+        pendingY = null;
+        continue;
+      }
       final fontToken = match.namedGroup('font');
       if (fontToken != null) {
         fontName = '/$fontToken';
@@ -291,6 +304,7 @@ class PdfContentProbe {
         continue;
       }
       if (match.namedGroup('tdx') != null) {
+        flushWord();
         pendingX = double.parse(match.namedGroup('tdx')!);
         pendingY = double.parse(match.namedGroup('tdy')!);
         continue;
@@ -337,7 +351,7 @@ class PdfContentProbe {
               .allMatches(tjArray)
               .map((part) => part.group(1)!)
               .join();
-      if (hex.length < 4 || pendingX == null || pendingY == null) {
+      if (pendingX == null || pendingY == null || (hex.isEmpty && pendingWord == null)) {
         continue;
       }
       final cids = <int>[
@@ -367,22 +381,23 @@ class PdfContentProbe {
       final x = ctm[0] * pendingX + ctm[2] * pendingY + ctm[4];
       final y = ctm[1] * pendingX + ctm[3] * pendingY + ctm[5];
       final scaleX = math.sqrt(ctm[0] * ctm[0] + ctm[1] * ctm[1]);
-      words.add(ProbedWord(
-        text: data == null
+      // Ts can split a SINGLE positioned word into multiple TJ arrays.
+      // Empty trailing arrays still execute their numeric advance correction.
+      // Keep the whole Td/BT word until ET or another positioning command.
+      final previous = pendingWord;
+      pendingWord = ProbedWord(
+        text: (previous?.text ?? '') + (data == null
             ? ''
-            : cids
-                .map((cid) => data.cidToUnicode[cid] ?? '\uFFFD')
-                .join(),
-        x: x,
-        y: y,
+            : cids.map((cid) => data.cidToUnicode[cid] ?? '\uFFFD').join()),
+        x: previous?.x ?? x,
+        y: previous?.y ?? y,
         fontSize: fontSize,
         fontName: fontName,
-        advanceWidth: advance * (scaleX == 0 ? 1 : scaleX),
+        advanceWidth: (previous?.advanceWidth ?? 0) + advance * (scaleX == 0 ? 1 : scaleX),
         baseFont: data?.baseFont ?? '',
-      ));
-      pendingX = null;
-      pendingY = null;
+      );
     }
+    flushWord();
 
     // تجميع الكلمات المتتالية في الرسم التي تشترك في نفس السطر.
     final lines = <ProbedLine>[];
@@ -621,7 +636,7 @@ class _PdfObjects {
       // المقصد في bfchar نصّ UTF-16 بأي عدد من الوحدات، ويُكتب هنا سداسياً
       // متصلاً (`<06440627>`) أو مفصولاً بمسافات؛ كلاهما مقروء.
       for (final entry in RegExp(
-        r'<([0-9A-Fa-f]{4})>\s*<([0-9A-Fa-f]{4,})>',
+        r'<([0-9A-Fa-f]{4})>\s*<((?:[0-9A-Fa-f]{4})*)>',
       ).allMatches(cmap)) {
         final hex = entry.group(2)!.replaceAll(RegExp(r'\s+'), '');
         final units = <int>[

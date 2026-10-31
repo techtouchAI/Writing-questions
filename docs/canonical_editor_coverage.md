@@ -1,0 +1,854 @@
+## متابعة6b — OPEN / candidate OFF
+
+المرجع الأحدث [التقرير الجامع](review/closure_status.md). اعتمد المستخدم inline بعد آخر كلمة؛ لم يعد القرار معلقًا.
+هذه موافقة على القاعدة المشتركة لا إصلاح تلقائي لصف الإنتاج القديم.
+Android6b أثبت longBODY8360 ونقله إلى معاينةPDF، لكنه فشل عند زر المشاركة المجهول؛
+fullreopen/PDF لم ينجحا بعد. إصلاح semantic actions وانحدارات48dp وأوامر IME مختلطة
+ينتظران بوابات SHA الجديد. لا تُسند نتائج6b أو التاريخ إلى هذا التعديل.
+جرد42أمرًا/75width-cases لا يزال أضيق من كل tool×content×boundary/history/PDF.
+كل مقبض غير مقاس48dp أو غير مختبر فعليًا يبقى unverified، دون تحويل تقديري إلىPASS.
+
+---
+
+## نقل السحب الجاري — المرشح OFF، لا قبول افتراضي
+
+أُضيفت لوحة native خارج الطباعة للسحب:48dp opaque وIDs ثابتة، مع نقل داخل
+السؤال وتبديل بين المالكين كما في المتحكم، وتمرير حتى آخر عنصر.6حالات سحب
+فعلية مع النموذج/PDF/history و4حالات حدود وتزامن تنتظر تنفيذ Flutter على
+SHA الجديد. اختبارات السحب الإنتاجية الأصلية محفوظة. هذا تنفيذ لوظيفة كانت
+غائبة في الخيار أ؛ لا يفعّل المرشح ولا يثبت48dp لكل أدوات الإنتاج.
+التقرير الجامع [closure_status](review/closure_status.md) هو المرجع الأحدث.
+
+## استئناف29fbb92 — OPEN، المرشح OFF
+
+التقرير الأعلى [closure_status](review/closure_status.md) يحفظ هوية الاستعادة
+والتشغيل الأحدث وحدود الإثبات. إصلاحات الرأس/C6 والكيبورد المسترجعة لها بوابات
+29fbb92، لكنها ليست قبولًا لتغييرات هذه الدورة؛ Android متخطّى هناك.
+لم يكتمل بديل drag القانوني أو effective48dp أو مصفوفة جميع الأدوات/IME؛
+لا تفعيل ولا إسقاط لأداة. يجب اجتياز دورة SHA الجديدة وفحص أدلتها كما في التقرير.
+
+---
+## تحديث المراجعة الحالية — OPEN / candidate OFF
+
+خط الأساس4b1f458 فقط:8production/219native/1038full/3canonical/analyze/actualAPK نجحت؛
+C6 WOULD FAIL83، واختلاف edge/inline marks قائم. لا تحويل لنجاح الوظائف إلى قبول شامل.
+التقرير الشامل [review/closure_status.md](review/closure_status.md) والجرد المحدث
+[review/closure_editing_inventory.md](review/closure_editing_inventory.md) يتقدمان
+على حالات التنفيذ التاريخية أدناه. اتجاه الرأس ومصدر القياس C6 أُصلحا في المصدر
+بانتظار CI/الفحص؛ candidate لم يُفعّل. السحب المتاح في الإنتاج لا يثبت وجود بديل
+السحب القانوني، ولا تصلح صناديق الورق المكبرة كبرهان effective48dp. مصفوفة كل أداة،
+كل مقطع، وكل Android/IME لا تزال غير مكتملة. لا نتيجة final-SHA تُفترض هنا.
+
+---
+التغطية والسجل التاريخيان:
+
+# الخيار أ: جدول التغطية وخطة التفعيل
+
+حالة البداية: `d4febcc61a2f473b0eec26f84dee87eb673efa21`، فوق دمج PR #47.
+لا يعني وجود معالج اختبار اكتمال نقل وظيفته إلى سطح الإنتاج. يبقى شرط التفعيل
+اجتياز اختبارات السلوك والهندسة على السطح الافتراضي دون حقن الراسم.
+
+| الوظيفة الحالية | المصدر الحالي | مقابلها في الخيار أ | الحالة قبل التنفيذ / دليل القبول |
+|---|---|---|---|
+| رسم الورقة والمقاطع | `_buildPage` / `_buildQuestionFragmentSlice` | `CanonicalLayoutPreviewPage` من كائن `LayoutDocument` نفسه | موجود؛ يلزم نقله إلى الإنتاج بعد بقية التغطية |
+| كتابة نص السؤال/الفرع/النقطة/الخيار | `_paperField` / `_field` | متحكم المصدر نفسه في طبقة إدخال مرتبطة بالحقل القانوني | الربط موجود في `_canonicalFieldBindings`؛ يلزم إثبات IME والتركيز عند تبدل الصفحة |
+| تحرير من التكملة | متحكم مشترك بين النوافذ | مصدر واحد + إحداثيات الحقل في صفحة المؤشر | اختبار قانوني موجود؛ يلزم اختبار إنتاجي مع التراجع والإعادة والتنسيق |
+| الحقول الفارغة | حقول تظهر داخل التدفق عند التحديد | محرر سياقي غير مطبوع، نفس `_field` و`update*` | يحتاج نقل؛ ممنوع إسقاط الحقل أو إعطاؤه ارتفاعًا مطبوعًا |
+| تنسيق نطاق نصي | `_toggleSelectionFormat` / `_applySelectionColor` | نفس النطاق والمتحكم، ورسم `LayoutRun.style` | موجود في النموذج والمحرك؛ يلزم اختبار التحديد والتنسيق من طبقة التحرير |
+| نص/معادلات مختلطة | `PaperField` / `MixedContentEditor` | نفس محرر المحتوى والمصدر، عرض قانوني منفصل | يحتاج ربط وقياس معادلة منفردة ومضمنة عند الحد |
+| معادلة داخل حقل | `_editEquationInField` | المعالج نفسه مع هدف الحقل المصاب هندسيًا | موجود جزئيًا؛ يلزم اختبار إنتاجي |
+| معادلة حرة/قوالب التخصصات | `_openEquationEditor` و`SmartExamToolbar` | نفس staging/drop والمعالجات | لا تتغير الدلالة؛ يلزم اختبار الإدراج على صفحات مختلفة |
+| تحديد سؤال/فرع/متعدد/الكل | `_tap*` / `_longPress*` / `_toggleSelectAll` | إصابة من هندسة الكتل + نفس مجموعات التحديد | موجود في المسار القانوني؛ يلزم مطابقة الفروع والمعرّفات |
+| تعديل رقم السؤال/الفرع | `_editQuestionLabel` / `_editBranchLabel` | إصابة جريان label → الحوار الحالي | يحتاج نقل؛ لا نموذج بيانات جديد |
+| تعديل الدرجات | `_editQuestionMarks` / `_editBranchMarks` / `_editPointMarks` | إصابة جريان marks → الحوار الحالي | يحتاج نقل، ومنها الدرجة غير الموجودة حاليًا |
+| إعادة ترتيب سؤال | `LongPressDraggable<int>` و`moveQuestion` | مقابض/أهداف خارج التدفق مشتقة من الكتلة | يحتاج نقل واختبار سحب فعلي |
+| نقل/تبديل الفرع | `LongPressDraggable<BranchRef>` و`moveBranch` / `swapBranchContent` | نفس المعالجات مع أهداف هندسية | يحتاج نقل مع الحفاظ على اختلاف داخل/بين السؤالين |
+| إضافة/نسخ/حذف سؤال وفرع | `_buildQuestionActionsBar` و`SmartExamToolbar` | الشريط الحالي خارج الورقة، نفس اختيار الهدف | موجود؛ لا دمج لأداتي إضافة الفرع المختلفتين |
+| إضافة/حذف نقطة ونوعها/خياراتها | `_addPointButton` / `_pointRow` | أوامر سياقية غير مطبوعة، نفس `PointsOwner` | يحتاج نقل دون تعطيل أنواع النقاط أو الخيارات |
+| صورة/شكل/مربع نص/فاصل | شريطان مربوطان بالمعالجات نفسها | موضع إدراج واحد لكل وظيفة مثبتة الازدواج | يحتاج إزالة الإتاحة المكررة فقط، لا حذف الوظيفة |
+| تحريك/تغيير حجم/تدوير/ملكية عنصر عائم | `_buildAttachment`، المسار القانوني للعناصر العائمة | معالجات الملكية نفسها مع هندسة الخطة | موجود جزئيًا؛ يلزم اختبار نقل بين الصفحات ومقاطع المالك |
+| حذف/تغيير فاصل | `_buildDividerWidget` | اختيار زخرفة الفاصل + نفس المعالجات | يحتاج نقل؛ يلزم إثبات بقاء الفاصل النهائي في الخطة وPDF |
+| الترويسة والتذييل | `_buildHeaderBlock` / `_editHeaderAndFooter` | نفس حوار التحرير، إصابة كتل header/footer | موجود جزئيًا؛ يلزم اختبار النقر |
+| التراجع والإعادة والحفظ والتصدير | المتحكم و`_save` / `_exportPdf` | المعالجات نفسها؛ PDF يستقبل التخطيط المطابق الحالي | موجود؛ يلزم اختبار عدم تصدير خطة قديمة أثناء التحرير |
+| التكبير/الملاءمة/التوسيط/القفل | `PreviewToolbar` | نفس الأوامر خارج الإدراج | موجود؛ أهداف لمس 48dp واختبار 320/360dp |
+| شريط التخصصات | `_showFormulas` / زر التبديل | مغلق أولًا، التبويبات الخمسة كما هي | يحتاج تعديل واختبار أن التبديل لا يغير المستند |
+
+## مراحل التحقق
+
+1. إصلاح المحرك المشترك: تغطية كامل الكتلة (بما فيها الفراغ والحشوات والفواصل)
+   وإسناد المرفقات إلى مقطع المالك الصحيح. لا تعديل لمقاسات الصفحة أو الخط.
+   تعاد اختبارات R2/R3/R5 واختبارات التخطيط/PDF السابقة قبل الانتقال.
+2. بناء طبقة التحرير وتغطية البنود الناقصة دون تبديل السطح الافتراضي.
+3. التفعيل بعد اجتياز اختبارات الوظائف؛ تحديث اختبارات السطح لتقيس الورقة
+   القانونية الفعلية لا `RenderEditable` باعتباره مرجع طباعة ثانيًا. لا تخفيف
+   للتوقعات الدلالية أو الهندسية، ولا استثناء لاختبارات إعادة الإنتاج.
+4. تنظيم الأدوات وقياس أهداف اللمس وإنتاج الأدلة من سطح الإنتاج.
+5. متابعة CI على SHA النهائي. الاختبارات الحمراء السابقة دليل فشل لا قبول.
+
+لا تغييرات في الحقول المخزنة أو شكل المستند مطلوبة في أي مرحلة.
+
+## نتيجة مرحلة المحرك ومهمة الأدوات المستقلة
+
+- `c778a87` / تشغيل Build `40178123999`: التحليل بلا ملاحظات؛ 889 نجاحًا
+  و6 إخفاقات معروفة غير معالجة بعد (R1/R4 وR7/R8 بعرضين). اختبارات
+  R2/R3/R5، المقارنة بمرجع غير مقطّع، والأسطر النهائية عند تباعد 1.7 ناجحة.
+  أصلح احتواء صندوق آخر سطر دون تحريك baseline أو تغيير الخط أو التفاف النص.
+  Build APK لم ينفذ لأن بوابة الاختبارات الكاملة حمراء؛ ليس قبولًا نهائيًا.
+- أُنجزت مهمة الأدوات المستقلة قبل تفعيل الورق الجديد، وهي لا تبدّل مسار
+  الرسم. الأوامر المكررة حُذفت من الشريط الأساسي فقط؛ تبويب وسائط يبقى
+  موضع الإدراج الوحيد. الصورة تعيد استعمال `_pickImageToSelection` نفسه
+  بما فيه الإلغاء والخطأ؛ الأشكال الستة تعيد استعمال `_addShapeToSelection`؛
+  مربع النص والفاصل يستعملان المعالجين نفسيهما بلا تعديل هدفهما.
+- لم تُدمج «إضافة فرع» و«فرع جديد»: الأولى تستهدف سؤال أدوات السؤال،
+  والثانية تبقي حل الهدف السابق `_addBranchToSelected`.
+- اختبارات الأوامر القديمة أصبحت تفتح التخصصات وتختار الوسائط عبر نقرات
+  حقيقية، ثم تتحقق من النموذج/التراجع/الإلغاء/الخطأ كما كانت؛ لا استدعاء
+  مباشر للمعالجات. فحص اللمس يشمل كل استجابات الشريط الأساسي وكل أوامر
+  التبويبات الخمسة بعرضي 320 و360، لا الأزرار الثمانية الأصلية فقط.
+- هذا لا يثبت بعد أهداف لمس أدوات الورقة القديمة/مقابض العناصر: تبقى ضمن
+  نقل طبقة التحرير. لا تفعيل للسطح القانوني الإنتاجي قبل اكتمال بقية الجدول.
+
+### أساس طبقة التحرير (غير مفعّل)
+
+`canonical_editing_layer.dart` ينقل مستطيل الحقل من الخطة عبر التحويل الفعلي
+لصفحة الرسم إلى إحداثيات منفذ العرض، ويضع المحرر بحجم لمس أصلي خارج شجرة
+طباعة الصفحة. لا يعيد قياس النص ولا يكتب ارتفاعًا في الخطة. تبديل مرساة
+التكملة يغيّر الموضع لا موضع الودجت في الشجرة؛ اختبار المكوّن يفحص بقاء
+`EditableTextState` والتركيز ونطاق IME composing مع التمرير والتكبير.
+هذا أساس هندسي فقط؛ **لم يُربط بعد بمحرر السؤال/الفروع في الإنتاج**، ولا
+يحقق وحده شروط نقل الحقول الفارغة والأرقام والدرجات والسحب وبقية الجدول.
+
+### قيود الوصول إلى الأدلة
+
+الصور وPDF تُرفع كـ artifact إنتاجي `production-fragment-repro` حتى عند فشل
+الاختبارات. تعذّر تحميلها من رابط التنزيل الموقّع في بيئة الوكيل. جُرّبت
+قناة نقل عبر annotations، لكن GitHub أعاد 4096 محرفًا فقط من كل رسالة؛
+لم يكتمل التحقق من SHA256 للأرشيف ولم تُستخرج منه أي صورة. أُزيلت قناة
+النقل غير الصالحة بدل إبقاء نصوص Base64 مقطوعة في سجلات CI. تبقى قياسات
+JSON ومقتطفات السجلات مقروءة، وهذا **لا يعادل مراجعة بصرية** للصور/PDF.
+
+### إصلاحا الإنتاج أولًا — قيد التحقق
+
+بعد قياس 420615e: أدوات المتن الفارغ وإضافة النقطة تنقل من التدفق المطبوع
+إلى `_buildQuestionActionsBar` ذي الارتفاع الثابت 52px والأزرار 48px.
+محرر المتن السياقي يعيد استخدام `_field`/`PaperField` ومتحكم المصدر ومعالج
+`updateQuestionBody`/`updateBranchBody`؛ إضافة النقطة تبقى `addPoint(PointsOwner)`.
+اختبارات جديدة 320/360 تفحص الهدف، التحرير الفارغ/غير الفارغ، بقاء المحرر
+والتركيز وIME، وإضافة نقطة فرع مع undo/redo. حالة هذه الاختبارات **غير محققة
+بعد** حتى صدور CI. هذا إصلاح للمسار الإنتاجي القديم وليس تفعيل الخيار أ،
+ولا يغيّر حالة الصفوف الأخرى في جدول التكافؤ.
+
+## بوابة إصلاح الإنتاج: 80fbd9c — تحققت
+
+- التشغيل `40230479989`: R1/R4 أولًا **8 نجاحات/0 إخفاق** (5 حالات فعلية
+  مع أحداث تحميل/تهيئة المجموعة)، ثم **904/0** في البوابة الكاملة، و3/0 في
+  البوابة القانونية. التحليل نجح، و**Build release APK وUpload APK نجحا
+  فعلًا**؛ ليس مجرد إرفاق إصدار متخطّى.
+- Visual وC6 ناجحان، وExtended `40230479922` ناجح. مصدر APK
+  `writing-questions-release-apk`، artifact `12613156304`.
+- R4 الطويل: 71 سطرًا/1775px في المصدر والخطة؛ مصدر السؤال كله
+  1846.066665px في الجانبين. النقر الفعلي على آخر محرف والتحرير نجح؛ الفرع
+  ينتهي في الصفحة 1 (ترقيم داخلي)، والسؤال التالي في الصفحة 2.
+- فحص عرض الحقل صار يقيس عمود الحبر الفعلي لا مساحة مؤشر TextField،
+  وصناديق الأسطر تستثني **مسافة اختيار طرفية غير مرسومة فقط**. عدد الأسطر
+  ونص كل سطر وحجم الخط والسماحيات السابقة لم تُخفّف. قيد عرض الحبر يساوي
+  عرض المصدر بـ1e-6px، ومؤشر 2px باقٍ.
+- مرفق الإنتاج `12613345760` يتضمن PNG/PDF للحالات. لم تُجر مراجعة بصرية
+  يدوية؛ وجود المرفق ونجاح CI ليسا ادعاء مراجعة.
+
+## الدمج المرشّح التالي — لا تفعيل إنتاجي
+
+`enableSeparateEditorCandidate` لا يعمل إلا مع حقن **كلتا** وصلتي السطح
+القانوني؛ افتراضي الإنتاج لا يزال السطح القديم الذي اجتاز الإصلاح أعلاه.
+يربط المرشّح `CanonicalEditingLayer` بحقل `PaperField` مرئي واحد في جذر
+المنفذ خارج صفحات الطباعة. مرساته `LayoutLine.rect` من الخطة، وتحويله من
+RenderBox الفعلي بعد layout، وبقاء الحقل تحت والد واحد عند تبدل المقطع.
+المصدر `_field` والمعالجات الموجودة دون نسخ نص. أنماطه الافتراضية من
+صاحب الحقل والعقد، وليست نمط كلمة محددة يُعمّم خطأ على بقية النص.
+
+اختبارات المرشّح 320/360 (قيد التحقق): نقر النص المطبوع الحقيقي لكل مقطع
+سؤال وفرع طويل، هوية المحرر/المتحكم والتركيز، IME، undo/redo، وعدم وجود
+PaperField تحت شجرة الورقة، وبقاء كائن الخطة نفسه عند التحديد. أضيف ضابط
+مستقل لاحتياطي المؤشر يقارن TextField عاديًا وآخر بعرض حبر مصحح وبنفس الخط
+والعرض ومؤشر مرئي؛ حالة السطر المنكسر مشتقة بقياس الخط لا رقم عرض تخميني.
+
+**ما يزال ناقصًا قبل التفعيل:** الحقول التي لا تملك جريانًا مطبوعًا، الأرقام
+والدرجات والنقاط/خياراتها، مقابض/أهداف السحب، التغطية الكاملة للنص/المعادلات
+والأوامر والحفظ، وتدقيق لمس جميع أدوات الورق. المرشّح ليس برهان تكافؤ هذه
+الوظائف؛ لا يتغير حكم صفوفها إلى «مغطاة» لمجرد وجوده.
+
+### Candidate follow-up — pending CI (production still off)
+
+- `7ed5e38`: R1/R4 8/0, full 911/2 (both candidate fragment hit helpers),
+  canonical 3/0, analyzer clean; Extended diagnostics passed. APK did not build.
+- Diagnosed the test-coordinate mismatch: `WidgetTester.getRect` combines a
+  transformed top-left with the **unscaled local size**. Actual paper is zoomed.
+  Pointer targets now use `RenderBox.getTransformTo(null)` over the complete
+  local bounds, matching the actual print transform. No layout tolerance or
+  print geometry was changed to make a test pass.
+- Optional question/branch bodies now have an opt-in native editor fallback
+  anchored to their real owner/title block, or the shared plan's unplanned-owner
+  page/body origin when nothing is printed. Existing body command/controllers/
+  model callbacks are retained. Empty placeholders remain outside print flow.
+  Typing/clearing bodies and retaining focus/controller/state at 320/360 are
+  covered by new **unverified** integration tests, not yet claimed as passing.
+- Native/contextual fields can request a 48dp minimum interactive height;
+  printed legacy fields keep the zero default. This is not a print-height fix.
+- CI now runs production R1/R4, then the native candidate/caret regressions,
+  then the full suite/analyzer/APK. Candidate failures must not trigger costly
+  downstream visual jobs or be hidden by full-suite output truncation.
+- All previous missing-parity rows remain missing until individually proved;
+  this does **not** approve or enable the candidate in production.
+
+- `703909d` targeted results: production 8/0; native candidate 7/4 (load/setup
+  included), so full tests and APK correctly did not run. Extended passed.
+  Actual-transform hits reached pages 0/1, but short question continuation on
+  page 2 remained occluded by the old editor anchor. Placement now docks to
+  the opposite viewport edge only when the actual prior anchor is offscreen;
+  the same native child/focus/composing/IME connection is retained. Component
+  regression measures the offscreen anchor and visible continuation region.
+  Empty-body test selectors corrected to the real `/title/statement` IDs.
+  These follow-up fixes are pending CI, not yet acceptance evidence.
+
+- `cdddb7a`: R1/R4 8/0; native gate 13/2. Empty body and placement/IME
+  component cases passed at both widths; multi-page question traversal passed,
+  but the final branch continuation still failed reachability. Full/APK did not
+  run. At document end both `ensureVisible` alignments clamp to the same maximum
+  offset. The integration helper now also performs bounded real edge drags in
+  both directions (without closing/recreating the editor), and reports actual
+  transformed page/pane bounds if no printed hit can be reached. Still pending.
+
+## Candidate core verified — cdf1b73 (still not production activation)
+
+Build run `40233457138`, main job `121289923152`, passed production R1/R4,
+then the focused native gate, full required tests, analyzer, actual release APK
+build and upload. Visual/C6 were not yet complete when this entry was written;
+Extended run `40233457180` passed. Binary evidence remains not manually reviewed.
+
+Integration-tested at 320/360: real printed-pointer editing across every fragment
+of genuinely multi-page question AND branch bodies; one native editor/controller/
+focus and no new IME client across fragments; composing insertion survives
+reflow; undo/redo; optional question/branch bodies accessed outside print, typed,
+cleared, and re-anchored without replacing the input; no printed geometry/data
+change from selection. These do not prove empty statements/entirely unprinted
+owners, math/commands/formatting, drag, points/options, or every touch target.
+
+Next candidate-only increment (pending CI): printed question/branch label/marks
+hits route to the existing `_edit*Label`/`_edit*Marks` dialogs, resolving owner IDs
+against the current model. Equivalent native 48dp commands remain available
+outside the paper even when a zero mark has no printed run. Tests exercise actual
+printed hits, native command/field/dialog touch sizes, save/cancel, zero marks,
+undo/redo, unchanged other question/text and stored range formatting. Point and
+option metadata, empty statements, and the other missing rows remain uncovered.
+
+### Production mixed-math evidence fixture — pending validation
+
+`production_mixed_math_evidence_test.dart` uses the DEFAULT production screen
+with the same `MathSnapshotHost` installed by `main.dart` (no resolver or asset
+injection). A test-only controller subclass observes `applyLayoutPlan`, so its
+PDF receives the **actual live plan object**, not a recomputed lookalike. At
+320/360 both question and branch bodies must independently span pages and
+contain inline/display math. The fixture writes phone PNGs and full-paper PNGs
+for every page before selection, after question selection, and after branch-only
+selection, plus the same-live-plan PDF and JSON manifest into the existing
+`production-fragment-repro` artifact directory. Selection compares all native
+source field rectangles in page coordinates to 1e-6px (IEEE roundoff only),
+while asserting identical document and plan objects. These files are not yet
+verified/generated and are not a manual visual review or an editing-parity claim.
+
+## Metadata and production evidence verified — 324fd4c
+
+Run `40234173938`, main `121292228670`: production 8/0, focused native 17/0,
+full **922/0** (103 suites), canonical 3/0, analyzer clean, actual APK built and
+uploaded. Extended `40234173929` passed. Visual/C6 were still outstanding at
+this checkpoint, so this is not an all-workflow completion statement.
+
+- Question/branch printed label/marks routing, native 48dp equivalent controls,
+  existing dialogs (including actual focus/field/action touch sizes), cancel,
+  zero marks, undo/redo, other-question/text/range-format preservation passed.
+  Point/option metadata is still missing.
+- Production mixed-math 320/360 fixture passed. Actual live-plan PDF plus every
+  page's phone/full-paper PNGs in three selection states are in
+  `production-fragment-repro` artifact `12614122565` (11,659,580 bytes).
+  Actual APK artifact `12614367237` (28,384,212 bytes). No manual image/PDF review.
+
+### Next source-field increment — pending verification
+
+A candidate-only 48dp access menu relocates existing empty question/branch
+statement/body fields out of print flow, including entirely unprinted owners
+and whitespace-only fields. It resolves persistent owner IDs against the live
+model at selection and uses the original source controllers/update callbacks.
+No stored model, print placeholder, or default production tool is added.
+Tests cover all four source roles at 320/360, composing insertion, the transition
+from no printed owner to printed text and back, and no editor/controller/focus/
+IME-client replacement. Existing optional-body cases also now test composing
+and no reconnection. Empty points/options/category and other parity rows remain
+uncovered; production activation remains prohibited.
+
+The production evidence fixture now additionally requires real `mathSnapshot`
+metrics and successful PDF rasters for EVERY formula, verifies both inline and
+block semantic nodes, and records actual maximum coordinate delta/field count.
+This strengthens evidence against silent readable-text fallback; its new checks
+are pending CI and do not retroactively claim a manual visual comparison.
+
+### Option identity race reproduction — deliberately not acceptance
+
+Audit found a concrete missing contract: option models/IR already have persistent
+IDs, but candidate bindings/controllers/callbacks still use positional indices.
+Deleting option 0 while option 1 is focused can synchronously sync the focused
+slot to the next option; IME input arriving before the next widget build then
+uses the captured old index and edits the wrong option. New 320/360 regressions
+exercise that exact same-frame race for question AND branch points, require the
+original option ID/controller/editor/focus/composing/IME client to survive, and
+check untouched sibling data and formats plus undo/redo. The model deletion is
+an external-mutation race probe, **not** proof of a native delete-button workflow.
+The regression is being introduced before its source repair; a red run is not
+acceptance. `b0c8b58` has passed its focused native gate and was still running the
+full suite when this reproduction was added. Production remains on repaired
+legacy; point/option UI parity is still incomplete.
+
+- Race baseline `322471f`, run `40235171531`, main `121295126393`: production
+  8/0, focused native **19/2**. Both widths reproduced the expected failure:
+  selected option remained `SECOND` instead of `SECONDم` after the earlier
+  deletion plus same-frame IME update. Full/APK correctly did not run.
+- Repair now pending CI: candidate option source keys encode persistent point
+  AND option IDs (transient view keys only; no stored model change). Field sync,
+  lifetime pruning, current alignment/range-format targeting, and owner activation
+  share that resolution. Old-layout IR options bind by model ID, not stale
+  index. Candidate source callbacks resolve question/branch/point/option IDs at
+  INPUT TIME, including before the next rebuild; retained controllers are not
+  swapped to another option. Legacy production keeps its existing keys/surface.
+  This is a race/data-identity repair, not completed point/option command parity.
+
+### Verified persistent-source repair (`02d2c64`)
+
+- Build run `40235447739`, main job `121295907603`: production R1/R4
+  **8/0**, focused native **21/0**, full **926/0**, canonical gate **3/0**;
+  analysis and **actual release APK build succeeded**. This includes the two
+  same-frame option-identity regressions and strengthened real-math fixture.
+- Extended run `40235447684` and the follow-on Visual job succeeded.
+  C6 is still pending at this checkpoint, not counted as success.
+- Production artifact `12614364524` (11,659,678 bytes), actual APK
+  `12614424446` (28,384,913 bytes). Neither images nor PDFs have been manually
+  reviewed/downloaded. No visual equivalence claim follows from test success.
+- GitHub limits notices to ten per step: the existing production publisher
+  exhausts those on R1–R7. A separate R9 notice step now exposes BOTH mixed-math
+  manifests through Checks API, and requires both files after a successful full
+  run. It does not replace downloadable PNG/PDF evidence or manual review.
+
+### Native point/option commands — implementation awaiting CI
+
+Candidate-only external 48dp controls now route to existing point kind/label/
+marks/delete and option add/label/delete handlers, using persistent IDs and
+fresh owner/index lookup. Printed point/option metadata opens the same dialogs.
+The empty-source menu exposes existing blank point text and blank MCQ options;
+no empty source, button, or editor is inserted into printed flow. Kind changes
+preserve existing options; changing away from MCQ while an option is active
+switches the editor to that point's text. Deleting an active source explicitly
+closes its editor, retaining the selected question/branch owner.
+
+New 320/360 tests exercise real menus/dialogs for question AND branch points:
+all four kinds, option-ID retention, native/printed metadata, blank option to
+text, UI option deletion with sibling preservation and undo/redo, option add,
+UI point deletion and exact-model undo, existing add-point action, empty point
+access, multiline source and undo-to-empty/redo with the same native editor,
+focus and IME-client count, and other-owner/range-format preservation.
+**Not yet compiled/tested; not acceptance.** Active-option kind-switch focus,
+category clearing, reorder drag, math/formatting command parity, every remaining
+control's touch target, and stale completed-asset/layout pairing remain open.
+Production candidate flag remains OFF; no activation, merge, or branch removal.
+
+
+### Point command first run and focus-switch repair (pending verification)
+
+- `02d2c64` finished ALL workflows successfully: Build `40235447739`,
+  including Visual `121297507891` and C6 `121298187920`, plus Extended
+  `40235447684`. Release attachment skipped because this is not a tag/release;
+  the actual APK build and artifact succeeded. No manual visual review.
+- `4d79d57`, Build `40236825017`, main `121300068869`: production **8/0**,
+  native **21/2**; both new command tests fail opening an empty option (the
+  expected source field is absent). Full suite and APK correctly did not run.
+  Analysis has one `curly_braces_in_flow_control_structures` info; Extended
+  `40236825028` succeeded. This is NOT point-command acceptance.
+- Candidate native field focus callbacks now reject a retired field whose key
+  differs from the explicitly selected active source. Popup focus restoration
+  must not overwrite a newly selected source before its widget mounts; legacy
+  activation is unchanged. The original missing-field assertion is retained
+  and now reports mounted field keys if it fails again. The analyzer info is
+  corrected with braces. This repair awaits CI, not a claim of a green result.
+
+
+### Point commands accepted by tests; analyzer still blocks APK (`a02d717`)
+
+Build `40343329932`, main `121643562734`: production **8/0**, native **23/0**,
+full **928/0**, canonical gate **3/0**. The source-switch guard repairs both
+missing-option regressions without closing the old editor in the test. The
+new native add/delete/undo/redo/empty point/option workflows pass at both widths
+for question and branch owners. This is scoped integration evidence, not full
+parity or activation. One multiline empty-option-menu `if` still violates the
+brace lint (the prior correction addressed the adjacent point-text `if`).
+Analysis failed and APK did NOT build on this SHA; this is not acceptance.
+
+The separate manifest publisher worked: R9 at BOTH widths reports 5 pages,
+question pages 0/1/2, branch pages 2/3/4, 8 math runs / 4 unique rasters with
+`mathSnapshot` metrics, 20 measured source fields, and **0.0px maximum selection
+geometry delta**, tolerance 1e-6px, PDF using the observed production live plan.
+Manual visual review remains false.
+
+### Point continuation/geometry evidence increment — pending verification
+
+The remaining multiline brace lint is fixed. New 320/360 tests require each
+question/branch POINT TEXT and MCQ OPTION itself to span multiple pages, cover
+every non-whitespace source offset exactly once, keep line/glyph metric boxes
+inside the shared plan's body bounds, and leave the following question clear of
+the final branch. They hit the original AND every continuation (the ending run
+on the final fragment), compose text into the same model field from EACH,
+and undo to the exact original document including other owners/options/formats.
+The native editor/controller/focus/IME connection must survive every fragment
+and edit/undo. No activation or assertion weakening is involved.
+
+All candidate printed-hit helpers now compare the actual transformed paper
+rectangle before/after activation within 1e-6px (floating-point matrix roundoff
+only), as well as identical unchanged-data layout. Opening native command
+menus/dialogs must keep all planned printed line coordinates unchanged.
+The command test additionally switches the ACTIVE OPTION away from/back to MCQ,
+requiring focused point-text fallback and exact retained option models.
+
+This fixture generates clearly labelled **opt-in candidate** R10 PNGs for every
+page at phone/paper resolution before selection and with the option editor
+active, plus PDF using the displayed restored-model layout and manifests.
+These are separate from default-production mixed-math R9 evidence. The workflow
+publishes/requires both widths of each after a successful unfiltered full run.
+New assertions and evidence generation are NOT compiled/tested yet. Neither
+candidate PNGs nor PDFs have been manually reviewed; production remains legacy.
+
+
+`a02d717` follow-on Visual `121646916853` and C6 `121648615396` subsequently
+finished successfully; Extended `40343329986` also succeeded. Overall Build
+remains FAILED due to the analyzer lint, and APK remained skipped. C6's
+non-gating historical geometry report still lists 95 tight-centre violations
+for its legacy comparison artifacts; a green diagnostic job is not proof of
+zero PDF/preview discrepancies and does not replace manual R9/R10 review.
+
+
+### R10 boundary diagnosis — shared run-box style mismatch (repair pending CI)
+
+`dc9ba67`, Build `40345220783`, main `121650227093`: production **8/0**,
+native **23/2**; the two new continuation cases stop BEFORE input at a boundary
+run box bottom **801.1151728723931pt**, body bottom **799.3700787401575pt**.
+The planned line itself fits. Analysis is clean, but full suite/APK did not run;
+Extended `40345220369` succeeded, downstream Visual/C6 correctly skipped.
+
+Tracing the box to both painters distinguishes metadata from actual ink:
+`FlutterTextMetrics._layoutOnce` takes fragment HEIGHT from the styled paragraph
+selection box but measures its BASELINE OFFSET with `lineHeightFactor: 1`.
+The actual preview painter measures the same styled run with the document's
+line-height factor and independently aligns its baseline; PDF also aligns from
+its own embedded-font baseline. Thus the hit/selection box is displaced downward
+relative to what is painted. This failure is NOT yet proof of cropped pixels.
+
+The fix uses the SAME resolved style for the run baseline and its styled box;
+no pagination/line baseline/wrapping/font/page/clip changes, no larger tolerance,
+and no source/model fields. Metrics backend version increments to invalidate
+cached box metadata. A focused independent TextPainter regression checks both
+baseline and box height at factors 1/1.2/1.45/1.7, and joins the native-first gate.
+The R10 body-bound/coverage/hit/edit assertions remain unchanged. This is a
+pending shared-metrics repair, not acceptance or a visual equivalence claim.
+
+
+### Font frames versus painted ink — R10 measurement correction
+
+`4b9d144`, Build `40346352752`, main `121654187481`: production **8/0**,
+native **33/3**; Extended `40346352543` succeeded. Full/APK did not run.
+The independent metric case shows why a font frame is not an ink measurement:
+at height 1, the adapter's STRUT selection height is **13.999998pt**, while
+Flutter's TIGHT font selection bounds are **23.841999pt**. The styled baseline
+fix clears the former bottom overrun but a boundary frame begins at
+**42.219685pt** versus body top **42.519685pt**. Neither observation alone
+proves clipped painted pixels. Analysis also flags the test's missing const.
+
+The metric regression now compares the SAME `BoxHeightStyle.strut` as the
+adapter (and fixes the const lint), retaining the actual styled-baseline check.
+R10 retains exact planned line containment, source-offset coverage, unchanged
+paper geometry, per-fragment input and native-state invariants. Instead of
+calling a strut rectangle “ink”, every near-edge source run is rasterized using
+exactly the preview painter's font, style, baseline, scale and page pixel phase.
+Its raw RGBA bytes with versus without the UNCHANGED shared body clip must be
+**identical, zero differing bytes**. Only scratch image allocation is padded;
+no production clip, font, geometry tolerance, or pagination is changed. This
+is a stronger direct painted-pixel visibility check, not allowance for overflow.
+All results still await CI; do not infer actual glyph clipping or acceptance
+from the earlier incorrectly interpreted frame measurements.
+
+### Point/option integration checkpoint `97c7569` — verified main gate
+
+Build `40347503909`, main `121658253342`: production **8/0**, native **36/0**
+(4 suites including focused font metrics), full **931/0**, canonical **3/0**,
+clean analysis and **actual release APK build succeeded**. Extended
+`40347504021` succeeded. Visual/C6 are still pending at this checkpoint.
+
+R10 manifests for BOTH widths confirm **20 real pages**, point text pages
+0–2 / branch-point text 9–11, question option pages 2–9 / branch option 11–19.
+Each printable source offset appears once; every source fragment edits its
+original model and undo restores the entire document and range formats.
+Actual boundary run raster bytes are identical with/without the unchanged body
+clip. Actual page activation delta is **0.0px** (tolerance 1e-6px). The following
+question shares page 19 without planned-line overlap. PDF uses the displayed
+live restored-model plan; manual visual review remains false.
+
+Reviewable PNG/PDF artifact `12662827368` (32,655,826 bytes) includes R9 default
+production mixed math AND clearly separate R10 opt-in candidate evidence.
+Actual APK artifact `12662233586` (28,385,653 bytes). Logs/artifact downloads
+remain inaccessible in the agent environment, so none were manually reviewed.
+
+| Current parity area | Implemented counterpart | Verified scope / still open |
+|---|---|---|
+| Question/branch source, empty fields, continuations, IME | Existing source controllers in anchored native editor | Integration verified at both widths; category clear/reopen still open |
+| Point/option add/delete/kinds/labels/marks/undo/redo | Existing handlers + external 48dp native commands and empty-source menu | Question AND branch owners verified; active-option kind switch retains all option data |
+| Long point/option source, every continuation, native lifetime | Actual shared-plan hits + the SAME model/controller/editor | 20-page cases verified, all characters covered, model/format round-trip exact |
+| Selection/command opening and page-edge visibility | Fixed canonical paper + external chrome | 0px activation shift and byte-exact painted boundary visibility verified |
+| Actual ink separation from the following question | Planned non-overlap plus actual glyph bounds | Additional raster-ink gap assertion below awaits CI |
+| Reorder drag, math/range-format command parity, remaining touch targets | Existing handlers remain available; counterpart coverage incomplete | NOT accepted; production activation prohibited |
+| Completed asset/layout pairing, stale export transitions | Current async canonical preview pipeline | Still needs deterministic delayed-asset coverage and repair if exposed |
+| Default-production preview/PDF evidence | R9 live-plan PNG/PDF with real inline/block math | Automated geometry/snapshots verified, manual visual comparison NOT performed |
+
+The next test-only increment additionally scans actual alpha pixels of the
+final branch and next-question runs, requiring non-overlapping raster ink (not
+only line rectangles), and records the measured pixel gap. Scratch RGBA copies
+retain compact byte storage; no production code/geometry/clip change. This new
+assertion is pending CI. The candidate remains OFF; no merge or branch removal.
+
+### Follow-on setup stall — no false all-CI acceptance
+
+At 2026-10-26 15:53 UTC, `97c7569` Visual job `121665272351` remains in
+“Install rendering tools” since 15:28:30 (over 24 minutes); comparison has not
+started. Main/APK and Extended successes remain valid, but overall/Visual/C6
+success is NOT claimed. A fresh download attempt of artifact `12662827368`
+also failed with EOF at its signed Azure URL; no images/PDF were extracted.
+
+The Visual install step now adopts the existing C6 bounded-network approach:
+150s apt update, 600s installation, 20s network idle timeouts/retries, 16m step
+budget. All THREE existing required packages remain required; timeout/failure
+is an actual failure, with phase/status and the failing log tail exposed through
+Checks annotations. No visual fixture, comparison, RMSE threshold, or test gate
+is removed/relaxed. The new push supersedes this unbounded setup stall, not a
+failed comparison or test. Final-SHA follow-on jobs still must actually finish.
+The ink-gap test/doc checkpoint landed in `e5f9189`; the bounded setup is in the
+following commit after a local patch-script syntax error was corrected.
+
+### Final-run scheduling note
+
+`78af1eb` Build `40353886832` was cancelled before any job/check ran while the
+two close pushes competed with the still-running `97c7569` workflow and pending
+`e5f9189` Build. It is NOT a test/build result. Local workflow YAML and setup
+Bash parsing succeed. `gh run rerun` gave a generic “workflow may be broken”
+message, but the direct rerun API reports **403 Resource not accessible by
+integration**; no rerun/cancel API retry is attempted. A documentation-only push
+now requests a fresh normal run with the SAME source/tests/bounded tool setup.
+Final acceptance still requires this latest SHA's actual jobs and APK, not a
+cancelled run or the earlier main-gate success.
+
+## Acceptance closure after `2ed3ec9`: actual evidence retrieval
+
+The artifact redirect was reproduced: the authenticated GitHub API succeeds,
+then the signed Azure blob download returns EOF in this sandbox. This is not
+an APK/test failure or an invalid GitHub credential. A new opt-in
+`[review-evidence]` CI job transports allowlisted ORIGINAL fixture PNG/PDF/JSON
+bytes through GitHub's blob API. Blobs are unattached: no commit, tree, ref,
+branch, release or tracked binary is created. Job-scoped contents:write is only
+for that API; no new repository branch or publication destination is used.
+Checks notices contain small references/checksums, not truncated Base64 data.
+The reader verifies run/SHA provenance, byte length, SHA-256 AND Git blob SHA-1
+before writing any review file. Missing/truncated data is an error, not review.
+This diagnostic transport does not change app code, clipping, tolerances,
+fonts, rendering or test gates. R1/R4/native/full/analyze/actual APK still run.
+Visual review remains pending until original files are retrieved and opened.
+Remaining drag/math/format/async/touch parity remains unaccepted; flag stays OFF.
+
+## Original-byte review checkpoint — a82ccc8 (not visual acceptance)
+
+The original Azure redirect still fails in the review sandbox. The same-run
+Git-blob route worked: 50 original files were downloaded and checked against
+run `40378917968`, source `a82ccc809800f3ab5e91b21483467f7f4bad4c10`, byte
+length, SHA-256, and Git blob SHA-1. However, GitHub capped the job's annotations
+at **50 of 52 references**. The missing files were `r9-360-same-live-plan.pdf`
+and `r9-360-question-selected-page-4-paper.png`. This is **partial retrieval**,
+not successful complete transport. The repair packs two references per notice
+(maximum 40 notices for 80 files), enumerates required companion files from the
+manifests, and verifies an inventory count plus inventory checksum before
+retrieval can emit a complete-success marker. Four offline regressions exercise
+packing, complete retrieval, truncated annotations, and corrupt original bytes.
+No application code, print geometry, clips, fonts, or tolerances changed here.
+
+### Actual visual examination performed
+
+Original PNGs were opened alongside **the corresponding original PDF pages**
+rasterized with MuPDF at 96 dpi. This is agent examination of visible content,
+not a human/device sign-off and not a deduction from green CI.
+
+| Evidence actually opened | Visible result | Acceptance |
+| --- | --- | --- |
+| R9 production, 320, all five paper pages against corresponding PDF pages | Inline/display math are black Ahem-like blocks, not readable equations. Header typography/placement differs. Continuation boundaries show partial glyph rows; preview's final branch tail does not visibly contain all of PDF's B109 ending. Text/line placement differs. | **Fail / investigate**; neither visual match nor math readability proved |
+| R9 production, 320, page 3 before/question-selected/branch-selected and page 5 before/branch-selected | Selection decorations appear without an obvious reflow in the opened pairs; existing boundary/tail defects remain. | Selection observation only, **not** print acceptance |
+| R10 native candidate, 320 **and** 360, page 20 paper against corresponding PDF page 20; same paper before/option-selected | Last option text remains visible above NEXT without overlap; selection decoration does not visibly move printed text in these pairs. | Narrow visual check passed for **this page only**, not complete candidate acceptance |
+| R10 native candidate, 320 and 360, selected phone screenshots | Native editor is visible, but labels/icons appear as test-font boxes. | Cannot use these images to sign off tool readability/touch or all functions |
+| R9 production, 360, complete PDF comparison | PDF reference was truncated by GitHub. | **Not reviewed** until complete republish/retrieval |
+
+Review files reside outside Git at `/home/user/review-a82ccc8/`; derived
+same-page views are under `comparison/`. Original run:
+https://github.com/techtouchAI/Writing-questions/actions/runs/40378917968
+
+The font hypothesis has a concrete test-environment lead:
+`test/views/widgets/math_snapshot_host_test.dart` explicitly documents Ahem
+instead of KaTeX, while R9 only registers application paper fonts through
+`FlutterTextMetrics.ensureFontsLoaded`. This is not yet proof that loading the
+package's production fonts resolves layout differences. First reproduce with
+the **unchanged production font assets** registered in the evidence harness;
+then trace any remaining plan/source/paint mismatch. Do not replace fonts,
+enlarge clips, change tolerances, or call the existing block images math parity.
+
+All Actions for a82 completed: R1/R4 8/0; native 36/0; full 931/0; canonical
+3/0; analyzer clean; **actual release APK built**; Visual and C6 succeeded;
+Extended `40378917818` succeeded. C6 still reports 95 historical non-gating
+violations. These automated successes do **not** override the visible failure.
+
+### Acceptance still open (no production activation)
+
+| Required remaining behavior | Current proof status |
+| --- | --- |
+| Actual question and branch drag, resulting model/order/coordinates/PDF | **Unproved** on the candidate; legacy handlers are not equivalent proof |
+| Readable inline/display math, mixed RTL/English, colors/all formats vs PDF | **Failed/incomplete visual evidence**, expanded matrix pending |
+| Async image/math/layout completion and export/save races | Root candidates identified; draft real-work regressions not yet compiled/run, no repair claimed |
+| ALL editing tools, touch targets, and empty fields at 320/360 | Existing targeted cases do not establish an exhaustive audit; missing rows remain missing |
+| Candidate activation / merge | **Prohibited**; stays off, no PR merged, no branches deleted |
+
+## Math acceptance repair — regression first, still no activation
+
+Baseline `49a76df`, run `40394056877`, reproduced four failures at 320/360:
+- Fraction snapshot: 16,446 ink pixels, **zero nonrectangular glyph components**,
+  two filled rectangles. A nonempty image was not proof of readable math.
+- Inline and display copies of the same fraction both measured exactly
+  **13.476187999999999 pt** high. The source display flag was lost before capture.
+R1/R4 remained 8/0; downstream full/analyzer/APK were correctly blocked by the
+new failing gate, not claimed successful. Extended `40394056876` completed.
+
+The repair forwards the existing semantic block-math flag through canonical
+metrics, snapshot jobs, preview assets, and PDF collection/lookup. Cache keys
+separate inline/display while preserving the old default-inline API and keys.
+No persisted document fields or print font/style settings are changed.
+
+Evidence harnesses register unchanged package/Material fonts from the generated
+`FontManifest.json`, fail on missing Main/Math families or empty font assets,
+and publish the loaded family/asset/length inventory. Both inline and display
+snapshots must have actual glyph strokes, reject filled-rectangle/empty ink,
+and preserve distinct real metrics at both widths. This is not yet a passing
+repair until CI and actual original-byte visual review complete. Branch-tail,
+page-boundary, header/margin, drag, async and full-tool acceptance stay open.
+
+### Additional measured cause after loading the real fonts
+
+`c7be8ed` main run `40394655894` passed 8/0 production, 43/0 native,
+938/0 full, 3/0 canonical, clean analysis and actual APK. All **57/57**
+original references were retrieved and checksummed, including the real font
+manifest (12 KaTeX families plus MaterialIcons). Actual page examination showed
+readable equations and the B109 tail, but PDF math was unexpectedly bold/upright
+and continuation/header geometry still differed. Therefore no visual acceptance.
+Visual/C6 for this intermediate SHA were superseded/cancelled by the next push;
+the final SHA must complete them, not inherit this intermediate result.
+
+Baseline `e421c52`, run `40397022714`, proved the ambient-font defect at both
+widths: same fraction/style/density is **156px** wide in the host versus **140px**
+in the source under Scaffold. The hidden host lives above Scaffold and inherited
+WidgetsApp's bold debug DefaultTextStyle. Source weight/color are now explicit
+capture/cache inputs rather than inherited defaults. A real source-raster byte
+comparison covers normal/bold and black/blue, not only a nonempty image.
+
+The new source/window/header regression initially failed to compile because
+Flutter 3.22 RenderParagraph exposes no public getLineBoundary. It now reads
+actual RenderParagraph selection boxes, without a second text layout. Its
+branch/header assertions have **not** yet passed and are not claimed repaired.
+
+Identified geometry inconsistencies: legacy PaperMetrics derived pt/px from
+rounded 794px rather than 72/96, making 10.5pt -> 14.005277px instead of 14px;
+legacy page consumers used 794x1123 while LayoutDocument owns physical A4.
+The repair consumes that existing plan's page dimensions and the physical
+unit ratio, without changing nominal font sizes or stored model coordinates.
+Header selection padding/borders also entered layout; header frame padding
+is now foreground-only, left-column alignment follows its existing semantic
+intent, and the header-to-question gap comes from the shared plan. These are
+root coordinate conversions/containers, not clip expansion or a tolerance change.
+
+`d698964` (`40398267492`) and `b8b86c6` (`40399423367`) complete:
+production R1/R4 **8/0**, native **48/2**, Extended successful; full/analyze/APK
+blocked by the intentional native guard. All eight source-reference weight/color
+comparisons passed. Both remaining failures were in the new R9 trace, not a
+passing geometric measurement: it incorrectly assumed a globally suffixed branch
+field key. Branch DragTarget builds later and uses local ValueKeys; R6 had already
+proved controller identity by scoping the field inside its question slice. The
+trace now uses that actual source/slice identity and preserves originals before
+asserting. No geometry tolerance was changed. Red evidence transport is now
+permitted as well, still requiring the complete hashed inventory and never
+changing the build/native acceptance guards. Frame visibility regression checks
+the foreground border and explicitly checks that switching it does not resize
+its header. Physical conversion helpers call LayoutUnits directly; stored canvas
+model coordinates/constants remain unchanged.
+
+### c942c2a: tested main, still visibly incomplete
+
+Run `40400455879`, main `121844843516`: R1/R4 **8/0**, native **50/0**,
+full **942/0/0** (105 suites), canonical **3/0**, clean analysis and actual
+release APK. Extended `40400455782` successful. Original transport
+`121849137901` verified **57/57**, inventory SHA256
+`ecc50eeedb302a73b5dfc7c4edc220bffd8502fde11a893776d6eeb0ce5ee67d`.
+Actually opened corresponding 320 page0/page4 preview+PDF originals rendered
+at 96dpi, and the original display-math capture composited on white only as
+an identified diagnostic derivative. Equation glyphs are now normal/italic
+like the source, not the former bold upright image. Header **box** is exactly
+`[56.69291338582678,56.69291338582678,680.3149606299214,109]` in both paths;
+B109 final text matches exactly and is visible in both. Selection delta=0.
+
+**NOT acceptance:** native page4 still begins with a partially clipped line
+and its last glyph is ~14.9px above the planned fragment bottom. A terminal
+containment assertion cannot prove that every continuation starts correctly.
+Expanded R9 now reads actual native text-line carets/selection boxes for BOTH
+bodies on EVERY page, compares source line inventory/baselines to LayoutDocument,
+and compares actual SafeMathTex rectangles to the PDF's canonical run boxes.
+Only IEEE 1e-6 coordinate comparison remains. WidgetSpan object carets are not
+misclassified as separate text lines. The complete diagnostic data is saved in
+the original manifest before assertions. Header frame also gets a centered-
+stroke regression: PDF strokes straddle header.rect; BoxBorder's default inside
+stroke does not. Font/glyph shaping of the header is still visibly different;
+no font replacement or visual acceptance is asserted.
+
+### Baseline/layout proof beyond glyph presence
+
+`9933d5a`, run `40403822327`: R1/R4 **8/0**, native **51/5**;
+Extended successful and complete originals transported despite red acceptance.
+Two real ink tests prove `MathSnapshot.baselinePt == null`: the host queried
+RenderBox baseline **post-frame**, Flutter 3.22 asserts that it is legal only in
+parent layout/paint, and the old catch silently substituted image-bottom for
+alphabetic baseline. One frame-stroke test proves inside `-1` versus centered
+`0`. R9's actual math rectangle trace proves inline vertical error **2.854px**,
+and natural width **39.498815px** versus measured-at-large-font **39.518005px**.
+Native page4 final text baselines are **58.297818..508.297802px** versus plan
+**72.511351..522.511320px**. The raw trace's inflated 39-vs-30 text count was a
+measurement bug (exact caret-top grouping split bidi runs), not a claimed lost
+nine lines: corrected grouping uses native glyph bands without changing the
+actual 1e-6 coordinate assertion.
+
+Repair under validation: capture the actual child's alphabetic baseline during
+parent layout; layout math at its real 96dpi source font size and obtain higher
+bitmap resolution with capture pixelRatio, rather than scaling font shaping;
+use the natural math width (as already done for its height/baseline) instead of
+a float32 selection-box width. Source TexText now uses the canonical baseline
+placeholder contract for inline AND display paragraphs, retaining the declared
+4px display padding. Printed leading distribution is explicit proportional,
+not inherited Material-3 even leading (first baseline previously differed by
+0.061px). Frame stroke is centered on the exact shared header rect. No clip,
+page-height constant, nominal font size, font family or acceptance tolerance
+was enlarged/loosened. Source reference byte tests now capture actual 16px
+source math at pixelRatio 6 (12pt at density 8), rather than assuming 96px font
+shaping scales identically.
+
+Also diagnosed the intermediate c942c2a Visual failure: content strip
+`y=864,x=566..606` was fully uncovered (200 pixels); header strip uncovered
+12.7%. Do not call Visual successful or relax its threshold. Its C6 job was
+superseded by the regression push. Fresh original fixture evidence is still
+required to localize the strip defect after these repairs.
+
+`d2d04cb`, run `40405333375`: R1/R4 **8/0**, native **54/2**, Extended
+successful, originals **57/57** verified and corresponding 320 page4 pair
+actually opened. The native continuation's first line is now visibly complete
+and B109 remains present. Baseline, normal/bold/black/blue pixel-reference,
+inline/display and centered-border regressions pass. Full/analyze/APK remained
+blocked by R9 and are NOT claimed for this SHA.
+
+Remaining raw measurements: display/body flow differs by increments of about
+0.0667px; native inline math width now matches exactly, top differs by
+~0.0000021px and a later x by 0.0001221px. Identified two further exact causes:
+(1) LineMetrics.height is integer-rounded, not the actual source glyph/flow
+extent; the shared font adapter now retains actual same-paragraph glyph boxes
+and TextPainter.height. (2) RenderParagraph places WidgetSpan from
+inlinePlaceholderBoxes, while canonical code used selection boxes and then
+recentered an already-aligned paragraph; the shared plan now retains the actual
+placeholder origin and its measured paint-baseline offset. This is not a
+loosened tolerance. Native math rectangle comparisons remain **1e-6**.
+
+The test's 39-vs-30 text count was additionally including math renderer's own
+RichText glyphs (e.g. superscript "2") as body paragraphs. It now excludes
+SafeMathTex descendants, and compares actual source glyph top/bottom to the
+same canonical glyph boxes. RenderParagraph's reported alphabeticBaseline is
+not substituted for its painted glyph-box coordinates. No assertion is
+silenced to obtain a synthetic baseline.
+
+Visual fixture originals now have a separate strict hashed transport profile
+(manifest, actual vector.pdf and **every** preview_page_N.png), including on
+visual failure. Fetch with `--job-name 'Original visual fixture review transport'`.
+Production's historical 57-file profile is unchanged. Transport unit tests
+**6/6**, digest self-tests **30/30**, YAML parse and diff whitespace checks pass
+locally; Flutter validation of the latest changes remains CI-only.
+
+Follow-up `ece1021` CI `40407092299` is NOT accepted: R1/R4 **8/0**,
+native **51/5**, Extended successful; downstream full/analyze/APK/visual
+skipped, original production transport failed because the earlier header
+assertion prevented a complete original inventory. Exact failures exposed two
+necessary distinctions: a native Amiri selection-box overhang is **not** added
+to the paragraph's flow (doing so incorrectly increased header 109→112.6428px);
+and native stretched paragraphs require equal minWidth/maxWidth, whereas a
+zero-minWidth TextPainter shrinks its content and shifts RTL/center paint
+origins. The alignment and point/option-continuation guards also failed.
+
+The follow-up retains unrounded ascent+descent logical flow, records actual
+glyphTop/glyphBottom separately on MeasuredLine/LayoutLine (including move and
+scale), and measures at the native column constraints. The R9 comparison uses
+those actual source glyph extents with **1e-6** unchanged, not flow rectangles
+or an inferred baseline. Added an independent same-font native TextPainter
+regression for header glyph overhang versus paragraph flow. No page-height or
+font substitutions and no disabled guards. Validation pending.
+
+`a3034a5` run `40408253196`: R1/R4 **7/1**; R4's ordered line inventory
+failed before capture; native/full/analyze/APK/visual/C6 skipped, Extended
+successful, original transport failed (incomplete inventory). No repaired-state
+claim. The unchanged logical equality guard now emits a compact boolean plus
+missing/extra/duplicate line IDs, rectangles and source windows, rather than a
+large expected/actual list truncated by GitHub annotations. This diagnosis is
+required before modifying the split algorithm; no tolerance changed.
+
+`d0ea6ed` run `40409229495`: still R1/R4 **7/1**, Extended successful,
+all downstream gates skipped. Compact proof: expected **73** line IDs, actual
+**42**; initial source windows `[0,46.35000014305115]`,
+`[46.35000014305115,65.10000085830688]`. Reference body bands were
+`[178.11968518242122,197.01968503937007]` and
+`[196.86968589767696,215.7696857546258]`: height **18.9pt**, baseline step
+**18.75pt**, overlapping by **0.15pt**. The proposed unrounded flow-height
+repair was wrong when Skia rounds DOWN, causing the indivisible-atom splitter
+to backtrack through the overlap chain and exclude lines.
+
+Correct flow representation: source-allocated `LineMetrics.height` with its
+**cumulative allocated top**, NOT `baseline-ascent` as that band's top and NOT
+unrounded ascent+descent as flow height. Painted baseline and actual selection
+box top/bottom remain independent, unchanged measurements. This handles both
+round-UP (the previous 0.0667px excess) and round-DOWN (0.2px overlap) without
+changing split tolerances, clips or fonts. Added an independent native multiline
+round-up/down regression (1.3/1.35/1.7 factors). The CI digest additionally
+retains the prefix of oversized diagnostic lines under its unchanged byte
+budget; **32/32** offline self-tests pass. Validation still pending.
+
+`6a2ea13` run `40409816668`: R1/R4 **8/0**, native **56/2**, Extended
+successful, strict production original transport **57/57** verified. Actual
+320 page1 native/PDF opened. Every inline/display math rectangle on every page
+now agrees within **2.28e-13px** (not a relaxed 1e-6); header remains exact
+109px; B109 survives and final glyph box ends at506.1874 vs clip506.6929px.
+
+R9's two remaining failures expose evidence-reader defects, not a proven
+25px source movement: first/last coordinates and all texts match, but selecting
+a trailing newline included a following empty-line box (+25px). Added a direct
+native RenderParagraph regression and trim only unpainted boundary whitespace
+before obtaining its glyph box. The former "any font-box overlap" page filter
+also counted the previous page's line at top31.732px on page1 even though the
+opened native page starts with full Q44 like PDF. Font selection boxes are not
+actual ink (they overhang adjacent allocated flow bands); classify whole native
+lines by their centers, retaining full exact glyph coordinate comparisons.
+This changes neither production clipping nor pagination, and is not pixel-ink
+proof by itself. New diagnostics retain the worst individual glyph comparison.
+Full/analyze/APK/Visual remain blocked; no completion or activation claimed.

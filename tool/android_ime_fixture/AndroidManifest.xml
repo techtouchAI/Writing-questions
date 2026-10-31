@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.writingquestions.acceptanceime">
+  <!-- Separate test-only keyboard; never packaged into the production APK. -->
+  <application android:label="Writing Questions acceptance IME" android:debuggable="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+    <service android:name=".AcceptanceIme" android:label="Writing Questions acceptance IME" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true">
+      <intent-filter><action android:name="android.view.InputMethod" /></intent-filter>
+      <meta-data android:name="android.view.im" android:resource="@xml/method" />
+    </service>
+  </application>
+</manifest>

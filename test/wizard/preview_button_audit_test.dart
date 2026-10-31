@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:writing_questions_app/providers/exam_document_provider.dart';
@@ -21,6 +22,8 @@ import 'package:writing_questions_app/views/widgets/smart_exam_toolbar.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 import 'package:writing_questions_app/views/wizard/paper_header_footer_view.dart';
 import 'package:writing_questions_app/views/wizard/preview_toolbar.dart';
+
+import 'preview_test_gestures.dart';
 
 class _TestImagePicker extends ImagePickerPlatform {
   _TestImagePicker({this.fail = false, this.file});
@@ -48,13 +51,22 @@ ExamDocument _document() => ExamDocument(
       ],
     );
 
+// Keep the original desktop cases and execute the same real-pointer/model
+// assertions on narrow viewports. This is NOT PDF/keyboard-platform parity.
+double _auditWidth = 1600;
+
 Future<void> _pump(WidgetTester tester, ExamWizardController controller,
-    {double width = 1600, VoidCallback? onBack, ExamDocumentProvider? library}) async {
-  tester.view.physicalSize = Size(width, 1600);
+    {double? width, VoidCallback? onBack, ExamDocumentProvider? library}) async {
+  final viewportWidth = width ?? _auditWidth;
+  tester.view.physicalSize = Size(viewportWidth, viewportWidth < 400 ? 1000 : 1600);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(MaterialApp(
+    debugShowCheckedModeBanner: false, locale: const Locale('ar'),
+    supportedLocales: const [Locale('ar'), Locale('en')],
+    localizationsDelegates: const [GlobalMaterialLocalizations.delegate,
+      GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
     home: MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: controller),
@@ -64,6 +76,9 @@ Future<void> _pump(WidgetTester tester, ExamWizardController controller,
     ),
   ));
   await tester.pumpAndSettle();
+  expect(find.byType(SmartExamToolbar), findsNothing,
+      reason: 'Specialties are hidden initially; command audits open the real UI.');
+  await openPreviewSpecialty(tester, 'نص');
 }
 
 Finder _tool(String tooltip) => find.descendant(
@@ -84,6 +99,9 @@ void main() {
   // "visible but untappable" controls, rather than calling callbacks directly.
   setUpAll(() => WidgetController.hitTestWarningShouldBeFatal = true);
   tearDownAll(() => WidgetController.hitTestWarningShouldBeFatal = false);
+  for (final width in [1600.0, 320.0, 360.0]) {
+    group('real pointer audit default viewport ${width.toInt()}dp', () {
+      setUp(() => _auditWidth = width);
 
   testWidgets('automatic font, size, spacing and color really clear overrides', (tester) async {
     final controller = ExamWizardController(document: _document());
@@ -202,8 +220,7 @@ void main() {
     );
     await _pump(tester, controller);
 
-    await _tap(tester, _tool('إدراج شكل'));
-    await _tap(tester, find.text('مربع').last);
+    await tapPreviewMedia(tester, 'مربع');
 
     expect(controller.document.questions, isEmpty);
     expect(controller.document.floatingElements, hasLength(1));
@@ -340,17 +357,17 @@ void main() {
   testWidgets('text insertion without a field gives guidance instead of silence', (tester) async {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
-    await _tap(tester, find.text('سطر جديد'));
+    await tapPreviewCommand(tester, 'نص', 'سطر جديد');
     expect(find.text('انقر داخل حقل نصي على الورقة أولاً.'), findsOneWidget);
     await _tap(tester, _field('branch-statement-b1'));
-    await _tap(tester, find.text('ملاحظة للمعلم'));
+    await tapPreviewCommand(tester, 'نص', 'ملاحظة للمعلم');
     expect(controller.questions.first.branches.single.content.statement, contains('ملاحظة: '));
     await _tap(tester, find.byTooltip('حذف الفرع'));
-    await _tap(tester, find.text('سطر جديد'));
+    await tapPreviewCommand(tester, 'نص', 'سطر جديد');
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('all shape menu entries and media chips insert as free document elements', (tester) async {
+  testWidgets('every unique media shape command preserves insertion semantics', (tester) async {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
     await _tap(tester, _field('statement-q1'));
@@ -359,20 +376,22 @@ void main() {
       'دائرة': FloatingShapeType.circle, 'مثلث': FloatingShapeType.triangle,
       'خط': FloatingShapeType.line, 'سهم': FloatingShapeType.arrow,
     };
-    for (final entry in shapes.entries) {
-      final before = controller.document.floatingElements.length;
-      await _tap(tester, _tool('إدراج شكل'));
-      await _tap(tester, find.text(entry.key).last);
-      expect(controller.document.floatingElements.length, before + 1);
-      expect(controller.document.floatingElements.last.shape, entry.value);
+    // The removed popup and these chips called the same _addShapeToSelection.
+    // Test the surviving UI for ALL six values, with and without a selection.
+    for (final selected in <bool>[true, false]) {
+      if (!selected) {
+        await _tap(tester, _tool('تحديد الكل'));
+        await _tap(tester, _tool('إلغاء تحديد الكل'));
+      }
+      for (final entry in shapes.entries) {
+        final before = controller.document.floatingElements.length;
+        await tapPreviewMedia(tester, entry.key);
+        expect(controller.document.floatingElements.length, before + 1);
+        expect(controller.document.floatingElements.last.shape, entry.value);
+      }
     }
-    await _tap(tester, find.text('وسائط'));
-    for (final entry in shapes.entries) {
-      final before = controller.document.floatingElements.length;
-      await _tap(tester, find.text(entry.key).last);
-      expect(controller.document.floatingElements.length, before + 1);
-      expect(controller.document.floatingElements.last.shape, entry.value);
-    }
+    expect(find.byTooltip('إدراج شكل'), findsNothing,
+        reason: 'There must not be a second insertion path.');
     expect(controller.questions.every((question) => question.attachments.isEmpty), isTrue);
     expect(tester.takeException(), isNull);
   });
@@ -381,7 +400,7 @@ void main() {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
     await _tap(tester, _field('statement-q1'));
-    await _tap(tester, _tool('إضافة فاصل'));
+    await tapPreviewMedia(tester, 'فاصل');
     expect(controller.questions.first.dividerAfter, isNotNull);
     await _tap(tester, find.byKey(const ValueKey('divider-q:q1')));
     await _tap(tester, find.text('السماكة'));
@@ -400,7 +419,7 @@ void main() {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
     await _tap(tester, _field('statement-q1'));
-    await _tap(tester, find.text('فرع جديد'));
+    await tapPreviewCommand(tester, 'نص', 'فرع جديد');
     expect(controller.questions.first.branches, hasLength(2));
     expect(controller.questions[1].branches, isEmpty);
     // أدوات الفرع صارت في شريط خارج الورقة وتعمل على فرع **محدَّد** (§19.15)؛
@@ -430,7 +449,7 @@ void main() {
     await _tap(tester, find.byTooltip('حذف السؤال').first);
     await _tap(tester, find.text('حذف'));
     expect(controller.questions, hasLength(2));
-    await _tap(tester, find.text('سؤال جديد'));
+    await tapPreviewCommand(tester, 'نص', 'سؤال جديد');
     expect(controller.questions, hasLength(3));
     expect(tester.takeException(), isNull);
   });
@@ -502,10 +521,12 @@ void main() {
     await _pump(tester, controller);
     final original = controller.document.settings.pageBorder;
     await _tap(tester, find.byTooltip('إعدادات الورقة'));
+    expect(tester.takeException(), isNull);
     await _tap(tester, find.text('إطار حول الصفحة'));
     await _tap(tester, find.text('إلغاء'));
     expect(controller.document.settings.pageBorder, original);
     await _tap(tester, find.byTooltip('إعدادات الورقة'));
+    expect(tester.takeException(), isNull);
     await _tap(tester, find.text('إطار حول الصفحة'));
     await _tap(tester, find.text('تطبيق'));
     expect(controller.document.settings.pageBorder, !original);
@@ -537,10 +558,11 @@ void main() {
       'كيمياء': ['ماء', 'ثاني أكسيد الكربون', 'حمض الكبريتيك', 'الأمونيا', 'سهم تفاعل', 'تفاعل عكوس', 'معادلة أيونية'],
       'فيزياء': ['قوانين نيوتن', 'نسبية', 'قانون أوم', 'الشغل', 'سرعة', 'متغير'],
     }.entries) {
-      await _tap(tester, find.text(tab.key));
+      await openPreviewSpecialty(tester, tab.key);
       for (final label in tab.value) {
-        await _tap(tester, find.text(label).last);
+        await tapPreviewCommand(tester, tab.key, label);
         expect(find.byType(Dialog), findsOneWidget);
+        expect(tester.takeException(), isNull, reason: '${tab.key}: $label');
         await _tap(tester, find.text('إلغاء'));
       }
     }
@@ -586,11 +608,16 @@ void main() {
     final handle = find.byKey(const ValueKey('resize-element-resize'));
     await tester.ensureVisible(handle);
     // Arabic page: dx is measured from the right, so drag the resize handle left to widen.
+    final zoom = tester.widget<PreviewToolbar>(find.byType(PreviewToolbar)).zoom;
     await tester.drag(handle, const Offset(-36, 24));
     await tester.pumpAndSettle();
     final element = controller.questions.first.attachments.single;
     expect(element.width, greaterThan(100));
     expect(element.height, greaterThan(80));
+    // Global screen deltas must be converted to paper units exactly once;
+    // retain the original growth checks and also reject double zoom scaling.
+    expect(element.width, closeTo(100 + 36 / zoom, 1e-4));
+    expect(element.height, closeTo(80 + 24 / zoom, 1e-4));
     expect(tester.takeException(), isNull);
   });
 
@@ -632,10 +659,9 @@ void main() {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
     await _tap(tester, _field('branch-statement-b1'));
-    await _tap(tester, find.text('آية قرآنية'));
+    await tapPreviewCommand(tester, 'نص', 'آية قرآنية');
     expect(controller.questions.first.branches.single.content.statement, contains('﴿'));
-    await _tap(tester, find.text('رياضيات'));
-    await _tap(tester, find.text('كسر'));
+    await tapPreviewCommand(tester, 'رياضيات', 'كسر');
     await _tap(tester, find.text('إدراج'));
     expect(find.byTooltip('إلغاء الإدراج'), findsOneWidget);
     await _tap(tester, find.byTooltip('إلغاء الإدراج'));
@@ -650,13 +676,13 @@ void main() {
     ImagePickerPlatform.instance = _TestImagePicker(fail: true);
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
-    await _tap(tester, _tool('إدراج صورة'));
+    await tapPreviewMedia(tester, 'صورة');
     expect(find.textContaining('تعذر فتح الصورة'), findsOneWidget);
     expect(controller.document.floatingElements, isEmpty);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('image insert, media insert, replace and cancellation use the picker result', (tester) async {
+  testWidgets('unique image command, replace and cancellation use the picker result', (tester) async {
     final originalPicker = ImagePickerPlatform.instance;
     addTearDown(() => ImagePickerPlatform.instance = originalPicker);
     final bytes = Uint8List.fromList(base64Decode(
@@ -665,7 +691,7 @@ void main() {
     ImagePickerPlatform.instance = _TestImagePicker(file: XFile.fromData(bytes, mimeType: 'image/png'));
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
-    await _tap(tester, _tool('إدراج صورة'));
+    await tapPreviewMedia(tester, 'صورة');
     expect(controller.document.floatingElements.single.bytes, bytes);
     final original = controller.document.floatingElements.single;
     await _tap(tester, find.byTooltip('استبدال الصورة'));
@@ -675,13 +701,14 @@ void main() {
     expect(replaced.dy, original.dy);
     expect(replaced.width, original.width);
     expect(replaced.height, original.height);
-    await _tap(tester, find.text('وسائط'));
-    await _tap(tester, find.descendant(of: find.byType(SmartExamToolbar), matching: find.text('صورة')));
+    await tapPreviewMedia(tester, 'صورة');
     expect(controller.document.floatingElements, hasLength(2));
     ImagePickerPlatform.instance = _TestImagePicker();
-    await _tap(tester, _tool('إدراج صورة'));
+    await tapPreviewMedia(tester, 'صورة');
     expect(controller.document.floatingElements, hasLength(2));
     expect(find.textContaining('تعذر فتح الصورة'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+    });
+  }
 }

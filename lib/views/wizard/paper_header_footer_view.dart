@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../layout/blueprint/exam_blueprint.dart';
 import '../../layout/document_ir.dart';
+import '../../layout/document_direction.dart';
+import '../../layout/canonical/layout_units.dart';
 import '../../layout/semantic/inline_nodes.dart';
 import '../../models/paper_font.dart';
 import '../../models/paper_text_style.dart';
@@ -47,13 +49,19 @@ class PaperHeaderView extends StatelessWidget {
   Widget _semanticLine(
     InlineContent content,
     TextStyle style,
-    TextAlign align,
-  ) =>
+    TextAlign align, {
+    DocumentDirection direction = DocumentDirection.inherit,
+  }) =>
       TexText.fromRichContent(
         content.richContent,
         style: style,
         mathTextStyle: style,
         textAlign: align,
+        textDirection: switch (direction) {
+          DocumentDirection.ltr => TextDirection.ltr,
+          DocumentDirection.rtl => TextDirection.rtl,
+          DocumentDirection.auto || DocumentDirection.inherit => null,
+        },
       );
 
   List<Widget> _legacyLines(
@@ -76,14 +84,15 @@ class PaperHeaderView extends StatelessWidget {
     TextStyle lineStyle,
     TextAlign columnAlign,
   ) {
-    final align = PaperStyles.toTextAlign(style.align, columnAlign);
     final spacing = style.paragraphSpacing;
     return <Widget>[
       for (final line in lines) ...<Widget>[
         _semanticLine(
           line.content,
-          line.bold ? lineStyle.copyWith(fontWeight: FontWeight.bold) : lineStyle,
-          align,
+          lineStyle.copyWith(fontWeight:
+              (style.bold ?? line.bold) ? FontWeight.bold : FontWeight.normal),
+          PaperStyles.toTextAlign(style.align ?? line.alignment, columnAlign),
+          direction: line.direction,
         ),
         if (spacing != null && spacing > 0) SizedBox(height: spacing),
       ],
@@ -122,8 +131,8 @@ class PaperHeaderView extends StatelessWidget {
       textDirection: TextDirection.rtl,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        decoration: framed
-            ? BoxDecoration(border: Border.all(color: PaperStyles.ink, width: 1.2))
+        foregroundDecoration: framed
+            ? BoxDecoration(border: Border.all(color: PaperStyles.ink, width: LayoutUnits.ptToPx(1), strokeAlign: BorderSide.strokeAlignCenter))
             : null,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -136,7 +145,8 @@ class PaperHeaderView extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   if (showBismillah)
-                    _semanticLine(bismillah, bismillahStyle, TextAlign.center),
+                    _semanticLine(bismillah, bismillahStyle, TextAlign.center,
+                        direction: ir?.bismillah.direction ?? DocumentDirection.inherit),
                   ...center,
                 ],
               ),
