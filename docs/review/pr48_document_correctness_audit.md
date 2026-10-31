@@ -97,9 +97,15 @@
 - **لا تخفيف اختبار**: بوابة `Android IME acceptance` تفشل لأنها تتحقق من
   المستوى الثالث (مساواة الاستخراج للنص)، وهو لا يتحقق لأي ملف عربي متطابق
   بصريًا. لم أُعدِّل البوابة.
-- **CI على آخر SHA (`aa88765`)**: `Analyze, test, and build APK` + `Visual regression
-  (Vector/Exact vs preview)` + `C6 diagnostics` + `Extended / Diagnostic tests` =
-  **success** (runs `41231261541`, `41231261572`).
+- **CI على هذا الفرع** (`Analyze, test, and build APK` + `Visual regression
+  (Vector/Exact vs preview)` + `C6 diagnostics` + `Extended / Diagnostic tests`):
+
+  | SHA | التشغيلات | النتيجة |
+  |---|---|---|
+  | `9ac82a2` | `41230887589` (Extended) | success؛ التشغيل الرئيسي `41230887554` أُلغي بإرسالٍ أحدث (سلوك التزامن المتوقع) |
+  | `aa88765` | `41231261541` + `41231261572` | success |
+  | `208c3a1` (HEAD) | `41233443760` + `41233443761` | success |
+
   بوابات Android IME وبوابات النقل (`* review transport`) تعمل عند
   `workflow_dispatch` فقط، لذلك تظهر `skipped` في تشغيل الدفع العادي؛ آخر قياس
   لها على كود الإنتاج غير المعدَّل هو التشغيل `41193725651` (المستخدم في §2).
