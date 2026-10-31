@@ -901,5 +901,720 @@
       "pdfminer": "ٌمَالَس",
       "pypdf": "سَالَمٌ"
     }
+  },
+  "isolatedOperatorProbe": {
+    "script": "tool/prototype_semantic_pdf/probe_isolated_ops.py",
+    "why": "Separates two variables the earlier matrix confounded: emission order (visual vs logical) and text-operator isolation (one BT per word vs one BT per glyph). pypdf accumulates one run per BT and prepends each RTL character, so per-glyph BT removes its reversal; pdfminer infers word breaks from positive x gaps, so logical emission glues words.",
+    "pixelDeltasForLogicalIsolatedSegment": {
+      "salatun": [
+        0
+      ],
+      "multi_mark": [
+        11
+      ],
+      "waw_lam_alef": [
+        7
+      ],
+      "short_phrase": [
+        4
+      ],
+      "mixed": [
+        3
+      ]
+    },
+    "matrix": [
+      {
+        "item": "salatun",
+        "order": "visual",
+        "ops": "single",
+        "payload": "segment",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "salatun",
+        "order": "visual",
+        "ops": "single",
+        "payload": "cluster",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "salatun",
+        "order": "visual",
+        "ops": "isolated",
+        "payload": "segment",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "salatun",
+        "order": "visual",
+        "ops": "isolated",
+        "payload": "cluster",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "salatun",
+        "order": "logical",
+        "ops": "single",
+        "payload": "segment",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "salatun",
+        "order": "logical",
+        "ops": "single",
+        "payload": "cluster",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "salatun",
+        "order": "logical",
+        "ops": "isolated",
+        "payload": "segment",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "salatun",
+        "order": "logical",
+        "ops": "isolated",
+        "payload": "cluster",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "short_phrase",
+        "order": "visual",
+        "ops": "single",
+        "payload": "segment",
+        "mupdf": true,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "short_phrase",
+        "order": "visual",
+        "ops": "single",
+        "payload": "cluster",
+        "mupdf": true,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "short_phrase",
+        "order": "visual",
+        "ops": "isolated",
+        "payload": "segment",
+        "mupdf": true,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "short_phrase",
+        "order": "visual",
+        "ops": "isolated",
+        "payload": "cluster",
+        "mupdf": true,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "short_phrase",
+        "order": "logical",
+        "ops": "single",
+        "payload": "segment",
+        "mupdf": true,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": false
+      },
+      {
+        "item": "short_phrase",
+        "order": "logical",
+        "ops": "single",
+        "payload": "cluster",
+        "mupdf": true,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": false
+      },
+      {
+        "item": "short_phrase",
+        "order": "logical",
+        "ops": "isolated",
+        "payload": "segment",
+        "mupdf": true,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": false
+      },
+      {
+        "item": "short_phrase",
+        "order": "logical",
+        "ops": "isolated",
+        "payload": "cluster",
+        "mupdf": true,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": false
+      },
+      {
+        "item": "multi_mark",
+        "order": "visual",
+        "ops": "single",
+        "payload": "segment",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": true,
+        "pageIdentical": true
+      },
+      {
+        "item": "multi_mark",
+        "order": "visual",
+        "ops": "single",
+        "payload": "cluster",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "multi_mark",
+        "order": "visual",
+        "ops": "isolated",
+        "payload": "segment",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "multi_mark",
+        "order": "visual",
+        "ops": "isolated",
+        "payload": "cluster",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "multi_mark",
+        "order": "logical",
+        "ops": "single",
+        "payload": "segment",
+        "mupdf": true,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": false
+      },
+      {
+        "item": "multi_mark",
+        "order": "logical",
+        "ops": "single",
+        "payload": "cluster",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": false
+      },
+      {
+        "item": "multi_mark",
+        "order": "logical",
+        "ops": "isolated",
+        "payload": "segment",
+        "mupdf": true,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": true,
+        "pageIdentical": false
+      },
+      {
+        "item": "multi_mark",
+        "order": "logical",
+        "ops": "isolated",
+        "payload": "cluster",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": false
+      },
+      {
+        "item": "mixed",
+        "order": "visual",
+        "ops": "single",
+        "payload": "segment",
+        "mupdf": false,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "mixed",
+        "order": "visual",
+        "ops": "single",
+        "payload": "cluster",
+        "mupdf": false,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "mixed",
+        "order": "visual",
+        "ops": "isolated",
+        "payload": "segment",
+        "mupdf": false,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "mixed",
+        "order": "visual",
+        "ops": "isolated",
+        "payload": "cluster",
+        "mupdf": false,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "mixed",
+        "order": "logical",
+        "ops": "single",
+        "payload": "segment",
+        "mupdf": false,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": false
+      },
+      {
+        "item": "mixed",
+        "order": "logical",
+        "ops": "single",
+        "payload": "cluster",
+        "mupdf": false,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": false
+      },
+      {
+        "item": "mixed",
+        "order": "logical",
+        "ops": "isolated",
+        "payload": "segment",
+        "mupdf": false,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": false
+      },
+      {
+        "item": "mixed",
+        "order": "logical",
+        "ops": "isolated",
+        "payload": "cluster",
+        "mupdf": false,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": false
+      },
+      {
+        "item": "waw_lam_alef",
+        "order": "visual",
+        "ops": "single",
+        "payload": "segment",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "waw_lam_alef",
+        "order": "visual",
+        "ops": "single",
+        "payload": "cluster",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "waw_lam_alef",
+        "order": "visual",
+        "ops": "isolated",
+        "payload": "segment",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "waw_lam_alef",
+        "order": "visual",
+        "ops": "isolated",
+        "payload": "cluster",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": true
+      },
+      {
+        "item": "waw_lam_alef",
+        "order": "logical",
+        "ops": "single",
+        "payload": "segment",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": false
+      },
+      {
+        "item": "waw_lam_alef",
+        "order": "logical",
+        "ops": "single",
+        "payload": "cluster",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": false
+      },
+      {
+        "item": "waw_lam_alef",
+        "order": "logical",
+        "ops": "isolated",
+        "payload": "segment",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": false
+      },
+      {
+        "item": "waw_lam_alef",
+        "order": "logical",
+        "ops": "isolated",
+        "payload": "cluster",
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pageIdentical": false
+      }
+    ],
+    "extractedSamples": {
+      "salatun": {
+        "salatun-visual-single-segment": {
+          "mupdf": "ٌس\u0004اَلَم",
+          "pdfium": "س\u0004اَلَمٌ",
+          "pdfminer": "ٌمَلَا(cid:4)س",
+          "pypdf": "س\u0004لَاَمٌ"
+        },
+        "salatun-visual-single-cluster": {
+          "mupdf": "\u0000ٌم \u0002سَ\u0002اَل",
+          "pdfium": "سَاَلمٌ",
+          "pdfminer": "(cid:0)ٌم(cid:2)لَا(cid:2)َس",
+          "pypdf": "\u0000ٌم\u0002لَا\u0002َس"
+        },
+        "salatun-visual-isolated-segment": {
+          "mupdf": "ٌمَلَا\u0004س",
+          "pdfium": "س\u0004اَلَمٌ",
+          "pdfminer": "ٌمَلَا(cid:4)س",
+          "pypdf": "ٌمَلَا\u0004س"
+        },
+        "salatun-visual-isolated-cluster": {
+          "mupdf": "\u0000ٌم \u0002لَا\u0002َس",
+          "pdfium": "سَاَلمٌ",
+          "pdfminer": "(cid:0)ٌم(cid:2)لَا(cid:2)َس",
+          "pypdf": "\u0000ٌم\u0002لَا\u0002َس"
+        },
+        "salatun-logical-single-segment": {
+          "mupdf": "ٌم \u0003اَلَس",
+          "pdfium": "ساَلَ ٌم",
+          "pdfminer": "سَلَا(cid:3)مٌ",
+          "pypdf": "ٌم\u0003لَاَس"
+        },
+        "salatun-logical-single-cluster": {
+          "mupdf": "َس \u0001مٌ\u0001اَل \u0004",
+          "pdfium": "\u0001سَاَل\u0001 \u0004مٌ",
+          "pdfminer": "َس(cid:1)لَا(cid:1)ٌم(cid:4)",
+          "pypdf": "َس\u0001لَا\u0001ٌم\u0004"
+        },
+        "salatun-logical-isolated-segment": {
+          "mupdf": "سَلَا\u0003مٌ",
+          "pdfium": "ساَلَ ٌم",
+          "pdfminer": "سَلَا(cid:3)مٌ",
+          "pypdf": "سَلَا\u0003مٌ"
+        },
+        "salatun-logical-isolated-cluster": {
+          "mupdf": "َس \u0001لَا\u0001ٌم \u0004",
+          "pdfium": "\u0001سَاَل\u0001 \u0004مٌ",
+          "pdfminer": "َس(cid:1)لَا(cid:1)ٌم(cid:4)",
+          "pypdf": "َس\u0001لَا\u0001ٌم\u0004"
+        }
+      },
+      "short_phrase": {
+        "short_phrase-visual-single-segment": {
+          "mupdf": "نص عربي طويل",
+          "pdfium": "نص عربي طويل",
+          "pdfminer": "ليوط يبرع صن",
+          "pypdf": "نصعربيطويل"
+        },
+        "short_phrase-visual-single-cluster": {
+          "mupdf": "نص عربي طويل",
+          "pdfium": "نص عربي طويل",
+          "pdfminer": "ليوط يبرع صن",
+          "pypdf": "نصعربيطويل"
+        },
+        "short_phrase-visual-isolated-segment": {
+          "mupdf": "نص عربي طويل",
+          "pdfium": "نص عربي طويل",
+          "pdfminer": "ليوط يبرع صن",
+          "pypdf": "صنيبرعليوط"
+        },
+        "short_phrase-visual-isolated-cluster": {
+          "mupdf": "نص عربي طويل",
+          "pdfium": "نص عربي طويل",
+          "pdfminer": "ليوط يبرع صن",
+          "pypdf": "صنيبرعليوط"
+        },
+        "short_phrase-logical-single-segment": {
+          "mupdf": "نص عربي طويل",
+          "pdfium": "نص عربي طويل",
+          "pdfminer": "نصعربيطويل",
+          "pypdf": "صنيبرع ليوط"
+        },
+        "short_phrase-logical-single-cluster": {
+          "mupdf": "نص عربي طويل",
+          "pdfium": "نص عربي طويل",
+          "pdfminer": "نصعربيطويل",
+          "pypdf": "صنيبرع ليوط"
+        },
+        "short_phrase-logical-isolated-segment": {
+          "mupdf": "نص عربي طويل",
+          "pdfium": "نص عربي طويل",
+          "pdfminer": "نصعربيطويل",
+          "pypdf": "نصعربيطويل"
+        },
+        "short_phrase-logical-isolated-cluster": {
+          "mupdf": "نص عربي طويل",
+          "pdfium": "نص عربي طويل",
+          "pdfminer": "نصعربيطويل",
+          "pypdf": "نصعربيطويل"
+        }
+      },
+      "multi_mark": {
+        "multi_mark-visual-single-segment": {
+          "mupdf": "ٌمُحَمَّد",
+          "pdfium": "مُحَمَّدٌ",
+          "pdfminer": "ٌدّ َمَحُم",
+          "pypdf": "مُحَمَّدٌ"
+        },
+        "multi_mark-visual-single-cluster": {
+          "mupdf": "\u0000ٌد \u0002\u0003ّمَ \u0003َح \u0006ُم",
+          "pdfium": "م\u0006ُحََمّدٌ",
+          "pdfminer": "(cid:0)ٌد(cid:2) (cid:3)ّمَ(cid:3)َح(cid:6)ُم",
+          "pypdf": "\u0000ٌد\u0002\u0003ّمَ\u0003َح\u0006ُم"
+        },
+        "multi_mark-visual-isolated-segment": {
+          "mupdf": "ٌدَّمَحُم",
+          "pdfium": "مُحَمَّدٌ",
+          "pdfminer": "ٌدّ َمَحُم",
+          "pypdf": "ٌدَّمَحُم"
+        },
+        "multi_mark-visual-isolated-cluster": {
+          "mupdf": "\u0000ٌد \u0002\u0003ّمَ \u0003َح \u0006ُم",
+          "pdfium": "م\u0006ُحََمّدٌ",
+          "pdfminer": "(cid:0)ٌد(cid:2) (cid:3)ّمَ(cid:3)َح(cid:6)ُم",
+          "pypdf": "\u0000ٌد\u0002\u0003ّمَ\u0003َح\u0006ُم"
+        },
+        "multi_mark-logical-single-segment": {
+          "mupdf": "مُحَمَّدٌ",
+          "pdfium": "ُم َح ّمَ ٌد",
+          "pdfminer": "ّدٌ مُحَمَ",
+          "pypdf": "ٌدَّمَحُم"
+        },
+        "multi_mark-logical-single-cluster": {
+          "mupdf": "ُم\u0001َح \u0003ّمَ \u0003\u0005ٌد\u0007",
+          "pdfium": "\u0001مُ حَ َ\u0005مّ \u0007دٌ",
+          "pdfminer": "(cid:5)ٌد(cid:7) ُم(cid:1)َح(cid:3)ّمَ(cid:3)",
+          "pypdf": "ُم\u0001َح\u0003ّمَ\u0003\u0005ٌد\u0007"
+        },
+        "multi_mark-logical-isolated-segment": {
+          "mupdf": "مُحَمَّدٌ",
+          "pdfium": "ُم َح ّمَ ٌد",
+          "pdfminer": "ّدٌ مُحَمَ",
+          "pypdf": "مُحَمَّدٌ"
+        },
+        "multi_mark-logical-isolated-cluster": {
+          "mupdf": "ُم\u0001َح \u0003ّمَ \u0003\u0005ٌد\u0007",
+          "pdfium": "\u0001مُ حَ َ\u0005مّ \u0007دٌ",
+          "pdfminer": "(cid:5)ٌد(cid:7) ُم(cid:1)َح(cid:3)ّمَ(cid:3)",
+          "pypdf": "ُم\u0001َح\u0003ّمَ\u0003\u0005ٌد\u0007"
+        }
+      },
+      "mixed": {
+        "mixed-visual-single-segment": {
+          "mupdf": "نص عربيEnglish 123",
+          "pdfium": "نص عربي English 123",
+          "pdfminer": "123 English يبرع صن",
+          "pypdf": "نصعربيEnglish123"
+        },
+        "mixed-visual-single-cluster": {
+          "mupdf": "نص عربيEnglish 123",
+          "pdfium": "نص عربي English 123",
+          "pdfminer": "123 English يبرع صن",
+          "pypdf": "نصعربيEnglish123"
+        },
+        "mixed-visual-isolated-segment": {
+          "mupdf": "نص عربيEnglish 123",
+          "pdfium": "نص عربي English 123",
+          "pdfminer": "123 English يبرع صن",
+          "pypdf": "صنيبرعEnglish123"
+        },
+        "mixed-visual-isolated-cluster": {
+          "mupdf": "نص عربيEnglish 123",
+          "pdfium": "نص عربي English 123",
+          "pdfminer": "123 English يبرع صن",
+          "pypdf": "صنيبرعEnglish123"
+        },
+        "mixed-logical-single-segment": {
+          "mupdf": "نص عربيEnglish 123",
+          "pdfium": "نص عربي English 123",
+          "pdfminer": "123 English نصعربي",
+          "pypdf": "صنيبرع English123"
+        },
+        "mixed-logical-single-cluster": {
+          "mupdf": "نص عربيEnglish 123",
+          "pdfium": "نص عربي English 123",
+          "pdfminer": "123 English نصعربي",
+          "pypdf": "صنيبرع English123"
+        },
+        "mixed-logical-isolated-segment": {
+          "mupdf": "نص عربيEnglish 123",
+          "pdfium": "نص عربي English 123",
+          "pdfminer": "123 English نصعربي",
+          "pypdf": "نصعربيEnglish123"
+        },
+        "mixed-logical-isolated-cluster": {
+          "mupdf": "نص عربيEnglish 123",
+          "pdfium": "نص عربي English 123",
+          "pdfminer": "123 English نصعربي",
+          "pypdf": "نصعربيEnglish123"
+        }
+      },
+      "waw_lam_alef": {
+        "waw_lam_alef-visual-single-segment": {
+          "mupdf": "َو\u0002اَل تَقْرَبُوا",
+          "pdfium": "واَلَ تَقْرَبُوا",
+          "pdfminer": "اوُبَرْقَت َلَا(cid:2)و",
+          "pypdf": "و\u0002لَاَتَقْرَبُوا"
+        },
+        "waw_lam_alef-visual-single-cluster": {
+          "mupdf": "\u0000وَ\u0000اَل تَ\u0000 قْ\bَر\u0000 بُ\u0005وا",
+          "pdfium": "وَاَل تَقَ\bْرب\u0005ُوا",
+          "pdfminer": "او(cid:5)ُب(cid:0)رَ(cid:8)ْق(cid:0)َت (cid:0)لَا(cid:0)َو",
+          "pypdf": "\u0000لَا\u0000َوَت\u0000ْق\bرَ\u0000ُب\u0005وا"
+        },
+        "waw_lam_alef-visual-isolated-segment": {
+          "mupdf": "َلَا\u0002و واُبَرْقَت",
+          "pdfium": "واَلَ تَقْرَبُوا",
+          "pdfminer": "اوُبَرْقَت َلَا(cid:2)و",
+          "pypdf": "َلَا\u0002واوُبَرْقَت"
+        },
+        "waw_lam_alef-visual-isolated-cluster": {
+          "mupdf": "\u0000اَل\u0000َووا\u0005ُب \u0000َر\bْق \u0000َت",
+          "pdfium": "وَاَل تَقَ\bْرب\u0005ُوا",
+          "pdfminer": "او(cid:5)ُب(cid:0)رَ(cid:8)ْق(cid:0)َت (cid:0)لَا(cid:0)َو",
+          "pypdf": "\u0000لَا\u0000َواو\u0005ُب\u0000رَ\bْق\u0000َت"
+        },
+        "waw_lam_alef-logical-single-segment": {
+          "mupdf": "اوُبَرْقَت \u0003اَلَو",
+          "pdfium": "واَلَ َت ْقرَ ُبوا",
+          "pdfminer": "بُوا َ قْر َ ت وَلَا(cid:3)",
+          "pypdf": "\u0003لَاَواوُبَرْقَت"
+        },
+        "waw_lam_alef-logical-single-cluster": {
+          "mupdf": "َو \u0001\u0001اَلَت \u0001ْق \u0005بُ\u0001 َر \bوا",
+          "pdfium": "\u0001وَاَل\u0001 \u0001تَ \u0005قَْر\u0001 \bبُوا",
+          "pdfminer": "ُب(cid:8)وا (cid:1) ْق(cid:5)رَ (cid:1) َت َو(cid:1)لَا(cid:1)",
+          "pypdf": "َو\u0001لَا\u0001 َت\u0001 ْق\u0005رَ \u0001ُب\bاو"
+        },
+        "waw_lam_alef-logical-isolated-segment": {
+          "mupdf": "وَلَا\u0003تَقْرَبُوا",
+          "pdfium": "واَلَ َت ْقرَ ُبوا",
+          "pdfminer": "بُوا َ قْر َ ت وَلَا(cid:3)",
+          "pypdf": "وَلَا\u0003تَق ْرَ بُوا"
+        },
+        "waw_lam_alef-logical-isolated-cluster": {
+          "mupdf": "َو \u0001لَا\u0001َت \u0001ْق \u0005رَ\u0001ُب \bوا",
+          "pdfium": "\u0001وَاَل\u0001 \u0001تَ \u0005قَْر\u0001 \bبُوا",
+          "pdfminer": "ُب(cid:8)وا (cid:1) ْق(cid:5)رَ (cid:1) َت َو(cid:1)لَا(cid:1)",
+          "pypdf": "َو\u0001لَا\u0001َت\u0001 ْق\u0005رَ \u0001ُب\bوا"
+        }
+      }
+    }
   }
 }
