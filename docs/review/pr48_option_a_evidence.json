@@ -904,5 +904,349 @@
     "Space glyphs are painted in every variant (production does the same); omitting them invalidates extractor word-separation measurements.",
     "Word order is reversed for visual emission on RTL lines only; LTR lines keep logical order in both modes (harness fix documented in layout_r.emission_order).",
     "Items equation/special_symbols use only characters present in the Arabic face; multi-face fallback is out of scope for this research harness."
-  ]
+  ],
+  "markStreamOrderExperiment": {
+    "hypothesis": "Emitting each combining mark *before* its base at identical coordinates would let bidi-reversing engines (MuPDF, PDFium) restore base-then-mark order without moving any glyph.",
+    "result": "rejected: no engine gained a pass and every item with marks changed pixels",
+    "rows": [
+      {
+        "item": "plain_arabic",
+        "markFirst": false,
+        "mupdf": true,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      {
+        "item": "plain_arabic",
+        "markFirst": true,
+        "mupdf": true,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      {
+        "item": "vocalised_word",
+        "markFirst": false,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 0
+      },
+      {
+        "item": "vocalised_word",
+        "markFirst": true,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 36
+      },
+      {
+        "item": "multi_mark",
+        "markFirst": false,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      {
+        "item": "multi_mark",
+        "markFirst": true,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 107
+      },
+      {
+        "item": "tanwin",
+        "markFirst": false,
+        "mupdf": false,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      {
+        "item": "tanwin",
+        "markFirst": true,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 225
+      },
+      {
+        "item": "shadda_fatha",
+        "markFirst": false,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 0
+      },
+      {
+        "item": "shadda_fatha",
+        "markFirst": true,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 146
+      },
+      {
+        "item": "lam_alef",
+        "markFirst": false,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 0
+      },
+      {
+        "item": "lam_alef",
+        "markFirst": true,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 161
+      },
+      {
+        "item": "mark_in_ligature",
+        "markFirst": false,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 0
+      },
+      {
+        "item": "mark_in_ligature",
+        "markFirst": true,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 72
+      }
+    ],
+    "raw": {
+      "plain_arabic:base": {
+        "mupdf": "نص عربي طويل\n",
+        "pdfium": "نص عربي طويل",
+        "pdfminer": "ليوط يبرع صن\n\n\f",
+        "pypdf": "نص عربي طويل"
+      },
+      "plain_arabic:markFirst": {
+        "mupdf": "نص عربي طويل\n",
+        "pdfium": "نص عربي طويل",
+        "pdfminer": "ليوط يبرع صن\n\n\f",
+        "pypdf": "نص عربي طويل"
+      },
+      "vocalised_word:base": {
+        "mupdf": "ٌس\u0004اَلَم\n",
+        "pdfium": "س\u0004اَلَمٌ",
+        "pdfminer": "ٌمَلَا(cid:4)س\n\n\f",
+        "pypdf": "س\u0004لَاَمٌ"
+      },
+      "vocalised_word:markFirst": {
+        "mupdf": "ٌَساَل\u0003م\n",
+        "pdfium": "ساَلمٌَ",
+        "pdfminer": "َم(cid:3)لَاس\n\nٌ\n\f",
+        "pypdf": "سلَا\u0003مٌَ"
+      },
+      "multi_mark:base": {
+        "mupdf": "ٌمُحَمَّد\n",
+        "pdfium": "مُحَمَّدٌ",
+        "pdfminer": "ٌدّ\n\nَمَحُم\n\n\f",
+        "pypdf": "مُحَمَّدٌ"
+      },
+      "multi_mark:markFirst": {
+        "mupdf": "ٌَّمحُمَد\n",
+        "pdfium": "محُمَدٌَّ",
+        "pdfminer": "َدَمُحم\n\nٌ\nّ\n\f",
+        "pypdf": "محُمَدٌَّ"
+      },
+      "tanwin:base": {
+        "mupdf": "ٍكِتَابٌ قَلَمًا عِلْم\n",
+        "pdfium": "كِتَابٌ قَلَمًا عِلْمٍ",
+        "pdfminer": "ٍمْلِع اًمَلَق ٌباَتِك\n\n\f",
+        "pypdf": "كِتَابٌ قَلَمًا عِلْمٍ"
+      },
+      "tanwin:markFirst": {
+        "mupdf": "ٍْكتِاَبٌ قلَمَاً علِم\n",
+        "pdfium": "كتِاَبٌ قلَمَاً علِمٍْ",
+        "pdfminer": "ْمِلع ًاَمَلق ٌبَاِتك\n\nٍ\n\f",
+        "pypdf": "كتِاَبٌ قلَمَاً علِمٍْ"
+      },
+      "shadda_fatha:base": {
+        "mupdf": "إِنَّ َهَّللا\u0007\b\u0007 رَبِّي\n",
+        "pdfium": "إِنَّ َهَّللا\u0007\b رَبِّي",
+        "pdfminer": "يّ\n\nِبَر (cid:7)\n\n(cid:7)اللَّهَ ّ\n\nَنِإ\n\n(cid:8)\n\f",
+        "pypdf": "إِنَّ اللَّهَ\u0007\b\u0007 رَبِّي"
+      },
+      "shadda_fatha:markFirst": {
+        "mupdf": "ِّإنَِّ َهَّللا\b\u0007 ربَي\n",
+        "pdfium": "إنَِّ َهَّللا\u0007\b ربَيِّ",
+        "pdfminer": "ِيَبر (cid:7)\n\n(cid:8)اللَّهَ َ\n\nِنإ\n\nّ\n(cid:8)\nّ\n\f",
+        "pypdf": "إنَِّ اللَّهَ\b\b\u0007 ربَيِّ"
+      },
+      "lam_alef:base": {
+        "mupdf": "و\u000bاَلَ تَقْرَبُوا\n",
+        "pdfium": "و\u000bاَلَ تَقْرَبُوا",
+        "pdfminer": "اوُبَرْقَت َلَا(cid:11)و\n\n\f",
+        "pypdf": "و\u000bلَاَ تَقْرَبُوا"
+      },
+      "lam_alef:markFirst": {
+        "mupdf": "واَل\nَ تقَرْبَوُا\n",
+        "pdfium": "واَل\nَ تقَرْبَوُا",
+        "pdfminer": "اُوَبْرَقت َ\n\n(cid:10)لَاو\n\n\f",
+        "pypdf": "ولَا\nَ تقَرْبَوُا"
+      },
+      "mark_in_ligature:base": {
+        "mupdf": "َس\u0002اَلَمٌ و\u0002اَل\n",
+        "pdfium": "ساَلَمٌ واَلَ",
+        "pdfminer": "َلَا(cid:2)و ٌمَلَا(cid:2)س\n\n\f",
+        "pypdf": "س\u0002لَاَمٌ و\u0002لَاَ"
+      },
+      "mark_in_ligature:markFirst": {
+        "mupdf": "َ\u0001ساَل\u0001مٌَ واَل\n",
+        "pdfium": "ساَل\u0001مٌَ واَلَ\u0001",
+        "pdfminer": "(cid:1)لَاو ٌ\n\nَم(cid:1)لَاس\n\nَ\n\f",
+        "pypdf": "سلَا\u0001مٌَ ولَا\u0001َ"
+      }
+    }
+  },
+  "invisibleSemanticLayerExperiment": {
+    "design": "visible glyphs painted in the unchanged reference order with an explicitly EMPTY /ToUnicode destination, plus an invisible (3 Tr) semantic layer emitted in logical order with one BT per glyph carrying source-segment payloads.",
+    "pixelResult": "every item 0 px vs reference (invisible text paints nothing)",
+    "engineResult": {
+      "plain_arabic": {
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": true,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      "vocalised_word": {
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": true,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      "multi_mark": {
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      "tanwin": {
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": true,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      "lam_alef": {
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 0
+      },
+      "mixed": {
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      "optend": {
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": true,
+        "pixelDelta": 0
+      }
+    },
+    "conclusion": "pdfminer and pypdf read the invisible layer correctly, but MuPDF and PDFium emit the CID value of the empty-mapped visible glyphs as control bytes (\\x00..\\x10), so the visible layer cannot be made semantically silent.",
+    "raw": {
+      "plain_arabic": {
+        "mupdf": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\u0004\t\nنص عربي طويل\n",
+        "pdfium": "نص عربي طويل \n\t\u0001\u0004\u0005\u0006\u0007\b\u0004",
+        "pdfminer": "نص عربي طويل\n\n\f",
+        "pypdf": "نص عربي طويل"
+      },
+      "vocalised_word": {
+        "mupdf": "\u0000\u0001\u0002\u0003\u0002\u0004سَلَا\u0002مٌ\n",
+        "pdfium": "ساَلَ ٌم \u0001\u0004",
+        "pdfminer": "سَلَامٌ\n\n\f",
+        "pypdf": "سَلَامٌ"
+      },
+      "multi_mark": {
+        "mupdf": "\u0000\u0001\u0002\u0003\u0004\u0003\u0005\u0006\u0007مُحَمَّدٌ\n",
+        "pdfium": "ُم َح ّمَ ٌد \u0001\u0004\u0005\u0006\u0007",
+        "pdfminer": "ّدٌ\n\n\nمُحَمَ\n\n\f",
+        "pypdf": "مُحَمَّدٌ"
+      },
+      "tanwin": {
+        "mupdf": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\t\n\u0003\n\u000b\u0006\f\r\u0007\n\u000e\u0004\u000fكِتَابٌ\n قَلَمًا عِلْمٍ\n",
+        "pdfium": "ِك َتا ٌب َقلَ ًما ِع ْل ٍم \u000e\u0004\u000f\n\u0007\r\f\u0006\u000b\n\n\t\u0001\u0004\u0005\u0006\u0007\b",
+        "pdfminer": "كِتَابٌ قَلَمًا عِلْمٍ\n\n\f",
+        "pypdf": "كِتَابٌ قَلَمًا عِلْمٍ"
+      },
+      "lam_alef": {
+        "mupdf": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\u0004\b\t\u0004\n\u0004\u000bوَلَا\u0004 تَقْرَبُوا\n",
+        "pdfium": "\u0004واَلَ َت ْقرَ ُبوا \u000b\u0004\n\u0004\t\u0001\u0004\u0005\u0006\u0007\u0004\b",
+        "pdfminer": "بُوا\nوَلَا\nَ قْر َ\n ت\n\n\f",
+        "pypdf": "وَلَا تَق ْرَ بُوا"
+      },
+      "mixed": {
+        "mupdf": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\t\n\u0003\u000b\f\r\u000e\u0003\u000f\u0010نص عربي \nEnglish\n \n123\n",
+        "pdfium": "نص عربي English 123 \u000e\u000f\u0010\u000b\f\r\t\n\u0001\u0004\u0005\u0006\u0007\b",
+        "pdfminer": " 123\nنص عربي \n\nEnglish\n\n\f",
+        "pypdf": "نص عربي English 123"
+      },
+      "optend": {
+        "mupdf": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\u0001\t\n\u0006\u000b\f\r\u000e\u000f\u0010\nOPTEND\n نهاية الخيار\n",
+        "pdfium": "OPTEND نهاية الخيار \u000e\u000f\u0010\r\f\u000b\u0006\n\t\u0001\u0004\u0005\u0006\u0007\b\u0001",
+        "pdfminer": " نهاية الخيار\n\nOPTEND\n\n\f",
+        "pypdf": "OPTEND نهاية الخيار"
+      }
+    }
+  },
+  "outlinedVisibleLayerExperiment": {
+    "design": "visible glyphs drawn as filled vector outlines (no text semantics) + text layer",
+    "pixelDeltas": {
+      "plain_arabic": {
+        "default": 1014,
+        "aa0": 319,
+        "aa8": 1014
+      },
+      "vocalised_word": {
+        "default": 410,
+        "aa0": 138,
+        "aa8": 410
+      },
+      "multi_mark": {
+        "default": 425,
+        "aa0": 139,
+        "aa8": 425
+      },
+      "lam_alef": {
+        "default": 830,
+        "aa0": 291,
+        "aa8": 830
+      }
+    },
+    "conclusion": "Outline filling never matches glyph text rasterisation (MuPDF rasterises text and graphics with different anti-aliasing); Gate 2 cannot be met with an outlined visible layer."
+  }
 }
