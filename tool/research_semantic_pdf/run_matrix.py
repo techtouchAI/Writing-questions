@@ -45,7 +45,7 @@ FONT = str((HERE / '../../assets/fonts/NotoNaskhArabic-Regular.ttf').resolve())
 REFERENCE = {'order': 'visual', 'ops': 'line', 'payload': 'legacy', 'actualText': 'none'}
 ORDERS = ('visual', 'logical')
 OPS = ('line', 'single', 'isolated')
-PAYLOADS = ('legacy', 'segment')
+PAYLOADS = ('legacy', 'logical', 'segment')
 ACTUAL = ('none', 'word', 'cluster')
 
 
@@ -59,7 +59,9 @@ def _entries(word: PlacedWord, order: str) -> list[tuple[int, int, int, float]]:
 
 
 def _payload(word: PlacedWord, idx: int, view: str) -> str:
-    return word.payload(idx, 'decomposed_visual' if view == 'legacy' else 'segment')
+    view_map = {'legacy': 'decomposed_visual', 'logical': 'decomposed',
+                'segment': 'segment'}
+    return word.payload(idx, view_map[view])
 
 
 def _text_ops(encoder, word: PlacedWord, gid: int, idx: int, x: float,

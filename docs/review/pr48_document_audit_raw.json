@@ -1,0 +1,83 @@
+{
+ "file": "/tmp/dev320/ime-document.pdf",
+ "sha256": "b1ee6511e6020479787ea7f3183971e4cce6d8fde7d816983f8743e225548092",
+ "pages": 3,
+ "pagesAudit": [
+  {
+   "page": 1,
+   "spans": 317,
+   "outsidePageBounds": [],
+   "overlappingSpanPairs": 0,
+   "combiningMarksRendered": 4,
+   "fontsUsed": [
+    "Amiri-Regular",
+    "NotoNaskhArabic-Bold",
+    "NotoNaskhArabic-Regular"
+   ],
+   "contentBytes": 3
+  },
+  {
+   "page": 2,
+   "spans": 360,
+   "outsidePageBounds": [],
+   "overlappingSpanPairs": 0,
+   "combiningMarksRendered": 0,
+   "fontsUsed": [
+    "NotoNaskhArabic-Regular"
+   ],
+   "contentBytes": 3
+  },
+  {
+   "page": 3,
+   "spans": 79,
+   "outsidePageBounds": [],
+   "overlappingSpanPairs": 0,
+   "combiningMarksRendered": 0,
+   "fontsUsed": [
+    "NotoNaskhArabic-Bold",
+    "NotoNaskhArabic-Regular"
+   ],
+   "contentBytes": 3
+  }
+ ],
+ "enginesOnSameFile": {
+  "mupdf": "ٌسَلاَم",
+  "pdfium": "سَلاَمٌ",
+  "pdfminer": "ٌمَالَس",
+  "pypdf": "سَالَمٌ"
+ },
+ "payloadRuleComparison20Items": {
+  "visual:line:legacy": {
+   "mupdf": 4,
+   "pdfium": 8,
+   "pdfminer": 1,
+   "pypdf": 6,
+   "pixelIdentical": "20/20",
+   "total": 19
+  },
+  "visual:line:logical": {
+   "mupdf": 3,
+   "pdfium": 7,
+   "pdfminer": 1,
+   "pypdf": 7,
+   "pixelIdentical": "20/20",
+   "total": 18
+  },
+  "visual:line:segment": {
+   "mupdf": 3,
+   "pdfium": 7,
+   "pdfminer": 1,
+   "pypdf": 7,
+   "pixelIdentical": "20/20",
+   "total": 18
+  },
+  "visual:isolated:legacy": {
+   "mupdf": 1,
+   "pdfium": 8,
+   "pdfminer": 1,
+   "pypdf": 1,
+   "pixelIdentical": "20/20",
+   "total": 11
+  }
+ }
+}
