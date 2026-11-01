@@ -418,3 +418,20 @@ class ElementGeometryInventory(unittest.TestCase):
             self.build(root, self.FILES | {'payload.bin'})
             with self.assertRaisesRegex(ValueError, 'unknown companion'):
                 list(transport.selected(root, 'element-geometry'))
+
+
+class TransportProfileWiring(unittest.TestCase):
+    """A profile the selector understands must also be selectable on the CLI.
+
+    Run 41357985694 published the visual inventory and then died with exit code
+    2: argparse rejected '--profile element-geometry' because the selector knew
+    the branch but the CLI choices did not.
+    """
+
+    def test_every_selector_branch_is_a_cli_choice(self):
+        source = (Path(__file__).resolve().parent / 'evidence_review_transport.py').read_text()
+        branches = set(re.findall(r"if profile == '([a-z-]+)'", source))
+        choices = set(re.findall(r"choices=\[([^\]]+)\]", source)[0].replace("'", '').split(', '))
+        self.assertTrue(branches, 'selector branches must be discoverable')
+        self.assertEqual(branches - {'production'}, choices - {'production'},
+                         'CLI choices and selector branches disagree')

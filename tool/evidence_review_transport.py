@@ -270,7 +270,7 @@ def fetch(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest='command', required=True)
-    p = sub.add_parser('publish'); p.add_argument('--root', type=Path, required=True); p.add_argument('--index', type=Path, required=True); p.add_argument('--profile', choices=['production', 'visual', 'validation', 'android', 'candidate-reorder'], default='production')
+    p = sub.add_parser('publish'); p.add_argument('--root', type=Path, required=True); p.add_argument('--index', type=Path, required=True); p.add_argument('--profile', choices=['production', 'visual', 'validation', 'android', 'candidate-reorder', 'element-geometry'], default='production')
     p = sub.add_parser('emit'); p.add_argument('--index', type=Path, required=True); p.add_argument('--group', type=int, required=True)
     p = sub.add_parser('fetch'); p.add_argument('--run', required=True); p.add_argument('--repository', default='techtouchAI/Writing-questions'); p.add_argument('--destination', type=Path, required=True); p.add_argument('--job-name', default='Original evidence review transport')
     args = parser.parse_args()
