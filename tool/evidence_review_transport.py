@@ -83,7 +83,15 @@ def selected(root, profile='production'):
     if profile == 'android':
         manifest = json.loads((root / 'manifest.json').read_text())
         names = manifest['files']
-        if len(names) != len(set(names)) or not 1 <= len(names) <= 60:
+        # Every published file must be enumerated here, and the bound keeps a
+        # single publish bounded. 13 screen snapshots carry 4 companions each
+        # (png/xml/ime/window) = 52, plus runtime.json, logcat.txt, the IME
+        # trace and the exported PDF/text = 59 on a fully successful run. The
+        # previous ceiling of 60 left no room for even one diagnostic snapshot,
+        # so run 41318864378 published 63 files and was rejected as invalid
+        # after the acceptance itself had passed. 80 keeps the guard meaningful
+        # while allowing the evidence a successful run actually produces.
+        if len(names) != len(set(names)) or not 1 <= len(names) <= 80:
             raise ValueError('Invalid Android evidence inventory')
         if not {'runtime.json', 'logcat.txt'} <= set(names):
             raise ValueError('Android evidence must include result and runtime log')

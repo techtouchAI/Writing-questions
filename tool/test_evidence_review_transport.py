@@ -322,3 +322,38 @@ class EvidenceTransportTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class AndroidInventoryBound(unittest.TestCase):
+    """A successful run publishes 59 enumerated files; the bound must allow it.
+
+    Run 41318864378 passed the acceptance and still lost its evidence: the
+    inventory was 63 files against a ceiling of 60, so the transport rejected
+    the whole publish. The bound now leaves room for one diagnostic snapshot.
+    """
+
+    def build(self, root, count):
+        names = ['runtime.json', 'logcat.txt'] + [f'extra-{i}.png' for i in range(count - 2)]
+        for name in names:
+            (root / name).write_bytes(b'fixture')
+        (root / 'manifest.json').write_text(json.dumps({'files': names}))
+        return names
+
+    def test_a_full_successful_inventory_is_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build(root, 59)
+            self.assertEqual(len(list(transport.selected(root, 'android'))), 60)
+
+    def test_one_diagnostic_snapshot_still_transports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build(root, 63)
+            self.assertEqual(len(list(transport.selected(root, 'android'))), 64)
+
+    def test_an_unbounded_inventory_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build(root, 81)
+            with self.assertRaisesRegex(ValueError, 'Invalid Android evidence inventory'):
+                list(transport.selected(root, 'android'))
