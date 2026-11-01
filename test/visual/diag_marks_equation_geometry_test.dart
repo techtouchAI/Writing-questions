@@ -233,6 +233,19 @@ Widget _app(ExamWizardController controller, {ExamPreviewScreen? screen}) =>
       ),
     );
 
+
+/// Settles without depending on a quiet frame count.
+///
+/// The released surface shows a pending-plan spinner while the engine works,
+/// and `pumpAndSettle` throws on a timeout (a spinner schedules frames for as
+/// long as the plan is unresolved), so the probe pumps a bounded number of
+/// frames and records the timeout instead of dying inside the harness.
+Future<void> _settle(WidgetTester tester, {int frames = 240}) async {
+  for (var frame = 0; frame < frames; frame++) {
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(loadProductionEvidenceFonts);
@@ -263,7 +276,7 @@ void main() {
 
     // ---------- (B) سطح الإنتاج: ما يراه المدرس ويحرّر عليه ----------
     await tester.pumpWidget(_app(controller));
-    await tester.pumpAndSettle();
+    await _settle(tester);
     final screen = tester.renderObject<RenderRepaintBoundary>(find.byKey(_screenKey));
     await _writeImage(tester, 'edit_surface', screen);
 
@@ -323,7 +336,7 @@ void main() {
     // ---------- (A) السطح القانوني: نفس ما يرسمه PDF ----------
     LayoutDocument? captured;
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
+    await _settle(tester, frames: 8);
     final controller2 = ExamWizardController(document: document);
     addTearDown(controller2.dispose);
     await tester.pumpWidget(
@@ -344,10 +357,10 @@ void main() {
         ),
       ),
     );
-    for (var attempt = 0; attempt < 60 && captured == null; attempt++) {
-      await tester.pump(const Duration(milliseconds: 32));
+    for (var attempt = 0; attempt < 240 && captured == null; attempt++) {
+      await tester.pump(const Duration(milliseconds: 16));
     }
-    await tester.pumpAndSettle();
+    await _settle(tester, frames: 32);
     final canonicalScreen =
         tester.renderObject<RenderRepaintBoundary>(find.byKey(_screenKey));
     await _writeImage(tester, 'reference_preview', canonicalScreen);

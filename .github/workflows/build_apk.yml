@@ -1167,6 +1167,14 @@ jobs:
           flutter test --reporter json test/visual/diag_marks_equation_geometry_test.dart 2>&1 \
             | tee build/visual_parity/element-geometry-test.log
 
+      # مسبار JSON لا يستطيع إظهار سبب فشله عبر ::error مباشرة؛ نستخرج الرسالة
+      # من سجلّه فنرى الخطأ بدل رقم الخروج.
+      - name: Explain the placement probe result
+        if: always()
+        shell: bash
+        run: |
+          python3 tool/explain_flutter_test_log.py build/visual_parity/element-geometry-test.log || true
+
       # [C6-POS] تشخيص غير ملزم: مواضع النص في المعاينة ثم في vector.pdf الذي
       # كتبه الاختبار أعلاه مباشرة (بلا تنزيل artifact). لا يغيّر البوابة
       # الرسمية أو عتبة RMSE أو نتيجة هذه الوظيفة؛ كل خطوة continue-on-error.
