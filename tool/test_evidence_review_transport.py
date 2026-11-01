@@ -2,6 +2,7 @@
 import contextlib
 import io
 import json
+import re
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -357,3 +358,25 @@ class AndroidInventoryBound(unittest.TestCase):
             self.build(root, 81)
             with self.assertRaisesRegex(ValueError, 'Invalid Android evidence inventory'):
                 list(transport.selected(root, 'android'))
+
+
+class AndroidEmitGroupCoverage(unittest.TestCase):
+    """Every reference the inventory accepts must have a step that emits it.
+
+    Run 41321098203 published 63 references through six emit groups (60 slots).
+    The transport job reported success, and only the fetch noticed the missing
+    slice. The workflow must cover the same bound the code enforces.
+    """
+
+    def test_android_transport_emits_every_group_the_cap_allows(self):
+        workflow = (Path(__file__).resolve().parent.parent
+                    / '.github' / 'workflows' / 'build_apk.yml').read_text()
+        groups = workflow.count('android-index.json" --group')
+        source = (Path(__file__).resolve().parent / 'evidence_review_transport.py').read_text()
+        ceiling = int(re.search(r'1 <= len\(names\) <= (\d+)', source).group(1))
+        self.assertGreaterEqual(groups * 10, ceiling,
+                                'an accepted inventory would be silently under-published')
+        used = {int(number) for number in re.findall(
+            r'android-index\.json" --group (\d+)', workflow)}
+        self.assertEqual(used, set(range(groups)),
+                         'emit groups must be contiguous from zero')

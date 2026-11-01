@@ -926,6 +926,15 @@ jobs:
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 4
       - name: Publish runtime references 6
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 5
+      # Two more groups: a fully successful run publishes 63 references (13
+      # snapshots x 4 companions, plus runtime.json, logcat.txt, the IME trace
+      # and the exported PDF and its text). With six groups the seventh slice
+      # was never emitted, so run 41321098203 passed and then could not be
+      # fetched: "Incomplete evidence inventory: annotation truncation".
+      - name: Publish runtime references 7
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 6
+      - name: Publish runtime references 8
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 7
 
   # --------------------------------------------------------------------------
   # التحقق البصري الخارجي: يُصيّر Vector PDF وExact المستقل
