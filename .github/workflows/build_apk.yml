@@ -1076,6 +1076,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 tool/evidence_review_transport.py publish --profile visual --root "$RUNNER_TEMP/visual-originals" --index "$RUNNER_TEMP/visual-index.json"
+      - name: Publish the measured mark and equation inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tool/evidence_review_transport.py publish --profile element-geometry --root "$RUNNER_TEMP/visual-originals/element-geometry" --index "$RUNNER_TEMP/element-index.json"
+      - name: Publish element geometry references 1
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/element-index.json" --group 0
+      - name: Publish element geometry references 2
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/element-index.json" --group 1
       - name: Publish original fixture references
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/visual-index.json" --group 0
       - name: Publish original fixture references 2
@@ -1148,6 +1156,16 @@ jobs:
           set -o pipefail
           flutter test --reporter json test/visual/visual_parity_fixture_test.dart 2>&1 \
             | tee build/visual_parity/fixture_test.log
+
+      # [ELEMENT-GEOMETRY] مسبار دراسة (لا بوابة): يقيس الدرجة والمعادلة
+      # المستقلة على السطحين ويكتب PDF النموذج نفسه. ليس continue-on-error:
+      # مسبار مكسور يجب أن يظهر لا أن يُدفن.
+      - name: Measure mark and display-equation placement on both surfaces
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter test --reporter json test/visual/diag_marks_equation_geometry_test.dart 2>&1 \
+            | tee build/visual_parity/element-geometry-test.log
 
       # [C6-POS] تشخيص غير ملزم: مواضع النص في المعاينة ثم في vector.pdf الذي
       # كتبه الاختبار أعلاه مباشرة (بلا تنزيل artifact). لا يغيّر البوابة

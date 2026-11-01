@@ -80,6 +80,26 @@ def selected(root, profile='production'):
                 raise ValueError(f'Missing/unsafe evidence: {name}')
             yield path
         return
+    if profile == 'element-geometry':
+        # One measured case, three surfaces. The inventory is closed so a
+        # measurement cannot be published half-complete: the PDF, the two
+        # rendered surfaces and the numbers they were compared with.
+        manifest = json.loads((root / 'manifest.json').read_text())
+        names = manifest['files']
+        expected = {'document.pdf', 'edit_surface.png', 'geometry.json',
+                    'manifest.json', 'reference_preview.png'}
+        if set(names) != expected or len(names) != len(expected):
+            raise ValueError('Element geometry manifest must enumerate every companion')
+        if not isinstance(manifest.get('pageCount'), int) or manifest['pageCount'] < 1:
+            raise ValueError('Element geometry manifest must record the page count')
+        for name in sorted(expected):
+            if Path(name).name != name:
+                raise ValueError('Unsafe element geometry evidence path')
+            path = root / name
+            if not path.is_file() or path.is_symlink():
+                raise ValueError(f'Missing/unsafe evidence: {name}')
+            yield path
+        return
     if profile == 'android':
         manifest = json.loads((root / 'manifest.json').read_text())
         names = manifest['files']

@@ -380,3 +380,28 @@ class AndroidEmitGroupCoverage(unittest.TestCase):
             r'android-index\.json" --group (\d+)', workflow)}
         self.assertEqual(used, set(range(groups)),
                          'emit groups must be contiguous from zero')
+
+
+class ElementGeometryInventory(unittest.TestCase):
+    """The measured case must publish every companion or none of it."""
+
+    FILES = {'document.pdf', 'edit_surface.png', 'geometry.json',
+             'manifest.json', 'reference_preview.png'}
+
+    def build(self, root, files):
+        for name in files:
+            (root / name).write_bytes(b'fixture')
+        (root / 'manifest.json').write_text(json.dumps({'files': sorted(files), 'pageCount': 1}))
+
+    def test_complete_inventory_transports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build(root, self.FILES)
+            self.assertEqual(len(list(transport.selected(root, 'element-geometry'))), 5)
+
+    def test_a_partial_measurement_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build(root, self.FILES - {'document.pdf'})
+            with self.assertRaisesRegex(ValueError, 'enumerate every companion'):
+                list(transport.selected(root, 'element-geometry'))
