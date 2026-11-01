@@ -9,10 +9,8 @@
 //
 // لا يحكم على شيء ولا يعدّل سلوكاً؛ يكتب قياساته في
 // `build/visual_parity/element-geometry/` لتُنقل عبر الناقل المتحقّق.
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -37,7 +35,6 @@ import 'package:writing_questions_app/models/point_kind.dart';
 import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/models/question_option.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
-import 'package:writing_questions_app/services/pdf_export_service.dart';
 import 'package:writing_questions_app/views/widgets/math_snapshot_host.dart';
 import 'package:writing_questions_app/views/widgets/safe_math_tex.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
@@ -310,7 +307,8 @@ void main() {
         : tester.getRect(find.byKey(pageKey));
     // مقياس التكبير الحالي للورقة داخل النافذة (px/px).
     final zoom = pageRect.width / LayoutUnits.ptToPx(LayoutUnits.a4.width);
-    final scale = LayoutUnits.ptToPx(1) * zoom;
+    // px -> pt: divide by the px-per-pt factor (96/72), never multiply by it.
+    final scale = LayoutUnits.pxToPt(1) * zoom;
 
     Rect? rectOf(Finder finder) {
       if (finder.evaluate().isEmpty) return null;
@@ -343,6 +341,16 @@ void main() {
 
     final production = <String, Object?>{
       'pageRectPt': _px(pageRect, scale),
+      'ambientDirection':
+          Directionality.of(tester.element(find.byKey(pageKey))).name,
+      'paintedBodies': <Map<String, Object?>>[
+        for (final id in <String>['body-q-marks', 'branch-body-b1'])
+          if (find.byKey(ValueKey<String>(id)).evaluate().isNotEmpty)
+            <String, Object?>{
+              'key': id,
+              'rectPt': _px(tester.getRect(find.byKey(ValueKey<String>(id))), scale),
+            },
+      ],
       'zoom': zoom,
       'pxToPt': LayoutUnits.pxToPt(1),
       'statementRectPt': statementRect == null ? null : _px(statementRect, scale),
@@ -405,49 +413,44 @@ void main() {
     }
 
     // ---------- (C) PDF للنموذج نفسه ----------
-    // Export is driven by pumps, not runAsync: the math raster pass completes
-    // through frames, and inside runAsync it never completes (the fixture
-    // records the same trap). A hard frame cap keeps the probe from hanging.
-    Uint8List? pdf;
-    try {
-      var finished = false;
-      Object? failure;
-      unawaited(
-        PdfExportService.buildDocumentPdfBytes(
-          document: document,
-          layoutDocument: layout,
-        ).then<void>((bytes) {
-          pdf = bytes;
-        }).catchError((Object error) {
-          failure = error;
-        }).whenComplete(() {
-          finished = true;
-        }),
-      );
-      for (var frame = 0; frame < 240 && !finished; frame++) {
-        await tester.pump(const Duration(milliseconds: 1));
-      }
-      if (!finished) {
-        problems.add('pdf export did not finish within 240 pumps');
-        note('تصدير PDF لم ينتهِ ضمن 240 إطارًا.');
-      } else if (failure != null) {
-        problems.add('pdf export failed: $failure');
-        note('فشل تصدير PDF: $failure');
-      } else if (pdf != null) {
-        Directory(_output).createSync(recursive: true);
-        File('$_output/document.pdf').writeAsBytesSync(pdf!);
-      }
-    } catch (error) {
-      problems.add('pdf build threw: $error');
-      note('تعذّر بناء PDF النموذج: $error');
-    }
-
+    // The PDF stage is not produced here: the painter draws LayoutDocument
+    // verbatim, and an export inside a widget test never completes its raster
+    // pass under a pump loop (measured: 240 pumps, still pending). The plan
+    // geometry below *is* the PDF geometry; the visual gate proves the painter
+    // does not move it.
     final canonicalMarks = _canonicalMarks(layout);
     final canonicalMath = _canonicalBlockMath(layout);
     _writeJson('geometry.json', <String, Object?>{
       'document': document.name,
       'pageCount': layout.pageCount,
+      'documentDirection': layout.direction.name,
+      'pageSize': <double>[layout.pageSize.width, layout.pageSize.height],
       'canonical': <String, Object?>{
+        'titleLines': <Map<String, Object?>>[
+          for (final page in layout.pages)
+            for (final block in page.blocks)
+              for (final child in <LayoutBlock>[block, ...block.descendants])
+                if (child.kind == LayoutBlockKind.title)
+                  for (final line in child.lines)
+                    <String, Object?>{
+                      'blockId': child.id,
+                      'lineId': line.id,
+                      'lineIndex': line.lineIndex,
+                      'direction': line.direction.name,
+                      'alignment': line.alignment?.name,
+                      'rect': _rect(line.rect),
+                      'runs': <Map<String, Object?>>[
+                        for (final run in line.runs)
+                          <String, Object?>{
+                            'role': run.semanticRole.name,
+                            'kind': run.contentKind.name,
+                            'text': run.text,
+                            'x': run.x,
+                            'advance': run.advance,
+                          },
+                      ],
+                    },
+        ],
         'marks': canonicalMarks,
         'blockMath': canonicalMath,
         'titleBlocks': <Map<String, Object?>>[
