@@ -399,9 +399,22 @@ class ElementGeometryInventory(unittest.TestCase):
             self.build(root, self.FILES)
             self.assertEqual(len(list(transport.selected(root, 'element-geometry'))), 5)
 
-    def test_a_partial_measurement_is_refused(self):
+    def test_a_run_that_lost_the_pdf_still_publishes_its_numbers(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self.build(root, self.FILES - {'document.pdf'})
-            with self.assertRaisesRegex(ValueError, 'enumerate every companion'):
+            self.assertEqual(len(list(transport.selected(root, 'element-geometry'))), 4)
+
+    def test_a_measurement_without_numbers_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build(root, self.FILES - {'geometry.json'})
+            with self.assertRaisesRegex(ValueError, 'must include the measurement'):
+                list(transport.selected(root, 'element-geometry'))
+
+    def test_an_unknown_companion_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build(root, self.FILES | {'payload.bin'})
+            with self.assertRaisesRegex(ValueError, 'unknown companion'):
                 list(transport.selected(root, 'element-geometry'))

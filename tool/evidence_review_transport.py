@@ -86,13 +86,21 @@ def selected(root, profile='production'):
         # rendered surfaces and the numbers they were compared with.
         manifest = json.loads((root / 'manifest.json').read_text())
         names = manifest['files']
-        expected = {'document.pdf', 'edit_surface.png', 'geometry.json',
-                    'manifest.json', 'reference_preview.png'}
-        if set(names) != expected or len(names) != len(expected):
-            raise ValueError('Element geometry manifest must enumerate every companion')
+        # Closed name set, but not a fixed count: a study run that produced the
+        # numbers and one screenshot must not lose them because the PDF stage
+        # timed out. What is declared must exist, and the two measurements are
+        # mandatory.
+        allowed = {'document.pdf', 'edit_surface.png', 'geometry.json',
+                   'manifest.json', 'reference_preview.png'}
+        if not isinstance(names, list) or not names or len(names) != len(set(names)):
+            raise ValueError('Element geometry manifest must enumerate its files once')
+        if not {'manifest.json', 'geometry.json'} <= set(names):
+            raise ValueError('Element geometry manifest must include the measurement')
+        if not set(names) <= allowed:
+            raise ValueError('Element geometry manifest names an unknown companion')
         if not isinstance(manifest.get('pageCount'), int) or manifest['pageCount'] < 1:
             raise ValueError('Element geometry manifest must record the page count')
-        for name in sorted(expected):
+        for name in sorted(set(names)):
             if Path(name).name != name:
                 raise ValueError('Unsafe element geometry evidence path')
             path = root / name

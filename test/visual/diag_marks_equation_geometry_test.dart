@@ -9,6 +9,7 @@
 //
 // لا يحكم على شيء ولا يعدّل سلوكاً؛ يكتب قياساته في
 // `build/visual_parity/element-geometry/` لتُنقل عبر الناقل المتحقّق.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -280,6 +281,18 @@ void main() {
     final screen = tester.renderObject<RenderRepaintBoundary>(find.byKey(_screenKey));
     await _writeImage(tester, 'edit_surface', screen);
 
+    // Evidence goes down before the next stage, so a hang in a later stage
+    // cannot erase what was already measured.
+    _writeJson('geometry.json', <String, Object?>{'stage': 'surface'});
+    _writeJson('manifest.json', <String, Object?>{
+      'files': <String>[
+        if (File('$_output/edit_surface.png').existsSync()) 'edit_surface.png',
+        'geometry.json',
+        'manifest.json',
+      ],
+      'pageCount': 1,
+    });
+
     const pageKey = ValueKey<String>('a4-page-0');
     if (find.byKey(pageKey).evaluate().isEmpty) {
       problems.add('production surface drew no page (plan pending)');
@@ -382,20 +395,40 @@ void main() {
     }
 
     // ---------- (C) PDF للنموذج نفسه ----------
+    // Export is driven by pumps, not runAsync: the math raster pass completes
+    // through frames, and inside runAsync it never completes (the fixture
+    // records the same trap). A hard frame cap keeps the probe from hanging.
     Uint8List? pdf;
     try {
-      pdf = await tester.runAsync(
-        () => PdfExportService.buildDocumentPdfBytes(
+      var finished = false;
+      Object? failure;
+      unawaited(
+        PdfExportService.buildDocumentPdfBytes(
           document: document,
           layoutDocument: layout,
-        ),
+        ).then<void>((bytes) {
+          pdf = bytes;
+        }).catchError((Object error) {
+          failure = error;
+        }).whenComplete(() {
+          finished = true;
+        }),
       );
-      if (pdf != null) {
+      for (var frame = 0; frame < 600 && !finished; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      if (!finished) {
+        problems.add('pdf export did not finish within 600 pumps');
+        note('تصدير PDF لم ينتهِ ضمن 600 إطار.');
+      } else if (failure != null) {
+        problems.add('pdf export failed: $failure');
+        note('فشل تصدير PDF: $failure');
+      } else if (pdf != null) {
         Directory(_output).createSync(recursive: true);
-        File('$_output/document.pdf').writeAsBytesSync(pdf);
+        File('$_output/document.pdf').writeAsBytesSync(pdf!);
       }
     } catch (error) {
-      problems.add('pdf build failed: $error');
+      problems.add('pdf build threw: $error');
       note('تعذّر بناء PDF النموذج: $error');
     }
 
@@ -424,11 +457,12 @@ void main() {
     });
     _writeJson('manifest.json', <String, Object?>{
       'files': <String>[
-        'document.pdf',
-        'edit_surface.png',
+        if (File('$_output/document.pdf').existsSync()) 'document.pdf',
+        if (File('$_output/edit_surface.png').existsSync()) 'edit_surface.png',
         'geometry.json',
+        if (File('$_output/reference_preview.png').existsSync())
+          'reference_preview.png',
         'manifest.json',
-        'reference_preview.png',
       ],
       'pageCount': layout.pageCount,
     });
