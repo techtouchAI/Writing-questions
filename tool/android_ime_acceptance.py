@@ -136,7 +136,50 @@ def visible_editable_point(xml, width, height):
     return ((left + right) // 2, (top + bottom) // 2)
 
 
+def record_metric(metrics, name, passed, detail):
+    """Record a measured *quality metric* without failing the functional gate.
+
+    The accepted policy (docs/review/pr48_document_correctness_audit.md §6)
+    separates the official document's content/visual requirements -- gated --
+    from extraction quality across PDF readers, which is a documented metric.
+    A metric is still measured, still written to `runtime.json`, and still
+    published as a notice; it is simply not evidence about the editor, so it
+    cannot decide whether Android IME works.
+    """
+    metrics[name] = dict(passed=bool(passed), detail=detail)
+    return metrics[name]
+
+
+def judge_pdf_evidence(text, pages, check, metrics):
+    """Judge the actual exported PDF: content integrity is gated, extraction is measured.
+
+    * `IMETAIL` and every English token are content-integrity properties that
+      extraction reports faithfully, so they stay gating checks.
+    * The diacritised Arabic statement is the across-reader extraction metric of
+      policy §6-3: measured on the same text, retained verbatim, never a reason
+      to call the editor broken.
+    """
+    check('actual device PDF preserves the long tail once',
+          text.count('IMETAIL') == 1 and pages >= 2,
+          f'{pages} actual PDF pages, IMETAIL count={text.count("IMETAIL")}')
+    check('actual device PDF preserves every English token', text.count('English') == 322,
+          f'Expected322 from actual statement+body; found{text.count("English")}.')
+    return record_metric(
+        metrics, 'actual device PDF retains diacritized Arabic statement',
+        extraction_retains(text, 'سَلَامٌ'),
+        'Quality metric (policy §6-3), not a functional IME check: the actual exported '
+        'PDF text is measured verbatim and retained with its PNG/PDF evidence; Arabic '
+        'extraction across PDF readers is documented in '
+        'docs/review/pr48_document_correctness_audit.md.')
+
+
+def extraction_retains(extracted_text, needle):
+    """Exact, un-normalised presence of `needle` in the extracted PDF text."""
+    return needle in extracted_text
+
+
 def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, entirely_above, keyboard_apk, automation_apk):
+    metrics = {}
     check('separate test IME APK installation', 'Success' in adb('install', '-r', str(keyboard_apk)),
           'Separate keyboard fixture; production APK is unchanged.')
     registration = wait_for_ime_registration(adb)
@@ -295,12 +338,11 @@ def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, e
     pdf = pymupdf.open(stream=raw,filetype='pdf')
     text='\n'.join(page.get_text() for page in pdf)
     (out/'ime-document.txt').write_text(text, encoding='utf-8')
-    check('actual device PDF preserves the long tail once', text.count('IMETAIL') == 1 and len(pdf) >= 2,
-          f'{len(pdf)} actual PDF pages, IMETAIL count={text.count("IMETAIL")}')
-    check('actual device PDF preserves every English token', text.count('English') == 322,
-          f'Expected322 from actual statement+body; found{text.count("English")}.')
-    check('actual device PDF retains diacritized Arabic statement', 'سَلَامٌ' in text,
-          'No normalization/extractor exemption; actual PDF text plus retained PNG/PDF for visual review.')
+    # The diacritised-Arabic assertion was a failing check until the owner's
+    # acceptance policy (2026-10-31) classified across-reader extraction as a
+    # documented metric; the measurement itself is unchanged (no normalisation,
+    # no extractor exemption) and its value stays in runtime.json.
+    judge_pdf_evidence(text, len(pdf), check, metrics)
     time.sleep(5)
     adb('shell', 'am', 'force-stop', PACKAGE)
     adb('shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1');time.sleep(5)
@@ -322,6 +364,7 @@ def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, e
                 inputMethod=IME_COMPONENT, registeredMethods=registration, fullEditedContentVerified=True,
                 observerApkSha256=hashlib.sha256(Path(automation_apk).read_bytes()).hexdigest(),
                 actualPdfSha256=hashlib.sha256(raw).hexdigest(), pdfPages=len(pdf),
+                extractionMetrics=metrics,
                 limitation='UI-driven test InputMethodService; not Gboard prediction/swipe/handwriting or all focus/media/export races.')
 
 

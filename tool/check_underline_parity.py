@@ -24,8 +24,10 @@ The comparison is therefore meaningful even though the two renderings come
 from different rasterisers: it compares a decoration's position relative to its
 own text, not the rasterisation of that decoration.
 
-Exit status is the gate: 0 when every rule is within --tolerance points of
-where the Preview draws it, 1 otherwise. This is a real check on a property the
+Exit status is the gate: 0 when every rule is measured and within --tolerance
+points of where the Preview draws it, 1 otherwise. A rule that cannot be
+measured in the Preview is a failure, not a skip: an unmeasured rule is not an
+agreed rule. This is a real check on a property the
 project owns. It is NOT a substitute for the RMSE gate and does not touch it.
 """
 from __future__ import annotations
@@ -116,14 +118,25 @@ def rules_in_pdf(page):
                 continue
             y = (p1.y + p2.y) / 2.0
             x0, x1 = sorted((p1.x, p2.x))
-            # The owning line: smallest vertical distance to a baseline above.
+            # The owning line: smallest vertical distance to a baseline above,
+            # among the lines the rule actually lies under. Vertical distance
+            # alone attributed a rule at x=88..178 to a label at x=537 (same
+            # baseline, different column), and the comparison then looked for
+            # that rule inside the *label's* box and reported it unmeasurable.
+            # A decoration belongs to a line only if it occupies that line's
+            # horizontal span.
             owner = None
+            shortest = min(x1 - x0, 1.0)
             for line in lines:
                 below = y - line['baseline']            # + when the rule is
                 if below < -0.1:                        # lower on the page
                     continue
                 if below > 0.6 * line['size']:          # too far to decorate
                     continue
+                lx0, _, lx1, _ = line['bbox']
+                overlap = min(x1, lx1) - max(x0, lx0)
+                if overlap < 0.5 * min(shortest, max(lx1 - lx0, 1.0)):
+                    continue                            # different column/run
                 if owner is None or below < owner['offset_pt']:
                     owner = {'offset_pt': below, 'line': line}
             if owner is None:
@@ -140,15 +153,23 @@ def rules_in_pdf(page):
     return found
 
 
-def preview_offset(luma, bbox, scale, pad_pt=2.0):
+def preview_offset(luma, bbox, scale, pad_pt=2.0, span_pt=None):
     """Offset of the rule below the glyph baseline, in pixels, for one line.
 
     Returns (offset_px, thickness_px, baseline_row, rule_rows) or None when the
-    region shows no continuous rule -- an unmeasurable region is reported, not
-    guessed.
+    region shows no continuous rule; the caller turns that into a failure, never
+    into an agreement.
+
+    `span_pt` is the rule's own horizontal span in points. When given, the
+    region is narrowed to exactly that span, so a rule that covers only one run
+    of a mixed line (an underlined answer inside a line of plain text) is
+    compared over its own width instead of against the whole line's width --
+    the decoration is then measured where it is drawn, on both sides.
     """
-    x0 = max(0, int((bbox[0] - pad_pt) * scale))
-    x1 = min(luma.shape[1], int((bbox[2] + pad_pt) * scale) + 1)
+    left = bbox[0] - pad_pt if span_pt is None else span_pt[0]
+    right = bbox[2] + pad_pt if span_pt is None else span_pt[1]
+    x0 = max(0, int(left * scale))
+    x1 = min(luma.shape[1], int(right * scale) + 1)
     y0 = max(0, int((bbox[1] - pad_pt) * scale))
     y1 = min(luma.shape[0], int((bbox[3] + pad_pt) * scale) + 1)
     if x1 - x0 < 4 or y1 - y0 < 4:
@@ -192,6 +213,7 @@ def main():
     doc = pymupdf.open(pdf_path)
     checked = 0
     failures = []
+    unmeasured = []
     for index in range(doc.page_count):
         page = doc[index]
         preview_png = os.path.join(args.artifacts,
@@ -207,12 +229,19 @@ def main():
         # derived from the page width rather than assumed.
         scale = width_px / page.rect.width
         for rule in rules_in_pdf(page):
-            measured = preview_offset(luma, rule['bbox'], scale)
+            measured = (preview_offset(luma, rule['bbox'], scale,
+                                       span_pt=rule['rule_x'])
+                        or preview_offset(luma, rule['bbox'], scale))
             if measured is None:
-                notify('UNDERLINE not measurable',
-                       [f'p{index + 1} "{rule["text"]}": the preview shows no '
-                        f'continuous rule in this line, so the comparison is '
-                        f'skipped rather than passed'], level='warning')
+                # A rule the PDF draws and the Preview does not show in the same
+                # span is a divergence, not an untestable case: it fails the
+                # gate. It was a silent skip until 2026-11-01, after the three
+                # skipped lines were traced to this tool (a rule attributed to a
+                # line it does not lie under) and not to the underline itself.
+                unmeasured.append(
+                    f'p{index + 1} "{rule["text"]}" @x{rule["rule_x"][0]:.1f}..'
+                    f'{rule["rule_x"][1]:.1f}: the PDF draws a rule the preview '
+                    f'does not show in that span')
                 continue
             preview_pt = measured['offset_px'] / scale
             delta = preview_pt - rule['offset_pt']
@@ -225,7 +254,12 @@ def main():
             if abs(delta) > args.tolerance:
                 failures.append(record)
 
-    if checked == 0:
+    if unmeasured:
+        notify('UNDERLINE not measurable', unmeasured, level='warning')
+        failures.extend(unmeasured)
+        for line in unmeasured[:4]:
+            print(f'::error title=UNDERLINE not measurable::{line}')
+    if checked == 0 and not unmeasured:
         notify('UNDERLINE no rule checked',
                ['no underline was measurable in either source; this check '
                 'proves nothing and says so instead of passing'],

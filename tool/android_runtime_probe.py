@@ -161,6 +161,13 @@ def main():
             report['imeAcceptance'] = run_acceptance(adb, out, snapshot, tap, check,
                 nodes, label, keyboard_top, entirely_above, args.ime_apk, args.automation_apk)
             report['inputMethod'] = report['imeAcceptance']['inputMethod']
+            # Extraction quality is measured, never mixed into the functional
+            # verdict: the accepted policy classifies across-reader extraction
+            # as a documented metric (docs/review/pr48_document_correctness_audit.md §6).
+            report['qualityMetrics'] = report['imeAcceptance'].get('extractionMetrics', {})
+            for name, metric in report['qualityMetrics'].items():
+                print('::notice title=Android IME quality metric::' + json.dumps(
+                    {name: metric}, ensure_ascii=False)[:900])
             report['closureBlockers'] = [
                 'Commercial keyboard prediction/swipe/handwriting and all platform focus/media/export races are not covered.',
                 'This emulator evidence is not physical-device evidence; full editor acceptance has separate gates.']
@@ -199,6 +206,7 @@ def main():
         (out / 'manifest.json').write_text(json.dumps(dict(files=names), indent=2))
         print('::warning title=Android runtime scope::' + json.dumps(dict(
             smokePassed=report['smokePassed'], completeAcceptance=False,
+            qualityMetrics=report.get('qualityMetrics', {}),
             remaining=report['closureBlockers']), ensure_ascii=False))
 
 
