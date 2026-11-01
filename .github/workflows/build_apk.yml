@@ -936,6 +936,31 @@ jobs:
       - name: Publish runtime references 8
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 7
 
+  element-geometry-review:
+    name: Original element geometry review transport
+    needs: visual-parity
+    if: ${{ always() && github.event_name == 'push' && needs.visual-parity.result != 'skipped' && needs.visual-parity.result != 'cancelled' && contains(github.event.head_commit.message, '[review-evidence]') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out evidence transport tool
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Download this run's measured case
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: visual-parity
+          path: ${{ runner.temp }}/visual-originals
+      - name: Verify evidence transport regressions
+        run: python3 -m unittest discover -s tool -p test_evidence_review_transport.py
+      - name: Publish the measured mark and equation inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tool/evidence_review_transport.py publish --profile element-geometry --root "$RUNNER_TEMP/visual-originals/element-geometry" --index "$RUNNER_TEMP/element-index.json"
+      - name: Publish element geometry references 1
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/element-index.json" --group 0
+
   # --------------------------------------------------------------------------
   # التحقق البصري الخارجي: يُصيّر Vector PDF وExact المستقل
   # بمحرّكات أخرى ويقارن كل صفحة بالمعاينة عبر RMSE فعلي (انظر
@@ -1084,14 +1109,6 @@ jobs:
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/visual-index.json" --group 2
       - name: Publish original fixture references 4
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/visual-index.json" --group 3
-      - name: Publish the measured mark and equation inventory
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 tool/evidence_review_transport.py publish --profile element-geometry --root "$RUNNER_TEMP/visual-originals/element-geometry" --index "$RUNNER_TEMP/element-index.json"
-      - name: Publish element geometry references 1
-        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/element-index.json" --group 0
-      - name: Publish element geometry references 2
-        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/element-index.json" --group 1
 
   visual-parity:
     name: Visual regression (Vector/Exact vs preview)
