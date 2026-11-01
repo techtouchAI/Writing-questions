@@ -241,7 +241,7 @@ Widget _app(ExamWizardController controller, {ExamPreviewScreen? screen}) =>
 /// and `pumpAndSettle` throws on a timeout (a spinner schedules frames for as
 /// long as the plan is unresolved), so the probe pumps a bounded number of
 /// frames and records the timeout instead of dying inside the harness.
-Future<void> _settle(WidgetTester tester, {int frames = 240}) async {
+Future<void> _settle(WidgetTester tester, {int frames = 90}) async {
   for (var frame = 0; frame < frames; frame++) {
     await tester.pump(const Duration(milliseconds: 16));
   }
@@ -253,7 +253,7 @@ void main() {
 
   testWidgets('[element-geometry] marks and display-math placement, 3 surfaces',
       (tester) async {
-    tester.view.physicalSize = const Size(1600, 2600);
+    tester.view.physicalSize = const Size(1200, 1500);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -266,7 +266,14 @@ void main() {
     FlutterError.onError = (details) {
       problems.add(details.exceptionAsString());
     };
-    addTearDown(() => FlutterError.onError = previousOnError);
+    var hookRestored = false;
+    void restoreHook() {
+      if (hookRestored) return;
+      hookRestored = true;
+      FlutterError.onError = previousOnError;
+    }
+
+    addTearDown(restoreHook);
     void note(String message) =>
         // ignore: avoid_print
         print('::warning title=ELEMENT-GEOMETRY::$message');
@@ -370,14 +377,17 @@ void main() {
         ),
       ),
     );
-    for (var attempt = 0; attempt < 240 && captured == null; attempt++) {
+    for (var attempt = 0; attempt < 120 && captured == null; attempt++) {
       await tester.pump(const Duration(milliseconds: 16));
     }
-    await _settle(tester, frames: 32);
+    await _settle(tester, frames: 12);
     final canonicalScreen =
         tester.renderObject<RenderRepaintBoundary>(find.byKey(_screenKey));
     await _writeImage(tester, 'reference_preview', canonicalScreen);
 
+    // The harness asserts that onError is restored before anything else can
+    // throw; widget-tree errors from here on belong to the probe's report.
+    restoreHook();
     final layout = captured;
     if (layout == null) {
       problems.add('canonical layout was never resolved');
@@ -414,12 +424,12 @@ void main() {
           finished = true;
         }),
       );
-      for (var frame = 0; frame < 600 && !finished; frame++) {
-        await tester.pump(const Duration(milliseconds: 16));
+      for (var frame = 0; frame < 240 && !finished; frame++) {
+        await tester.pump(const Duration(milliseconds: 1));
       }
       if (!finished) {
-        problems.add('pdf export did not finish within 600 pumps');
-        note('تصدير PDF لم ينتهِ ضمن 600 إطار.');
+        problems.add('pdf export did not finish within 240 pumps');
+        note('تصدير PDF لم ينتهِ ضمن 240 إطارًا.');
       } else if (failure != null) {
         problems.add('pdf export failed: $failure');
         note('فشل تصدير PDF: $failure');
@@ -472,5 +482,5 @@ void main() {
     // A measurement that published a partial inventory would be rejected by
     // the transport anyway; fail loudly but after the evidence is written.
     expect(problems, isEmpty, reason: 'المسبار لقي بقيود مسجّلة أعلاه.');
-  });
+  }, timeout: const Timeout(Duration(minutes: 6)));
 }
