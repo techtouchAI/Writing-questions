@@ -201,3 +201,59 @@ class PdfEvidenceVerdictChannels(unittest.TestCase):
         ime.record_metric(metrics, 'b', False, 'd2')
         self.assertEqual(metrics, {'a': dict(passed=True, detail='d1'),
                                    'b': dict(passed=False, detail='d2')})
+
+
+class ShareSheetDismissalBeforeRelaunch(unittest.TestCase):
+    """The system chooser is a different package; the relaunch test needs our window back."""
+
+    CHOOSER = ('  mCurrentFocus=Window{8d1 u0 com.android.intentresolver/'
+               '.ChooserActivity}')
+
+    def test_focused_package_reads_the_real_dumpsys_line(self):
+        self.assertEqual(ime.focused_package(self.CHOOSER), 'com.android.intentresolver')
+        self.assertEqual(
+            ime.focused_package('  mCurrentFocus=Window{1 u0 ' + ime.PACKAGE + '/.MainActivity}'),
+            ime.PACKAGE)
+        self.assertEqual(ime.focused_package('no focus here'),
+                         ime.focused_package('mFocusedApp=AppWindowToken{}'))
+
+    def harness(self, dumps, backs_until_none):
+        calls = {'back': 0, 'sleep': 0}
+        state = {'dump': 0}
+
+        def adb(*args):
+            if args[:3] == ('shell', 'input', 'keyevent'):
+                calls['back'] += 1
+                return ''
+            if args[:3] == ('shell', 'dumpsys', 'window'):
+                index = min(state['dump'], len(dumps) - 1)
+                state['dump'] += 1
+                return dumps[index]
+            return ''
+
+        checks = []
+
+        def check(name, condition, detail):
+            checks.append(dict(name=name, passed=bool(condition), detail=detail))
+            if not condition:
+                raise AssertionError(f'{name}: {detail}')
+
+        ime.dismiss_system_share_sheet(adb, check, ime.PACKAGE, attempts=backs_until_none,
+                                       sleep=lambda _s: calls.__setitem__('sleep', calls['sleep'] + 1))
+        return calls, checks
+
+    def test_our_window_already_focused_presses_nothing(self):
+        ours = '  mCurrentFocus=Window{1 u0 ' + ime.PACKAGE + '/.MainActivity}'
+        calls, checks = self.harness([ours], 3)
+        self.assertEqual(calls['back'], 0)
+        self.assertTrue(checks[0]['passed'])
+
+    def test_chooser_is_dismissed_with_a_real_back_key(self):
+        ours = '  mCurrentFocus=Window{1 u0 ' + ime.PACKAGE + '/.MainActivity}'
+        calls, checks = self.harness([self.CHOOSER, self.CHOOSER, ours], 3)
+        self.assertEqual(calls['back'], 2)
+        self.assertTrue(checks[0]['passed'])
+
+    def test_a_chooser_that_never_closes_fails_the_check(self):
+        with self.assertRaises(AssertionError):
+            self.harness([self.CHOOSER], 2)

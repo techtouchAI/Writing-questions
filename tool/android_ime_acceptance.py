@@ -150,6 +150,37 @@ def record_metric(metrics, name, passed, detail):
     return metrics[name]
 
 
+def focused_package(window_dump):
+    """The package that currently owns input focus, from `dumpsys window`."""
+    for line in window_dump.splitlines():
+        if 'mCurrentFocus' not in line and 'mFocusedApp' not in line:
+            continue
+        match = re.search(r'([\w.]+)/[\w.$]+', line)
+        if match:
+            return match.group(1)
+    return ''
+
+
+def dismiss_system_share_sheet(adb, check, package, attempts=3, sleep=time.sleep):
+    """Close the system share sheet before testing a relaunch.
+
+    The sheet is a *different* package (Android's chooser). Force-stopping the
+    application does not close it, so the relaunch assertions then fail on
+    "متابعة العمل" being covered by the chooser -- exactly what run 41313650750
+    reported at both widths once the PDF checks stopped aborting earlier. This
+    presses the real back key until our own window owns focus, and asserts it.
+    """
+    focus = ''
+    for _ in range(attempts):
+        focus = focused_package(adb('shell', 'dumpsys', 'window', 'windows'))
+        if focus == package:
+            break
+        adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+        sleep(1)
+    check('system share sheet dismissed and the document window refocused',
+          focus == package, f'focused={focus or "unknown"} after {attempts} back key(s)')
+
+
 def judge_pdf_evidence(text, pages, check, metrics):
     """Judge the actual exported PDF: content integrity is gated, extraction is measured.
 
@@ -178,8 +209,8 @@ def extraction_retains(extracted_text, needle):
     return needle in extracted_text
 
 
-def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, entirely_above, keyboard_apk, automation_apk):
-    metrics = {}
+def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, entirely_above, keyboard_apk, automation_apk, metrics=None):
+    metrics = {} if metrics is None else metrics
     check('separate test IME APK installation', 'Success' in adb('install', '-r', str(keyboard_apk)),
           'Separate keyboard fixture; production APK is unchanged.')
     registration = wait_for_ime_registration(adb)
@@ -344,6 +375,7 @@ def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, e
     # no extractor exemption) and its value stays in runtime.json.
     judge_pdf_evidence(text, len(pdf), check, metrics)
     time.sleep(5)
+    dismiss_system_share_sheet(adb, check, PACKAGE)
     adb('shell', 'am', 'force-stop', PACKAGE)
     adb('shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1');time.sleep(5)
     tap(find('متابعة العمل', clickable=True));time.sleep(5)
