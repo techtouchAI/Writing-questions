@@ -11,6 +11,7 @@
 // `build/visual_parity/element-geometry/` لتُنقل عبر الناقل المتحقّق.
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -243,6 +244,19 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
+    // A probe must still hand over what it measured. Widget-tree errors
+    // (an overflow in the released surface is itself a finding) are recorded
+    // and printed instead of aborting before the evidence is written.
+    final problems = <String>[];
+    final previousOnError = FlutterError.onError;
+    FlutterError.onError = (details) {
+      problems.add(details.exceptionAsString());
+    };
+    addTearDown(() => FlutterError.onError = previousOnError);
+    void note(String message) =>
+        // ignore: avoid_print
+        print('::warning title=ELEMENT-GEOMETRY::$message');
+
     final document = _document();
     final controller = ExamWizardController(document: document);
     addTearDown(controller.dispose);
@@ -253,14 +267,14 @@ void main() {
     final screen = tester.renderObject<RenderRepaintBoundary>(find.byKey(_screenKey));
     await _writeImage(tester, 'edit_surface', screen);
 
-    final pageKey = const ValueKey<String>('a4-page-0');
+    const pageKey = ValueKey<String>('a4-page-0');
     if (find.byKey(pageKey).evaluate().isEmpty) {
-      _writeJson('geometry.json', <String, Object?>{
-        'error': 'production surface drew no page (plan pending)',
-      });
-      fail('مسبار الهندسة: سطح الإنتاج لم يرسم صفحة، فلا قياس.');
+      problems.add('production surface drew no page (plan pending)');
+      note('surface الإنتاج لم يرسم صفحة: لا قياس هندسي على هذه المرحلة.');
     }
-    final pageRect = tester.getRect(find.byKey(pageKey));
+    final pageRect = find.byKey(pageKey).evaluate().isEmpty
+        ? Rect.zero
+        : tester.getRect(find.byKey(pageKey));
     // مقياس التكبير الحالي للورقة داخل النافذة (px/px).
     final zoom = pageRect.width / LayoutUnits.ptToPx(LayoutUnits.a4.width);
     final scale = LayoutUnits.ptToPx(1) * zoom;
@@ -340,22 +354,37 @@ void main() {
 
     final layout = captured;
     if (layout == null) {
+      problems.add('canonical layout was never resolved');
+      note('لم يُحسم التخطيط القانوني: لا مقارنة ولا PDF.');
       _writeJson('geometry.json', <String, Object?>{
-        'error': 'canonical layout was never resolved',
+        'complete': false,
+        'problems': problems,
         'production': production,
       });
-      fail('مسبار الهندسة: لم يُحسم التخطيط القانوني، فلا مقارنة.');
+      _writeJson('manifest.json', <String, Object?>{
+        'files': <String>['geometry.json', 'manifest.json'],
+        'pageCount': 1,
+      });
+      fail('مسبار الهندسة: ${problems.join(' | ')}');
     }
 
     // ---------- (C) PDF للنموذج نفسه ----------
-    final pdf = await tester.runAsync(
-      () => PdfExportService.buildDocumentPdfBytes(
-        document: document,
-        layoutDocument: layout,
-      ),
-    );
-    Directory(_output).createSync(recursive: true);
-    File('$_output/document.pdf').writeAsBytesSync(pdf!);
+    Uint8List? pdf;
+    try {
+      pdf = await tester.runAsync(
+        () => PdfExportService.buildDocumentPdfBytes(
+          document: document,
+          layoutDocument: layout,
+        ),
+      );
+      if (pdf != null) {
+        Directory(_output).createSync(recursive: true);
+        File('$_output/document.pdf').writeAsBytesSync(pdf);
+      }
+    } catch (error) {
+      problems.add('pdf build failed: $error');
+      note('تعذّر بناء PDF النموذج: $error');
+    }
 
     final canonicalMarks = _canonicalMarks(layout);
     final canonicalMath = _canonicalBlockMath(layout);
@@ -390,6 +419,11 @@ void main() {
       ],
       'pageCount': layout.pageCount,
     });
-    expect(pdf.isNotEmpty, isTrue);
+    if (problems.isNotEmpty) {
+      note('problems: ${problems.join(' | ')}');
+    }
+    // A measurement that published a partial inventory would be rejected by
+    // the transport anyway; fail loudly but after the evidence is written.
+    expect(problems, isEmpty, reason: 'المسبار لقي بقيود مسجّلة أعلاه.');
   });
 }
