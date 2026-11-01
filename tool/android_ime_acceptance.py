@@ -161,24 +161,32 @@ def focused_package(window_dump):
     return ''
 
 
-def dismiss_system_share_sheet(adb, check, package, attempts=3, sleep=time.sleep):
+def dismiss_system_share_sheet(adb, check, package, windows, attempts=3, sleep=time.sleep):
     """Close the system share sheet before testing a relaunch.
 
     The sheet is a *different* package (Android's chooser). Force-stopping the
     application does not close it, so the relaunch assertions then fail on
     "متابعة العمل" being covered by the chooser -- exactly what run 41313650750
-    reported at both widths once the PDF checks stopped aborting earlier. This
-    presses the real back key until our own window owns focus, and asserts it.
+    reported at both widths once the PDF checks stopped aborting earlier.
+
+    Readiness is taken from the *interactive window dump* both sides already
+    use, not from `dumpsys window` focus strings: Android 15 on this runner did
+    not expose a parsable mCurrentFocus line, which made a focus-based check
+    report `focused=unknown` and fail for the wrong reason (run 41317130663).
+    The condition is positive evidence -- our package's nodes are present and
+    the chooser's activity is gone -- so it cannot pass on an empty dump.
     """
-    focus = ''
+    dump = ''
     for _ in range(attempts):
-        focus = focused_package(adb('shell', 'dumpsys', 'window', 'windows'))
-        if focus == package:
+        dump = windows()
+        if package in dump and 'ChooserActivity' not in dump:
             break
         adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
         sleep(1)
     check('system share sheet dismissed and the document window refocused',
-          focus == package, f'focused={focus or "unknown"} after {attempts} back key(s)')
+          package in dump and 'ChooserActivity' not in dump,
+          f'chooser={"present" if "ChooserActivity" in dump else "gone"}; '
+          f'our package={"present" if package in dump else "absent"} after {attempts} back key(s)')
 
 
 def judge_pdf_evidence(text, pages, check, metrics):
@@ -375,10 +383,19 @@ def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, e
     # no extractor exemption) and its value stays in runtime.json.
     judge_pdf_evidence(text, len(pdf), check, metrics)
     time.sleep(5)
-    dismiss_system_share_sheet(adb, check, PACKAGE)
+    dismiss_system_share_sheet(adb, check, PACKAGE, xml)
     adb('shell', 'am', 'force-stop', PACKAGE)
     adb('shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1');time.sleep(5)
-    tap(find('متابعة العمل', clickable=True));time.sleep(5)
+    # Both entries lead to the same persisted document. The assertion that
+    # follows is unchanged -- the exact name, statement and long body must come
+    # back after a process restart -- but a launcher state that offers the
+    # library instead of a "continue" button must not be read as data loss.
+    snapshot('11b-after-restart')
+    reopened = [n for n in nodes(xml()) if n.get('package') == PACKAGE
+                and ('متابعة العمل' in label(n) or NAME in label(n)) and n.get('clickable') == 'true']
+    if not reopened:
+        raise AssertionError('Native control not reachable: متابعة العمل or the saved document entry')
+    tap(reopened[-1]);time.sleep(5)
     preview_back()
     open_rich('منطوق السؤال'); edit_exact(NAME); tap(find('إلغاء',clickable=True))
     open_rich('نص السؤال (اختياري)'); edit_exact(BODY)
