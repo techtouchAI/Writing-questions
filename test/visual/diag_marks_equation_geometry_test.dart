@@ -291,6 +291,8 @@ void main() {
     _writeJson('manifest.json', <String, Object?>{
       'files': <String>[
         if (File('$_output/edit_surface.png').existsSync()) 'edit_surface.png',
+        if (File('$_output/edit_surface_active.png').existsSync())
+          'edit_surface_active.png',
         'geometry.json',
         'manifest.json',
       ],
@@ -358,8 +360,58 @@ void main() {
       'marksRectPt': marksRects,
       'marksDetail': marksDetail,
       'displayMathCount': displayMaths.length,
+      'whileEditing': activeState,
       'displayMath': displayMaths,
     };
+
+    // ---------- (B2) السطح أثناء التحرير: ما يراه المدرس حين يكتب ----------
+    // النقر على متن السؤال يحوّل الحقل من عرض مطبوع إلى TextField بمصدره
+    // الخام؛ نقيس ما يترتب على ذلك قبل مغادرة هذه الشجرة.
+    final activeState = <String, Object?>{};
+    final bodyFinder = find.byKey(const ValueKey<String>('body-q-marks'));
+    if (bodyFinder.evaluate().isNotEmpty) {
+      activeState['displayMathBefore'] = find
+          .byType(SafeMathTex)
+          .evaluate()
+          .where((element) =>
+              (element.widget as SafeMathTex).mathStyle == MathStyle.display)
+          .length;
+      await tester.tap(bodyFinder);
+      await _settle(tester, frames: 24);
+      activeState['displayMathWhileEditing'] = find
+          .byType(SafeMathTex)
+          .evaluate()
+          .where((element) =>
+              (element.widget as SafeMathTex).mathStyle == MathStyle.display)
+          .length;
+      final editable = find.descendant(
+        of: bodyFinder,
+        matching: find.byType(EditableText),
+      );
+      if (editable.evaluate().isNotEmpty) {
+        final state = tester.state<EditableTextState>(editable.first);
+        final render = state.renderEditable;
+        activeState['fieldTextLength'] = state.textEditingValue.text.length;
+        activeState['showsRawLatex'] =
+            state.textEditingValue.text.contains(r'$$');
+        activeState['fieldLines'] = render.getBoxesForSelection(
+          TextSelection(
+            baseOffset: 0,
+            extentOffset: state.textEditingValue.text.length,
+          ),
+          boxHeightStyle: ui.BoxHeightStyle.strut,
+        ).length;
+      }
+      activeState['bodyRectPt'] =
+          _px(tester.getRect(bodyFinder), scale);
+      activeState['marksRectPtWhileEditing'] = <List<double>>[
+        for (final element in marksFinder.evaluate())
+          _px(tester.getRect(find.byWidget(element.widget)), scale),
+      ];
+      final activeScreen =
+          tester.renderObject<RenderRepaintBoundary>(find.byKey(_screenKey));
+      await _writeImage(tester, 'edit_surface_active', activeScreen);
+    }
 
     // ---------- (A) السطح القانوني: نفس ما يرسمه PDF ----------
     LayoutDocument? captured;
@@ -472,6 +524,8 @@ void main() {
       'files': <String>[
         if (File('$_output/document.pdf').existsSync()) 'document.pdf',
         if (File('$_output/edit_surface.png').existsSync()) 'edit_surface.png',
+        if (File('$_output/edit_surface_active.png').existsSync())
+          'edit_surface_active.png',
         'geometry.json',
         if (File('$_output/reference_preview.png').existsSync())
           'reference_preview.png',

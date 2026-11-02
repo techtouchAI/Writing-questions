@@ -385,8 +385,8 @@ class AndroidEmitGroupCoverage(unittest.TestCase):
 class ElementGeometryInventory(unittest.TestCase):
     """The measured case must publish every companion or none of it."""
 
-    FILES = {'document.pdf', 'edit_surface.png', 'geometry.json',
-             'manifest.json', 'reference_preview.png'}
+    FILES = {'document.pdf', 'edit_surface.png', 'edit_surface_active.png',
+             'geometry.json', 'manifest.json', 'reference_preview.png'}
 
     def build(self, root, files):
         for name in files:
@@ -397,13 +397,13 @@ class ElementGeometryInventory(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self.build(root, self.FILES)
-            self.assertEqual(len(list(transport.selected(root, 'element-geometry'))), 5)
+            self.assertEqual(len(list(transport.selected(root, 'element-geometry'))), 6)
 
     def test_a_run_that_lost_the_pdf_still_publishes_its_numbers(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self.build(root, self.FILES - {'document.pdf'})
-            self.assertEqual(len(list(transport.selected(root, 'element-geometry'))), 4)
+            self.assertEqual(len(list(transport.selected(root, 'element-geometry'))), 5)
 
     def test_a_measurement_without_numbers_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:

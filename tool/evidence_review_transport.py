@@ -90,8 +90,8 @@ def selected(root, profile='production'):
         # numbers and one screenshot must not lose them because the PDF stage
         # timed out. What is declared must exist, and the two measurements are
         # mandatory.
-        allowed = {'document.pdf', 'edit_surface.png', 'geometry.json',
-                   'manifest.json', 'reference_preview.png'}
+        allowed = {'document.pdf', 'edit_surface.png', 'edit_surface_active.png',
+                   'geometry.json', 'manifest.json', 'reference_preview.png'}
         if not isinstance(names, list) or not names or len(names) != len(set(names)):
             raise ValueError('Element geometry manifest must enumerate its files once')
         if not {'manifest.json', 'geometry.json'} <= set(names):
