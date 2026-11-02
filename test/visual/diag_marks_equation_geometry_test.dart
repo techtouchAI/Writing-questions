@@ -317,6 +317,7 @@ void main() {
       return tester.getRect(finder.first);
     }
 
+    final activeState = <String, Object?>{};
     final marksFinder = find.byTooltip('انقر لتعديل الدرجة');
     final statementRect = rectOf(find.byKey(const ValueKey<String>('statement-q-marks')));
     final bodyRect = rectOf(find.byKey(const ValueKey<String>('body-q-marks')));
@@ -367,7 +368,6 @@ void main() {
     // ---------- (B2) السطح أثناء التحرير: ما يراه المدرس حين يكتب ----------
     // النقر على متن السؤال يحوّل الحقل من عرض مطبوع إلى TextField بمصدره
     // الخام؛ نقيس ما يترتب على ذلك قبل مغادرة هذه الشجرة.
-    final activeState = <String, Object?>{};
     final bodyFinder = find.byKey(const ValueKey<String>('body-q-marks'));
     if (bodyFinder.evaluate().isNotEmpty) {
       activeState['displayMathBefore'] = find
