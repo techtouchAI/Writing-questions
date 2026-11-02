@@ -19,6 +19,17 @@ def _escape(text: str) -> str:
     return text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
 
 
+def plain_lines(path: pathlib.Path):
+    # A non-JSON log (plain reporter, or a compiler that printed before the
+    # reporter started) still carries the reason; surface it.
+    for line in path.read_text(errors='replace').splitlines():
+        stripped = line.strip()
+        if stripped.startswith('{'):
+            continue
+        if stripped and ('Error:' in stripped or 'error:' in stripped):
+            yield stripped
+
+
 def events(path: pathlib.Path):
     for line in path.read_text(errors='replace').splitlines():
         line = line.strip()
@@ -55,8 +66,13 @@ def summarise(path: pathlib.Path) -> int:
                 + _escape(f'{path.name}: {names.get(event.get("testID"), "?")}')
                 + '::test reported error; see the message annotation'
             )
-        elif kind == 'print' and 'ELEMENT-GEOMETRY' in str(event.get('message')):
-            print('::warning title=ELEMENT-GEOMETRY::' + _escape(str(event.get('message'))[:MESSAGE_LIMIT]))
+        elif kind == 'print':
+            message = str(event.get('message'))
+            if 'ELEMENT-GEOMETRY' in message:
+                print('::warning title=ELEMENT-GEOMETRY::' + _escape(message[:MESSAGE_LIMIT]))
+            elif 'rror' in message and problems < 12:
+                problems += 1
+                print('::error title=' + _escape(path.name) + '::' + _escape(message[:MESSAGE_LIMIT]))
     return problems
 
 
@@ -68,6 +84,9 @@ def main(argv) -> int:
             print(f'::notice title={_escape(path.name)}::log not produced')
             continue
         seen += summarise(path)
+        for line in list(plain_lines(path))[:12]:
+            seen += 1
+            print('::error title=' + _escape(path.name) + '::' + _escape(line[:MESSAGE_LIMIT]))
     print(f'::notice title=probe log::parsed {len(argv)} log(s), {seen} problem event(s)')
     return 0
 

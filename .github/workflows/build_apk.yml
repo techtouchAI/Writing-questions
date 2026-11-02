@@ -1181,7 +1181,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          flutter test --reporter json test/visual/diag_marks_equation_geometry_test.dart 2>&1 \
+          flutter test test/visual/diag_marks_equation_geometry_test.dart 2>&1 \
             | tee build/visual_parity/element-geometry-test.log
 
       # مسبار JSON لا يستطيع إظهار سبب فشله عبر ::error مباشرة؛ نستخرج الرسالة
