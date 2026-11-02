@@ -394,13 +394,12 @@ void main() {
         activeState['fieldTextLength'] = state.textEditingValue.text.length;
         activeState['showsRawLatex'] =
             state.textEditingValue.text.contains(r'$$');
-        activeState['fieldLines'] = render.getBoxesForSelection(
-          TextSelection(
-            baseOffset: 0,
-            extentOffset: state.textEditingValue.text.length,
-          ),
-          boxHeightStyle: ui.BoxHeightStyle.strut,
-        ).length;
+        activeState['fieldLines'] = render
+            .getBoxesForSelection(TextSelection(
+              baseOffset: 0,
+              extentOffset: state.textEditingValue.text.length,
+            ))
+            .length;
       }
       activeState['bodyRectPt'] =
           _px(tester.getRect(bodyFinder), scale);
