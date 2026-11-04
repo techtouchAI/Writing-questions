@@ -7878,7 +7878,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         if (trailingSemantic != null) {
           final base = semanticContent ?? InlineContent.fromSource(text);
           return TexText.fromRichContent(
-            (base + trailingSemantic!).richContent,
+            (base + trailingSemantic).richContent,
             style: style,
             mathTextStyle: style,
             textAlign: textAlign,

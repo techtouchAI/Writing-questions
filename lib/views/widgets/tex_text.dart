@@ -189,7 +189,7 @@ class _DisplayMathParagraph extends StatefulWidget {
   final String latex;
   final TextStyle? style;
   final TextStyle? mathTextStyle;
-  final TextDirection textDirection;
+  final TextDirection? textDirection;
   final double lineHeightPx;
 
   @override
