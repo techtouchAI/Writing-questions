@@ -36,6 +36,7 @@ class PaperField extends StatefulWidget {
     this.allowTextSelection = true,
     this.onLongPress,
     this.canonicalInteractionOnly = false,
+    this.renderWhenNotRich = false,
     this.autofocus = false,
     this.matchPrintedTextWidth = false,
     this.minimumInteractiveHeight = 0,
@@ -53,6 +54,14 @@ class PaperField extends StatefulWidget {
   /// Canonical rich content from DocumentIR when this field is paper output.
   /// `null` keeps the legacy/edit-only source parsing path.
   final InlineContent? semanticContent;
+
+  /// يعرض [renderBuilder] حتى للنص الخالي من الصيغ والآيات.
+  ///
+  /// يُستخدم حين يُلحق بالحقل محتوى مطبوع لا يمكن أن يرسمه `TextField`:
+  /// درجة العنوان (بعد U+00A0) أو لاحقة النقطة. بدونها يبقى الحقل
+  /// `TextField` فتختفي الدرجة من الورقة. النقر يظل يفتح التحرير كما هو
+  /// (`_handleRenderedTap`).
+  final bool renderWhenNotRich;
 
   final TextAlign textAlign;
 
@@ -317,7 +326,8 @@ class _PaperFieldState extends State<PaperField> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final effectiveStyle = widget.style;
-        final showRendered = _isRenderable && !_editing && !_focusNode.hasFocus;
+        final showRendered =
+            (_isRenderable || widget.renderWhenNotRich) && !_editing && !_focusNode.hasFocus;
         if (showRendered) {
           return Tooltip(
             message: 'انقر للتحرير',

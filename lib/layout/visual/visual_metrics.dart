@@ -73,4 +73,35 @@ abstract final class VisualMetrics {
 
   /// إزاحة سطر القسم/العنوان عن حافة الكتلة (لا إزاحة).
   static const double blockStartIndentPx = 0;
+
+  /// الحد الأدنى لفجوة المعادلة المستقلة قبلها وبعدها (4px = 3pt): هو الرقم
+  /// الثابت القديم نفسه، لكنه صار **أرضية** لا القيمة الوحيدة.
+  static const double displayMathMinGapPx = 4;
+
+  /// فجوة المعادلة المستقلة مشتقّة من قياسها لا من رقم ثابت.
+  ///
+  /// القاعدة: نصف ما يزيده ارتفاع صندوق المعادلة المقيس على ارتفاع السطر
+  /// المرجعي، بحدّ أدنى [displayMathMinGapPx]. معادلة بكسر أو جذر أو تكامل
+  /// ارتفاعها ضعف السطر كانت تأخذ فجوة سطر عادي فتلتصق بالنص حولها؛ هذه
+  /// الصيغة تجعل الفجوة تتبع الصندوق نفسه.
+  ///
+  /// المصدر واحد ويستهلكه مكانان فقط: قرار التخطيط في المحرك (قبل فقرة
+  /// المعادلة وبعدها) وحشوة المعاينة في [TexText] — فلا تُحسب الفجوة مرتين
+  /// ولا تختلف بين راسم وآخر.
+  ///
+  /// أي قيمة غير منتهية أو غير موجبة تُعيد الأرضية: لا تخطيط سالبًا ولا
+  /// لانهائيًا.
+  static double displayMathGapPx({
+    required double mathHeightPx,
+    required double lineHeightPx,
+  }) {
+    if (!mathHeightPx.isFinite ||
+        !lineHeightPx.isFinite ||
+        mathHeightPx <= 0 ||
+        lineHeightPx <= 0) {
+      return displayMathMinGapPx;
+    }
+    final extra = (mathHeightPx - lineHeightPx) / 2;
+    return extra > displayMathMinGapPx ? extra : displayMathMinGapPx;
+  }
 }

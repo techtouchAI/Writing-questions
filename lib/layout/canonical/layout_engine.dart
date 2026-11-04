@@ -983,20 +983,24 @@ class _LayoutBuilder {
     for (var index = 0; index < segments.length; index++) {
       final segment = segments[index];
       final isBlockMath = segment.length == 1 && segment.single.isBlockMath;
+      final block = _paragraphBlock(
+        id: isBlockMath ? '$id/block-math/$index' : (index == 0 ? id : '$id/segment/$index'),
+        kind: kind,
+        semanticNode: semanticNode,
+        spans: segment,
+        style: style,
+        alignment: isBlockMath ? PaperAlign.center : alignment,
+        direction: direction,
+        width: width,
+        x: x,
+      );
+      // فجوة المعادلة المستقلة من **قياس صندوقها** لا من رقم ثابت: نفس الدالة
+      // التي يستهلكها سطح المعاينة (`VisualMetrics.displayMathGapPx`).
+      final mathGapPt = isBlockMath ? _displayMathGapPt(block.rect.height, style) : 0.0;
       flow.add(
-        _paragraphBlock(
-          id: isBlockMath ? '$id/block-math/$index' : (index == 0 ? id : '$id/segment/$index'),
-          kind: kind,
-          semanticNode: semanticNode,
-          spans: segment,
-          style: style,
-          alignment: isBlockMath ? PaperAlign.center : alignment,
-          direction: direction,
-          width: width,
-          x: x,
-        ),
-        before: isBlockMath ? LayoutUnits.pxToPt(4) : 0,
-        after: isBlockMath ? LayoutUnits.pxToPt(4) : 0,
+        block,
+        before: mathGapPt,
+        after: mathGapPt,
       );
     }
     return LayoutBlock(
@@ -1009,6 +1013,17 @@ class _LayoutBuilder {
       children: List<LayoutBlock>.unmodifiable(flow.children),
       keepTogether: false,
     );
+  }
+
+  /// فجوة المعادلة المستقلة بالنقاط، مشتقّة من ارتفاع الصندوق المقيس مقابل
+  /// ارتفاع السطر المرجعي ([LayoutTextStyle.lineHeightFactor]) عبر المصدر
+  /// الوحيد [VisualMetrics.displayMathGapPx].
+  double _displayMathGapPt(double mathHeightPt, LayoutTextStyle style) {
+    final lineHeightPt = style.fontSizePt * style.lineHeightFactor;
+    return LayoutUnits.pxToPt(VisualMetrics.displayMathGapPx(
+      mathHeightPx: LayoutUnits.ptToPx(mathHeightPt),
+      lineHeightPx: LayoutUnits.ptToPx(lineHeightPt),
+    ));
   }
 
   LayoutBlock _paragraphBlock({
