@@ -1205,7 +1205,7 @@ void main() {
       before,
       reason: 'AUD-INVALID-02: درجة سالبة لا تُطبَّق على الموديل.',
     );
-    expect(find.text('أدخل الدرجة رقماً صحيحاً فقط (مثال: 5).'), findsOneWidget,
+    expect(find.text('أدخل الدرجة رقماً صحيحاً فقط (مثال: 20).'), findsOneWidget,
         reason: 'AUD-INVALID-02: إدخال غير صالح يُرفض برسالة واضحة.');
     await _settleSnackbars(tester);
     expect(tester.takeException(), isNull);
