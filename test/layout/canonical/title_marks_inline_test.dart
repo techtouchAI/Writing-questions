@@ -172,7 +172,7 @@ void main() {
     await _pump(tester, _document(marksOverride: null));
 
     final editable = _renderEditable(tester);
-    expect(editable.text.toPlainText().contains('درجة'), isFalse,
+    expect(editable.text!.toPlainText().contains('درجة'), isFalse,
         reason: 'سؤال بلا درجة رسم درجةً في فقرته.');
   });
 }

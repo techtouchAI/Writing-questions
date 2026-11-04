@@ -263,7 +263,12 @@ void main() {
       expect(find.byKey(const ValueKey<String>('a4-page-0')), findsOneWidget);
       // سطر العنوان: الرقم التلقائي + المنطوق + الدرجة بصيغة (٢٠ درجة).
       expect(find.text('السؤال الأول/'), findsOneWidget);
-      expect(find.text('(٢٠ درجة)'), findsOneWidget);
+      // الدرجة جريان نصّي داخل فقرة الحقل نفسها (لا ودجة بجانبه)، فتُعثر
+      // داخل شجرة النص المرسومة.
+      expect(
+        find.textContaining('(٢٠ درجة)', findRichText: true),
+        findsOneWidget,
+      );
       expect(find.text('عرّف الفاعل'), findsOneWidget);
     });
 

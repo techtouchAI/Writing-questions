@@ -194,9 +194,14 @@ void main() {
           File('lib/views/widgets/tex_text.dart').readAsStringSync();
       for (final source in <String>[engine, texText]) {
         expect(source.contains('displayMathGapPx('), isTrue);
-        // لا صيغة ثانية مكرّرة داخل الراسم أو المحرك.
-        expect(source.contains('(mathHeight'), isFalse,
-            reason: 'صيغة الفجوة مكرّرة خارج VisualMetrics.');
+        // لا صيغة ثانية مكرّرة داخل الراسم أو المحرك: النسخة المكرّرة
+        // تُعرف بخشم القسمة على ارتفاع السطر، وهو ما لا وجود له إلا في
+        // VisualMetrics.
+        expect(
+          RegExp(r'lineHeight(Px|Pt)?\)\s*/\s*2').hasMatch(source),
+          isFalse,
+          reason: 'صيغة الفجوة مكرّرة خارج VisualMetrics.',
+        );
       }
     });
   });
