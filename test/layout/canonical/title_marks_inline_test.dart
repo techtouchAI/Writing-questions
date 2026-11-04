@@ -2,15 +2,17 @@
 //
 // ما تقيسه هذه البوابة على سطح الإنتاج نفسه (`ExamPreviewScreen` كما يُنشأ في
 // الإنتاج، بلا محوّل canonical):
-//   * الدرجة تُرسم داخل فقرة الحقل نفسه (لا `TextField` منفصل ولا ودجة بجانبه).
+//   * الدرجة تُرسم داخل نصّ الحقل نفسه (شجرة `buildTextSpan`)، لا ودجة بجانبه.
 //   * بينها وبين المنطوق `U+00A0` واحد، كما في `LayoutEngine._titleBlock`.
 //   * حين يلتفّ المنطوق على أكثر من سطر تقع الدرجة على **السطر الأخير**.
-//   * ملاصقتها للمحرف الذي قبلها تقع داخل 0.75pt (نفس تفاوت بوابة الحقل).
+//   * ملاصقتها للفاصل تقع داخل 0.75pt (نفس تفاوت بوابة هندسة الحقل).
+//   * الدرجة ليست جزءًا من نصّ المتحكم: لا تدخل `text` ولا التحديد، فلا تمسّ
+//     التحرير ولا الإدخال.
 //   * أداة تحرير الدرجة موجودة خارج الورقة (شريط السؤال) بعد نقلها.
 //
-// المصدر: `lib/views/wizard/exam_preview_screen.dart` (`_titleRow`,
-// `_trailingTitleContent`, `_paperField`) و`lib/views/widgets/paper_field.dart`
-// (`renderWhenNotRich`).
+// القياس: شجرة الأسطر نفسها التي رسمها `RenderEditable`
+// (`EditableText.renderEditable.text`) تُخطَّط بـ`TextPainter` بالعرض والنمط
+// والاتجاه أنفسهم، فالصناديق المقيسة هي صناديق الرسم لا محاكاة له.
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,7 +24,7 @@ import 'package:writing_questions_app/models/question_model.dart';
 import 'package:writing_questions_app/providers/exam_wizard_controller.dart';
 import 'package:writing_questions_app/views/wizard/exam_preview_screen.dart';
 
-/// التفاوت الموثَّق (pt) لملاصقة الدرجة للمحرف الذي قبلها.
+/// التفاوت الموثَّق (pt) لملاصقة الدرجة للفاصل الذي قبلها.
 const double _kAdjacencyTolerancePt = 0.75;
 
 /// التفاوت الرأسي (pt) لاعتبار صندوقين على السطر نفسه.
@@ -66,39 +68,59 @@ Future<void> _pump(WidgetTester tester, ExamDocument document) async {
 
 Finder _titleField() => find.byKey(const ValueKey<String>('statement-q1'));
 
-RichText _titleParagraph(WidgetTester tester) {
-  final paragraph = find
-      .descendant(of: _titleField(), matching: find.byType(RichText))
-      .evaluate()
-      .map((element) => element.widget)
-      .whereType<RichText>()
-      .where((widget) => widget.text.toPlainText().contains('درجة'))
-      .toList(growable: false);
-  expect(paragraph, hasLength(1),
-      reason: 'لم تُرسم الدرجة داخل فقرة المنطوق: '
-          'إما أنها عادت ودجةً مستقلة، أو أن الحقل لم يُرسم من renderBuilder.');
-  return paragraph.single;
+Finder _titleEditable() =>
+    find.descendant(of: _titleField(), matching: find.byType(EditableText));
+
+RenderEditable _renderEditable(WidgetTester tester) =>
+    tester.state<EditableTextState>(_titleEditable()).renderEditable;
+
+/// تخطيط شجرة الأسطر المرسومة فعلاً بالعرض والاتجاه أنفسهما.
+TextPainter _paint(RenderEditable editable) {
+  final painter = TextPainter(
+    text: editable.text,
+    textDirection: editable.textDirection,
+    textAlign: editable.textAlign,
+  )..layout(maxWidth: editable.size.width);
+  return painter;
+}
+
+List<double> _lineTops(TextPainter painter, int length) {
+  final tops = <double>[];
+  for (final box in painter.getBoxesForSelection(
+    TextSelection(baseOffset: 0, extentOffset: length),
+  )) {
+    if (tops.every((top) => (top - box.top).abs() > _kLineTolerancePt)) {
+      tops.add(box.top);
+    }
+  }
+  return tops;
 }
 
 void main() {
-  testWidgets('الدرجة داخل فقرة المنطوق بعد U+00A0 وعلى السطر الأخير',
+  testWidgets('الدرجة داخل نصّ الفقرة بعد U+00A0 وعلى السطر الأخير',
       (tester) async {
     await _pump(tester, _document());
 
-    // 1) الحقل نفسه لم يعد TextField في وضع العرض: الفقرة هي الراسم.
-    expect(
-      find.descendant(of: _titleField(), matching: find.byType(TextField)),
-      findsNothing,
-      reason: 'الحقل ما زال TextField، فالدرجة لم تُدمج في نصّه.',
-    );
+    // 1) الحقل بقي قابلاً للتحرير: الدرجة لم تحوّله إلى عرض ثابت.
+    expect(_titleEditable(), findsOneWidget,
+        reason: 'الحقل ليس TextField: التحرير المباشر فُقد.');
 
-    final richText = _titleParagraph(tester);
-    final render = tester.renderObject<RenderParagraph>(find.byWidget(richText));
-    final plain = richText.text.toPlainText();
+    // 2) الدرجة ليست في نصّ المتحكم: رسم فقط، لا محتوى ولا تحديد.
+    final controllerText = tester
+        .widget<TextField>(find.descendant(
+            of: _titleField(), matching: find.byType(TextField)))
+        .controller!
+        .text;
+    expect(controllerText.contains('درجة'), isFalse,
+        reason: 'الدرجة دخلت نصّ الحقل القابل للتحرير.');
 
-    // 2) المحرف الواصل U+00A0 موجود قبل الدرجة مباشرة.
+    // 3) لكنها في الشجرة المرسومة بعد U+00A0.
+    final editable = _renderEditable(tester);
+    final painter = _paint(editable);
+    final plain = painter.text!.toPlainText();
+    expect(plain.contains('درجة'), isTrue,
+        reason: 'الدرجة غير مرسومة في فقرة الحقل.');
     final marksNameIndex = plain.indexOf('درجة');
-    expect(marksNameIndex, greaterThan(0), reason: 'لا نصّ للدرجة في الفقرة.');
     final openIndex = plain.lastIndexOf('(', marksNameIndex);
     expect(openIndex, greaterThan(0), reason: 'لا قوس افتتاح لمجموعة الدرجة.');
     final nbspIndex = plain.lastIndexOf('\u00A0', openIndex);
@@ -107,45 +129,31 @@ void main() {
     expect(plain.substring(nbspIndex + 1, openIndex).trim(), isEmpty,
         reason: 'بين U+00A0 والدرجة محتوى غير متوقّع.');
 
-    // 3) الأسطر: المنطوق الطويل يلتفّ، والدرجة تقع على السطر الأخير.
-    final allBoxes = render.getBoxesForSelection(
-      TextSelection(baseOffset: 0, extentOffset: plain.length),
-    );
-    expect(allBoxes, isNotEmpty, reason: 'لا صناديق نصّ: القياس بلا عيّنة.');
-    final lineTops = <double>[];
-    for (final box in allBoxes) {
-      if (lineTops.every((top) => (top - box.top).abs() > _kLineTolerancePt)) {
-        lineTops.add(box.top);
-      }
-    }
-    expect(lineTops.length, greaterThanOrEqualTo(2),
+    // 4) الأسطر: المنطوق الطويل يلتفّ، والدرجة على السطر الأخير.
+    final tops = _lineTops(painter, plain.length);
+    expect(tops.length, greaterThanOrEqualTo(2),
         reason: 'المنطوق لم يلتفّ: الحالة لا تقيس «السطر الأخير».');
-    final lastLineTop = lineTops.reduce((a, b) => a > b ? a : b);
-
-    final marksBoxes = render.getBoxesForSelection(
+    final lastLineTop = tops.reduce((a, b) => a > b ? a : b);
+    final marksBoxes = painter.getBoxesForSelection(
       TextSelection(baseOffset: openIndex, extentOffset: plain.length),
     );
     expect(marksBoxes, isNotEmpty, reason: 'لا صندوق لمجموعة الدرجة.');
     for (final box in marksBoxes) {
       expect((box.top - lastLineTop).abs(), lessThanOrEqualTo(_kLineTolerancePt),
-          reason: 'الدرجة ليست على السطر الأخير (top=${box.top}, '
-              'lastLineTop=$lastLineTop).');
+          reason: 'الدرجة ليست على السطر الأخير '
+              '(top=${box.top}, lastLineTop=$lastLineTop).');
     }
 
-    // 4) الملاصقة: بين الدرجة والمحرف الذي قبلها عرض U+00A0 نفسه، لا صفّ كامل.
-    final nbspBoxes = render.getBoxesForSelection(
+    // 5) الملاصقة: عرض U+00A0 نفسه لا صفّ كامل.
+    final nbspBoxes = painter.getBoxesForSelection(
       TextSelection(baseOffset: nbspIndex, extentOffset: nbspIndex + 1),
     );
     expect(nbspBoxes, hasLength(1), reason: 'U+00A0 ليس محرفًا واحدًا.');
-    final nbspBox = nbspBoxes.single;
+    final rtl = painter.textDirection == TextDirection.rtl;
     final marksEdge = marksBoxes
-        .map((box) => render.textDirection == TextDirection.rtl
-            ? box.right
-            : box.left)
+        .map((box) => rtl ? box.right : box.left)
         .reduce((a, b) => a > b ? a : b);
-    final nbspEdge = render.textDirection == TextDirection.rtl
-        ? nbspBox.left
-        : nbspBox.right;
+    final nbspEdge = rtl ? nbspBoxes.single.left : nbspBoxes.single.right;
     expect((marksEdge - nbspEdge).abs(), lessThanOrEqualTo(_kAdjacencyTolerancePt),
         reason: 'المسافة بين الدرجة والفاصل ${(marksEdge - nbspEdge).abs()}pt '
             'تتجاوز $_kAdjacencyTolerancePt pt.');
@@ -156,9 +164,6 @@ void main() {
 
     expect(find.byKey(const ValueKey<String>('question-action-marks')), findsOneWidget,
         reason: 'لا أداة لتحرير درجة السؤال بعد نقلها خارج الورقة.');
-
-    // لا تبقى أداة تحرير داخل الورقة: لا نصّ «+ درجة» ولا ودجة قابلة للنقر
-    // على حافة صفّ العنوان.
     expect(find.text('+ درجة'), findsNothing,
         reason: '«+ درجة» ما زالت تُرسم داخل مساحة الورقة.');
   });
@@ -166,15 +171,8 @@ void main() {
   testWidgets('سؤال بلا درجة لا يُلحق بفقرة العنوان شيئًا', (tester) async {
     await _pump(tester, _document(marksOverride: null));
 
-    final richText = find
-        .descendant(of: _titleField(), matching: find.byType(RichText))
-        .evaluate()
-        .map((element) => element.widget)
-        .whereType<RichText>()
-        .toList(growable: false);
-    for (final widget in richText) {
-      expect(widget.text.toPlainText().contains('درجة'), isFalse,
-          reason: 'سؤال بلا درجة رسم درجةً في فقرته.');
-    }
+    final editable = _renderEditable(tester);
+    expect(editable.text.toPlainText().contains('درجة'), isFalse,
+        reason: 'سؤال بلا درجة رسم درجةً في فقرته.');
   });
 }

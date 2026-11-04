@@ -7842,6 +7842,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     VoidCallback? onLongPress,
   }) {
     final layout = _controller!.document.layout;
+    // اللاحقة المطبوعة (درجة العنوان/النقطة بعد U+00A0) تُرسم من المتحكم نفسه:
+    // `text` يبقى نصّ الحقل القابل للتحرير، والدرجة تُجرى في فقرة النص فتتبع
+    // آخر حرف وتلتفّ معه إلى السطر الأخير — عقد المحرك القانوني بلا ودجة
+    // جانبية ولا طبقة فوق الحقل.
+    if (controller is PaperRangeTextEditingController) {
+      final trailing = trailingSemantic;
+      controller.trailingSpan =
+          trailing == null ? null : TextSpan(text: trailing.legacyText, style: style);
+    }
     // مفاتيح حقول مقطع التكملة مميّزة: الحقلان (البداية والتكملة) يشتركان في
     // المتحكم الواحد، ويجب أن يبقى كل مفتاح في الشجرة وحيداً.
     return PaperField(
@@ -7854,7 +7863,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       semanticContent: semanticContent,
       textAlign: textAlign,
       hint: hint,
-      renderWhenNotRich: trailingSemantic != null,
       onActivate: () {
         // A popup/dialog can restore focus to the previous field while an
         // explicit source switch is rebuilding. That retired native field
@@ -7875,15 +7883,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         // اللاحقة أولًا: تُدمج مع المصدر الدلالي نفسه فيُبنى نصّ واحد يتدفّق
         // بحرّية، فتبقى الدرجة مع آخر حرف على السطر الأخير (لا على حافة
         // الصفّ ولا على السطر الأول) وتسافر مع النص عند الالتفاف.
-        if (trailingSemantic != null) {
-          final base = semanticContent ?? InlineContent.fromSource(text);
-          return TexText.fromRichContent(
-            (base + trailingSemantic).richContent,
-            style: style,
-            mathTextStyle: style,
-            textAlign: textAlign,
-          );
-        }
         if (mushafStyle) {
           return _buildRichPreview(
             layout,
