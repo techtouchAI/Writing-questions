@@ -1,0 +1,1252 @@
+{
+  "meta": {
+    "repository": "techtouchAI/Writing-questions",
+    "branch": "arena/c08372c2-writing-questions",
+    "referenceSha": "db0bc3261fe69d6a99fd4a24d317ea6359097fa6",
+    "productionFreezeBase": "c45655c9a296f1fba47c99940897aef425ba87c0",
+    "mode": "RESEARCH ONLY - production frozen - candidate OFF",
+    "script": "tool/research_semantic_pdf/run_matrix.py",
+    "font": "assets/fonts/NotoNaskhArabic-Regular.ttf",
+    "fontSha256": "56c0790cccace67424dc2eee8caaf630c84ad98761996a1fb1bf65f2cdfccd26",
+    "engines": {
+      "pymupdf": "2.0",
+      "pypdf": "6.21.4",
+      "pdfminer": "20260107",
+      "pypdfium2": "5.14.0"
+    },
+    "referenceVariant": "order=visual, ops=line (one BT/Tj per line, production-like), payload=legacy, actualText=none",
+    "rasterSettings": "PyMuPDF page.get_pixmap(dpi=150, colorspace=csGRAY); strict byte equality per page"
+  },
+  "corpus": {
+    "plain_arabic": {
+      "case": "عربية غير مشكّلة",
+      "source": "نص عربي طويل",
+      "codePoints": "U+0646 U+0635 U+0020 U+0639 U+0631 U+0628 U+064A U+0020 U+0637 U+0648 U+064A U+0644",
+      "isNfc": true,
+      "referencePdf": "ref-plain_arabic.pdf",
+      "referencePdfSha256": "6bf8f0772b6ac86761ed7cbfecc67d38fff8cadcbbab3c3a33d25d4bb05a4fa2",
+      "referencePageCount": 1
+    },
+    "vocalised_word": {
+      "case": "عربية مشكّلة (بيان الاختبار الأصلي)",
+      "source": "سَلَامٌ",
+      "codePoints": "U+0633 U+064E U+0644 U+064E U+0627 U+0645 U+064C",
+      "isNfc": true,
+      "referencePdf": "ref-vocalised_word.pdf",
+      "referencePdfSha256": "072c6eaa2e5d389b7c07e1d06c02e1061d722d2d38ec0bc1830c060e964e7ce9",
+      "referencePageCount": 1
+    },
+    "multi_mark": {
+      "case": "حركات متعددة على حرف واحد",
+      "source": "مُحَمَّدٌ",
+      "codePoints": "U+0645 U+064F U+062D U+064E U+0645 U+064E U+0651 U+062F U+064C",
+      "isNfc": true,
+      "referencePdf": "ref-multi_mark.pdf",
+      "referencePdfSha256": "060bd128a0d685c890f550c0e7dd9ea04f2cfe1e902618368d1f968d9a7f1cad",
+      "referencePageCount": 1
+    },
+    "tanwin": {
+      "case": "التنوين",
+      "source": "كِتَابٌ قَلَمًا عِلْمٍ",
+      "codePoints": "U+0643 U+0650 U+062A U+064E U+0627 U+0628 U+064C U+0020 U+0642 U+064E U+0644 U+064E U+0645 U+064B U+0627 U+0020 U+0639 U+0650 U+0644 U+0652 U+0645 U+064D",
+      "isNfc": true,
+      "referencePdf": "ref-tanwin.pdf",
+      "referencePdfSha256": "7df80ffd70e07f6db7510af4dd13deb02949bdd556ca39d122739feb9be796cd",
+      "referencePageCount": 1
+    },
+    "shadda_fatha": {
+      "case": "الشدة مع الحركات",
+      "source": "إِنَّ اللَّهَ رَبِّي",
+      "codePoints": "U+0625 U+0650 U+0646 U+064E U+0651 U+0020 U+0627 U+0644 U+0644 U+064E U+0651 U+0647 U+064E U+0020 U+0631 U+064E U+0628 U+0650 U+0651 U+064A",
+      "isNfc": true,
+      "referencePdf": "ref-shadda_fatha.pdf",
+      "referencePdfSha256": "5b25e6a778c70ea5039791d3a458547e150eed63cb355b064d66edd863355954",
+      "referencePageCount": 1
+    },
+    "lam_alef": {
+      "case": "لام ألف",
+      "source": "وَلَا تَقْرَبُوا",
+      "codePoints": "U+0648 U+064E U+0644 U+064E U+0627 U+0020 U+062A U+064E U+0642 U+0652 U+0631 U+064E U+0628 U+064F U+0648 U+0627",
+      "isNfc": true,
+      "referencePdf": "ref-lam_alef.pdf",
+      "referencePdfSha256": "03f3751afa3559327abeec59b2d4dd9fa0da8a7daf0d0344087813fbc5ed5ae2",
+      "referencePageCount": 1
+    },
+    "mark_in_ligature": {
+      "case": "علامة داخل امتداد ligature (فتحة بين لام وألف)",
+      "source": "سَلَامٌ وَلَا",
+      "codePoints": "U+0633 U+064E U+0644 U+064E U+0627 U+0645 U+064C U+0020 U+0648 U+064E U+0644 U+064E U+0627",
+      "isNfc": true,
+      "referencePdf": "ref-mark_in_ligature.pdf",
+      "referencePdfSha256": "f80088fe97c9f69d9e40918705a33aa4e0eb1da528d25ee0fcfa05863e72d4b3",
+      "referencePageCount": 1
+    },
+    "compound_edges": {
+      "case": "كلمة تبدأ/تنتهي بعلامة مركبة",
+      "source": "ّللْعَالَمِينَّ",
+      "codePoints": "U+0651 U+0644 U+0644 U+0652 U+0639 U+064E U+0627 U+0644 U+064E U+0645 U+0650 U+064A U+0646 U+064E U+0651",
+      "isNfc": true,
+      "referencePdf": "ref-compound_edges.pdf",
+      "referencePdfSha256": "8c047913a860fc9205cbadaf3aa6f687a2cd1f3856257409d830b776eb0b1aea",
+      "referencePageCount": 1
+    },
+    "mixed": {
+      "case": "عربي وإنجليزي مختلط",
+      "source": "نص عربي English 123",
+      "codePoints": "U+0646 U+0635 U+0020 U+0639 U+0631 U+0628 U+064A U+0020 U+0045 U+006E U+0067 U+006C U+0069 U+0073 U+0068 U+0020 U+0031 U+0032 U+0033",
+      "isNfc": true,
+      "referencePdf": "ref-mixed.pdf",
+      "referencePdfSha256": "1d795c9184bfc222f947731608f55e77bf7a6ac5d98206dd106e8d757894b58e",
+      "referencePageCount": 1
+    },
+    "digits_arabic": {
+      "case": "أرقام هندية (عربية)",
+      "source": "(٢٠ درجة) ٤٥٦",
+      "codePoints": "U+0028 U+0662 U+0660 U+0020 U+062F U+0631 U+062C U+0629 U+0029 U+0020 U+0664 U+0665 U+0666",
+      "isNfc": true,
+      "referencePdf": "ref-digits_arabic.pdf",
+      "referencePdfSha256": "59403963d4e665c7d469def30a77c3a3e6bcca1f7b97b5a9a74205ed869f1d9c",
+      "referencePageCount": 1
+    },
+    "digits_western": {
+      "case": "أرقام غربية",
+      "source": "سؤال 12 من 40",
+      "codePoints": "U+0633 U+0624 U+0627 U+0644 U+0020 U+0031 U+0032 U+0020 U+0645 U+0646 U+0020 U+0034 U+0030",
+      "isNfc": true,
+      "referencePdf": "ref-digits_western.pdf",
+      "referencePdfSha256": "d27b355d7c87f078e3e29d37a527215d4e93521b17f22c4856fcb54d382bbeba",
+      "referencePageCount": 1
+    },
+    "punctuation": {
+      "case": "علامات ترقيم",
+      "source": "قال: «هذا نص»؛ ثم انتهى.",
+      "codePoints": "U+0642 U+0627 U+0644 U+003A U+0020 U+00AB U+0647 U+0630 U+0627 U+0020 U+0646 U+0635 U+00BB U+061B U+0020 U+062B U+0645 U+0020 U+0627 U+0646 U+062A U+0647 U+0649 U+002E",
+      "isNfc": true,
+      "referencePdf": "ref-punctuation.pdf",
+      "referencePdfSha256": "94ccb42eabefce19e53c60da576a1950d90a5af599d944a6c3056b07b18c60a6",
+      "referencePageCount": 1
+    },
+    "double_spaces": {
+      "case": "مسافات متكررة (مسافتان بين الكلمات)",
+      "source": "نص  عربي   طويل",
+      "codePoints": "U+0646 U+0635 U+0020 U+0020 U+0639 U+0631 U+0628 U+064A U+0020 U+0020 U+0020 U+0637 U+0648 U+064A U+0644",
+      "isNfc": true,
+      "referencePdf": "ref-double_spaces.pdf",
+      "referencePdfSha256": "6bf8f0772b6ac86761ed7cbfecc67d38fff8cadcbbab3c3a33d25d4bb05a4fa2",
+      "referencePageCount": 1
+    },
+    "two_lines": {
+      "case": "أسطر متعددة",
+      "source": "السطر الأول\nالسطر الثاني",
+      "codePoints": "U+0627 U+0644 U+0633 U+0637 U+0631 U+0020 U+0627 U+0644 U+0623 U+0648 U+0644 U+000A U+0627 U+0644 U+0633 U+0637 U+0631 U+0020 U+0627 U+0644 U+062B U+0627 U+0646 U+064A",
+      "isNfc": true,
+      "referencePdf": "ref-two_lines.pdf",
+      "referencePdfSha256": "cb0b8902aa68db69af1fad860dbbb827b72183d35f34ca204d4882c7d0c60e56",
+      "referencePageCount": 2
+    },
+    "wrapped": {
+      "case": "التفاف الأسطر (سطر منطقي واحد على سطرين بصريين)",
+      "source": "هَذِهِ جُمْلَةٌ طَوِيلَةٌ جِدًّا\nلِاخْتِبَارِ الِاسْتِخْرَاجِ",
+      "codePoints": "U+0647 U+064E U+0630 U+0650 U+0647 U+0650 U+0020 U+062C U+064F U+0645 U+0652 U+0644 U+064E U+0629 U+064C U+0020 U+0637 U+064E U+0648 U+0650 U+064A U+0644 U+064E U+0629 U+064C U+0020 U+062C U+0650 U+062F U+064B U+0651 U+0627 U+000A U+0644 U+0650 U+0627 U+062E U+0652 U+062A U+0650 U+0628 U+064E U+0627 U+0631 U+0650 U+0020 U+0627 U+0644 U+0650 U+0627 U+0633 U+0652 U+062A U+0650 U+062E U+0652 U+0631 U+064E U+0627 U+062C U+0650",
+      "isNfc": true,
+      "referencePdf": "ref-wrapped.pdf",
+      "referencePdfSha256": "e259665ebab0afce3809419dcb5e0a77559333ad825bfffbfa32da1bca5356c2",
+      "referencePageCount": 2
+    },
+    "long_text": {
+      "case": "نص طويل",
+      "source": "هَذِهِ جُمْلَةٌ عَرَبِيَّةٌ طَوِيلَةٌ جِدًّا لِاخْتِبَارِ الِاسْتِخْرَاجِ\nمِنْ مَلَفَّاتِ الـ PDF الْمُنْتَجَةِ دَاخِلَ التَّطْبِيقِ.",
+      "codePoints": "U+0647 U+064E U+0630 U+0650 U+0647 U+0650 U+0020 U+062C U+064F U+0645 U+0652 U+0644 U+064E U+0629 U+064C U+0020 U+0639 U+064E U+0631 U+064E U+0628 U+0650 U+064A U+064E U+0651 U+0629 U+064C U+0020 U+0637 U+064E U+0648 U+0650 U+064A U+0644 U+064E U+0629 U+064C U+0020 U+062C U+0650 U+062F U+064B U+0651 U+0627 U+0020 U+0644 U+0650 U+0627 U+062E U+0652 U+062A U+0650 U+0628 U+064E U+0627 U+0631 U+0650 U+0020 U+0627 U+0644 U+0650 U+0627 U+0633 U+0652 U+062A U+0650 U+062E U+0652 U+0631 U+064E U+0627 U+062C U+0650 U+000A U+0645 U+0650 U+0646 U+0652 U+0020 U+0645 U+064E U+0644 U+064E U+0641 U+064E U+0651 U+0627 U+062A U+0650 U+0020 U+0627 U+0644 U+0640 U+0020 U+0050 U+0044 U+0046 U+0020 U+0627 U+0644 U+0652 U+0645 U+064F U+0646 U+0652 U+062A U+064E U+062C U+064E U+0629 U+0650 U+0020 U+062F U+064E U+0627 U+062E U+0650 U+0644 U+064E U+0020 U+0627 U+0644 U+062A U+064E U+0651 U+0637 U+0652 U+0628 U+0650 U+064A U+0642 U+0650 U+002E",
+      "isNfc": true,
+      "referencePdf": "ref-long_text.pdf",
+      "referencePdfSha256": "050a2010bf8ed07928f18f7982ffd020856a41a478101b05a3a212c8e16056b9",
+      "referencePageCount": 2
+    },
+    "equation": {
+      "case": "معادلات رياضية",
+      "source": "٣ + ٤ = ٧\nx2 + 2x + 1 = 0",
+      "codePoints": "U+0663 U+0020 U+002B U+0020 U+0664 U+0020 U+003D U+0020 U+0667 U+000A U+0078 U+0032 U+0020 U+002B U+0020 U+0032 U+0078 U+0020 U+002B U+0020 U+0031 U+0020 U+003D U+0020 U+0030",
+      "isNfc": true,
+      "referencePdf": "ref-equation.pdf",
+      "referencePdfSha256": "ec0e2e65748be3e9283a3e1f8c912e491af338fbfeaef24e96f45ab527c35531",
+      "referencePageCount": 2
+    },
+    "special_symbols": {
+      "case": "رموز خاصة",
+      "source": "• § © @ # *",
+      "codePoints": "U+2022 U+0020 U+00A7 U+0020 U+00A9 U+0020 U+0040 U+0020 U+0023 U+0020 U+002A",
+      "isNfc": true,
+      "referencePdf": "ref-special_symbols.pdf",
+      "referencePdfSha256": "d1033b82c85147e50c46eecca65327fbc27cec45b88d0edda03de0731ae8ffd9",
+      "referencePageCount": 1
+    },
+    "optend": {
+      "case": "OPTEND",
+      "source": "OPTEND نهاية الخيار",
+      "codePoints": "U+004F U+0050 U+0054 U+0045 U+004E U+0044 U+0020 U+0646 U+0647 U+0627 U+064A U+0629 U+0020 U+0627 U+0644 U+062E U+064A U+0627 U+0631",
+      "isNfc": true,
+      "referencePdf": "ref-optend.pdf",
+      "referencePdfSha256": "891865262decfacbec0223e3ac876fef92e5face7ca2edf93d778d0156176297",
+      "referencePageCount": 1
+    },
+    "b109": {
+      "case": "B109",
+      "source": "B109 السؤال الحادي عشر",
+      "codePoints": "U+0042 U+0031 U+0030 U+0039 U+0020 U+0627 U+0644 U+0633 U+0624 U+0627 U+0644 U+0020 U+0627 U+0644 U+062D U+0627 U+062F U+064A U+0020 U+0639 U+0634 U+0631",
+      "isNfc": true,
+      "referencePdf": "ref-b109.pdf",
+      "referencePdfSha256": "86d1efc5bb592c2569083a70eab34a244a0c6f7c4ca7ea7a9dc545aeb3282e41",
+      "referencePageCount": 1
+    }
+  },
+  "variantSummary": {
+    "visual:line:legacy:none": {
+      "items": 20,
+      "mupdf": 4,
+      "pdfium": 8,
+      "pdfminer": 1,
+      "pypdf": 6,
+      "pixelIdentical": 20,
+      "allFour": [
+        "special_symbols"
+      ],
+      "target": [
+        "special_symbols"
+      ]
+    },
+    "visual:line:segment:none": {
+      "items": 20,
+      "mupdf": 3,
+      "pdfium": 7,
+      "pdfminer": 1,
+      "pypdf": 7,
+      "pixelIdentical": 20,
+      "allFour": [
+        "special_symbols"
+      ],
+      "target": [
+        "special_symbols"
+      ]
+    },
+    "logical:isolated:segment:none": {
+      "items": 20,
+      "mupdf": 11,
+      "pdfium": 5,
+      "pdfminer": 9,
+      "pypdf": 12,
+      "pixelIdentical": 4,
+      "allFour": [
+        "plain_arabic",
+        "double_spaces",
+        "special_symbols"
+      ],
+      "target": [
+        "special_symbols"
+      ]
+    }
+  },
+  "factorialSummary5Items": {
+    "visual:single:legacy:none": {
+      "items": 5,
+      "mupdf": 0,
+      "pdfium": 2,
+      "pdfminer": 0,
+      "pypdf": 1,
+      "pixelIdentical": 5,
+      "allFour": [],
+      "target": []
+    },
+    "visual:single:legacy:word": {
+      "items": 5,
+      "mupdf": 0,
+      "pdfium": 0,
+      "pdfminer": 0,
+      "pypdf": 1,
+      "pixelIdentical": 5,
+      "allFour": [],
+      "target": []
+    },
+    "visual:single:legacy:cluster": {
+      "items": 5,
+      "mupdf": 0,
+      "pdfium": 0,
+      "pdfminer": 0,
+      "pypdf": 1,
+      "pixelIdentical": 5,
+      "allFour": [],
+      "target": []
+    },
+    "visual:single:segment:none": {
+      "items": 5,
+      "mupdf": 0,
+      "pdfium": 2,
+      "pdfminer": 0,
+      "pypdf": 1,
+      "pixelIdentical": 5,
+      "allFour": [],
+      "target": []
+    },
+    "visual:single:segment:word": {
+      "items": 5,
+      "mupdf": 0,
+      "pdfium": 0,
+      "pdfminer": 0,
+      "pypdf": 1,
+      "pixelIdentical": 5,
+      "allFour": [],
+      "target": []
+    },
+    "visual:single:segment:cluster": {
+      "items": 5,
+      "mupdf": 0,
+      "pdfium": 0,
+      "pdfminer": 0,
+      "pypdf": 1,
+      "pixelIdentical": 5,
+      "allFour": [],
+      "target": []
+    },
+    "visual:isolated:legacy:none": {
+      "items": 5,
+      "mupdf": 0,
+      "pdfium": 2,
+      "pdfminer": 0,
+      "pypdf": 0,
+      "pixelIdentical": 5,
+      "allFour": [],
+      "target": []
+    },
+    "visual:isolated:legacy:word": {
+      "items": 5,
+      "mupdf": 0,
+      "pdfium": 0,
+      "pdfminer": 0,
+      "pypdf": 0,
+      "pixelIdentical": 5,
+      "allFour": [],
+      "target": []
+    },
+    "visual:isolated:legacy:cluster": {
+      "items": 5,
+      "mupdf": 0,
+      "pdfium": 0,
+      "pdfminer": 0,
+      "pypdf": 0,
+      "pixelIdentical": 5,
+      "allFour": [],
+      "target": []
+    },
+    "visual:isolated:segment:none": {
+      "items": 5,
+      "mupdf": 0,
+      "pdfium": 2,
+      "pdfminer": 0,
+      "pypdf": 0,
+      "pixelIdentical": 5,
+      "allFour": [],
+      "target": []
+    },
+    "visual:isolated:segment:word": {
+      "items": 5,
+      "mupdf": 0,
+      "pdfium": 0,
+      "pdfminer": 0,
+      "pypdf": 0,
+      "pixelIdentical": 5,
+      "allFour": [],
+      "target": []
+    },
+    "visual:isolated:segment:cluster": {
+      "items": 5,
+      "mupdf": 0,
+      "pdfium": 0,
+      "pdfminer": 0,
+      "pypdf": 0,
+      "pixelIdentical": 5,
+      "allFour": [],
+      "target": []
+    },
+    "logical:single:legacy:none": {
+      "items": 5,
+      "mupdf": 3,
+      "pdfium": 2,
+      "pdfminer": 1,
+      "pypdf": 0,
+      "pixelIdentical": 1,
+      "allFour": [],
+      "target": []
+    },
+    "logical:single:legacy:word": {
+      "items": 5,
+      "mupdf": 4,
+      "pdfium": 0,
+      "pdfminer": 1,
+      "pypdf": 0,
+      "pixelIdentical": 1,
+      "allFour": [],
+      "target": []
+    },
+    "logical:single:segment:none": {
+      "items": 5,
+      "mupdf": 3,
+      "pdfium": 2,
+      "pdfminer": 1,
+      "pypdf": 0,
+      "pixelIdentical": 1,
+      "allFour": [],
+      "target": []
+    },
+    "logical:single:segment:word": {
+      "items": 5,
+      "mupdf": 4,
+      "pdfium": 0,
+      "pdfminer": 1,
+      "pypdf": 0,
+      "pixelIdentical": 1,
+      "allFour": [],
+      "target": []
+    },
+    "logical:isolated:legacy:none": {
+      "items": 5,
+      "mupdf": 3,
+      "pdfium": 2,
+      "pdfminer": 1,
+      "pypdf": 3,
+      "pixelIdentical": 1,
+      "allFour": [
+        "plain_arabic"
+      ],
+      "target": []
+    },
+    "logical:isolated:legacy:word": {
+      "items": 5,
+      "mupdf": 5,
+      "pdfium": 0,
+      "pdfminer": 1,
+      "pypdf": 3,
+      "pixelIdentical": 1,
+      "allFour": [],
+      "target": []
+    },
+    "logical:isolated:segment:none": {
+      "items": 5,
+      "mupdf": 3,
+      "pdfium": 2,
+      "pdfminer": 1,
+      "pypdf": 3,
+      "pixelIdentical": 1,
+      "allFour": [
+        "plain_arabic"
+      ],
+      "target": []
+    },
+    "logical:isolated:segment:word": {
+      "items": 5,
+      "mupdf": 5,
+      "pdfium": 0,
+      "pdfminer": 1,
+      "pypdf": 3,
+      "pixelIdentical": 1,
+      "allFour": [],
+      "target": []
+    }
+  },
+  "pixelDeltas": {
+    "logical:isolated:segment": {
+      "plain_arabic": 4,
+      "vocalised_word": 0,
+      "multi_mark": 11,
+      "tanwin": 14,
+      "shadda_fatha": 10,
+      "lam_alef": 7,
+      "mark_in_ligature": 0,
+      "compound_edges": 6,
+      "mixed": 3,
+      "digits_arabic": 1,
+      "digits_western": 2,
+      "punctuation": 16,
+      "double_spaces": 4,
+      "two_lines": 13,
+      "wrapped": 29,
+      "long_text": 71,
+      "equation": 0,
+      "special_symbols": 0,
+      "optend": 2,
+      "b109": 7
+    },
+    "visual:line:segment": {
+      "plain_arabic": 0,
+      "vocalised_word": 0,
+      "multi_mark": 0,
+      "tanwin": 0,
+      "shadda_fatha": 0,
+      "lam_alef": 0,
+      "mark_in_ligature": 0,
+      "compound_edges": 0,
+      "mixed": 0,
+      "digits_arabic": 0,
+      "digits_western": 0,
+      "punctuation": 0,
+      "double_spaces": 0,
+      "two_lines": 0,
+      "wrapped": 0,
+      "long_text": 0,
+      "equation": 0,
+      "special_symbols": 0,
+      "optend": 0,
+      "b109": 0
+    }
+  },
+  "rawOutputs": {
+    "plain_arabic": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": "نص عربي طويل\n",
+        "pdfium": "نص عربي طويل",
+        "pdfminer": "ليوط يبرع صن\n\n\f",
+        "pypdf": "نص عربي طويل"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": "نص عربي طويل\n",
+        "pdfium": "نص عربي طويل",
+        "pdfminer": "ليوط يبرع صن\n\n\f",
+        "pypdf": "نص عربي طويل"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "نص عربي طويل\n",
+        "pdfium": "نص عربي طويل",
+        "pdfminer": "نص عربي طويل\n\n\f",
+        "pypdf": "نص عربي طويل"
+      }
+    },
+    "vocalised_word": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": "ٌسَلاَم\n",
+        "pdfium": "سَلاَمٌ",
+        "pdfminer": "ٌمَالَس\n\n\f",
+        "pypdf": "سَالَمٌ"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": "ٌس\u0004اَلَم\n",
+        "pdfium": "س\u0004اَلَمٌ",
+        "pdfminer": "ٌمَلَا(cid:4)س\n\n\f",
+        "pypdf": "س\u0004لَاَمٌ"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "سَلَا\u0003مٌ\n",
+        "pdfium": "ساَلَ ٌم",
+        "pdfminer": "سَلَا(cid:3)مٌ\n\n\f",
+        "pypdf": "سَلَا\u0003مٌ"
+      }
+    },
+    "multi_mark": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": "ٌمُحَمَّد\n",
+        "pdfium": "مُحَمَّدٌ",
+        "pdfminer": "ٌدّ\n\nَمَحُم\n\n\f",
+        "pypdf": "مُحَمَّدٌ"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": "ٌمُحَمَّد\n",
+        "pdfium": "مُحَمَّدٌ",
+        "pdfminer": "ٌدّ\n\nَمَحُم\n\n\f",
+        "pypdf": "مُحَمَّدٌ"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "مُحَمَّدٌ\n",
+        "pdfium": "ُم َح ّمَ ٌد",
+        "pdfminer": "ّدٌ\n\nمُحَمَ\n\n\f",
+        "pypdf": "مُحَمَّدٌ"
+      }
+    },
+    "tanwin": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": "ٍكِتَابٌ قَلَمًا عِلْم\n",
+        "pdfium": "كِتَابٌ قَلَمًا عِلْمٍ",
+        "pdfminer": "ٍمْلِع اًمَلَق ٌباَتِك\n\n\f",
+        "pypdf": "كِتَابٌ قَلَمًا عِلْمٍ"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": "ٍكِتَابٌ قَلَمًا عِلْم\n",
+        "pdfium": "كِتَابٌ قَلَمًا عِلْمٍ",
+        "pdfminer": "ٍمْلِع اًمَلَق ٌباَتِك\n\n\f",
+        "pypdf": "كِتَابٌ قَلَمًا عِلْمٍ"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "كِتَابٌ\n قَلَمًا عِلْمٍ\n",
+        "pdfium": "ِك َتا ٌب َقلَ ًما ِع ْل ٍم",
+        "pdfminer": "كِتَابٌ قَلَمًا عِلْمٍ\n\n\f",
+        "pypdf": "كِتَابٌ قَلَمًا عِلْمٍ"
+      }
+    },
+    "shadda_fatha": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": "إِنَّ اللهََّ رَبِّي\n",
+        "pdfium": "إِنَّ اللهَّ رَبِّي",
+        "pdfminer": "يّ\n\nِبَر َ\n\nَهللا ّ\n\nَنِإ\n\nّ\n\f",
+        "pypdf": "إِنَّ هللاََّ رَبِّي"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": "إِنَّ َهَّللا\u0007\b\u0007 رَبِّي\n",
+        "pdfium": "إِنَّ َهَّللا\u0007\b رَبِّي",
+        "pdfminer": "يّ\n\nِبَر (cid:7)\n\n(cid:7)اللَّهَ ّ\n\nَنِإ\n\n(cid:8)\n\f",
+        "pypdf": "إِنَّ اللَّهَ\u0007\b\u0007 رَبِّي"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "إِنَّ\n اللَّهَ\u0007\b\u0007 رَبِّي\n",
+        "pdfium": "ِإ َّن َ\u0007\bهَّللا َرِّبي",
+        "pdfminer": "ّي\n\n(cid:7) رَبِ\n\nّ اللَّهَ(cid:7)\n\nإِنَ\n\n(cid:8)\n\f",
+        "pypdf": "إِنَّ اللَّهَ\u0007\b\u0007 رَبِّي"
+      }
+    },
+    "lam_alef": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": "وَلاَ تَقْرَبُوا\n",
+        "pdfium": "وَلاَ تَقْرَبُوا",
+        "pdfminer": "اوُبَرْقَت َالَو\n\n\f",
+        "pypdf": "وَالَ تَقْرَبُوا"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": "و\u000bاَلَ تَقْرَبُوا\n",
+        "pdfium": "و\u000bاَلَ تَقْرَبُوا",
+        "pdfminer": "اوُبَرْقَت َلَا(cid:11)و\n\n\f",
+        "pypdf": "و\u000bلَاَ تَقْرَبُوا"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "وَلَا\u0003 تَقْرَبُوا\n",
+        "pdfium": "واَلَ َت ْقرَ ُبوا",
+        "pdfminer": "بُوا\n\nَ قْر َ\n\n ت\n\nوَلَا(cid:3)\n\n\f",
+        "pypdf": "وَلَا\u0003 تَق ْرَ بُوا"
+      }
+    },
+    "mark_in_ligature": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": "َسَلاَمٌ وَلا\n",
+        "pdfium": "سَلاَمٌ وَلاَ",
+        "pdfminer": "َالَو ٌمَالَس\n\n\f",
+        "pypdf": "سَالَمٌ وَالَ"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": "َس\u0002اَلَمٌ و\u0002اَل\n",
+        "pdfium": "ساَلَمٌ واَلَ",
+        "pdfminer": "َلَا(cid:2)و ٌمَلَا(cid:2)س\n\n\f",
+        "pypdf": "س\u0002لَاَمٌ و\u0002لَاَ"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "سَلَا\u0003مٌ وَلَا\u0003\n",
+        "pdfium": "ساَلَ ٌم واَلَ",
+        "pdfminer": "سَلَا(cid:3)مٌ وَلَا(cid:3)\n\n\f",
+        "pypdf": "سَلَا\u0003مٌ وَلَا\u0003"
+      }
+    },
+    "compound_edges": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": "َّّللْعَالَمِين\n",
+        "pdfium": "ّللْعَالَمِينَّ",
+        "pdfminer": "َنيِمَلاَعْللّ\n\nّ\n\f",
+        "pypdf": "ّللْعَالَمِينَّ"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": "َّّللْعَالَمِين\n",
+        "pdfium": "ّللْعَالَمِينَّ",
+        "pdfminer": "َنيِمَلاَعْللّ\n\nّ\n\f",
+        "pypdf": "ّللْعَالَمِينَّ"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "ّل لْعَل اَمِنيَّ\n",
+        "pdfium": "ّل ْل َعاَل ِمينَّ",
+        "pdfminer": "َمِين\n\nل\n\nا\n\nلْع\n\nل\n\nّ\nَ\nَ\nّ\n\f",
+        "pypdf": "ّل لْعَا لَمِينَ ّ"
+      }
+    },
+    "mixed": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": "123 English نص عربي\n",
+        "pdfium": "نص عربي English 123",
+        "pdfminer": "123 English يبرع صن\n\n\f",
+        "pypdf": "123 English نص عربي"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": "123 English نص عربي\n",
+        "pdfium": "نص عربي English 123",
+        "pdfminer": "123 English يبرع صن\n\n\f",
+        "pypdf": "123 English نص عربي"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "نص عربي \nEnglish\n \n123\n",
+        "pdfium": "نص عربي English 123",
+        "pdfminer": " 123\n\nEnglish\n\nنص عربي \n\n\f",
+        "pypdf": "نص عربي English 123"
+      }
+    },
+    "digits_arabic": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": "(٠٢ درجة) ٦٥٤\n",
+        "pdfium": ")٢٠ درجة( ٤٥٦",
+        "pdfminer": "٤٥٦ )ةجرد ٢٠(\n\n\f",
+        "pypdf": "٤٥٦ )(٠٢ درجة"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": "(٠٢ درجة) ٦٥٤\n",
+        "pdfium": ")٢٠ درجة( ٤٥٦",
+        "pdfminer": "٤٥٦ )ةجرد ٢٠(\n\n\f",
+        "pypdf": "٤٥٦ )(٠٢ درجة"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "(٠٢ ةجرد) ٦٥٤\n",
+        "pdfium": ")٢٠ درجة( ٤٥٦",
+        "pdfminer": "(٢٠ درجة) ٤٥٦\n\n\f",
+        "pypdf": "(٢٠ درجة) ٤٥٦"
+      }
+    },
+    "digits_western": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": "40  من12 سؤال\n",
+        "pdfium": "سؤال 12 من 40",
+        "pdfminer": "40 نم 12 لاؤس\n\n\f",
+        "pypdf": "40  من12 سؤال"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": "40  من12 سؤال\n",
+        "pdfium": "سؤال 12 من 40",
+        "pdfminer": "40 نم 12 لاؤس\n\n\f",
+        "pypdf": "40  من12 سؤال"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "سؤال \n12\n من \n40\n",
+        "pdfium": "4\r\n0\r\nمن\r\n1\r\n2\r\nل\r\nا\r\nسؤ",
+        "pdfminer": "سؤال 12 من 40\n\n\f",
+        "pypdf": "سؤال 12 من 40"
+      }
+    },
+    "punctuation": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": ".قال: «هذا نص»؛ ثم انتهى\n",
+        "pdfium": "قال: »هذا نص«؛ ثم انتهى.",
+        "pdfminer": ".ىهتنا مث ؛»صن اذه« :لاق\n\n\f",
+        "pypdf": ".؛ ثم انتهى»هذا نص« :قال"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": ".قال: «هذا نص»؛ ثم انتهى\n",
+        "pdfium": "قال: »هذا نص«؛ ثم انتهى.",
+        "pdfminer": ".ىهتنا مث ؛»صن اذه« :لاق\n\n\f",
+        "pypdf": ".؛ ثم انتهى»هذا نص« :قال"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "قال: «هذا نص»؛ ثم انتهى.\n",
+        "pdfium": "قال: »هذا نص«؛ ثم انتهى.",
+        "pdfminer": "قال: «هذا نص»؛ ثم انتهى.\n\n\f",
+        "pypdf": "قال: «هذا نص»؛ ثم انتهى."
+      }
+    },
+    "double_spaces": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": "نص عربي طويل\n",
+        "pdfium": "نص عربي طويل",
+        "pdfminer": "ليوط يبرع صن\n\n\f",
+        "pypdf": "نص عربي طويل"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": "نص عربي طويل\n",
+        "pdfium": "نص عربي طويل",
+        "pdfminer": "ليوط يبرع صن\n\n\f",
+        "pypdf": "نص عربي طويل"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "نص عربي طويل\n",
+        "pdfium": "نص عربي طويل",
+        "pdfminer": "نص عربي طويل\n\n\f",
+        "pypdf": "نص عربي طويل"
+      }
+    },
+    "two_lines": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": "السطر الأول\n\nالسطر الثاني\n",
+        "pdfium": "السطر الأول\nالسطر الثاني",
+        "pdfminer": "لوألا رطسلا\n\n\fيناثلا رطسلا\n\n\f",
+        "pypdf": "السطر األول\nالسطر الثاني"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": "السطر األول\n\nالسطر الثاني\n",
+        "pdfium": "السطر األول\nالسطر الثاني",
+        "pdfminer": "لولأا رطسلا\n\n\fيناثلا رطسلا\n\n\f",
+        "pypdf": "السطر الأول\nالسطر الثاني"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "السطر الأول\n\nالسطر الثاني\n",
+        "pdfium": "السطر األول\nالسطر الثاني",
+        "pdfminer": "السطر الأول\n\n\fالسطر الثاني\n\n\f",
+        "pypdf": "السطر الأول\nالسطر الثاني"
+      }
+    },
+    "wrapped": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": "هَذِهِ جُمْلَةٌ طَوِيلَةٌ جِدًّا\n\nِلاِخْتِبَارِ الاِسْتِخْرَاج\n",
+        "pdfium": "هَذِهِ جُمْلَةٌ طَوِيلَةٌ جِدًّا\nلاِخْتِبَارِ الاِسْتِخْرَاجِ",
+        "pdfminer": "اّ\n\nًدِج ٌةَليِوَط ٌةَلْمُج ِهِذَه\n\n\fِجاَرْخِتْسِالا ِراَبِتْخِال\n\n\f",
+        "pypdf": "هَذِهِ جُمْلَةٌ طَوِيلَةٌ جِدًّا\nالِخْتِبَارِ االِسْتِخْرَاجِ"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": "هَذِهِ جُمْلَةٌ طَوِيلَةٌ جِدًّا\n\n\u0014اِلِخْتِبَار\u0014 ااِلِسْتِخْرَاج\n",
+        "pdfium": "هَذِهِ جُمْلَةٌ طَوِيلَةٌ جِدًّا\nاِلِخْتِبَار\u0014 ااِلِسْتِخْرَاج\u0014",
+        "pdfminer": "اّ\n\nًدِج ٌةَليِوَط ٌةَلْمُج ِهِذَه\n\n\f(cid:20)جاَرْخِتْسِلِاا (cid:20)راَبِتْخِلِا\n\n\f",
+        "pypdf": "هَذِهِ جُمْلَةٌ طَوِيلَةٌ جِدًّا\n\u0014لِاِخْتِبَار\u0014 الِاِسْتِخْرَاج"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "هَذِهِ جُمْلَةٌ طَوِيلَةٌ جِدًّا\n\nلِا\u0015خْتِبَارِ ا\nلِا\u0015سْتِخْرَا\nجِ\n",
+        "pdfium": "َه ِذهِ ُج ْمَل ٌة َط ِويلَ ٌة ِج ًّدا\nِاِل ْخ ِتَبار\u0015 ا ِاِل ْس ِتخْ َراج\u0015",
+        "pdfminer": "ّا\n\nةٌ جِدً\n\nهَذِهِ جُمْلَةٌ طَ وِيل\n\nَ\n\fج\n\nا\n\nرَ\n\nسْ تِخ ْ\n\nلِا\n\nا\n\nخْتِبَار\n\nلِا\n\n(cid:21)\nِ\n \n(cid:21)\nِ\n\f",
+        "pypdf": "هَذِهِ جُمْلَةٌ طَو ِيلَ ةٌ جِدًّا\nلِا\u0015 خْتِبَارِ  الِا \u0015س ْت ِخْ رَا جِ "
+      }
+    },
+    "long_text": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": "ِهَذِهِ جُمْلَةٌ عَرَبِيَّةٌ طَوِيلَةٌ جِدًّا لاِخْتِبَارِ الاِسْتِخْرَاج\n\n.ِ الْمُنْتَجَةِ دَاخِلَ التَّطْبِيقPDF مِنْ مَلَفَّاتِ الـ\n",
+        "pdfium": "هَذِهِ جُمْلَةٌ عَرَبِيَّةٌ طَوِيلَةٌ جِدًّا لاِخْتِبَارِ الاِسْتِخْرَاجِ\nمِنْ مَلَفَّاتِ الـ PDF الْمُنْتَجَةِ دَاخِلَ التَّطْبِيق.ِ",
+        "pdfminer": "ِجاَرْخِتْسِالا ِراَبِتْخِال اّ\n\nًدِج ٌةَليِوَط ٌةّ\n\nَيِبَرَع ٌةَلْمُج ِهِذَه\n\n\f.ِقيِبْطّ\n\nَتلا َلِخاَد ِةَجَتْنُمْلا PDF ـلا ِتاّ\n\nَفَلَم ْنِم\n\n\f",
+        "pypdf": "هَذِهِ جُمْلَةٌ عَرَبِيَّةٌ طَوِيلَةٌ جِدًّا الِخْتِبَارِ االِسْتِخْرَاجِ\n. الْمُنْتَجَةِ دَاخِلَ التَّطْبِيقِPDF مِنْ مَلَفَّاتِ الـ"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": "\u0000هَذِهِ جُمْلَةٌ عَرَبِيَّةٌ طَوِيلَةٌ جِدًّا اِلِخْتِبَار\u0000 ااِلِسْتِخْرَاج\n\n.ِ الْمُنْتَجَةِ دَاخِلَ التَّطْبِيقPDF مِنْ مَلَفَّاتِ الـ\n",
+        "pdfium": "هَذِهِ جُمْلَةٌ عَرَبِيَّةٌ طَوِيلَةٌ جِدًّا اِلِخْتِبَار ااِلِسْتِخْرَاج\nمِنْ مَلَفَّاتِ الـ PDF الْمُنْتَجَةِ دَاخِلَ التَّطْبِيق.ِ",
+        "pdfminer": "(cid:0)جاَرْخِتْسِلِاا (cid:0)راَبِتْخِلِا اّ\n\nًدِج ٌةَليِوَط ٌةّ\n\nَيِبَرَع ٌةَلْمُج ِهِذَه\n\n\f.ِقيِبْطّ\n\nَتلا َلِخاَد ِةَجَتْنُمْلا PDF ـلا ِتاّ\n\nَفَلَم ْنِم\n\n\f",
+        "pypdf": "\u0000هَذِهِ جُمْلَةٌ عَرَبِيَّةٌ طَوِيلَةٌ جِدًّا لِاِخْتِبَار\u0000 الِاِسْتِخْرَاج\n. الْمُنْتَجَةِ دَاخِلَ التَّطْبِيقِPDF مِنْ مَلَفَّاتِ الـ"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "هَذِهِ جُمْلَةٌ عَرَبِيَّةٌ طَوِيلَةٌ جِدًّا لِا\u0019خْتِبَارِ ا\nلِا\u0019سْتِخْرَا\nجِ\n\nمِنْ\n مَلَفَّاتِ\n الـ \nPDF\n الْمُنْتَجَةِ دَاخِلَ\n التَّطْبِيقِ\n.\n",
+        "pdfium": "َه ِذهِ ُج ْمَل ٌة َع َرِب ّيَ ٌة َط ِويلَ ٌة ِج ًّدا ِاِل ْخ ِتَبار\u0019 ا ِاِل ْس ِتخْ َراج\u0019\nِم ْن َمَل ّفَا ِت الـ PDF اْل ُمنْ َتجَ ِة َدا ِخلَ ال َّت ْطِبيق.ِ",
+        "pdfminer": "ج\n\nا\n\nرَ\n\nسْ تِخ ْ\n\nلِا\n\nا\n\nخْتِبَار\n\nّا لِا\n\nةٌ جِدً\n\nّةٌ طَ وِيل\n\nَ رَبِي َ\n\nهَذِهِ جُمْلَةٌ ع\n\nَ\n(cid:25)\nِ\n \n(cid:25)\nِ\n\f.\n\nِ يق ِ\n\nّطْب\n\n التَ\n\nاخِل َ\n\nْ مُن ْتَجَةِ د\n\n ال\n\nPDF\n\nّاتِ الـ \n\nمِنْ مَ لَف َ\n\nَ\n\f",
+        "pypdf": "هَذِهِ جُمْلَةٌ عَر َبِيَ ّةٌ طَو ِيلَ ةٌ جِدًّا لِا\u0019خ ْتِبَارِ  الِا \u0019س ْت ِخْ رَا جِ \nمِنْ مَل َفَ ّاتِ الـ PDF الْم ُنْ تَجَةِ دَا خِلَ  التَّطْبِي قِ ."
+      }
+    },
+    "equation": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": " ٤ = ٧+ ٣\n\nx2 + 2x + 1 = 0\n",
+        "pdfium": "٧ = ٤ + ٣\nx2 + 2x + 1 = 0",
+        "pdfminer": "٧ = ٤ + ٣\n\n\fx2 + 2x + 1 = 0\n\n\f",
+        "pypdf": "٧ = ٤ + ٣\nx2 + 2x + 1 = 0"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": " ٤ = ٧+ ٣\n\nx2 + 2x + 1 = 0\n",
+        "pdfium": "٧ = ٤ + ٣\nx2 + 2x + 1 = 0",
+        "pdfminer": "٧ = ٤ + ٣\n\n\fx2 + 2x + 1 = 0\n\n\f",
+        "pypdf": "٧ = ٤ + ٣\nx2 + 2x + 1 = 0"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "٣ + ٤ = ٧\n\nx2 + 2x + 1 = 0\n",
+        "pdfium": "٧ = ٤ + ٣\nx2 + 2x + 1 = 0",
+        "pdfminer": "٣ + ٤ = ٧\n\n\fx2 + 2x + 1 = 0\n\n\f",
+        "pypdf": "٣ + ٤ = ٧\nx2 + 2x + 1 = 0"
+      }
+    },
+    "special_symbols": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": "• § © @ # *\n",
+        "pdfium": "• § © @ # *",
+        "pdfminer": "• § © @ # *\n\n\f",
+        "pypdf": "• § © @ # *"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": "• § © @ # *\n",
+        "pdfium": "• § © @ # *",
+        "pdfminer": "• § © @ # *\n\n\f",
+        "pypdf": "• § © @ # *"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "• § © @ # *\n",
+        "pdfium": "•\r\n§\r\n©\r\n@\r\n#\r\n*",
+        "pdfminer": "• § © @ # *\n\n\f",
+        "pypdf": "• § © @ # *"
+      }
+    },
+    "optend": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": " نهاية الخيارOPTEND\n",
+        "pdfium": "OPTEND نهاية الخيار",
+        "pdfminer": "رايخلا ةياهن OPTEND\n\n\f",
+        "pypdf": " نهاية الخيارOPTEND"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": " نهاية الخيارOPTEND\n",
+        "pdfium": "OPTEND نهاية الخيار",
+        "pdfminer": "رايخلا ةياهن OPTEND\n\n\f",
+        "pypdf": " نهاية الخيارOPTEND"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "OPTEND\n نهاية الخيار\n",
+        "pdfium": "OPTEND نهاية الخيار",
+        "pdfminer": " نهاية الخيار\n\nOPTEND\n\n\f",
+        "pypdf": "OPTEND نهاية الخيار"
+      }
+    },
+    "b109": {
+      "order=visual-ops=line-payload=legacy-actualText=none": {
+        "mupdf": " السؤال الحادي عشرB109\n",
+        "pdfium": "109B السؤال الحادي عشر",
+        "pdfminer": "رشع يداحلا لاؤسلا B109\n\n\f",
+        "pypdf": " السؤال الحادي عشرB109"
+      },
+      "order=visual-ops=line-payload=segment-actualText=none": {
+        "mupdf": " السؤال الحادي عشرB109\n",
+        "pdfium": "109B السؤال الحادي عشر",
+        "pdfminer": "رشع يداحلا لاؤسلا B109\n\n\f",
+        "pypdf": " السؤال الحادي عشرB109"
+      },
+      "order=logical-ops=isolated-payload=segment-actualText=none": {
+        "mupdf": "B109\n ا\nلسؤ\nا\nل الحادي عشر\n",
+        "pdfium": "109B السؤال الحادي عشر",
+        "pdfminer": "ل الحادي عشر\n\nا\n\nلسؤ ا\n\nB109\n\n \n\f",
+        "pypdf": "B109 ال سؤا ل الحادي عشر"
+      }
+    }
+  },
+  "notes": [
+    "The reference PDF reproduces the shipped semantic emission (visual paint order, one Tj per line, decomposed-visual payload rule) and is built with the same layout, so pixel comparison is honest.",
+    "Space glyphs are painted in every variant (production does the same); omitting them invalidates extractor word-separation measurements.",
+    "Word order is reversed for visual emission on RTL lines only; LTR lines keep logical order in both modes (harness fix documented in layout_r.emission_order).",
+    "Items equation/special_symbols use only characters present in the Arabic face; multi-face fallback is out of scope for this research harness."
+  ],
+  "markStreamOrderExperiment": {
+    "hypothesis": "Emitting each combining mark *before* its base at identical coordinates would let bidi-reversing engines (MuPDF, PDFium) restore base-then-mark order without moving any glyph.",
+    "result": "rejected: no engine gained a pass and every item with marks changed pixels",
+    "rows": [
+      {
+        "item": "plain_arabic",
+        "markFirst": false,
+        "mupdf": true,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      {
+        "item": "plain_arabic",
+        "markFirst": true,
+        "mupdf": true,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      {
+        "item": "vocalised_word",
+        "markFirst": false,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 0
+      },
+      {
+        "item": "vocalised_word",
+        "markFirst": true,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 36
+      },
+      {
+        "item": "multi_mark",
+        "markFirst": false,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      {
+        "item": "multi_mark",
+        "markFirst": true,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 107
+      },
+      {
+        "item": "tanwin",
+        "markFirst": false,
+        "mupdf": false,
+        "pdfium": true,
+        "pdfminer": false,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      {
+        "item": "tanwin",
+        "markFirst": true,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 225
+      },
+      {
+        "item": "shadda_fatha",
+        "markFirst": false,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 0
+      },
+      {
+        "item": "shadda_fatha",
+        "markFirst": true,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 146
+      },
+      {
+        "item": "lam_alef",
+        "markFirst": false,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 0
+      },
+      {
+        "item": "lam_alef",
+        "markFirst": true,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 161
+      },
+      {
+        "item": "mark_in_ligature",
+        "markFirst": false,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 0
+      },
+      {
+        "item": "mark_in_ligature",
+        "markFirst": true,
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 72
+      }
+    ],
+    "raw": {
+      "plain_arabic:base": {
+        "mupdf": "نص عربي طويل\n",
+        "pdfium": "نص عربي طويل",
+        "pdfminer": "ليوط يبرع صن\n\n\f",
+        "pypdf": "نص عربي طويل"
+      },
+      "plain_arabic:markFirst": {
+        "mupdf": "نص عربي طويل\n",
+        "pdfium": "نص عربي طويل",
+        "pdfminer": "ليوط يبرع صن\n\n\f",
+        "pypdf": "نص عربي طويل"
+      },
+      "vocalised_word:base": {
+        "mupdf": "ٌس\u0004اَلَم\n",
+        "pdfium": "س\u0004اَلَمٌ",
+        "pdfminer": "ٌمَلَا(cid:4)س\n\n\f",
+        "pypdf": "س\u0004لَاَمٌ"
+      },
+      "vocalised_word:markFirst": {
+        "mupdf": "ٌَساَل\u0003م\n",
+        "pdfium": "ساَلمٌَ",
+        "pdfminer": "َم(cid:3)لَاس\n\nٌ\n\f",
+        "pypdf": "سلَا\u0003مٌَ"
+      },
+      "multi_mark:base": {
+        "mupdf": "ٌمُحَمَّد\n",
+        "pdfium": "مُحَمَّدٌ",
+        "pdfminer": "ٌدّ\n\nَمَحُم\n\n\f",
+        "pypdf": "مُحَمَّدٌ"
+      },
+      "multi_mark:markFirst": {
+        "mupdf": "ٌَّمحُمَد\n",
+        "pdfium": "محُمَدٌَّ",
+        "pdfminer": "َدَمُحم\n\nٌ\nّ\n\f",
+        "pypdf": "محُمَدٌَّ"
+      },
+      "tanwin:base": {
+        "mupdf": "ٍكِتَابٌ قَلَمًا عِلْم\n",
+        "pdfium": "كِتَابٌ قَلَمًا عِلْمٍ",
+        "pdfminer": "ٍمْلِع اًمَلَق ٌباَتِك\n\n\f",
+        "pypdf": "كِتَابٌ قَلَمًا عِلْمٍ"
+      },
+      "tanwin:markFirst": {
+        "mupdf": "ٍْكتِاَبٌ قلَمَاً علِم\n",
+        "pdfium": "كتِاَبٌ قلَمَاً علِمٍْ",
+        "pdfminer": "ْمِلع ًاَمَلق ٌبَاِتك\n\nٍ\n\f",
+        "pypdf": "كتِاَبٌ قلَمَاً علِمٍْ"
+      },
+      "shadda_fatha:base": {
+        "mupdf": "إِنَّ َهَّللا\u0007\b\u0007 رَبِّي\n",
+        "pdfium": "إِنَّ َهَّللا\u0007\b رَبِّي",
+        "pdfminer": "يّ\n\nِبَر (cid:7)\n\n(cid:7)اللَّهَ ّ\n\nَنِإ\n\n(cid:8)\n\f",
+        "pypdf": "إِنَّ اللَّهَ\u0007\b\u0007 رَبِّي"
+      },
+      "shadda_fatha:markFirst": {
+        "mupdf": "ِّإنَِّ َهَّللا\b\u0007 ربَي\n",
+        "pdfium": "إنَِّ َهَّللا\u0007\b ربَيِّ",
+        "pdfminer": "ِيَبر (cid:7)\n\n(cid:8)اللَّهَ َ\n\nِنإ\n\nّ\n(cid:8)\nّ\n\f",
+        "pypdf": "إنَِّ اللَّهَ\b\b\u0007 ربَيِّ"
+      },
+      "lam_alef:base": {
+        "mupdf": "و\u000bاَلَ تَقْرَبُوا\n",
+        "pdfium": "و\u000bاَلَ تَقْرَبُوا",
+        "pdfminer": "اوُبَرْقَت َلَا(cid:11)و\n\n\f",
+        "pypdf": "و\u000bلَاَ تَقْرَبُوا"
+      },
+      "lam_alef:markFirst": {
+        "mupdf": "واَل\nَ تقَرْبَوُا\n",
+        "pdfium": "واَل\nَ تقَرْبَوُا",
+        "pdfminer": "اُوَبْرَقت َ\n\n(cid:10)لَاو\n\n\f",
+        "pypdf": "ولَا\nَ تقَرْبَوُا"
+      },
+      "mark_in_ligature:base": {
+        "mupdf": "َس\u0002اَلَمٌ و\u0002اَل\n",
+        "pdfium": "ساَلَمٌ واَلَ",
+        "pdfminer": "َلَا(cid:2)و ٌمَلَا(cid:2)س\n\n\f",
+        "pypdf": "س\u0002لَاَمٌ و\u0002لَاَ"
+      },
+      "mark_in_ligature:markFirst": {
+        "mupdf": "َ\u0001ساَل\u0001مٌَ واَل\n",
+        "pdfium": "ساَل\u0001مٌَ واَلَ\u0001",
+        "pdfminer": "(cid:1)لَاو ٌ\n\nَم(cid:1)لَاس\n\nَ\n\f",
+        "pypdf": "سلَا\u0001مٌَ ولَا\u0001َ"
+      }
+    }
+  },
+  "invisibleSemanticLayerExperiment": {
+    "design": "visible glyphs painted in the unchanged reference order with an explicitly EMPTY /ToUnicode destination, plus an invisible (3 Tr) semantic layer emitted in logical order with one BT per glyph carrying source-segment payloads.",
+    "pixelResult": "every item 0 px vs reference (invisible text paints nothing)",
+    "engineResult": {
+      "plain_arabic": {
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": true,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      "vocalised_word": {
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": true,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      "multi_mark": {
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      "tanwin": {
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": true,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      "lam_alef": {
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": false,
+        "pixelDelta": 0
+      },
+      "mixed": {
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": true,
+        "pixelDelta": 0
+      },
+      "optend": {
+        "mupdf": false,
+        "pdfium": false,
+        "pdfminer": false,
+        "pypdf": true,
+        "pixelDelta": 0
+      }
+    },
+    "conclusion": "pdfminer and pypdf read the invisible layer correctly, but MuPDF and PDFium emit the CID value of the empty-mapped visible glyphs as control bytes (\\x00..\\x10), so the visible layer cannot be made semantically silent.",
+    "raw": {
+      "plain_arabic": {
+        "mupdf": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\u0004\t\nنص عربي طويل\n",
+        "pdfium": "نص عربي طويل \n\t\u0001\u0004\u0005\u0006\u0007\b\u0004",
+        "pdfminer": "نص عربي طويل\n\n\f",
+        "pypdf": "نص عربي طويل"
+      },
+      "vocalised_word": {
+        "mupdf": "\u0000\u0001\u0002\u0003\u0002\u0004سَلَا\u0002مٌ\n",
+        "pdfium": "ساَلَ ٌم \u0001\u0004",
+        "pdfminer": "سَلَامٌ\n\n\f",
+        "pypdf": "سَلَامٌ"
+      },
+      "multi_mark": {
+        "mupdf": "\u0000\u0001\u0002\u0003\u0004\u0003\u0005\u0006\u0007مُحَمَّدٌ\n",
+        "pdfium": "ُم َح ّمَ ٌد \u0001\u0004\u0005\u0006\u0007",
+        "pdfminer": "ّدٌ\n\n\nمُحَمَ\n\n\f",
+        "pypdf": "مُحَمَّدٌ"
+      },
+      "tanwin": {
+        "mupdf": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\t\n\u0003\n\u000b\u0006\f\r\u0007\n\u000e\u0004\u000fكِتَابٌ\n قَلَمًا عِلْمٍ\n",
+        "pdfium": "ِك َتا ٌب َقلَ ًما ِع ْل ٍم \u000e\u0004\u000f\n\u0007\r\f\u0006\u000b\n\n\t\u0001\u0004\u0005\u0006\u0007\b",
+        "pdfminer": "كِتَابٌ قَلَمًا عِلْمٍ\n\n\f",
+        "pypdf": "كِتَابٌ قَلَمًا عِلْمٍ"
+      },
+      "lam_alef": {
+        "mupdf": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\u0004\b\t\u0004\n\u0004\u000bوَلَا\u0004 تَقْرَبُوا\n",
+        "pdfium": "\u0004واَلَ َت ْقرَ ُبوا \u000b\u0004\n\u0004\t\u0001\u0004\u0005\u0006\u0007\u0004\b",
+        "pdfminer": "بُوا\nوَلَا\nَ قْر َ\n ت\n\n\f",
+        "pypdf": "وَلَا تَق ْرَ بُوا"
+      },
+      "mixed": {
+        "mupdf": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\t\n\u0003\u000b\f\r\u000e\u0003\u000f\u0010نص عربي \nEnglish\n \n123\n",
+        "pdfium": "نص عربي English 123 \u000e\u000f\u0010\u000b\f\r\t\n\u0001\u0004\u0005\u0006\u0007\b",
+        "pdfminer": " 123\nنص عربي \n\nEnglish\n\n\f",
+        "pypdf": "نص عربي English 123"
+      },
+      "optend": {
+        "mupdf": "\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\u0001\t\n\u0006\u000b\f\r\u000e\u000f\u0010\nOPTEND\n نهاية الخيار\n",
+        "pdfium": "OPTEND نهاية الخيار \u000e\u000f\u0010\r\f\u000b\u0006\n\t\u0001\u0004\u0005\u0006\u0007\b\u0001",
+        "pdfminer": " نهاية الخيار\n\nOPTEND\n\n\f",
+        "pypdf": "OPTEND نهاية الخيار"
+      }
+    }
+  },
+  "outlinedVisibleLayerExperiment": {
+    "design": "visible glyphs drawn as filled vector outlines (no text semantics) + text layer",
+    "pixelDeltas": {
+      "plain_arabic": {
+        "default": 1014,
+        "aa0": 319,
+        "aa8": 1014
+      },
+      "vocalised_word": {
+        "default": 410,
+        "aa0": 138,
+        "aa8": 410
+      },
+      "multi_mark": {
+        "default": 425,
+        "aa0": 139,
+        "aa8": 425
+      },
+      "lam_alef": {
+        "default": 830,
+        "aa0": 291,
+        "aa8": 830
+      }
+    },
+    "conclusion": "Outline filling never matches glyph text rasterisation (MuPDF rasterises text and graphics with different anti-aliasing); Gate 2 cannot be met with an outlined visible layer."
+  }
+}

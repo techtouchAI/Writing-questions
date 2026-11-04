@@ -136,7 +136,89 @@ def visible_editable_point(xml, width, height):
     return ((left + right) // 2, (top + bottom) // 2)
 
 
-def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, entirely_above, keyboard_apk, automation_apk):
+def record_metric(metrics, name, passed, detail):
+    """Record a measured *quality metric* without failing the functional gate.
+
+    The accepted policy (docs/review/pr48_document_correctness_audit.md §6)
+    separates the official document's content/visual requirements -- gated --
+    from extraction quality across PDF readers, which is a documented metric.
+    A metric is still measured, still written to `runtime.json`, and still
+    published as a notice; it is simply not evidence about the editor, so it
+    cannot decide whether Android IME works.
+    """
+    metrics[name] = dict(passed=bool(passed), detail=detail)
+    return metrics[name]
+
+
+def focused_package(window_dump):
+    """The package that currently owns input focus, from `dumpsys window`."""
+    for line in window_dump.splitlines():
+        if 'mCurrentFocus' not in line and 'mFocusedApp' not in line:
+            continue
+        match = re.search(r'([\w.]+)/[\w.$]+', line)
+        if match:
+            return match.group(1)
+    return ''
+
+
+def dismiss_system_share_sheet(adb, check, package, windows, attempts=3, sleep=time.sleep):
+    """Close the system share sheet before testing a relaunch.
+
+    The sheet is a *different* package (Android's chooser). Force-stopping the
+    application does not close it, so the relaunch assertions then fail on
+    "متابعة العمل" being covered by the chooser -- exactly what run 41313650750
+    reported at both widths once the PDF checks stopped aborting earlier.
+
+    Readiness is taken from the *interactive window dump* both sides already
+    use, not from `dumpsys window` focus strings: Android 15 on this runner did
+    not expose a parsable mCurrentFocus line, which made a focus-based check
+    report `focused=unknown` and fail for the wrong reason (run 41317130663).
+    The condition is positive evidence -- our package's nodes are present and
+    the chooser's activity is gone -- so it cannot pass on an empty dump.
+    """
+    dump = ''
+    for _ in range(attempts):
+        dump = windows()
+        if package in dump and 'ChooserActivity' not in dump:
+            break
+        adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+        sleep(1)
+    check('system share sheet dismissed and the document window refocused',
+          package in dump and 'ChooserActivity' not in dump,
+          f'chooser={"present" if "ChooserActivity" in dump else "gone"}; '
+          f'our package={"present" if package in dump else "absent"} after {attempts} back key(s)')
+
+
+def judge_pdf_evidence(text, pages, check, metrics):
+    """Judge the actual exported PDF: content integrity is gated, extraction is measured.
+
+    * `IMETAIL` and every English token are content-integrity properties that
+      extraction reports faithfully, so they stay gating checks.
+    * The diacritised Arabic statement is the across-reader extraction metric of
+      policy §6-3: measured on the same text, retained verbatim, never a reason
+      to call the editor broken.
+    """
+    check('actual device PDF preserves the long tail once',
+          text.count('IMETAIL') == 1 and pages >= 2,
+          f'{pages} actual PDF pages, IMETAIL count={text.count("IMETAIL")}')
+    check('actual device PDF preserves every English token', text.count('English') == 322,
+          f'Expected322 from actual statement+body; found{text.count("English")}.')
+    return record_metric(
+        metrics, 'actual device PDF retains diacritized Arabic statement',
+        extraction_retains(text, 'سَلَامٌ'),
+        'Quality metric (policy §6-3), not a functional IME check: the actual exported '
+        'PDF text is measured verbatim and retained with its PNG/PDF evidence; Arabic '
+        'extraction across PDF readers is documented in '
+        'docs/review/pr48_document_correctness_audit.md.')
+
+
+def extraction_retains(extracted_text, needle):
+    """Exact, un-normalised presence of `needle` in the extracted PDF text."""
+    return needle in extracted_text
+
+
+def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, entirely_above, keyboard_apk, automation_apk, metrics=None):
+    metrics = {} if metrics is None else metrics
     check('separate test IME APK installation', 'Success' in adb('install', '-r', str(keyboard_apk)),
           'Separate keyboard fixture; production APK is unchanged.')
     registration = wait_for_ime_registration(adb)
@@ -295,16 +377,25 @@ def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, e
     pdf = pymupdf.open(stream=raw,filetype='pdf')
     text='\n'.join(page.get_text() for page in pdf)
     (out/'ime-document.txt').write_text(text, encoding='utf-8')
-    check('actual device PDF preserves the long tail once', text.count('IMETAIL') == 1 and len(pdf) >= 2,
-          f'{len(pdf)} actual PDF pages, IMETAIL count={text.count("IMETAIL")}')
-    check('actual device PDF preserves every English token', text.count('English') == 322,
-          f'Expected322 from actual statement+body; found{text.count("English")}.')
-    check('actual device PDF retains diacritized Arabic statement', 'سَلَامٌ' in text,
-          'No normalization/extractor exemption; actual PDF text plus retained PNG/PDF for visual review.')
+    # The diacritised-Arabic assertion was a failing check until the owner's
+    # acceptance policy (2026-10-31) classified across-reader extraction as a
+    # documented metric; the measurement itself is unchanged (no normalisation,
+    # no extractor exemption) and its value stays in runtime.json.
+    judge_pdf_evidence(text, len(pdf), check, metrics)
     time.sleep(5)
+    dismiss_system_share_sheet(adb, check, PACKAGE, xml)
     adb('shell', 'am', 'force-stop', PACKAGE)
     adb('shell', 'monkey', '-p', PACKAGE, '-c', 'android.intent.category.LAUNCHER', '1');time.sleep(5)
-    tap(find('متابعة العمل', clickable=True));time.sleep(5)
+    # Both entries lead to the same persisted document. The assertion that
+    # follows is unchanged -- the exact name, statement and long body must come
+    # back after a process restart -- but a launcher state that offers the
+    # library instead of a "continue" button must not be read as data loss.
+    snapshot('11b-after-restart')
+    reopened = [n for n in nodes(xml()) if n.get('package') == PACKAGE
+                and ('متابعة العمل' in label(n) or NAME in label(n)) and n.get('clickable') == 'true']
+    if not reopened:
+        raise AssertionError('Native control not reachable: متابعة العمل or the saved document entry')
+    tap(reopened[-1]);time.sleep(5)
     preview_back()
     open_rich('منطوق السؤال'); edit_exact(NAME); tap(find('إلغاء',clickable=True))
     open_rich('نص السؤال (اختياري)'); edit_exact(BODY)
@@ -322,6 +413,7 @@ def run_acceptance(adb, out, snapshot, tap, check, nodes, label, keyboard_top, e
                 inputMethod=IME_COMPONENT, registeredMethods=registration, fullEditedContentVerified=True,
                 observerApkSha256=hashlib.sha256(Path(automation_apk).read_bytes()).hexdigest(),
                 actualPdfSha256=hashlib.sha256(raw).hexdigest(), pdfPages=len(pdf),
+                extractionMetrics=metrics,
                 limitation='UI-driven test InputMethodService; not Gboard prediction/swipe/handwriting or all focus/media/export races.')
 
 

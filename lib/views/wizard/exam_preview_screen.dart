@@ -5729,23 +5729,23 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                         enabled: questionEnabled,
                         onPressed: () => _confirmDeleteQuestion(index!),
                       ),
-                    if (_separateEditorCandidate) ...<Widget>[
+                    if (_separateEditorCandidate)
                       button(key: 'question-action-label', icon: Icons.numbers,
                         tooltip: 'رقم السؤال', enabled: questionEnabled,
                         onPressed: () => _editQuestionLabel(index!)),
-                      button(key: 'question-action-marks', icon: Icons.grade_outlined,
-                        tooltip: 'درجة السؤال', enabled: questionEnabled,
-                        onPressed: () => _editQuestionMarks(index!)),
-                    ],
+                    // درجة السؤال تُحرَّر من هنا فقط: الورقة تعرضها في مكانها
+                    // المطبوع ولا تحمل أداة تحرير.
+                    button(key: 'question-action-marks', icon: Icons.grade_outlined,
+                      tooltip: 'درجة السؤال', enabled: questionEnabled,
+                      onPressed: () => _editQuestionMarks(index!)),
                     divider(),
-                    if (_separateEditorCandidate) ...<Widget>[
+                    if (_separateEditorCandidate)
                       button(key: 'branch-action-label', icon: Icons.numbers,
                         tooltip: 'رقم الفرع', enabled: branchEnabled,
                         onPressed: () => _editBranchLabel(branchRef!)),
-                      button(key: 'branch-action-marks', icon: Icons.grade_outlined,
-                        tooltip: 'درجة الفرع', enabled: branchEnabled,
-                        onPressed: () => _editBranchMarks(branchRef!)),
-                    ],
+                    button(key: 'branch-action-marks', icon: Icons.grade_outlined,
+                      tooltip: 'درجة الفرع', enabled: branchEnabled,
+                      onPressed: () => _editBranchMarks(branchRef!)),
                     button(
                       key: 'branch-action-duplicate',
                       icon: Icons.copy_all_outlined,
@@ -5913,7 +5913,6 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     required Widget dragHandle,
     required Widget label,
     required Widget statement,
-    required Widget marks,
     // أدوات الصفّ **للفرع فقط** حالياً. صفّ السؤال لا يمرّر شيئاً: أدواته في
     // شريط خارج الورقة (§19.15) كي لا تحدّد هندسته.
     List<Widget> actions = const <Widget>[],
@@ -5930,11 +5929,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
               child: label,
             ),
             const SizedBox(width: VisualMetrics.titleGapPx),
+            // الدرجة ليست ودجة هنا: تُرسم داخل فقرة الحقل نفسه (انظر
+            // `_trailingTitleContent`)، فتبقى في جريان النص وتنتقل مع آخر
+            // حرف إلى السطر الأخير عند الالتفاف كما في التخطيط القانوني.
             Expanded(child: statement),
-            ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: width * 0.26),
-              child: marks,
-            ),
             ...actions,
           ],
         );
@@ -6127,12 +6125,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   ? 'Question statement...'
                   : 'اكتب منطوق السؤال هنا...',
               semanticContent: data.content,
-            ),
-            marks: _marksTarget(
-              marks: data.title.marks,
-              showPlaceholder: document.settings.showQuestionMarks,
-              style: titleStyle,
-              onEdit: () => _editQuestionMarks(questionIndex),
+              trailingSemantic: _trailingTitleContent(data.title.marks),
             ),
           ),
           ),
@@ -6289,37 +6282,33 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
         expandToWidth: false,
       );
 
-  Widget _marksTarget({
-    required MarksNode? marks,
-    required bool showPlaceholder,
-    required TextStyle style,
-    required VoidCallback onEdit,
-  }) {
+  /// لاحقة سطر العنوان: `U+00A0` ثم الدرجة — نفس عقد `LayoutEngine._titleBlock`
+  /// (`_nonBreakingGap` قبل مجموعة الدرجة). المسافة قبل الدرجة محرف غير قابل
+  /// للكسر يُقاس بخط السطر نفسه، لا `SizedBox` ولا حشوة.
+  ///
+  /// تعديل الدرجة صار من شريط خارج الورقة (`question-action-marks`،
+  /// `branch-action-marks`، `point-action-marks`): لا أداة تحرير داخل المساحة
+  /// المطبوعة، ولا «+ درجة» تُطبع أو تحجز عرضًا.
+  InlineContent? _trailingTitleContent(MarksNode? marks) {
+    if (marks == null) return null;
+    return InlineContent(<InlineNode>[TextNode('\u00A0'), marks]);
+  }
+
+  /// لاحقة سطر النقطة: لاحقة النوع (قوسا «صح/خطأ» أو فراغ الإكمال) ثم الدرجة،
+  /// كلاهما في جريان نصّ النقطة نفسه بعد `U+00A0`.
+  InlineContent? _trailingPointContent(InlineContent? trailer, MarksNode? marks) {
+    final nodes = <InlineNode>[];
+    if (trailer != null && trailer.nodes.isNotEmpty) {
+      nodes
+        ..add(TextNode('\u00A0'))
+        ..addAll(trailer.nodes);
+    }
     if (marks != null) {
-      return Tooltip(
-        message: 'انقر لتعديل الدرجة',
-        child: GestureDetector(
-          onTap: onEdit,
-          child: Padding(
-            padding: const EdgeInsetsDirectional.only(start: 4),
-            child: _semanticInline(InlineContent(<InlineNode>[marks]), style),
-          ),
-        ),
-      );
+      nodes
+        ..add(TextNode('\u00A0'))
+        ..add(marks);
     }
-    if (!showPlaceholder) {
-      return const SizedBox.shrink();
-    }
-    return Tooltip(
-      message: 'إضافة درجة',
-      child: GestureDetector(
-        onTap: onEdit,
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 4),
-          child: Text('+ درجة', style: TextStyle(fontSize: 10, color: Colors.grey)),
-        ),
-      ),
-    );
+    return nodes.isEmpty ? null : InlineContent(nodes);
   }
 
   List<FloatingElement> _attachmentModels(
@@ -6590,12 +6579,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
             hint: layout.isLtr ? 'Branch statement...' : 'اكتب منطوق الفرع هنا...',
             mushafStyle: true,
             semanticContent: data.content,
-          ),
-          marks: _marksTarget(
-            marks: data.title.marks,
-            showPlaceholder: document.settings.showQuestionMarks,
-            style: bodyStyle,
-            onEdit: () => _editBranchMarks(ref),
+            trailingSemantic: _trailingTitleContent(data.title.marks),
           ),
         ),
         ),
@@ -6729,18 +6713,8 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
                   textAlign: _textAlignFor(fieldKey, fallback: ownerAlign),
                   hint: point.kind.textHint,
                   semanticContent: point.content,
+                  trailingSemantic: _trailingPointContent(point.trailer, point.marks),
                 ),
-              ),
-              if (point.trailer != null)
-                Padding(
-                  padding: const EdgeInsetsDirectional.only(start: 4),
-                  child: _semanticInline(point.trailer!, bodyStyle),
-                ),
-              _marksTarget(
-                marks: point.marks,
-                showPlaceholder: controller.document.settings.showQuestionMarks,
-                style: bodyStyle,
-                onEdit: () => _editPointMarks(owner, item.id),
               ),
               if (showActions) ...<Widget>[
                 PopupMenuButton<PointKind>(
@@ -7854,6 +7828,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     required String fieldKey,
     required TextEditingController controller,
     required TextStyle style,
+    // لاحقة تُرسم **داخل فقرة الحقل** بعد U+00A0 (درجة العنوان، أو لاحقة
+    // النقطة ودرجتها). عقد المحرك القانوني: الدرجة جريان نصي يتبع آخر حرف،
+    // لا صندوق مستقل على حافة الصفّ.
+    InlineContent? trailingSemantic,
     TextAlign textAlign = TextAlign.start,
     String? hint,
     bool mushafStyle = false,
@@ -7864,6 +7842,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     VoidCallback? onLongPress,
   }) {
     final layout = _controller!.document.layout;
+    // اللاحقة المطبوعة (درجة العنوان/النقطة بعد U+00A0) تُرسم من المتحكم نفسه:
+    // `text` يبقى نصّ الحقل القابل للتحرير، والدرجة تُجرى في فقرة النص فتتبع
+    // آخر حرف وتلتفّ معه إلى السطر الأخير — عقد المحرك القانوني بلا ودجة
+    // جانبية ولا طبقة فوق الحقل.
+    if (controller is PaperRangeTextEditingController) {
+      final trailing = trailingSemantic;
+      controller.trailingSpan =
+          trailing == null ? null : TextSpan(text: trailing.legacyText, style: style);
+    }
     // مفاتيح حقول مقطع التكملة مميّزة: الحقلان (البداية والتكملة) يشتركان في
     // المتحكم الواحد، ويجب أن يبقى كل مفتاح في الشجرة وحيداً.
     return PaperField(
@@ -7893,6 +7880,9 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       // نص الفرع وحده يتبع «أسلوب المصحف» (توسيط الآية القائمة بذاتها)
       // كما في محرك الـ PDF — وبقية الحقول تُعرض بمحاذاة الحقل نفسها.
       renderBuilder: (text) {
+        // اللاحقة أولًا: تُدمج مع المصدر الدلالي نفسه فيُبنى نصّ واحد يتدفّق
+        // بحرّية، فتبقى الدرجة مع آخر حرف على السطر الأخير (لا على حافة
+        // الصفّ ولا على السطر الأول) وتسافر مع النص عند الالتفاف.
         if (mushafStyle) {
           return _buildRichPreview(
             layout,

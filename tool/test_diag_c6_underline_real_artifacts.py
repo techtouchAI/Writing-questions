@@ -54,6 +54,14 @@ class RealUnderlineParityTests(unittest.TestCase):
             int(match.group(1)), 1,
             'لا تسطير حقيقي في مخرجات التركيبة — اختبار فارغ لا يُثبت شيئاً.')
         self.assertNotIn('UNDERLINE offset', out)
+        # 2026-11-01: every rule of this fixture is measurable. The five that
+        # used to be skipped were a defect of this tool -- a rule attributed to
+        # a line it does not lie under, then looked for inside that wrong line's
+        # box -- fixed by requiring horizontal overlap and measuring over the
+        # rule's own span. A skip here would now mean a real preview/PDF
+        # divergence, so it is pinned as a failure of this test.
+        self.assertNotIn('not measurable', out,
+                         'قاعدة في PDF لا تُرى في المعاينة بنفس الامتداد = انحراف، لا حالة متخطاة: ' + out)
 
     def test_erasing_real_underline_ink_is_skipped_not_agreed(self):
         # إزالة حبر التسطير من لقطة حقيقية: يجب أن يُبلغ الفحص عن عدم قابلية

@@ -926,6 +926,40 @@ jobs:
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 4
       - name: Publish runtime references 6
         run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 5
+      # Two more groups: a fully successful run publishes 63 references (13
+      # snapshots x 4 companions, plus runtime.json, logcat.txt, the IME trace
+      # and the exported PDF and its text). With six groups the seventh slice
+      # was never emitted, so run 41321098203 passed and then could not be
+      # fetched: "Incomplete evidence inventory: annotation truncation".
+      - name: Publish runtime references 7
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 6
+      - name: Publish runtime references 8
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/android-index.json" --group 7
+
+  element-geometry-review:
+    name: Original element geometry review transport
+    needs: visual-parity
+    if: ${{ always() && github.event_name == 'push' && needs.visual-parity.result != 'skipped' && needs.visual-parity.result != 'cancelled' && contains(github.event.head_commit.message, '[review-evidence]') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Check out evidence transport tool
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Download this run's measured case
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: visual-parity
+          path: ${{ runner.temp }}/visual-originals
+      - name: Verify evidence transport regressions
+        run: python3 -m unittest discover -s tool -p test_evidence_review_transport.py
+      - name: Publish the measured mark and equation inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tool/evidence_review_transport.py publish --profile element-geometry --root "$RUNNER_TEMP/visual-originals/element-geometry" --index "$RUNNER_TEMP/element-index.json"
+      - name: Publish element geometry references 1
+        run: python3 tool/evidence_review_transport.py emit --index "$RUNNER_TEMP/element-index.json" --group 0
 
   # --------------------------------------------------------------------------
   # التحقق البصري الخارجي: يُصيّر Vector PDF وExact المستقل
@@ -1139,6 +1173,24 @@ jobs:
           set -o pipefail
           flutter test --reporter json test/visual/visual_parity_fixture_test.dart 2>&1 \
             | tee build/visual_parity/fixture_test.log
+
+      # [ELEMENT-GEOMETRY] مسبار دراسة (لا بوابة): يقيس الدرجة والمعادلة
+      # المستقلة على السطحين ويكتب PDF النموذج نفسه. ليس continue-on-error:
+      # مسبار مكسور يجب أن يظهر لا أن يُدفن.
+      - name: Measure mark and display-equation placement on both surfaces
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter test test/visual/diag_marks_equation_geometry_test.dart 2>&1 \
+            | tee build/visual_parity/element-geometry-test.log
+
+      # مسبار JSON لا يستطيع إظهار سبب فشله عبر ::error مباشرة؛ نستخرج الرسالة
+      # من سجلّه فنرى الخطأ بدل رقم الخروج.
+      - name: Explain the placement probe result
+        if: always()
+        shell: bash
+        run: |
+          python3 tool/explain_flutter_test_log.py build/visual_parity/element-geometry-test.log || true
 
       # [C6-POS] تشخيص غير ملزم: مواضع النص في المعاينة ثم في vector.pdf الذي
       # كتبه الاختبار أعلاه مباشرة (بلا تنزيل artifact). لا يغيّر البوابة

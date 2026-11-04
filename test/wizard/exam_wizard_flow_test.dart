@@ -263,7 +263,10 @@ void main() {
       expect(find.byKey(const ValueKey<String>('a4-page-0')), findsOneWidget);
       // سطر العنوان: الرقم التلقائي + المنطوق + الدرجة بصيغة (٢٠ درجة).
       expect(find.text('السؤال الأول/'), findsOneWidget);
-      expect(find.text('(٢٠ درجة)'), findsOneWidget);
+      // الدرجة جريان نصّي داخل فقرة الحقل نفسها (لا ودجة بجانبه)، فتُقرأ من
+      // شجرة الأسطر التي رسمها الحقل فعلاً.
+      expect(_gradeDrawnInSomeField(tester, '(٢٠ درجة)'), isTrue,
+          reason: 'الدرجة ليست مرسومة في فقرة أي حقل.');
       expect(find.text('عرّف الفاعل'), findsOneWidget);
     });
 
@@ -733,4 +736,15 @@ void main() {
       expect(find.byType(CustomPaint), findsWidgets);
     });
   });
+}
+
+/// الدرجة تُرسم من شجرة أسطر الحقل (`RenderEditable`)، لا من ودجة `Text`
+/// بجانبه؛ فلا يجدها `find.text` ولا تصلح إلا قراءتها من الشجرة المرسومة.
+bool _gradeDrawnInSomeField(WidgetTester tester, String grade) {
+  final fields = find.byType(EditableText);
+  for (var index = 0; index < fields.evaluate().length; index++) {
+    final editable = tester.state<EditableTextState>(fields.at(index)).renderEditable;
+    if (editable.text!.toPlainText().contains(grade)) return true;
+  }
+  return false;
 }

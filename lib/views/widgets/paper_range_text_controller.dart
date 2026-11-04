@@ -31,6 +31,15 @@ class PaperRangeTextEditingController extends TextEditingController {
 
   List<RunStyle> get runs => _runs;
 
+  /// لاحقة **غير قابلة للتحرير** تُرسم بعد نصّ الحقل في جريانه نفسه: درجة
+  /// العنوان أو النقطة بعد `U+00A0`.
+  ///
+  /// لماذا هنا؟ لأن `EditableText` يرسم من `buildTextSpan` وحده. إضافتها هنا
+  /// تُبقي `text` و`selection` و`value.composing` كما هي (فلا يمسّ التحريرَ
+  /// ولا الإدخال)، وتحفظ الحقل `TextField` قابلاً للكتابة، وتُجري الدرجة في
+  /// فقرة النص نفسها فتلتفّ معه إلى السطر الأخير.
+  TextSpan? trailingSpan;
+
   static bool _same(List<RunStyle> a, List<RunStyle> b) {
     if (identical(a, b)) return true;
     if (a.length != b.length) return false;
@@ -58,7 +67,7 @@ class PaperRangeTextEditingController extends TextEditingController {
     final base = style ?? const TextStyle();
     final text = this.text;
     if (_runs.isEmpty || text.isEmpty) {
-      return TextSpan(style: base, text: text);
+      return _withTrailing(TextSpan(style: base, text: text), base);
     }
     final spans = <TextSpan>[];
     var cursor = 0;
@@ -81,7 +90,21 @@ class PaperRangeTextEditingController extends TextEditingController {
     if (cursor < text.length) {
       spans.add(TextSpan(text: text.substring(cursor)));
     }
-    return TextSpan(style: base, children: spans);
+    return _withTrailing(TextSpan(style: base, children: spans), base);
+  }
+
+  /// يُلحق اللاحقة (إن وُجدت) بآخر الشجرة المرسومة، بنمط الحقل نفسه.
+  TextSpan _withTrailing(TextSpan baseSpan, TextStyle base) {
+    final trailing = trailingSpan;
+    if (trailing == null) return baseSpan;
+    return TextSpan(
+      style: baseSpan.style ?? base,
+      children: <InlineSpan>[
+        ...?baseSpan.children,
+        if (baseSpan.text != null) TextSpan(text: baseSpan.text),
+        trailing,
+      ],
+    );
   }
 
   /// يدمج خصائص النطاق فوق النمط الأساسي. الخاصية الغائبة في النطاق (`null`)

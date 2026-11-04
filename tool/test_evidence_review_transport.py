@@ -2,6 +2,7 @@
 import contextlib
 import io
 import json
+import re
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -322,3 +323,115 @@ class EvidenceTransportTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class AndroidInventoryBound(unittest.TestCase):
+    """A successful run publishes 59 enumerated files; the bound must allow it.
+
+    Run 41318864378 passed the acceptance and still lost its evidence: the
+    inventory was 63 files against a ceiling of 60, so the transport rejected
+    the whole publish. The bound now leaves room for one diagnostic snapshot.
+    """
+
+    def build(self, root, count):
+        names = ['runtime.json', 'logcat.txt'] + [f'extra-{i}.png' for i in range(count - 2)]
+        for name in names:
+            (root / name).write_bytes(b'fixture')
+        (root / 'manifest.json').write_text(json.dumps({'files': names}))
+        return names
+
+    def test_a_full_successful_inventory_is_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build(root, 59)
+            self.assertEqual(len(list(transport.selected(root, 'android'))), 60)
+
+    def test_one_diagnostic_snapshot_still_transports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build(root, 63)
+            self.assertEqual(len(list(transport.selected(root, 'android'))), 64)
+
+    def test_an_unbounded_inventory_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build(root, 81)
+            with self.assertRaisesRegex(ValueError, 'Invalid Android evidence inventory'):
+                list(transport.selected(root, 'android'))
+
+
+class AndroidEmitGroupCoverage(unittest.TestCase):
+    """Every reference the inventory accepts must have a step that emits it.
+
+    Run 41321098203 published 63 references through six emit groups (60 slots).
+    The transport job reported success, and only the fetch noticed the missing
+    slice. The workflow must cover the same bound the code enforces.
+    """
+
+    def test_android_transport_emits_every_group_the_cap_allows(self):
+        workflow = (Path(__file__).resolve().parent.parent
+                    / '.github' / 'workflows' / 'build_apk.yml').read_text()
+        groups = workflow.count('android-index.json" --group')
+        source = (Path(__file__).resolve().parent / 'evidence_review_transport.py').read_text()
+        ceiling = int(re.search(r'1 <= len\(names\) <= (\d+)', source).group(1))
+        self.assertGreaterEqual(groups * 10, ceiling,
+                                'an accepted inventory would be silently under-published')
+        used = {int(number) for number in re.findall(
+            r'android-index\.json" --group (\d+)', workflow)}
+        self.assertEqual(used, set(range(groups)),
+                         'emit groups must be contiguous from zero')
+
+
+class ElementGeometryInventory(unittest.TestCase):
+    """The measured case must publish every companion or none of it."""
+
+    FILES = {'document.pdf', 'edit_surface.png', 'edit_surface_active.png',
+             'geometry.json', 'manifest.json', 'reference_preview.png'}
+
+    def build(self, root, files):
+        for name in files:
+            (root / name).write_bytes(b'fixture')
+        (root / 'manifest.json').write_text(json.dumps({'files': sorted(files), 'pageCount': 1}))
+
+    def test_complete_inventory_transports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build(root, self.FILES)
+            self.assertEqual(len(list(transport.selected(root, 'element-geometry'))), 6)
+
+    def test_a_run_that_lost_the_pdf_still_publishes_its_numbers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build(root, self.FILES - {'document.pdf'})
+            self.assertEqual(len(list(transport.selected(root, 'element-geometry'))), 5)
+
+    def test_a_measurement_without_numbers_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build(root, self.FILES - {'geometry.json'})
+            with self.assertRaisesRegex(ValueError, 'must include the measurement'):
+                list(transport.selected(root, 'element-geometry'))
+
+    def test_an_unknown_companion_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.build(root, self.FILES | {'payload.bin'})
+            with self.assertRaisesRegex(ValueError, 'unknown companion'):
+                list(transport.selected(root, 'element-geometry'))
+
+
+class TransportProfileWiring(unittest.TestCase):
+    """A profile the selector understands must also be selectable on the CLI.
+
+    Run 41357985694 published the visual inventory and then died with exit code
+    2: argparse rejected '--profile element-geometry' because the selector knew
+    the branch but the CLI choices did not.
+    """
+
+    def test_every_selector_branch_is_a_cli_choice(self):
+        source = (Path(__file__).resolve().parent / 'evidence_review_transport.py').read_text()
+        branches = set(re.findall(r"if profile == '([a-z-]+)'", source))
+        choices = set(re.findall(r"choices=\[([^\]]+)\]", source)[0].replace("'", '').split(', '))
+        self.assertTrue(branches, 'selector branches must be discoverable')
+        self.assertEqual(branches - {'production'}, choices - {'production'},
+                         'CLI choices and selector branches disagree')

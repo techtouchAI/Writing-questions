@@ -147,3 +147,109 @@ class ActualInputContract(unittest.TestCase):
         self.assertNotIn('AcceptanceIme',(Path(__file__).parents[1]/'android/app/src/main/AndroidManifest.xml').read_text())
 
 if __name__=='__main__':unittest.main()
+
+
+class PdfEvidenceVerdictChannels(unittest.TestCase):
+    """Content integrity is gated; cross-reader extraction is a recorded metric.
+
+    Policy: docs/review/pr48_document_correctness_audit.md §6. The measurement
+    itself is unchanged -- this suite pins that the same text is examined by the
+    same exact-substring rule, and that only its verdict channel moved.
+    """
+
+    def harness(self, text, pages=3):
+        checks, metrics = [], {}
+
+        def check(name, condition, detail):
+            checks.append(dict(name=name, passed=bool(condition), detail=detail))
+            if not condition:
+                raise AssertionError(f'{name}: {detail}')
+
+        ime.judge_pdf_evidence(text, pages, check, metrics)
+        return checks, metrics
+
+    def test_content_integrity_stays_gated(self):
+        with self.assertRaises(AssertionError):
+            self.harness('no tail marker here English')
+        with self.assertRaises(AssertionError):
+            self.harness('IMETAIL English')
+        checks, _ = self.harness('IMETAIL ' + 'English ' * 322)
+        self.assertTrue(all(entry['passed'] for entry in checks))
+        self.assertEqual(len(checks), 2)
+
+    def test_extraction_metric_is_recorded_and_never_raises(self):
+        checks, metrics = self.harness('IMETAIL ' + 'English ' * 322)
+        name = 'actual device PDF retains diacritized Arabic statement'
+        self.assertIn(name, metrics)
+        self.assertFalse(metrics[name]['passed'], 'the failing value must be kept, not dropped')
+        self.assertTrue(all(entry['passed'] for entry in checks),
+                        'a metric must not decide the functional verdict')
+
+    def test_metric_passes_only_on_the_exact_un_normalised_substring(self):
+        _, metrics = self.harness('سَلَامٌ IMETAIL ' + 'English ' * 322)
+        self.assertTrue(metrics['actual device PDF retains diacritized Arabic statement']['passed'])
+        # A decomposed form (letters + separate marks) is a different string and
+        # must not be reported as the same retained statement.
+        decomposed = 'سَلَامٌ'.encode('utf-8').decode('utf-8')
+        self.assertTrue(ime.extraction_retains(decomposed, 'سَلَامٌ'))
+        self.assertFalse(ime.extraction_retains('سلام', 'سَلَامٌ'))
+        self.assertFalse(ime.extraction_retains('سَلاَمٌ', 'سَلَامٌ'))
+
+    def test_record_metric_keeps_every_entry(self):
+        metrics = {}
+        ime.record_metric(metrics, 'a', True, 'd1')
+        ime.record_metric(metrics, 'b', False, 'd2')
+        self.assertEqual(metrics, {'a': dict(passed=True, detail='d1'),
+                                   'b': dict(passed=False, detail='d2')})
+
+
+class ShareSheetDismissalBeforeRelaunch(unittest.TestCase):
+    """The chooser is a different package; the relaunch test needs our window back."""
+
+    CHOOSER = ('<hierarchy><node package="com.android.intentresolver" '
+               'class=".ChooserActivity" text="Sharing 1 file"/></hierarchy>')
+    OURS = ('<hierarchy><node package="' + ime.PACKAGE +
+            '" class=".MainActivity" text="متابعة العمل"/></hierarchy>')
+
+    def harness(self, dumps, attempts):
+        calls = {'back': 0}
+        state = {'i': 0}
+
+        def adb(*args):
+            if args[:3] == ('shell', 'input', 'keyevent'):
+                calls['back'] += 1
+            return ''
+
+        def windows():
+            index = min(state['i'], len(dumps) - 1)
+            state['i'] += 1
+            return dumps[index]
+
+        checks = []
+
+        def check(name, condition, detail):
+            checks.append(dict(name=name, passed=bool(condition), detail=detail))
+            if not condition:
+                raise AssertionError(f'{name}: {detail}')
+
+        ime.dismiss_system_share_sheet(adb, check, ime.PACKAGE, windows,
+                                       attempts=attempts, sleep=lambda _s: None)
+        return calls, checks
+
+    def test_our_window_already_visible_presses_nothing(self):
+        calls, checks = self.harness([self.OURS], 3)
+        self.assertEqual(calls['back'], 0)
+        self.assertTrue(checks[0]['passed'])
+
+    def test_chooser_is_dismissed_with_a_real_back_key(self):
+        calls, checks = self.harness([self.CHOOSER, self.CHOOSER, self.OURS], 3)
+        self.assertEqual(calls['back'], 2)
+        self.assertTrue(checks[0]['passed'])
+
+    def test_a_chooser_that_never_closes_fails_the_check(self):
+        with self.assertRaises(AssertionError):
+            self.harness([self.CHOOSER], 2)
+
+    def test_an_empty_dump_is_never_a_pass(self):
+        with self.assertRaises(AssertionError):
+            self.harness([''], 2)

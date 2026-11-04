@@ -80,10 +80,46 @@ def selected(root, profile='production'):
                 raise ValueError(f'Missing/unsafe evidence: {name}')
             yield path
         return
+    if profile == 'element-geometry':
+        # One measured case, three surfaces. The inventory is closed so a
+        # measurement cannot be published half-complete: the PDF, the two
+        # rendered surfaces and the numbers they were compared with.
+        manifest = json.loads((root / 'manifest.json').read_text())
+        names = manifest['files']
+        # Closed name set, but not a fixed count: a study run that produced the
+        # numbers and one screenshot must not lose them because the PDF stage
+        # timed out. What is declared must exist, and the two measurements are
+        # mandatory.
+        allowed = {'document.pdf', 'edit_surface.png', 'edit_surface_active.png',
+                   'geometry.json', 'manifest.json', 'reference_preview.png'}
+        if not isinstance(names, list) or not names or len(names) != len(set(names)):
+            raise ValueError('Element geometry manifest must enumerate its files once')
+        if not {'manifest.json', 'geometry.json'} <= set(names):
+            raise ValueError('Element geometry manifest must include the measurement')
+        if not set(names) <= allowed:
+            raise ValueError('Element geometry manifest names an unknown companion')
+        if not isinstance(manifest.get('pageCount'), int) or manifest['pageCount'] < 1:
+            raise ValueError('Element geometry manifest must record the page count')
+        for name in sorted(set(names)):
+            if Path(name).name != name:
+                raise ValueError('Unsafe element geometry evidence path')
+            path = root / name
+            if not path.is_file() or path.is_symlink():
+                raise ValueError(f'Missing/unsafe evidence: {name}')
+            yield path
+        return
     if profile == 'android':
         manifest = json.loads((root / 'manifest.json').read_text())
         names = manifest['files']
-        if len(names) != len(set(names)) or not 1 <= len(names) <= 60:
+        # Every published file must be enumerated here, and the bound keeps a
+        # single publish bounded. 13 screen snapshots carry 4 companions each
+        # (png/xml/ime/window) = 52, plus runtime.json, logcat.txt, the IME
+        # trace and the exported PDF/text = 59 on a fully successful run. The
+        # previous ceiling of 60 left no room for even one diagnostic snapshot,
+        # so run 41318864378 published 63 files and was rejected as invalid
+        # after the acceptance itself had passed. 80 keeps the guard meaningful
+        # while allowing the evidence a successful run actually produces.
+        if len(names) != len(set(names)) or not 1 <= len(names) <= 80:
             raise ValueError('Invalid Android evidence inventory')
         if not {'runtime.json', 'logcat.txt'} <= set(names):
             raise ValueError('Android evidence must include result and runtime log')
@@ -234,7 +270,7 @@ def fetch(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest='command', required=True)
-    p = sub.add_parser('publish'); p.add_argument('--root', type=Path, required=True); p.add_argument('--index', type=Path, required=True); p.add_argument('--profile', choices=['production', 'visual', 'validation', 'android', 'candidate-reorder'], default='production')
+    p = sub.add_parser('publish'); p.add_argument('--root', type=Path, required=True); p.add_argument('--index', type=Path, required=True); p.add_argument('--profile', choices=['production', 'visual', 'validation', 'android', 'candidate-reorder', 'element-geometry'], default='production')
     p = sub.add_parser('emit'); p.add_argument('--index', type=Path, required=True); p.add_argument('--group', type=int, required=True)
     p = sub.add_parser('fetch'); p.add_argument('--run', required=True); p.add_argument('--repository', default='techtouchAI/Writing-questions'); p.add_argument('--destination', type=Path, required=True); p.add_argument('--job-name', default='Original evidence review transport')
     args = parser.parse_args()

@@ -1184,8 +1184,14 @@ void main() {
     final controller = ExamWizardController(document: _document());
     await _pump(tester, controller);
 
-    // درجة الفرع b1 = 5 → «(٥ درجة)»؛ النقر عليها يفتح حوار الرقم الخام.
-    await _tap(tester, find.text('(٥ درجة)'));
+    // درجة السؤال تُحرَّر من شريط أدوات السؤال خارج الورقة: الورقة تعرض
+    // الدرجة في مكانها المطبوع ولا تحمل أداة تحرير. اللقطة قبل الحوار تثبت
+    // أن الإدخال غير الصالح لا يغيّر المستند.
+    final before = jsonEncode(controller.document.toMap());
+    await _tap(
+      tester,
+      find.byKey(const ValueKey<String>('question-action-marks')),
+    );
     await tester.enterText(
       find.descendant(
         of: find.byType(AlertDialog),
@@ -1195,13 +1201,11 @@ void main() {
     );
     await _tap(tester, find.text('تطبيق'));
     expect(
-      controller.document
-          .branchAt(const BranchRef(questionIndex: 0, branchIndex: 0))
-          .marks,
-      5,
+      jsonEncode(controller.document.toMap()),
+      before,
       reason: 'AUD-INVALID-02: درجة سالبة لا تُطبَّق على الموديل.',
     );
-    expect(find.text('أدخل الدرجة رقماً صحيحاً فقط (مثال: 5).'), findsOneWidget,
+    expect(find.text('أدخل الدرجة رقماً صحيحاً فقط (مثال: 20).'), findsOneWidget,
         reason: 'AUD-INVALID-02: إدخال غير صالح يُرفض برسالة واضحة.');
     await _settleSnackbars(tester);
     expect(tester.takeException(), isNull);

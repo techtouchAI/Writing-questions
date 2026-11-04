@@ -1,0 +1,1032 @@
+{
+  "document": "قياس موضع الدرجة والمعادلة",
+  "pageCount": 1,
+  "documentDirection": "rtl",
+  "pageSize": [
+    595.2755905511812,
+    841.8897637795276
+  ],
+  "canonical": {
+    "titleLines": [
+      {
+        "blockId": "q-marks/title",
+        "lineId": "q-marks/title/line/0",
+        "lineIndex": 0,
+        "direction": "rtl",
+        "alignment": null,
+        "rect": [
+          42.51968503937008,
+          149.76968503937007,
+          510.236220472441,
+          18.75
+        ],
+        "runs": [
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 23.77157628817833,
+            "advance": 2.4292831420898438
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "الفقرة",
+            "x": 26.200859430268174,
+            "advance": 23.578319549560547
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 49.77917897982872,
+            "advance": 2.4292831420898438
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "في",
+            "x": 52.208462121918565,
+            "advance": 12.2783203125
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 64.48678243441856,
+            "advance": 2.4292831420898438
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "العربي",
+            "x": 66.9160655765084,
+            "advance": 25.381061553955078
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 92.29713857455528,
+            "advance": 2.4292945861816406
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "النص",
+            "x": 94.72642171664512,
+            "advance": 21.764602661132812
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 116.49102437777793,
+            "advance": 2.4292831420898438
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "قراءة",
+            "x": 118.92030751986778,
+            "advance": 21.797584533691406
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 140.71789205355915,
+            "advance": 2.4292831420898438
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "على",
+            "x": 143.147175195649,
+            "advance": 15.960742950439453
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 159.10791814608845,
+            "advance": 2.42926025390625
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "التَشْكِيلِ",
+            "x": 161.5371783999947,
+            "advance": 32.99867248535156
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 194.53585088534626,
+            "advance": 2.4293060302734375
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "أثرَ",
+            "x": 196.9651569156197,
+            "advance": 11.23406982421875
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 208.19922673983845,
+            "advance": 2.42926025390625
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "بيّن",
+            "x": 210.6284869937447,
+            "advance": 13.564407348632812
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 224.19291723056114,
+            "advance": 2.4292831420898438
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "ثم",
+            "x": 226.6221774844674,
+            "advance": 9.87103271484375
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 236.49321019931114,
+            "advance": 2.4293060302734375
+          },
+          {
+            "role": "text",
+            "kind": "math",
+            "text": "x^{2}+2x+1=0",
+            "x": 238.92249334140098,
+            "advance": 78.82793426513672
+          },
+          {
+            "role": "separator",
+            "kind": "separator",
+            "text": "",
+            "x": 314.7504504947213,
+            "advance": 3.0
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 317.7504504947213,
+            "advance": 2.4292831420898438
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "المعادلة",
+            "x": 320.17971074862754,
+            "advance": 30.426498413085938
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 350.6062091617135,
+            "advance": 2.4292831420898438
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "في",
+            "x": 353.0354923038033,
+            "advance": 12.2783203125
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 365.3138126163033,
+            "advance": 2.4292831420898438
+          },
+          {
+            "role": "text",
+            "kind": "math",
+            "text": "x",
+            "x": 367.74311864657676,
+            "advance": 6.672271728515625
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 374.4153903750924,
+            "advance": 2.4292831420898438
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "قيمة",
+            "x": 376.84467351718223,
+            "advance": 18.31304168701172
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 395.15771520419395,
+            "advance": 2.4292831420898438
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "أوجد",
+            "x": 397.5870212344674,
+            "advance": 21.05010223388672
+          },
+          {
+            "role": "separator",
+            "kind": "separator",
+            "text": "/",
+            "x": 497.4650577334908,
+            "advance": 3.1657562255859375
+          },
+          {
+            "role": "number",
+            "kind": "number",
+            "text": "الأول",
+            "x": 500.63081395907676,
+            "advance": 21.313934326171875
+          },
+          {
+            "role": "number",
+            "kind": "number",
+            "text": " ",
+            "x": 521.9447482852487,
+            "advance": 2.4293060302734375
+          },
+          {
+            "role": "number",
+            "kind": "number",
+            "text": "السؤال",
+            "x": 524.3740543155221,
+            "advance": 28.381851196289062
+          }
+        ]
+      },
+      {
+        "blockId": "q-marks/title",
+        "lineId": "q-marks/title/line/1",
+        "lineIndex": 1,
+        "direction": "rtl",
+        "alignment": null,
+        "rect": [
+          42.51968503937008,
+          168.51968503937007,
+          510.236220472441,
+          18.75
+        ],
+        "runs": [
+          {
+            "role": "marks",
+            "kind": "separator",
+            "text": ")",
+            "x": 480.40507543368614,
+            "advance": 4.39691162109375
+          },
+          {
+            "role": "marks",
+            "kind": "marks",
+            "text": "درجة",
+            "x": 484.8019870547799,
+            "advance": 21.1820068359375
+          },
+          {
+            "role": "marks",
+            "kind": "separator",
+            "text": " ",
+            "x": 505.9839938907174,
+            "advance": 2.42926025390625
+          },
+          {
+            "role": "marks",
+            "kind": "number",
+            "text": "١٠",
+            "x": 508.41325414462364,
+            "advance": 10.728424072265625
+          },
+          {
+            "role": "marks",
+            "kind": "separator",
+            "text": "(",
+            "x": 519.1416782168893,
+            "advance": 4.39691162109375
+          },
+          {
+            "role": "separator",
+            "kind": "separator",
+            "text": " ",
+            "x": 523.5385898379831,
+            "advance": 2.42926025390625
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": ".",
+            "x": 525.9678500918893,
+            "advance": 2.693115234375
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "التالية",
+            "x": 528.6609653262643,
+            "advance": 24.094940185546875
+          }
+        ]
+      },
+      {
+        "blockId": "q-marks/branch/b1/title",
+        "lineId": "q-marks/branch/b1/title/line/0",
+        "lineIndex": 0,
+        "direction": "rtl",
+        "alignment": null,
+        "rect": [
+          42.51968503937008,
+          342.5196850393701,
+          490.736220472441,
+          18.75
+        ],
+        "runs": [
+          {
+            "role": "marks",
+            "kind": "separator",
+            "text": ")",
+            "x": 443.6732486514596,
+            "advance": 3.63299560546875
+          },
+          {
+            "role": "marks",
+            "kind": "marks",
+            "text": "درجة",
+            "x": 447.3062442569283,
+            "advance": 19.82391357421875
+          },
+          {
+            "role": "marks",
+            "kind": "separator",
+            "text": " ",
+            "x": 467.1301578311471,
+            "advance": 2.32049560546875
+          },
+          {
+            "role": "marks",
+            "kind": "number",
+            "text": "٥",
+            "x": 469.4506534366158,
+            "advance": 4.7144622802734375
+          },
+          {
+            "role": "marks",
+            "kind": "separator",
+            "text": "(",
+            "x": 474.16511571688926,
+            "advance": 3.63299560546875
+          },
+          {
+            "role": "separator",
+            "kind": "separator",
+            "text": " ",
+            "x": 477.798111322358,
+            "advance": 2.32049560546875
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": ":",
+            "x": 480.11860692782676,
+            "advance": 2.1629791259765625
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "الأول",
+            "x": 482.2815860538033,
+            "advance": 19.099411010742188
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 501.3809970645455,
+            "advance": 2.32049560546875
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "الفرع",
+            "x": 503.70149267001426,
+            "advance": 19.372467041015625
+          },
+          {
+            "role": "separator",
+            "kind": "separator",
+            "text": "",
+            "x": 523.0739597110299,
+            "advance": 3.0
+          },
+          {
+            "role": "separator",
+            "kind": "separator",
+            "text": ")",
+            "x": 526.0739597110299,
+            "advance": 4.199981689453125
+          },
+          {
+            "role": "label",
+            "kind": "label",
+            "text": "أ",
+            "x": 530.2739414004831,
+            "advance": 2.981964111328125
+          }
+        ]
+      },
+      {
+        "blockId": "q-marks/branch/b2/title",
+        "lineId": "q-marks/branch/b2/title/line/0",
+        "lineIndex": 0,
+        "direction": "rtl",
+        "alignment": null,
+        "rect": [
+          42.51968503937008,
+          433.2696850393701,
+          490.736220472441,
+          18.75
+        ],
+        "runs": [
+          {
+            "role": "marks",
+            "kind": "separator",
+            "text": ")",
+            "x": 436.0292819766549,
+            "advance": 3.63299560546875
+          },
+          {
+            "role": "marks",
+            "kind": "marks",
+            "text": "درجة",
+            "x": 439.66227758212364,
+            "advance": 19.82391357421875
+          },
+          {
+            "role": "marks",
+            "kind": "separator",
+            "text": " ",
+            "x": 459.4861911563424,
+            "advance": 2.32049560546875
+          },
+          {
+            "role": "marks",
+            "kind": "number",
+            "text": "٣",
+            "x": 461.80668676181114,
+            "advance": 4.7144622802734375
+          },
+          {
+            "role": "marks",
+            "kind": "separator",
+            "text": "(",
+            "x": 466.5211490420846,
+            "advance": 3.63299560546875
+          },
+          {
+            "role": "separator",
+            "kind": "separator",
+            "text": " ",
+            "x": 470.1541446475533,
+            "advance": 2.32049560546875
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": ":",
+            "x": 472.4746402530221,
+            "advance": 2.1629791259765625
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "الثاني",
+            "x": 474.63761937899864,
+            "advance": 21.262435913085938
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 495.9000552920846,
+            "advance": 2.32049560546875
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "الفرع",
+            "x": 498.2205508975533,
+            "advance": 19.372421264648438
+          },
+          {
+            "role": "separator",
+            "kind": "separator",
+            "text": "",
+            "x": 517.5929721622018,
+            "advance": 3.0
+          },
+          {
+            "role": "separator",
+            "kind": "separator",
+            "text": ")",
+            "x": 520.5929721622018,
+            "advance": 4.199981689453125
+          },
+          {
+            "role": "label",
+            "kind": "label",
+            "text": "ب",
+            "x": 524.7929538516549,
+            "advance": 8.46295166015625
+          }
+        ]
+      },
+      {
+        "blockId": "q-next/title",
+        "lineId": "q-next/title/line/0",
+        "lineIndex": 0,
+        "direction": "rtl",
+        "alignment": null,
+        "rect": [
+          42.51968503937008,
+          479.0196850393701,
+          510.236220472441,
+          18.75
+        ],
+        "runs": [
+          {
+            "role": "marks",
+            "kind": "separator",
+            "text": ")",
+            "x": 385.92768895907676,
+            "advance": 4.396888732910156
+          },
+          {
+            "role": "marks",
+            "kind": "marks",
+            "text": "درجة",
+            "x": 390.3245776919869,
+            "advance": 21.182029724121094
+          },
+          {
+            "role": "marks",
+            "kind": "separator",
+            "text": " ",
+            "x": 411.506607416108,
+            "advance": 2.42926025390625
+          },
+          {
+            "role": "marks",
+            "kind": "number",
+            "text": "٧",
+            "x": 413.93586767001426,
+            "advance": 5.3642120361328125
+          },
+          {
+            "role": "marks",
+            "kind": "separator",
+            "text": "(",
+            "x": 419.3000797061471,
+            "advance": 4.39691162109375
+          },
+          {
+            "role": "separator",
+            "kind": "separator",
+            "text": " ",
+            "x": 423.6969913272408,
+            "advance": 2.42926025390625
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": ".",
+            "x": 426.1262515811471,
+            "advance": 2.693115234375
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "قصير",
+            "x": 428.8193668155221,
+            "advance": 22.292221069335938
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 451.111587884858,
+            "advance": 2.4293060302734375
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "تالٍ",
+            "x": 453.54089391513145,
+            "advance": 13.663330078125
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": " ",
+            "x": 467.20422399325645,
+            "advance": 2.4293060302734375
+          },
+          {
+            "role": "text",
+            "kind": "text",
+            "text": "سؤال",
+            "x": 469.6335300235299,
+            "advance": 22.90777587890625
+          },
+          {
+            "role": "separator",
+            "kind": "separator",
+            "text": "",
+            "x": 492.54130590243614,
+            "advance": 3.0
+          },
+          {
+            "role": "separator",
+            "kind": "separator",
+            "text": "/",
+            "x": 495.54130590243614,
+            "advance": 3.165802001953125
+          },
+          {
+            "role": "number",
+            "kind": "number",
+            "text": "الثاني",
+            "x": 498.70710790438926,
+            "advance": 23.237548828125
+          },
+          {
+            "role": "number",
+            "kind": "number",
+            "text": " ",
+            "x": 521.9446567325143,
+            "advance": 2.4293060302734375
+          },
+          {
+            "role": "number",
+            "kind": "number",
+            "text": "السؤال",
+            "x": 524.3739627627878,
+            "advance": 28.381942749023438
+          }
+        ]
+      }
+    ],
+    "marks": {
+      "count": 4,
+      "entries": [
+        {
+          "page": 0,
+          "lineId": "q-marks/title/line/1",
+          "lineIndex": 1,
+          "paragraphIndex": 1,
+          "lineRect": [
+            42.51968503937008,
+            168.51968503937007,
+            510.236220472441,
+            18.75
+          ],
+          "lineBaseline": 180.3079693411279,
+          "statementEndX": 525.9678500918893,
+          "marksStartX": 480.40507543368614,
+          "marksEndX": 523.5385898379831,
+          "marksTopPt": 168.51968503937007,
+          "gapPt": 45.56277465820318,
+          "trueEnd": false,
+          "marksText": ")درجة ١٠("
+        },
+        {
+          "page": 0,
+          "lineId": "q-marks/branch/b1/title/line/0",
+          "lineIndex": 0,
+          "paragraphIndex": 14,
+          "lineRect": [
+            42.51968503937008,
+            342.5196850393701,
+            490.736220472441,
+            18.75
+          ],
+          "lineBaseline": 354.2335133646417,
+          "statementEndX": 480.11860692782676,
+          "marksStartX": 443.6732486514596,
+          "marksEndX": 477.798111322358,
+          "marksTopPt": 342.5196850393701,
+          "gapPt": 36.44535827636719,
+          "trueEnd": false,
+          "marksText": ")درجة ٥("
+        },
+        {
+          "page": 0,
+          "lineId": "q-marks/branch/b2/title/line/0",
+          "lineIndex": 0,
+          "paragraphIndex": 17,
+          "lineRect": [
+            42.51968503937008,
+            433.2696850393701,
+            490.736220472441,
+            18.75
+          ],
+          "lineBaseline": 444.9835133646417,
+          "statementEndX": 472.4746402530221,
+          "marksStartX": 436.0292819766549,
+          "marksEndX": 470.1541446475533,
+          "marksTopPt": 433.2696850393701,
+          "gapPt": 36.44535827636719,
+          "trueEnd": false,
+          "marksText": ")درجة ٣("
+        },
+        {
+          "page": 0,
+          "lineId": "q-next/title/line/0",
+          "lineIndex": 0,
+          "paragraphIndex": 19,
+          "lineRect": [
+            42.51968503937008,
+            479.0196850393701,
+            510.236220472441,
+            18.75
+          ],
+          "lineBaseline": 490.8079700563836,
+          "statementEndX": 426.1262515811471,
+          "marksStartX": 385.92768895907676,
+          "marksEndX": 423.6969913272408,
+          "marksTopPt": 479.0196850393701,
+          "gapPt": 40.19856262207031,
+          "trueEnd": false,
+          "marksText": ")درجة ٧("
+        }
+      ]
+    },
+    "blockMath": {
+      "count": 2,
+      "entries": [
+        {
+          "page": 0,
+          "blockId": "q-marks/body/block-math/1",
+          "rect": [
+            42.51968503937008,
+            229.26968503937007,
+            510.236220472441,
+            19.5
+          ],
+          "gapBeforePt": 3.0,
+          "gapAfterPt": 3.0,
+          "lineCount": 1,
+          "measurementSource": "mathSnapshot"
+        },
+        {
+          "page": 0,
+          "blockId": "q-marks/branch/b1/body/block-math/1",
+          "rect": [
+            42.51968503937008,
+            402.5196850393701,
+            490.736220472441,
+            26.25
+          ],
+          "gapBeforePt": 3.0,
+          "gapAfterPt": 4.5,
+          "lineCount": 1,
+          "measurementSource": "mathSnapshot"
+        }
+      ]
+    },
+    "titleBlocks": [
+      {
+        "page": 0,
+        "id": "q-marks/title",
+        "rect": [
+          42.51968503937008,
+          149.76968503937007,
+          510.236220472441,
+          37.5
+        ],
+        "lines": 2
+      },
+      {
+        "page": 0,
+        "id": "q-marks/branch/b1/title",
+        "rect": [
+          42.51968503937008,
+          342.5196850393701,
+          490.736220472441,
+          18.75
+        ],
+        "lines": 1
+      },
+      {
+        "page": 0,
+        "id": "q-marks/branch/b2/title",
+        "rect": [
+          42.51968503937008,
+          433.2696850393701,
+          490.736220472441,
+          18.75
+        ],
+        "lines": 1
+      },
+      {
+        "page": 0,
+        "id": "q-next/title",
+        "rect": [
+          42.51968503937008,
+          479.0196850393701,
+          510.236220472441,
+          18.75
+        ],
+        "lines": 1
+      }
+    ]
+  },
+  "production": {
+    "pageRectPt": [
+      152.36220472440942,
+      135.0,
+      595.2755905511812,
+      841.8897637795276
+    ],
+    "ambientDirection": "rtl",
+    "paintedBodies": [
+      {
+        "key": "body-q-marks",
+        "rectPt": [
+          194.8818897637795,
+          323.7696850393701,
+          510.23622047244106,
+          100.50000000000004
+        ]
+      },
+      {
+        "key": "branch-body-b1",
+        "rectPt": [
+          194.8818897637795,
+          509.01968503937013,
+          490.73622047244106,
+          69.75
+        ]
+      }
+    ],
+    "zoom": 1.0,
+    "pxToPt": 0.75,
+    "statementRectPt": [
+      241.01539272398458,
+      284.7696850393701,
+      392.3118010693649,
+      37.5
+    ],
+    "bodyRectPt": [
+      194.8818897637795,
+      323.7696850393701,
+      510.23622047244106,
+      100.50000000000004
+    ],
+    "marksRectPt": [
+      [
+        194.8818897637795,
+        284.7696850393701,
+        46.13350296020508,
+        18.75
+      ],
+      [
+        194.8818897637795,
+        489.51968503937013,
+        37.12486267089844,
+        18.75
+      ],
+      [
+        194.8818897637795,
+        580.2696850393702,
+        37.12486267089844,
+        18.75
+      ],
+      [
+        194.8818897637795,
+        626.0196850393702,
+        40.769290924072266,
+        18.75
+      ]
+    ],
+    "marksDetail": [
+      {
+        "rectPt": [
+          194.8818897637795,
+          284.7696850393701,
+          46.13350296020508,
+          18.75
+        ],
+        "widgetType": "Tooltip"
+      },
+      {
+        "rectPt": [
+          194.8818897637795,
+          489.51968503937013,
+          37.12486267089844,
+          18.75
+        ],
+        "widgetType": "Tooltip"
+      },
+      {
+        "rectPt": [
+          194.8818897637795,
+          580.2696850393702,
+          37.12486267089844,
+          18.75
+        ],
+        "widgetType": "Tooltip"
+      },
+      {
+        "rectPt": [
+          194.8818897637795,
+          626.0196850393702,
+          40.769290924072266,
+          18.75
+        ],
+        "widgetType": "Tooltip"
+      }
+    ],
+    "displayMathCount": 2,
+    "whileEditing": {
+      "displayMathBefore": 2,
+      "displayMathWhileEditing": 3,
+      "bodyRectPt": [
+        194.8818897637795,
+        323.7696850393701,
+        510.23622047244106,
+        100.50000000000004
+      ],
+      "marksRectPtWhileEditing": [
+        [
+          194.8818897637795,
+          284.7696850393701,
+          46.13350296020508,
+          18.75
+        ],
+        [
+          194.8818897637795,
+          489.51968503937013,
+          37.12486267089844,
+          18.75
+        ],
+        [
+          194.8818897637795,
+          580.2696850393702,
+          37.12486267089844,
+          18.75
+        ],
+        [
+          194.8818897637795,
+          626.0196850393702,
+          40.769290924072266,
+          18.75
+        ]
+      ]
+    },
+    "displayMath": [
+      {
+        "latex": "\\frac{a}{b}=\\sqrt{x^{2}+1}",
+        "rectPt": [
+          418.1289596557617,
+          364.0405256842065,
+          63.74206680297854,
+          19.729159999999993
+        ]
+      },
+      {
+        "latex": "\\int_{0}^{1} x\\,dx=\\frac{1}{2}",
+        "rectPt": [
+          411.5261535644531,
+          549.7721273992945,
+          57.4477148885091,
+          25.997558999999995
+        ]
+      }
+    ]
+  }
+}
