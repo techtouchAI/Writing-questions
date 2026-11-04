@@ -744,7 +744,7 @@ bool _gradeDrawnInSomeField(WidgetTester tester, String grade) {
   final fields = find.byType(EditableText);
   for (var index = 0; index < fields.evaluate().length; index++) {
     final editable = tester.state<EditableTextState>(fields.at(index)).renderEditable;
-    if (editable.text.toPlainText().contains(grade)) return true;
+    if (editable.text!.toPlainText().contains(grade)) return true;
   }
   return false;
 }
