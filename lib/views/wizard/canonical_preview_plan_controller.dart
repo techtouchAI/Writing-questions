@@ -35,7 +35,10 @@ typedef CanonicalPlanResolver = Future<LayoutDocument> Function({
 /// لماذا لا `ChangeNotifier` للمتحكم؟ لأن سطح المعاينة يرسم أصلاً على إشعار
 /// `ExamWizardController`؛ إشعار إضافي هنا كان سيضاعف إعادة البناء بلا داعٍ.
 class CanonicalPreviewPlanController {
-  CanonicalPreviewPlanController({this.resolver});
+  CanonicalPreviewPlanController({
+    this.resolver,
+    this.assetLoader,
+  });
 
   /// مُحوِّل الخطة **الحالي**.
   ///
@@ -45,6 +48,7 @@ class CanonicalPreviewPlanController {
   /// كان يجعل المستند الثاني يُحسَم بمُحوِّل الأول، فيُرفض ويُعرض «تعذّر تجهيز
   /// خطة الصفحات» بلا أي صفحة. يُحدَّث في كل بناء من الودجت الحالي.
   CanonicalPlanResolver? resolver;
+  CanonicalPreviewAssetLoader? assetLoader;
 
   /// مهلة الخطة السابقة للارتفاع 70ms: يحسب الاختبار والحسم في كل تعديل
   /// حرف، فيتجنّب هذا العرض المتكرر بلا داعٍ. قرار التقسيم نفسه لا يُخفَّف.
