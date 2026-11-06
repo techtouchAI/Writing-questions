@@ -368,14 +368,22 @@ class ExamPreviewScreen extends StatefulWidget {
   final VoidCallback onBackToQuestions;
   final CanonicalPreviewLayoutResolver? canonicalLayoutResolver;
   final CanonicalPreviewAssetLoader? canonicalPreviewAssetLoader;
+  final ExamWizardController? controller; // Injected for canonical binding
 
   /// Integration candidate only. Requires BOTH injected canonical adapters;
   /// production remains on its repaired surface until the coverage gate passes.
   final bool enableSeparateEditorCandidate;
   final PreviewPdfBuilder? pdfDocumentBuilder;
 
-  @override
-  State<ExamPreviewScreen> createState() => _ExamPreviewScreenState();
+  const ExamPreviewScreen({
+    super.key,
+    required this.onBackToQuestions,
+    this.canonicalLayoutResolver,
+    this.canonicalPreviewAssetLoader,
+    this.controller,
+    this.enableSeparateEditorCandidate = false,
+    this.pdfDocumentBuilder,
+  });
 }
 
 class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
@@ -477,7 +485,10 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   @override
   void initState() {
     super.initState();
-    _planController = CanonicalPreviewPlanController()..onChanged = _onPlanChanged;
+    _planController = CanonicalPreviewPlanController(
+          resolver: widget.canonicalLayoutResolver,
+          assetLoader: widget.canonicalPreviewAssetLoader,
+        )..onChanged = _onPlanChanged;
   }
 
   void _onPlanChanged() {
@@ -568,7 +579,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   ///
   /// أثناء الكتابة يكون النموذج مساوياً للحقل أصلاً فلا يحدث أي تعديل.
   void _syncFieldsFromModel() {
-    final controller = _controller;
+    final controller = widget.controller ?? _controller;
     if (controller == null) {
       return;
     }
@@ -606,7 +617,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
       _disposeStaleFields(document);
     } finally {
       _syncingFields = false;
-      final controller = _controller;
+      final controller = widget.controller ?? _controller;
       if (controller != null) {
         _planController.request(controller.document, controller.documentIr);
       }
@@ -672,20 +683,26 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
   }
 
   /// يحمّل صور السطح القانوني لتخطيط الخطة الحالية وحدها.
-  void _ensureCanonicalAssets(LayoutDocument? planLayout, ExamDocument document) {
+  void _ensureCanonicalAssets(
+      LayoutDocument? planLayout,
+      ExamDocument document, [
+        CanonicalPreviewLayoutResolver? resolver,
+        CanonicalPreviewAssetLoader? loader,
+      ]) {
     if (!_useCanonicalSurface || planLayout == null) return;
     if (identical(_canonicalPreviewAssetsLayout, planLayout)) return;
     if (identical(_canonicalPreviewAssetsFailedLayout, planLayout)) return;
     _canonicalPreviewAssetsLayout = planLayout;
-    final loader = widget.canonicalPreviewAssetLoader;
+    final assetLoader = loader ?? widget.canonicalPreviewAssetLoader;
+    final layoutResolver = resolver ?? widget.canonicalLayoutResolver;
     unawaited(() async {
       try {
-        final assets = loader == null
+        final assets = assetLoader == null
             ? await CanonicalLayoutPreviewAssets.load(
                 layout: planLayout,
                 document: document,
               )
-            : await loader(layout: planLayout, document: document);
+            : await assetLoader(layout: planLayout, document: document);
         if (!mounted || !identical(_canonicalPreviewAssetsLayout, planLayout)) {
           assets.dispose();
           return;
@@ -2562,7 +2579,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (_isBusy) {
       return;
     }
-    final controller = _controller!;
+    final controller = widget.controller ?? _controller!;
     final document = controller.document;
     setState(() => _isBusy = true);
     try {
@@ -3457,6 +3474,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     // استبدال الودجت (مستند/وصلات أخرى)، فالتقاطها مرة واحدة يحسم المستند
     // الجديد بوصلة القديم.
     _planController.resolver = widget.canonicalLayoutResolver;
+    _planController.assetLoader = widget.canonicalPreviewAssetLoader;
     // الخطة هي مصدر الصفحات: تُطلب للمستند الحالي وتُعرض كما هي (حتى لو كانت
     // نسخة اللحظة السابقة أثناء الحسم) كي لا تفقد الحقول التركيز مع كل حرف.
     _planController.request(document, controller.documentIr);
@@ -3465,7 +3483,15 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     final pagePlan = _planController.plan;
     if (pagePlan != null) {
       _trimPageKeysByIndices(pagePlan.pages.map((page) => page.index));
-      if (_useCanonicalSurface) _ensureCanonicalAssets(pagePlan.layout, document);
+      if (_useCanonicalSurface) {
+        final resolver = widget.canonicalLayoutResolver;
+        final loader = widget.canonicalPreviewAssetLoader;
+        if (resolver != null && loader != null) {
+          _ensureCanonicalAssets(pagePlan.layout, document, resolver, loader);
+        } else {
+          _ensureCanonicalAssets(pagePlan.layout, document);
+        }
+      }
     }
     final canonicalAssets = _canonicalPreviewAssets;
     final planFailed = identical(_planController.failedFor, document);
