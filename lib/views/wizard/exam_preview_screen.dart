@@ -321,17 +321,6 @@ typedef PreviewPdfBuilder = Future<Uint8List> Function({
   required ExamDocument document, LayoutDocument? layoutDocument,
 });
 
-typedef CanonicalPreviewLayoutResolver = Future<LayoutDocument> Function({
-  required ExamDocument document,
-  required DocumentIR sourceIr,
-});
-
-typedef CanonicalPreviewAssetLoader =
-    Future<CanonicalLayoutPreviewAssets> Function({
-  required LayoutDocument layout,
-  required ExamDocument document,
-});
-
 /// الخطوة 3: معاينة A4 تفاعلية بسطحين — يُختار أحدهما بحقن الوصلات.
 ///
 /// - **سطح الورقة التفاعلي (الافتراضي)**: بلا وصلات محقونة تُبنى الورقة
@@ -356,15 +345,6 @@ typedef CanonicalPreviewAssetLoader =
 ///   إطار، حذف — والنقرة المزدوجة على مربع النص تفتح محرّره.
 /// - **العرض**: تكبير/تصغير/ملاءمة/توسيط، وقفل يمنع التحريك العرضي.
 class ExamPreviewScreen extends StatefulWidget {
-  const ExamPreviewScreen({
-    super.key,
-    required this.onBackToQuestions,
-    this.canonicalLayoutResolver,
-    this.canonicalPreviewAssetLoader,
-    this.enableSeparateEditorCandidate = false,
-    this.pdfDocumentBuilder,
-  });
-
   final VoidCallback onBackToQuestions;
   final CanonicalPreviewLayoutResolver? canonicalLayoutResolver;
   final CanonicalPreviewAssetLoader? canonicalPreviewAssetLoader;
@@ -384,6 +364,9 @@ class ExamPreviewScreen extends StatefulWidget {
     this.enableSeparateEditorCandidate = false,
     this.pdfDocumentBuilder,
   });
+
+  @override
+  State<ExamPreviewScreen> createState() => _ExamPreviewScreenState();
 }
 
 class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
@@ -684,17 +667,14 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
 
   /// يحمّل صور السطح القانوني لتخطيط الخطة الحالية وحدها.
   void _ensureCanonicalAssets(
-      LayoutDocument? planLayout,
-      ExamDocument document, [
-        CanonicalPreviewLayoutResolver? resolver,
-        CanonicalPreviewAssetLoader? loader,
-      ]) {
+    LayoutDocument? planLayout,
+    ExamDocument document,
+  ) {
     if (!_useCanonicalSurface || planLayout == null) return;
     if (identical(_canonicalPreviewAssetsLayout, planLayout)) return;
     if (identical(_canonicalPreviewAssetsFailedLayout, planLayout)) return;
     _canonicalPreviewAssetsLayout = planLayout;
-    final assetLoader = loader ?? widget.canonicalPreviewAssetLoader;
-    final layoutResolver = resolver ?? widget.canonicalLayoutResolver;
+    final assetLoader = widget.canonicalPreviewAssetLoader;
     unawaited(() async {
       try {
         final assets = assetLoader == null
@@ -3484,13 +3464,7 @@ class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
     if (pagePlan != null) {
       _trimPageKeysByIndices(pagePlan.pages.map((page) => page.index));
       if (_useCanonicalSurface) {
-        final resolver = widget.canonicalLayoutResolver;
-        final loader = widget.canonicalPreviewAssetLoader;
-        if (resolver != null && loader != null) {
-          _ensureCanonicalAssets(pagePlan.layout, document, resolver, loader);
-        } else {
-          _ensureCanonicalAssets(pagePlan.layout, document);
-        }
+        _ensureCanonicalAssets(pagePlan.layout, document);
       }
     }
     final canonicalAssets = _canonicalPreviewAssets;
