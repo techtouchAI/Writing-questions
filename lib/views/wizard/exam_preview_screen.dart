@@ -364,6 +364,9 @@ class ExamPreviewScreen extends StatefulWidget {
     this.enableSeparateEditorCandidate = false,
     this.pdfDocumentBuilder,
   });
+
+  @override
+  State<ExamPreviewScreen> createState() => _ExamPreviewScreenState();
 }
 
 class _ExamPreviewScreenState extends State<ExamPreviewScreen> {
