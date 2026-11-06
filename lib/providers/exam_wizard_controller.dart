@@ -38,14 +38,7 @@ import '../models/text_format_span.dart';
 ///
 /// كل تعديل ينتج نسخة جديدة غير قابلة للتغيير من [ExamDocument].
 class ExamWizardController extends ChangeNotifier {
-  final CanonicalPreviewLayoutResolver? canonicalLayoutResolver;
-  final CanonicalPreviewAssetLoader? canonicalPreviewAssetLoader;
-
-  ExamWizardController({
-    ExamDocument? document,
-    this.canonicalLayoutResolver,
-    this.canonicalPreviewAssetLoader,
-  })
+  ExamWizardController({ExamDocument? document})
       : _document = document ??
             ExamDocument(
               name: 'ورقة أسئلة جديدة',
@@ -1494,24 +1487,9 @@ class ExamWizardController extends ChangeNotifier {
   /// ثانٍ يقرّر صفحة السؤال وموضعه. بعد توحيد التخطيط صار الحكم للمحرك وحده؛
   /// بقاء الحساب القديم هنا كان سيقيد العناصر بصفحة أخرى غير صفحة الورقة.
   ///
-  /// **الربط القانوني:** إذا وُجدت الوصلات المحقونة، تُستخدم لحل التخطيط
-  /// فوراً (بدلاً من الاعتماد على `_layoutPlan` المحقون من السطح فقط).
+  /// تُحقن من سطح المعاينة وحده؛ لا يحسب المتحكم تخطيطاً ثانياً.
   QuestionRect? questionRect(String questionId) {
     final rect = _layoutPlan?.questionRectPx(questionId);
-    if (rect == null && canonicalLayoutResolver != null && canonicalPreviewAssetLoader != null) {
-      // الربط المباشر للمتحكم: حل التخطيط فوراً من المصدر القانوني
-      unawaited(() async {
-        try {
-          final layout = await canonicalLayoutResolver!(
-            document: _document,
-            sourceIr: documentIr,
-          );
-          // هنا يمكن تحديث _layoutPlan أو تمريره للسطح إذا لزم الأمر
-          // (السطح يقرأ `_pagePlan` من `_planController` الذي يطلب من المتحكم)
-          // لكننا نضمن أن المحرك القانوني قد حُلّ.
-        } catch (e) {}
-      });
-    }
     if (rect == null) {
       return null;
     }

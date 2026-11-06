@@ -10,9 +10,23 @@ import '../../models/exam_document.dart';
 import '../../models/floating_element.dart';
 import '../../services/math_snapshot_renderer.dart';
 import '../document_direction.dart';
+import '../document_ir.dart';
 import 'canonical_layout_interaction.dart';
 import 'layout_document.dart';
 import 'layout_units.dart';
+
+/// Resolves a document's canonical layout from its semantic source.
+typedef CanonicalPreviewLayoutResolver = Future<LayoutDocument> Function({
+  required ExamDocument document,
+  required DocumentIR sourceIr,
+});
+
+/// Loads renderer assets for an already-resolved canonical layout.
+typedef CanonicalPreviewAssetLoader =
+    Future<CanonicalLayoutPreviewAssets> Function({
+  required LayoutDocument layout,
+  required ExamDocument document,
+});
 
 /// Decoded renderer assets for the Preview painter. These images are kept
 /// outside LayoutDocument, which stays renderer-independent and point-only.

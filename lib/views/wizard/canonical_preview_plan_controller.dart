@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/scheduler.dart';
 
+import '../../layout/canonical/canonical_layout_preview.dart';
 import '../../layout/canonical/canonical_layout_service.dart';
 import '../../layout/canonical/canonical_page_plan.dart';
 import '../../layout/canonical/layout_document.dart';
@@ -10,11 +11,6 @@ import '../../models/exam_document.dart';
 import '../../services/export_file_service.dart';
 
 /// مُحوِّل مستند ↔ خطة صفحات: نداء واحد، ومهل قصيرة للكتابة المتصلة.
-typedef CanonicalPlanResolver = Future<LayoutDocument> Function({
-  required ExamDocument document,
-  required DocumentIR sourceIr,
-});
-
 /// يحسم **خطة الصفحات الوحيدة** التي ترسمها كل الأسطح.
 ///
 /// المسؤولية الوحيدة: أن يبقى `_plan` مطابقاً للمستند الحالي، وألّا يُعرض
@@ -47,7 +43,7 @@ class CanonicalPreviewPlanController {
   /// العربية ثم الإنجليزية في الاختبار نفسه. التقاطه مرة واحدة في `initState`
   /// كان يجعل المستند الثاني يُحسَم بمُحوِّل الأول، فيُرفض ويُعرض «تعذّر تجهيز
   /// خطة الصفحات» بلا أي صفحة. يُحدَّث في كل بناء من الودجت الحالي.
-  CanonicalPlanResolver? resolver;
+  CanonicalPreviewLayoutResolver? resolver;
   CanonicalPreviewAssetLoader? assetLoader;
 
   /// مهلة الخطة السابقة للارتفاع 70ms: يحسب الاختبار والحسم في كل تعديل
